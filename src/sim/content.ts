@@ -149,38 +149,46 @@ export type CharterMetric =
   | { kind: 'avgMood'; amount: number; hours: number }
   | { kind: 'couples'; amount: number }
   | { kind: 'feast'; meals: number; ale: number }
-  | { kind: 'contentPop'; pop: number; mood: number; hours: number };
+  | { kind: 'contentPop'; pop: number; mood: number; hours: number }
+  | { kind: 'paths'; amount: number }
+  | { kind: 'decorPaths'; decor: number; paths: number }
+  | { kind: 'allTable'; hours: number }
+  | { kind: 'curedSince'; amount: number }
+  | { kind: 'errandsSince'; amount: number }
+  | { kind: 'avgBeauty'; amount: number; hours: number }
+  | { kind: 'skilled'; count: number; level: number }
+  | { kind: 'calm'; pop: number; hours: number };
 
 export interface CharterDef { id: string; tier: 1 | 2 | 3; name: string; desc: string; metric: CharterMetric }
 export const CHARTERS: CharterDef[] = [
   { id: 'pantry', tier: 1, name: 'A proper pantry', desc: 'Have 40 meals stored at once.', metric: { kind: 'stock', resources: ['stew', 'pie', 'smokedFish'], amount: 40 } },
   { id: 'growing', tier: 1, name: 'Room to grow', desc: 'Reach 9 colonists.', metric: { kind: 'population', amount: 9 } },
   { id: 'township', tier: 1, name: 'Township papers', desc: 'Finish 16 buildings (decorations don\u2019t count).', metric: { kind: 'buildings', amount: 16 } },
-  { id: 'cheer', tier: 2, name: 'Measurable cheer', desc: 'Keep average mood at 62+ for a full day.', metric: { kind: 'avgMood', amount: 62, hours: 24 } },
+  { id: 'cheer', tier: 2, name: 'Measurable cheer', desc: 'Keep average mood at 58+ for a full day.', metric: { kind: 'avgMood', amount: 58, hours: 24 } },
   { id: 'lovebirds', tier: 2, name: 'Lovebirds', desc: 'Have 2 couples at the same time.', metric: { kind: 'couples', amount: 2 } },
   { id: 'lumber', tier: 2, name: 'Lumber baron', desc: 'Have 40 planks stored at once.', metric: { kind: 'stock', resources: ['planks'], amount: 40 } },
   { id: 'feast', tier: 3, name: 'The Great Feast', desc: 'Have 60 meals and 30 ale stored at once.', metric: { kind: 'feast', meals: 60, ale: 30 } },
-  { id: 'harmony', tier: 3, name: 'Frontier harmony', desc: '14+ colonists with average mood 60+ for a full day.', metric: { kind: 'contentPop', pop: 14, mood: 60, hours: 24 } },
+  { id: 'harmony', tier: 3, name: 'Frontier harmony', desc: '12+ colonists with average mood 55+ for a full day.', metric: { kind: 'contentPop', pop: 12, mood: 55, hours: 24 } },
   { id: 'boomtown', tier: 3, name: 'Boomtown', desc: 'Reach 16 colonists.', metric: { kind: 'population', amount: 16 } },
+  { id: 'woodpile', tier: 1, name: 'A proper woodpile', desc: 'Have 120 wood stored at once.', metric: { kind: 'stock', resources: ['wood'], amount: 120 } },
+  { id: 'paved', tier: 1, name: 'Paved with good intentions', desc: 'Lay 25 tiles of path.', metric: { kind: 'paths', amount: 25 } },
+  { id: 'tables', tier: 1, name: 'Elbows off the table', desc: 'Nobody eats without a table for a full day.', metric: { kind: 'allTable', hours: 24 } },
+  { id: 'healthy', tier: 2, name: 'Clean bill of health', desc: 'Nurse 3 sick or injured colonists back to health.', metric: { kind: 'curedSince', amount: 3 } },
+  { id: 'handy', tier: 2, name: 'Handy folk', desc: 'Finish 3 urgent jobs.', metric: { kind: 'errandsSince', amount: 3 } },
+  { id: 'pretty', tier: 2, name: 'Pretty as a picture', desc: 'Keep average surroundings at beauty 3 or more for a full day.', metric: { kind: 'avgBeauty', amount: 3, hours: 24 } },
+  { id: 'masters', tier: 2, name: 'Master craftsfolk', desc: 'Have 2 colonists with a skill of 10.', metric: { kind: 'skilled', count: 2, level: 10 } },
+  { id: 'pieday', tier: 3, name: 'Pie Day', desc: 'Have 40 pies stored at once.', metric: { kind: 'stock', resources: ['pie'], amount: 40 } },
+  { id: 'garden', tier: 3, name: 'Garden town', desc: 'Have 14 decorations and 60 tiles of path.', metric: { kind: 'decorPaths', decor: 14, paths: 60 } },
+  { id: 'calm', tier: 3, name: 'Peace and quiet', desc: '12+ colonists and nobody sulking for two full days.', metric: { kind: 'calm', pop: 12, hours: 48 } },
 ];
 
 export interface EventOption { label: string; detail: string; effect: string }
 export interface EventDef { id: string; title: string; text: string; options: EventOption[]; requires?: 'couple' }
 export const EVENTS: EventDef[] = [
-  { id: 'goblinTax', title: 'The goblin tax collector', text: 'A goblin in a very official hat demands a "frontier levy". He has a clipboard. Nobody knows where he got it.',
-    options: [
-      { label: 'Pay 20 food', detail: 'Lose 20 food, raw first.', effect: 'payFood20' },
-      { label: 'Refuse', detail: 'Everyone −6 mood for 2 days (goblin graffiti).', effect: 'graffiti' },
-    ] },
   { id: 'bard', title: 'A travelling bard', text: 'A bard offers to play "The Ballad of Your Colony" for a modest fee. He has not yet written it.',
     options: [
       { label: 'Pay 6 ale', detail: 'Everyone +6 mood for a day.', effect: 'bardPlay' },
       { label: 'Shoo him away', detail: 'Nothing happens. He writes a mean song anyway.', effect: 'none' },
-    ] },
-  { id: 'pigeons', title: 'Pigeon uprising', text: 'The pigeons have unionised. Their demands are berries.',
-    options: [
-      { label: 'Pay 15 berries', detail: 'Lose 15 berries.', effect: 'pigeonBribe' },
-      { label: 'Stand firm', detail: 'Lose 40% of all berries.', effect: 'pigeonRiot' },
     ] },
   { id: 'wedding', title: 'A wedding is proposed', text: 'A couple wants to make it official. Everyone is invited, whether they like it or not.', requires: 'couple',
     options: [
@@ -228,6 +236,8 @@ export const JOB_EVENTS: JobEventDef[] = [
   { id: 'cat', title: 'The cat is up a tree', text: 'The colony cat climbed the tallest tree on the frontier and is now yowling about it.', hours: 2, deadline: 8, at: 'edge', skill: 'chopping', reward: 'Everyone +3 mood for a day.', penalty: 'Everyone −3 mood for a day, from the yowling.' },
   { id: 'feud', title: 'A feud is brewing', text: '{a} and {b} are not speaking, except to say very loud things about each other. Someone should mediate.', hours: 3, deadline: 16, at: 'pair', reward: 'They patch things up a bit (+25 opinion each way).', penalty: 'Both −6 mood for two days, and they like each other even less.', requires: 'rivals' },
   { id: 'bog', title: 'Someone is stuck in the bog', text: 'A traveller has wandered into the bog at the edge of the woods and is sinking at a dignified pace.', hours: 4, deadline: 10, at: 'edge', reward: 'They join the colony out of gratitude.', penalty: 'They get out on their own and tell everyone how rude you were (−2 mood for a day).' },
+  { id: 'goblin', title: 'The goblin tax collector', text: 'A goblin in a very official hat is demanding a "frontier levy" and refuses to leave. Someone should politely walk him to the edge of the woods.', hours: 2, deadline: 6, at: 'hearth', reward: 'He leaves with nothing but a stamped form.', penalty: 'He takes 20 food and graffitis every wall on the way out.' },
+  { id: 'pigeons', title: 'The pigeons have unionised', text: 'The pigeons are picketing the food stores. Their demands are berries. Someone needs to negotiate, loudly, with a broom.', hours: 3, deadline: 8, at: 'storage', reward: 'The pigeons disperse, grumbling.', penalty: 'They riot. Lose 40% of the berries.' },
   { id: 'remedy', title: 'Brew a remedy', text: 'The frontier flu is going around. Someone handy with medicine could brew a remedy.', hours: 4, deadline: 18, at: 'clinic', skill: 'medicine', reward: 'Everyone who is sick feels much better.', penalty: 'The flu runs its course.' },
 ];
 

@@ -3,7 +3,7 @@ import { BUILDING_BY_ID, CHARTERS, EVENTS, JOB_NAMES, PERK_BY_ID, RESOURCES, TRA
 import {
   World, Command, Colonist, alive, avgMood, beds, buildingByUid, charterProgress, colonistById,
   day, hourOfDay, opinion, workersAt, MAX_DEPARTURES, sites, siteWork, remainingCost, storageCap, stored,
-  keepsFresh, findSpot, canPlace, laborers, centerOf, built, Building, efficiencyAt, pathAt, MAP_SIZE, blockedReason, Errand, Difficulty, patientsAt,
+  keepsFresh, findSpot, canPlace, laborers, centerOf, built, Building, efficiencyAt, pathAt, MAP_SIZE, blockedReason, Errand, Difficulty, patientsAt, lost,
 } from '../sim/world';
 import type { IsoView, Picked } from '../render/iso';
 
@@ -119,6 +119,7 @@ export class UI {
       case 'paths-done': this.view.pathMode = false; this.open = true; this.tab = 'build'; break;
       case 'cancel-site': { const err = this.send({ type: 'cancel', building: Number(arg) }); if (err) this.toast(err); this.detail = null; this.view.selected = null; break; }
       case 'assign': { const [cid, bid] = arg.split(':').map(x => (x === 'none' ? null : Number(x))); const err = this.send({ type: 'assign', colonist: cid!, building: bid }); if (err) this.toast(err); break; }
+      case 'food': { const f = arg as ResourceId; this.send({ type: 'foodRule', food: f, allowed: w.forbidden.includes(f) }); break; }
       case 'auto': this.send({ type: 'autoAssign' }); this.toast('The foreman has reassigned everyone.'); break;
       case 'resolve': this.send({ type: 'resolve', option: Number(arg) }); this.lastModal = ''; break;
       case 'restart': this.onRestart((arg || 'normal') as Difficulty); break;
@@ -147,7 +148,7 @@ export class UI {
     const h = hourOfDay(w);
     const hh = String(Math.floor(h)).padStart(2, '0');
     const prog = charterProgress(w);
-    const pips = Array.from({ length: MAX_DEPARTURES }, (_, i) => `<i class="pip${i < w.stats.departures ? ' on' : ''}"></i>`).join('');
+    const pips = Array.from({ length: MAX_DEPARTURES }, (_, i) => `<i class="pip${i < lost(w) ? ' on' : ''}"></i>`).join('');
     const strain = Math.round(w.strain);
     const cap = storageCap(w), st = stored(w);
     const storeChip = `<span class="chip store${st >= cap ? ' full' : ''}"><b>${Math.floor(st)}/${cap}</b> stored${keepsFresh(w) ? '' : ' · food spoils'}</span>`;
@@ -169,7 +170,7 @@ export class UI {
         </div>
         <div class="threats">
           <div class="strain" title="Frontier strain: a mood penalty that grows every day"><span>Strain</span><b>−${strain}</b></div>
-          <div class="leavers" title="If ${MAX_DEPARTURES} settlers leave, the colony collapses"><span>Left</span><div class="pips">${pips}</div></div>
+          <div class="leavers" title="If ${MAX_DEPARTURES} settlers leave or die, the colony collapses"><span>Lost</span><div class="pips">${pips}</div></div>
         </div>
       </div>
       ${w.errands.length ? `<div class="errands">${w.errands.map(e => this.errandChip(w, e)).join('')}</div>` : ''}`;
@@ -234,7 +235,12 @@ export class UI {
     }).join('');
     return `<div class="list-head"><span>${alive(w).length} colonists · ${beds(w)} beds · average mood ${Math.round(avgMood(w))}</span>
       <button type="button" class="ghost" data-act="auto">Auto-assign jobs</button></div>
-      <p class="muted hint">${laborers(w).length} laborers. Anyone without a job builds, hauls and cleans.</p><div class="rows">${rows}</div>`;
+      <p class="muted hint">${laborers(w).length} laborers. Anyone without a job builds, hauls and cleans.</p><div class="rows">${rows}</div>
+      <h3>Food rules</h3><p class="muted hint">Turn a food off to keep it in storage for a charter or a feast. Nobody will touch it.</p>
+      <div class="foodrules">${(['stew', 'pie', 'smokedFish', 'berries', 'fish', 'mushrooms'] as ResourceId[]).map(f => {
+        const on = !w.forbidden.includes(f);
+        return `<button type="button" class="rule${on ? ' on' : ''}" data-act="food" data-arg="${f}" aria-pressed="${on}"><i style="background:${RES_COLOR[f]}"></i>${RESOURCES.find(r => r.id === f)!.name}<small>${on ? 'eaten' : 'kept'} · ${Math.floor(w.res[f])}</small></button>`;
+      }).join('')}</div>`;
   }
 
   private colonistDetail(w: World, id: number) {
@@ -424,10 +430,10 @@ export class UI {
     const s = w.stats;
     return `<div class="card-wrap end ${won ? 'won' : 'lost'}"><p class="eyebrow">${won ? 'Victory' : 'The colony collapsed'}</p>
       <h2>${won ? 'Mumblewood is a town' : 'The kettle remains'}</h2>
-      <p class="lede">${won ? 'All three charters complete.' : `Too many settlers walked off into the woods.`} You lasted ${day(w)} day${day(w) === 1 ? '' : 's'} on ${w.difficulty[0].toUpperCase() + w.difficulty.slice(1)}.</p>
+      <p class="lede">${won ? 'All three charters complete.' : `Too many settlers were lost.`} You lasted ${day(w)} day${day(w) === 1 ? '' : 's'} on ${w.difficulty[0].toUpperCase() + w.difficulty.slice(1)}.</p>
       <dl class="stats"><div><dt>Charters</dt><dd>${w.chartersDone.length} / 3</dd></div><div><dt>Peak population</dt><dd>${s.peakPop}</dd></div>
       <div><dt>Couples formed</dt><dd>${s.couples}</dd></div><div><dt>Breakups</dt><dd>${s.breakups}</dd></div>
-      <div><dt>Settlers who left</dt><dd>${s.departures}</dd></div><div><dt>Meals eaten</dt><dd>${s.mealsEaten}</dd></div>
+      <div><dt>Left the colony</dt><dd>${s.departures}</dd></div><div><dt>Died</dt><dd>${s.deaths}</dd></div><div><dt>Meals eaten</dt><dd>${s.mealsEaten}</dd></div>
       <div><dt>Errands done</dt><dd>${s.errands}</dd></div><div><dt>Recoveries</dt><dd>${s.cured}</dd></div></dl>
       ${this.ledger()}
       <h3>Start a new colony</h3>
