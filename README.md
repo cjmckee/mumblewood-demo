@@ -17,6 +17,7 @@ npx tsx tools/diagnose.ts trace 3 20   # day-by-day status of one bot run
 npx tsx tools/losses.ts 150    # fresh seeds: win rate, why settlers were lost, days per charter
 npx tsx tools/moods.ts cheer 20   # where mood comes from on a forced charter, plus romance stats
 npx tsx tools/review.ts 8 777 food   # read bot runs closely: choices, mood spread, why people leave, quality vs mood
+npx tsx tools/wood.ts 20       # where wood and planks come from and go, and how much choppers actually chop
 npx tsc -p .                   # type-check
 ```
 
@@ -33,7 +34,7 @@ Open `dist/mumblewood.html` in a browser. It works on phones too.
 | `src/ui/ui.ts` | HUD, bottom sheet, placement bar and decision cards. It changes the world only through commands |
 | `src/main.ts` | Game loop and speed control |
 | `tools/harness.ts` | Headless balance harness |
-| `tools/forced.ts`, `tools/charters.ts`, `tools/diagnose.ts`, `tools/issues.ts`, `tools/losses.ts`, `tools/moods.ts`, `tools/review.ts` | Bot diagnostics: per-charter health, problem detectors, daily traces |
+| `tools/forced.ts`, `tools/charters.ts`, `tools/diagnose.ts`, `tools/issues.ts`, `tools/losses.ts`, `tools/moods.ts`, `tools/review.ts`, `tools/wood.ts` | Bot diagnostics: per-charter health, problem detectors, daily traces |
 
 The UI changes the simulation only through `apply(world, command)`, so a future save file or replay
 can simply be a seed plus a list of commands.

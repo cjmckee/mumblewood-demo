@@ -123,6 +123,8 @@ export interface World {
   difficulty: Difficulty;
   nextUid: number; nextColonistId: number;
   autoAssignNew: boolean;
+  /** diagnostics: running totals of where goods came from and went, e.g. 'wood:hearth' */
+  flows: Record<string, number>;
   stats: { peakPop: number; couples: number; breakups: number; departures: number; mealsEaten: number; built: number; cured: number; errands: number; deaths: number };
   version: number; // bumps when buildings change shape or state, for the renderer
 }
@@ -182,6 +184,7 @@ export function mealTotal(w: World) { return MEALS.reduce((n, r) => n + w.res[r]
 export function avgMood(w: World) { const a = alive(w); return a.length ? a.reduce((s, c) => s + c.mood, 0) / a.length : 0; }
 export function couples(w: World) { return alive(w).filter(c => c.partner != null && c.id < c.partner).length; }
 function hasBuilt(w: World, def: string) { return w.buildings.some(b => b.def === def && b.built); }
+export function flow(w: World, key: string, n: number) { if (w.flows) w.flows[key] = (w.flows[key] ?? 0) + n; }
 export function storageCap(w: World) { return built(w).reduce((n, b) => n + (bdef(b).storage ?? 0), 0); }
 export function stored(w: World) { return sum(w.res); }
 export const FOODS: ResourceId[] = RESOURCES.filter(r => r.kind === 'raw' || r.kind === 'meal').map(r => r.id);
@@ -504,6 +507,7 @@ export function createWorld(seed: number, difficulty: Difficulty = 'normal'): Wo
     decisions: [], log: [], opinions: {}, status: 'playing', strain: 0, nextEventHour: 24 * 1.6,
     errands: [], nextErrandId: 1, difficulty, charterBase: { cured: 0, errands: 0 }, moodLog: [], ateOffTable: false, forbidden: [],
     nextUid: 1, nextColonistId: 1, autoAssignNew: false,
+    flows: {},
     stats: { peakPop: 6, couples: 0, breakups: 0, departures: 0, mealsEaten: 0, built: 0, cured: 0, errands: 0, deaths: 0 },
     version: 0,
   };
@@ -1169,6 +1173,7 @@ function arrive(w: World, c: Colonist) {
         c.carrying = { res: t.res, amount: amt }; t.amount = amt;
       } else {
         site.delivered[t.res] = (site.delivered[t.res] ?? 0) + c.carrying.amount;
+        flow(w, `${t.res}:-build ${site.def}`, c.carrying.amount);
         c.carrying = null; c.task = null; w.version++;
       }
     } else if (t.kind === 'haul') {
@@ -1241,9 +1246,10 @@ function produce(w: World, dt: number) {
         let need = amount * (per as number);
         if (r === 'rawFood') {
           for (const x of [...RAW_FOODS].sort((p, q) => (b.inbox[q] ?? 0) - (b.inbox[p] ?? 0))) { const t = Math.min(b.inbox[x] ?? 0, need); b.inbox[x] = (b.inbox[x] ?? 0) - t; need -= t; }
-        } else b.inbox[r as ResourceId] = (b.inbox[r as ResourceId] ?? 0) - need;
+        } else { b.inbox[r as ResourceId] = (b.inbox[r as ResourceId] ?? 0) - need; flow(w, `${r}:-${b.def}`, need); }
       }
       b.outbox[def.recipe.output] = (b.outbox[def.recipe.output] ?? 0) + amount;
+      flow(w, `${def.recipe.output}:+${b.def}`, amount);
       if (def.job) c.skills[def.job] = Math.min(10, c.skills[def.job] + 0.004 * dt * 6);
       // the occasional workplace mishap, likelier for the unskilled
       if (def.job && nextRand(w) < dt * 0.0025 * (def.job === 'chopping' ? 2 : 1) * (11 - c.skills[def.job]) / 6) {
@@ -1269,7 +1275,7 @@ function produce(w: World, dt: number) {
       if (w.paths[i] !== 1) { c.task = null; continue; }
       t.progress += workSpeed(w, c) * dt;
       if (t.progress >= 0.4) {
-        if (w.res.wood >= 1) { w.res.wood -= 1; w.paths[i] = 2; w.version++; }
+        if (w.res.wood >= 1) { w.res.wood -= 1; flow(w, 'wood:-paths', 1); w.paths[i] = 2; w.version++; }
         c.task = null;
       }
     } else if (c.activity === 'building' && c.task?.kind === 'build') {
@@ -1501,10 +1507,10 @@ function hourly(w: World) {
 
   if (h >= 18 || h < 6) {
     const burn = hasPerk(w, 'warmHearth') ? 0.5 : 1;
-    if (w.res.wood >= burn) w.res.wood -= burn;
+    if (w.res.wood >= burn) { w.res.wood -= burn; flow(w, 'wood:-hearth', burn); }
     else everyone(w, 'cold', 'The hearth went cold', -5, 12);
   }
-  if (hasBuilt(w, 'bathhouse') && h >= 6 && h < 18) w.res.wood = Math.max(0, w.res.wood - 0.4);
+  if (hasBuilt(w, 'bathhouse') && h >= 6 && h < 18) { flow(w, 'wood:-bathhouse', Math.min(0.4, w.res.wood)); w.res.wood = Math.max(0, w.res.wood - 0.4); }
   // food spoils unless it sits somewhere that keeps it fresh (a storehouse)
   const rot = 0.035 / 24;
   for (const r of FOODS) {
@@ -1522,6 +1528,9 @@ function hourly(w: World) {
     if (c.activity !== 'sleeping') {
       c.hunger -= (100 / 26) * (has(c, 'glutton') ? 1.6 : 1) * (hasPerk(w, 'rations') ? 0.8 : 1);
       c.fun -= 2;
+      // a job you love is a little fun in itself; the real lifting still happens at the tavern and the stage
+      const jb = c.activity === 'working' ? buildingByUid(w, c.job) : undefined;
+      if (jb && bdef(jb).job === c.likes) c.fun += 1.5;
     } else c.hunger -= 1.2;
     c.hunger = Math.max(0, c.hunger);
     c.starvingHours = c.hunger <= 0 ? c.starvingHours + 1 : 0;

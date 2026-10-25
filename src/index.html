@@ -16,6 +16,7 @@
   --good: #8ccf6f;
   --warn: #e8c547;
   --bad: #e0694a;
+  --wear: #b48ad6;      /* frontier wear: dusk violet */
   --love: #e58fb5;
   --sulk: #a98ae6;
   --font-display: 'Grenze Gotisch', 'UnifrakturMaguntia', Georgia, serif;
@@ -125,6 +126,17 @@ h3.first { margin-top: 4px; }
 .thoughts li { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; padding: 5px 0; border-bottom: 1px solid #262c26; }
 .thoughts li b { font-variant-numeric: tabular-nums; }
 .thoughts .pos b { color: var(--good); } .thoughts .neg b { color: var(--bad); }
+.thoughts .wear span { color: var(--wear); } .thoughts .wear b { color: var(--wear); }
+.ledger { display: grid; gap: 6px; margin: 4px 0 10px; }
+.lg-row { display: grid; grid-template-columns: 96px minmax(0, 1fr) 36px; align-items: center; gap: 8px; font-size: 13px; }
+.lg-row i { display: block; height: 8px; border-radius: 4px; background: #2c332b; overflow: hidden; }
+.lg-row i b { display: block; height: 100%; border-radius: 4px; }
+.lg-row em { font-style: normal; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+.lg-good b { background: var(--good); } .lg-good em { color: var(--good); }
+.lg-bad b { background: var(--bad); } .lg-bad em { color: var(--bad); }
+.lg-wear b { background: var(--wear); } .lg-wear em, .lg-wear span { color: var(--wear); }
+.lg-sum { margin: 2px 0 0; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.lg-sum b { color: var(--text); }
 .rels { display: flex; flex-wrap: wrap; gap: 6px; }
 .rel { font-size: 12px; padding: 4px 10px; border-radius: 999px; background: #262d26; }
 .rel.love { color: var(--love); } .rel.friend { color: var(--good); } .rel.rival { color: var(--bad); }
