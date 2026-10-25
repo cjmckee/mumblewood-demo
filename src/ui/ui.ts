@@ -29,7 +29,10 @@ function activityText(w: World, c: Colonist) {
     case 'working': return job ? BUILDING_BY_ID[job.def].name : 'Working';
     case 'idle': return 'Idle at the hearth';
     case 'leisure': return c.place != null && buildingByUid(w, c.place)?.def === 'tavern' ? 'At the tavern' : 'At the hearth';
-    case 'eating': { const at = buildingByUid(w, c.meal?.at ?? null); return at && BUILDING_BY_ID[at.def].seats ? 'Eating in the dining hall' : 'Eating standing up'; }
+    case 'eating': {
+      if (c.meal && !c.meal.got) { const src = buildingByUid(w, c.meal.from); return `Fetching food${src ? ` from the ${BUILDING_BY_ID[src.def].name.toLowerCase()}` : ''}`; }
+      const at = buildingByUid(w, c.meal?.at ?? null); return at && BUILDING_BY_ID[at.def].seats ? 'Eating in the dining hall' : 'Eating standing up';
+    }
     case 'building': { const t = c.task; if (t?.kind === 'pave') return 'Laying a path'; const b = t && 'site' in t ? buildingByUid(w, t.site) : undefined; return b ? `Building the ${BUILDING_BY_ID[b.def].name.toLowerCase()}` : 'Building'; }
     case 'cleaning': return 'Cleaning the dining hall';
     case 'sick': { const at = buildingByUid(w, c.place); return `${c.illness?.name ?? 'Sick'} · ${at && BUILDING_BY_ID[at.def].patients ? 'at the clinic' : 'resting in bed'}`; }
@@ -120,6 +123,7 @@ export class UI {
       case 'cancel-site': { const err = this.send({ type: 'cancel', building: Number(arg) }); if (err) this.toast(err); this.detail = null; this.view.selected = null; break; }
       case 'assign': { const [cid, bid] = arg.split(':').map(x => (x === 'none' ? null : Number(x))); const err = this.send({ type: 'assign', colonist: cid!, building: bid }); if (err) this.toast(err); break; }
       case 'store-preset': { const [bid, m] = arg.split(':'); this.send({ type: 'storageFilter', building: Number(bid), allow: m === 'food' ? FOODS : m === 'goods' ? GOODS : null }); break; }
+      case 'store-prio': { const [bid, m] = arg.split(':'); this.send({ type: 'storagePriority', building: Number(bid), high: m === 'high' }); break; }
       case 'store-item': {
         const [bid, r] = arg.split(':'); const b = buildingByUid(w, Number(bid)); if (!b) break;
         const cur = b.allow ?? RESOURCES.map(x => x.id);
@@ -302,7 +306,7 @@ export class UI {
     const queue = sites(w).map(b => this.siteRow(w, b)).join('');
     const done = built(w).filter(b => !BUILDING_BY_ID[b.def].decor).map(b => {
       const def = BUILDING_BY_ID[b.def];
-      const info = blockedReason(w, b) ? 'idle: no ingredients' : def.slots ? `${workersAt(w, b.uid).length}/${def.slots} workers` : def.beds ? `${def.beds} beds` : def.seats ? `${def.seats} seats · ${Math.round(b.clean)}% clean` : def.storage ? `${Math.round(Object.values(b.stock).reduce((n, x) => n + (x ?? 0), 0))}/${def.storage} · ${storeLabel(b)}` : def.id === 'hearth' ? 'gathering place' : 'passive';
+      const info = blockedReason(w, b) ? 'idle: no ingredients' : def.slots ? `${workersAt(w, b.uid).length}/${def.slots} workers` : def.beds ? `${def.beds} beds` : def.seats ? `${def.seats} seats · ${Math.round(b.clean)}% clean` : def.storage ? `${Math.round(Object.values(b.stock).reduce((n, x) => n + (x ?? 0), 0))}/${def.storage} · ${storeLabel(b)}${b.high ? ' · high priority' : ''}` : def.id === 'hearth' ? 'gathering place' : 'passive';
       return `<button type="button" class="row compact" data-act="building" data-arg="${b.uid}"><span class="who"><b>${esc(def.name)}</b></span><small>${info}</small></button>`;
     }).join('');
     return `${queue ? `<h3 class="first">Under construction</h3><div class="rows">${queue}</div>` : ''}
@@ -388,6 +392,8 @@ export class UI {
       const preset = (id: string, label: string) => `<button type="button" class="seg${mode === id ? ' on' : ''}" data-act="store-preset" data-arg="${b.uid}:${id}" aria-pressed="${mode === id}">${label}</button>`;
       const items = RESOURCES.map(r => { const on = accepts(b, r.id); return `<button type="button" class="rule${on ? ' on' : ''}" data-act="store-item" data-arg="${b.uid}:${r.id}" aria-pressed="${on}"><i style="background:${RES_COLOR[r.id]}"></i>${r.name}<small>${on ? 'stored here' : 'not here'}</small></button>`; }).join('');
       staff += `<p class="prefs">Holding <b>${Math.round(held)} / ${def.storage}</b>${contents ? `: ${contents}` : ''}.${def.keepsFresh ? ' Food here stays fresh.' : ' Food left here slowly spoils.'}</p>
+        <h3>Priority</h3><p class="muted">Haulers fill high-priority storage first and top it up from low-priority storage.</p>
+        <div class="segs two"><button type="button" class="seg${b.high ? '' : ' on'}" data-act="store-prio" data-arg="${b.uid}:low" aria-pressed="${!b.high}">Low</button><button type="button" class="seg${b.high ? ' on' : ''}" data-act="store-prio" data-arg="${b.uid}:high" aria-pressed="${b.high}">High</button></div>
         <h3>What goes here</h3><p class="muted">Haulers take each good to the nearest storage that accepts it, and fetch from the nearest one that has it.</p>
         <div class="segs">${preset('all', 'Everything')}${preset('food', 'Food only')}${preset('goods', 'Goods only')}</div>
         <div class="rules">${items}</div>`;

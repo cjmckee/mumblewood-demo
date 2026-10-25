@@ -1,18 +1,19 @@
 // A heuristic player, used by the balance harness to play thousands of runs headlessly.
 // It reads the active charter and plays towards it, the way a person would.
 import { BUILDING_BY_ID, CHARTERS, EVENTS, ResourceId } from './content';
-import { World, apply, alive, beds, mealTotal, sites, findSpot, CENTER, CHARTER_HELPERS, avgMood, built, MAP_SIZE, pathAt, terrainAt, T_WATER, bdef, workersAt, blockedReason, opinion, Building, Colonist, hourOfDay, charterProgress, storageFree, storages, FOODS, GOODS, bedridden, foodTotal } from './world';
+import { World, apply, alive, beds, mealTotal, sites, findSpot, CENTER, CHARTER_HELPERS, avgMood, built, MAP_SIZE, pathAt, terrainAt, T_WATER, bdef, workersAt, blockedReason, opinion, Building, Colonist, hourOfDay, charterProgress, buildingByUid, storageFree, storages, FOODS, GOODS, bedridden, foodTotal } from './world';
 
 const BLUEPRINT_PRIORITY = ['sawmill', 'pieoven', 'dock', 'cottage', 'brewery', 'tavern', 'smokehouse', 'cellar', 'stage', 'bathhouse'];
 const PERK_PRIORITY = ['saintsDay', 'ironWill', 'communalPot', 'overtime', 'rations', 'earplugs', 'warmHearth', 'gossipBan', 'matchmaker'];
-const MOOD_BUILDINGS = ['tavern', 'stage', 'cottage', 'bathhouse', 'pieoven', 'brewery'];
+const MOOD_BUILDINGS = ['tavern', 'brewery', 'pieoven', 'bathhouse', 'cottage', 'stage'];
+const MOOD_CHARTERS = ['cheer', 'harmony', 'calm'];
 
 /** how far along a charter would already be if picked now, 0..1 */
 function progressIf(w: World, id: string) {
-  const saved = { charter: w.charter, hours: w.charterHours, base: w.charterBase };
-  w.charter = id; w.charterHours = 0; w.charterBase = { cured: w.stats.cured, errands: w.stats.errands };
+  const saved = { charter: w.charter, hours: w.charterHours, base: w.charterBase, log: w.moodLog };
+  w.charter = id; w.charterHours = 0; w.charterBase = { cured: w.stats.cured, errands: w.stats.errands }; w.moodLog = [];
   const r = charterProgress(w)?.ratio ?? 0;
-  w.charter = saved.charter; w.charterHours = saved.hours; w.charterBase = saved.base;
+  w.charter = saved.charter; w.charterHours = saved.hours; w.charterBase = saved.base; w.moodLog = saved.log;
   return r;
 }
 const charterKind = (w: World) => CHARTERS.find(c => c.id === w.charter)?.metric.kind;
@@ -37,7 +38,7 @@ export function autoDecide(w: World, style: 'greedy' | 'random' = 'greedy', rand
         const c = CHARTERS.find(x => x.id === id)!;
         const hold = ['avgMood', 'contentPop', 'calm', 'avgBeauty'].includes(c.metric.kind) ? -1 : 0;
         // a charter that needs a building we don't own (and can't build) is a bad bet
-        const needs: Record<string, string[]> = { feast: ['brewery'], pieday: ['pieoven'], lumber: ['sawmill'] };
+        const needs: Record<string, string[]> = { feast: ['brewery'], pieday: ['pieoven'], lumber: ['sawmill'], cheer: ['sawmill'], harmony: ['sawmill'] };
         const missing = (needs[id] ?? []).filter(b => !w.owned.includes(b)).length * -2;
         return progressIf(w, id) * 3 + hold + missing;
       };
@@ -55,7 +56,9 @@ export function autoDecide(w: World, style: 'greedy' | 'random' = 'greedy', rand
       const bestI = d.options.map(score).reduce((b, s, i, arr) => (s > arr[b] ? i : b), 0);
       const kind = charterKind(w);
       const wantsPeople = kind === 'population' || kind === 'contentPop';
-      const cap = wantsPeople ? 30 : 12;
+      // mood charters: every settler past 8 adds strain, so take only as many as the charter needs
+      const m = CHARTERS.find(c => c.id === w.charter)?.metric as { pop?: number } | undefined;
+      const cap = kind === 'contentPop' || kind === 'calm' ? (m?.pop ?? 12) : wantsPeople ? 30 : kind === 'avgMood' ? 9 : 12;
       // only take on mouths the larder can feed
       const raw = w.res.berries + w.res.fish + w.res.mushrooms + mealTotal(w);
       const fed = raw > alive(w).length * 3;
@@ -106,9 +109,10 @@ export function autoBuild(w: World) {
     if (garden) { if (count('flowerbed') < 10) want.unshift('flowerbed'); if (count('lantern') < 4) want.push('lantern'); }
     if (kind === 'avgMood' || kind === 'contentPop' || kind === 'couples' || kind === 'calm' || avgMood(w) < 45) {
       for (const id of MOOD_BUILDINGS) if (w.owned.includes(id) && count(id) === 0) want.push(id);
-      if (count('flowerbed') < 6) want.push('flowerbed');
-      if (count('statue') < 2 && !saving.includes('planks')) want.push('statue');
-      if (count('lantern') < 3) want.push('lantern');
+      const spare = w.res.wood > 45;
+      if (count('flowerbed') < 6 && spare) want.push('flowerbed');
+      if (count('statue') < 2 && !saving.includes('planks') && w.res.planks > 30) want.push('statue');
+      if (count('lantern') < 3 && spare) want.push('lantern');
       // swap drafty lean-tos for cottages when planks allow
       if (w.owned.includes('cottage') && count('cottage') < Math.ceil(pop / 2) && w.res.planks >= 14) want.unshift('cottage');
     }
@@ -171,10 +175,10 @@ export function staffWants(w: World): Record<string, number> {
   const ch = w.charter ?? '';
   const raw = w.res.berries + w.res.fish + w.res.mushrooms;
   return {
-    woodcutter: 1 + Math.floor(pop / 5) + (ch === 'woodpile' ? 2 : ['paved', 'garden', 'lumber', 'township'].includes(ch) ? 1 : 0) + (w.res.wood < 25 ? 1 : 0),
+    woodcutter: 1 + Math.floor(pop / 5) + (ch === 'woodpile' ? 2 : ['paved', 'garden', 'lumber', 'township', ...MOOD_CHARTERS].includes(ch) ? 1 : 0) + (w.res.wood < 25 ? 1 : 0),
     rawFood: rawFoodWorkers(w, pop) + (raw < pop * 4 ? 1 : 0) + (['pantry', 'feast', 'pieday'].includes(ch) ? 1 : 0),
     kitchen: Math.max(1, Math.ceil(pop / 9)) + (['pantry', 'feast'].includes(ch) ? 1 : 0),
-    sawmill: (w.res.planks < 25 ? 1 : 0) + (['lumber', 'pieday', 'garden', 'pretty'].includes(ch) ? 1 : 0),
+    sawmill: (w.res.planks < 25 ? 1 : 0) + (['lumber', 'pieday', 'garden', 'pretty', ...MOOD_CHARTERS].includes(ch) ? 1 : 0),
     pieoven: ch === 'pieday' ? 2 : ['cheer', 'feast', 'harmony', 'calm'].includes(ch) ? 1 : 0,
     brewery: ch === 'feast' ? 2 : w.res.ale < 15 && built(w).some(b => b.def === 'tavern') ? 1 : 0,
     smokehouse: w.res.fish > 20 ? 1 : 0,
@@ -214,7 +218,7 @@ export function staffPlan(w: World): Map<number, number> {
   // 2. whatever the charter leans on
   const focus: Record<string, string[]> = {
     lumber: ['sawmill'], pieday: ['pieoven', 'sawmill'], feast: ['brewery', 'kitchen'], pantry: ['kitchen', 'rawFood'],
-    woodpile: ['woodcutter'], paved: ['woodcutter'], garden: ['sawmill', 'woodcutter'], cheer: ['pieoven', 'tavern'], calm: ['tavern', 'pieoven'],
+    woodpile: ['woodcutter'], paved: ['woodcutter'], garden: ['sawmill', 'woodcutter'], cheer: ['sawmill', 'woodcutter', 'tavern', 'brewery', 'pieoven'], calm: ['sawmill', 'tavern', 'brewery', 'pieoven'], harmony: ['sawmill', 'woodcutter', 'tavern', 'brewery', 'pieoven'],
   };
   for (const k of focus[ch] ?? []) give(k, 99);
   // 3. everything else, round-robin so no one kind eats the budget
@@ -243,7 +247,8 @@ export function staffShortfall(w: World): string[] {
 
 function fit(w: World, c: Colonist, b: Building) {
   const job = bdef(b).job!;
-  let s = c.skills[job] + (c.likes === job ? 3 : 0) - (c.dislikes === job ? 4 : 0);
+  const moodPush = MOOD_CHARTERS.includes(w.charter ?? '') || avgMood(w) < 40;
+  let s = c.skills[job] + (c.likes === job ? (moodPush ? 8 : 3) : 0) - (c.dislikes === job ? (moodPush ? 12 : 4) : 0);
   for (const o of workersAt(w, b.uid)) if (o.id !== c.id && (opinion(w, c.id, o.id) < -30 || opinion(w, o.id, c.id) < -30)) s -= 4;
   if (bedridden(c)) s -= 50;
   return s;
@@ -257,6 +262,12 @@ export function autoStaff(w: World) {
     const b = w.buildings.find(x => x.uid === uid)!;
     const ws = workersAt(w, uid).sort((a, z) => fit(w, a, b) - fit(w, z, b));
     for (const c of ws.slice(0, Math.max(0, ws.length - n))) apply(w, { type: 'assign', colonist: c.id, building: null });
+  }
+  // nobody keeps a job they hate while a laborer could take it instead
+  for (const c of alive(w)) {
+    const b = buildingByUid(w, c.job); if (!b || !bdef(b).job || bdef(b).job !== c.dislikes) continue;
+    const swap = alive(w).find(o => o.job == null && o.errand == null && !bedridden(o) && o.dislikes !== bdef(b).job);
+    if (swap) { apply(w, { type: 'assign', colonist: c.id, building: null }); apply(w, { type: 'assign', colonist: swap.id, building: b.uid }); }
   }
   // then fill gaps from laborers, best fit first
   for (const [uid, n] of [...plan].sort((a, b) => b[1] - a[1])) {

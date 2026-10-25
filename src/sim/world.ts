@@ -52,7 +52,8 @@ export interface Colonist {
   sulking: boolean; lowMoodHours: number; left: boolean;
   job: number | null; bed: number | null; partner: number | null;
   task: Task | null; carrying: Carry | null;
-  meal: { at: number | null; until: number } | null; // eating: where, and when finished (until = 0 while walking there)
+  /** eating: fetch food from storage `from`, then eat at `at`; until = 0 while walking */
+  meal: { at: number | null; until: number; from: number | null; got: ResourceId | null } | null;
   activity: Activity; place: number | null; inside: number | null;
   memories: Memory[]; thoughts: Thought[];
   hadCompany: boolean; hadCompanyLastNight: boolean; drankTonight: boolean;
@@ -81,6 +82,8 @@ export interface Building {
   stock: Partial<Record<ResourceId, number>>;
   /** storage buildings: which goods it takes; null means everything */
   allow: ResourceId[] | null;
+  /** storage buildings: high-priority storage fills first and is topped up from low */
+  high: boolean;
 }
 
 export type Decision =
@@ -111,6 +114,8 @@ export interface World {
   errands: Errand[]; nextErrandId: number;
   /** stats when the current charter began, for "since" charters */
   charterBase: { cured: number; errands: number };
+  /** hourly average mood since the charter began (last 24 kept), for the mood charters */
+  moodLog: number[];
   /** someone ate without a table this hour */
   ateOffTable: boolean;
   /** foods colonists are not allowed to eat (kept for charters, feasts and trade) */
@@ -196,10 +201,10 @@ export function spoilingFood(w: World) {
   return Math.max(0, FOODS.reduce((n, r) => n + w.res[r], 0) - fresh);
 }
 const dist = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(a.x - b.x, a.y - b.y);
-/** where to put down a load of r: the nearest storage that takes it and has room */
+/** where to put down a load of r: the nearest highest-priority storage that takes it and has room */
 function storeTarget(w: World, r: ResourceId, from: { x: number; y: number }): Building | undefined {
   const all = storages(w);
-  const pick = (xs: Building[]) => xs.sort((a, b) => dist(spotOf(a), from) - dist(spotOf(b), from))[0];
+  const pick = (xs: Building[]) => xs.sort((a, b) => Number(b.high) - Number(a.high) || dist(spotOf(a), from) - dist(spotOf(b), from))[0];
   return pick(all.filter(b => accepts(b, r) && roomIn(b) >= 1)) ?? pick(all.filter(b => accepts(b, r))) ?? pick(all);
 }
 /** where to fetch r on the way from `from` to `to`: the storage holding it with the shortest trip */
@@ -237,7 +242,7 @@ export function reconcileStock(w: World) {
         if (diff > -1e-6) break;
       }
     } else {
-      const order = all.slice().sort((a, b) => dist(spotOf(a), ctr) - dist(spotOf(b), ctr));
+      const order = all.slice().sort((a, b) => Number(b.high) - Number(a.high) || dist(spotOf(a), ctr) - dist(spotOf(b), ctr));
       for (const b of order.filter(b => accepts(b, r))) {
         const t = Math.min(Math.max(0, roomIn(b)), diff); if (t <= 0) continue;
         b.stock[r] = (b.stock[r] ?? 0) + t; diff -= t; if (diff < 1e-6) break;
@@ -484,7 +489,7 @@ function makeColonist(w: World, usedNames: Set<string>): Colonist {
 }
 
 function newBuilding(w: World, def: string, x: number, y: number, isBuilt: boolean): Building {
-  const b: Building = { uid: w.nextUid++, def, x, y, built: isBuilt, progress: 0, delivered: {}, outbox: {}, inbox: {}, clean: 100, eff: efficiencyAt(w, def, x, y).eff || 1, stock: {}, allow: null };
+  const b: Building = { uid: w.nextUid++, def, x, y, built: isBuilt, progress: 0, delivered: {}, outbox: {}, inbox: {}, clean: 100, eff: efficiencyAt(w, def, x, y).eff || 1, stock: {}, allow: null, high: false };
   w.buildings.push(b); w.version++;
   return b;
 }
@@ -497,7 +502,7 @@ export function createWorld(seed: number, difficulty: Difficulty = 'normal'): Wo
     owned: BUILDINGS.filter(b => b.basic).map(b => b.id), perks: [],
     charterTier: 1, charter: null, charterHours: 0, chartersDone: [],
     decisions: [], log: [], opinions: {}, status: 'playing', strain: 0, nextEventHour: 24 * 1.6,
-    errands: [], nextErrandId: 1, difficulty, charterBase: { cured: 0, errands: 0 }, ateOffTable: false, forbidden: [],
+    errands: [], nextErrandId: 1, difficulty, charterBase: { cured: 0, errands: 0 }, moodLog: [], ateOffTable: false, forbidden: [],
     nextUid: 1, nextColonistId: 1, autoAssignNew: false,
     stats: { peakPop: 6, couples: 0, breakups: 0, departures: 0, mealsEaten: 0, built: 0, cured: 0, errands: 0, deaths: 0 },
     version: 0,
@@ -577,7 +582,8 @@ export type Command =
   | { type: 'resolve'; option: number }
   | { type: 'autoAssign' }
   | { type: 'setAutoAssignNew'; value: boolean }
-  | { type: 'storageFilter'; building: number; allow: ResourceId[] | null };
+  | { type: 'storageFilter'; building: number; allow: ResourceId[] | null }
+  | { type: 'storagePriority'; building: number; high: boolean };
 
 export function remainingCost(b: Building): Partial<Record<ResourceId, number>> {
   const out: Partial<Record<ResourceId, number>> = {};
@@ -614,6 +620,12 @@ export function apply(w: World, cmd: Command): string | null {
       if (!b || !bdef(b).storage) return 'Only storage can be filtered.';
       b.allow = cmd.allow && cmd.allow.length < RESOURCES.length ? [...cmd.allow] : null; w.version++;
       for (const c of alive(w)) if (c.task && 'via' in c.task && c.task.via === b.uid && !c.carrying) c.task.via = undefined;
+      return null;
+    }
+    case 'storagePriority': {
+      const b = buildingByUid(w, cmd.building);
+      if (!b || !bdef(b).storage) return 'Only storage has a priority.';
+      b.high = cmd.high; w.version++;
       return null;
     }
     case 'cancel': {
@@ -667,7 +679,7 @@ function resolveDecision(w: World, option: number): string | null {
     case 'charter': {
       const id = d.options[option] ?? d.options[0];
       w.charter = id; w.charterHours = 0;
-      w.charterBase = { cured: w.stats.cured, errands: w.stats.errands };
+      w.charterBase = { cured: w.stats.cured, errands: w.stats.errands }; w.moodLog = [];
       const next = w.decisions[0];
       if (next?.kind === 'blueprint') w.decisions[0] = blueprintDecision(w);
       addLog(w, `New charter from the Crown: ${CHARTERS.find(c => c.id === id)!.name}.`);
@@ -983,17 +995,20 @@ function chooseTask(w: World, c: Colonist): Task | null {
   // hauling finished goods to storage
   for (const b of built(w)) {
     for (const [r, n] of Object.entries(b.outbox) as [ResourceId, number][]) {
-      if (n < 4 || storageFree(w, r) < 1 || taskCount(w, t => t.kind === 'haul' && t.from === b.uid && t.res === r) > 0) continue;
+      const low = FOODS.includes(r) && foodTotal(w) < alive(w).length * 3;
+      if (n < (low ? 1 : 4) || storageFree(w, r) < 1 || taskCount(w, t => t.kind === 'haul' && t.from === b.uid && t.res === r) > 0) continue;
       const s = spotOf(b);
-      opts.push({ t: { kind: 'haul', from: b.uid, res: r, amount: Math.min(CARRY, n) }, pri: n >= OUTBOX_CAP ? 3.2 : 2, x: s.x, y: s.y });
+      opts.push({ t: { kind: 'haul', from: b.uid, res: r, amount: Math.min(CARRY, n) }, pri: n >= OUTBOX_CAP ? 3.2 : low ? 3.3 : 2, x: s.x, y: s.y });
     }
   }
-  // moving goods out of storage that no longer accepts them
+  // moving goods out of storage that no longer accepts them, and topping up high-priority storage from low
   for (const b of storages(w)) for (const [r, n] of Object.entries(b.stock) as [ResourceId, number][]) {
-    if ((n ?? 0) < 1 || accepts(b, r) || taskCount(w, t => t.kind === 'haul' && t.from === b.uid && t.res === r) > 0) continue;
-    if (!storages(w).some(o => o !== b && accepts(o, r) && roomIn(o) >= 1)) continue;
+    if ((n ?? 0) < 1 || taskCount(w, t => t.kind === 'haul' && t.from === b.uid && t.res === r) > 0) continue;
+    const misplaced = !accepts(b, r);
+    if (!misplaced && b.high) continue;
+    if (!storages(w).some(o => o !== b && accepts(o, r) && roomIn(o) >= 1 && (misplaced || o.high))) continue;
     const s = spotOf(b);
-    opts.push({ t: { kind: 'haul', from: b.uid, res: r, amount: Math.min(CARRY, n), restock: true }, pri: 1.8, x: s.x, y: s.y });
+    opts.push({ t: { kind: 'haul', from: b.uid, res: r, amount: Math.min(CARRY, n), restock: true }, pri: misplaced ? 1.8 : 1.6, x: s.x, y: s.y });
   }
   // carrying ingredients to staffed workshops
   for (const b of built(w)) {
@@ -1053,7 +1068,12 @@ function goalFor(w: World, c: Colonist): Goal {
   const hearthSpot = (r: number): Goal => { const ctr = centerOf(hearth); const p = ringAt(c, ctr.x, ctr.y, r); return { ...p, uid: hearth.uid, inside: false, key: `h${r}` }; };
   switch (c.activity) {
     case 'sleeping': { const bed = buildingByUid(w, c.bed); return bed ? at(bed, 0, true) : hearthSpot(2.4); }
-    case 'eating': { const m = buildingByUid(w, c.meal?.at ?? null); if (m && bdef(m).seats) return at(m, 0, true); const st = m ?? nearestStorage(w, c.x, c.y); return st ? at(st, 0.8, false, 'eat') : hearthSpot(2); }
+    case 'eating': {
+      const src = buildingByUid(w, c.meal?.from ?? null);
+      if (!c.meal?.got) return src ? at(src, 0.7, false, 'food') : hearthSpot(2);
+      const m = buildingByUid(w, c.meal.at); if (m && bdef(m).seats) return at(m, 0, true);
+      return src ? at(src, 1.1, false, 'eat') : hearthSpot(2);
+    }
     case 'hauling': {
       const t = c.task as Extract<Task, { via?: number }>;
       const via = (pickNew: () => Building | undefined, ok: (b: Building) => boolean) => {
@@ -1107,7 +1127,7 @@ function goalFor(w: World, c: Colonist): Goal {
 function activityFor(w: World, c: Colonist): Activity {
   const h = hourOfDay(w);
   if (c.carrying) return 'hauling'; // always finish a delivery
-  if (c.meal) return 'eating';
+  if (c.meal && !bedridden(c)) return 'eating';
   if (bedridden(c)) return 'sick';
   if (c.errand != null && h >= 6 && h < 22 && w.errands.some(e => e.id === c.errand)) return 'errand';
   if (h >= 22 || h < 6) return 'sleeping';
@@ -1184,6 +1204,14 @@ function arrive(w: World, c: Colonist) {
       }
     }
   } else if (c.activity === 'eating' && c.meal && c.meal.until === 0) {
+    if (!c.meal.got) {
+      // at the storage: take something to eat, or try another storage, or give up
+      const here = buildingByUid(w, c.meal.from);
+      if (grabMeal(w, c, here)) return;
+      const next = mealSource(w, c);
+      if (next && next.uid !== c.meal.from) c.meal.from = next.uid; else c.meal = null;
+      return;
+    }
     c.meal.until = w.hour + 0.5;
   }
 }
@@ -1278,28 +1306,60 @@ function completeBuilding(w: World, b: Building) {
 /** food people are allowed to eat */
 export function edibleTotal(w: World) { return [...RAW_FOODS, ...MEALS].filter(r => !w.forbidden.includes(r)).reduce((n, r) => n + w.res[r], 0); }
 function startMeal(w: World, c: Colonist) {
-  if (edibleTotal(w) < 1) return;
   const halls = built(w).filter(b => bdef(b).seats);
   const hall = halls.find(b => alive(w).filter(o => o.meal?.at === b.uid).length < (bdef(b).seats ?? 0));
-  c.meal = { at: hall?.uid ?? nearestStorage(w, c.x, c.y)?.uid ?? null, until: 0 };
+  c.meal = { at: hall?.uid ?? null, until: 0, from: null, got: null };
+  c.meal.from = mealSource(w, c)?.uid ?? null;
+  if (c.meal.from == null) { c.meal = null; return; }
+  // the bedridden get a bowl brought to them
+  if (bedridden(c)) {
+    c.meal.at = null;
+    if (grabMeal(w, c, buildingByUid(w, c.meal.from))) c.meal.until = w.hour + 0.5; else c.meal = null;
+  }
+}
+/** the storage to fetch a meal from: any with cooked food first, then any with allowed raw food; shortest trip to the table */
+function mealSource(w: World, c: Colonist): Building | undefined {
+  const hall = buildingByUid(w, c.meal?.at ?? null);
+  const ok = (rs: ResourceId[]) => storages(w).filter(b => rs.some(r => !w.forbidden.includes(r) && (b.stock[r] ?? 0) >= 1));
+  const trip = (b: Building) => dist(spotOf(b), c) + (hall ? dist(spotOf(b), spotOf(hall)) : 0);
+  // nothing in storage: grab it straight out of a forager's basket or the kitchen's pot
+  const baskets = (rs: ResourceId[]) => built(w).filter(b => !bdef(b).storage && rs.some(r => !w.forbidden.includes(r) && (b.outbox[r] ?? 0) >= 1));
+  const pool = ok(MEALS).length ? ok(MEALS) : ok(RAW_FOODS).length ? ok(RAW_FOODS) : baskets(MEALS).length ? baskets(MEALS) : baskets(RAW_FOODS);
+  return pool.sort((a, b) => trip(a) - trip(b))[0];
+}
+/** pick up the best allowed food at a storage; false if there was none */
+function grabMeal(w: World, c: Colonist, b: Building | undefined) {
+  if (b && !bdef(b).storage) {
+    const r = MEALS.find(x => !w.forbidden.includes(x) && (b.outbox[x] ?? 0) >= 1) ?? RAW_FOODS.find(x => !w.forbidden.includes(x) && (b.outbox[x] ?? 0) >= 1);
+    if (!r) return false;
+    b.outbox[r] = (b.outbox[r] ?? 0) - 1; c.meal!.got = r;
+    return true;
+  }
+  const has = (r: ResourceId) => !w.forbidden.includes(r) && (b ? (b.stock[r] ?? 0) >= 1 : w.res[r] >= 1);
+  const r = MEALS.find(has) ?? [...RAW_FOODS].sort((p, q) => (b ? (b.stock[q] ?? 0) - (b.stock[p] ?? 0) : w.res[q] - w.res[p])).find(has);
+  if (!r) return false;
+  takeOut(w, b, r, 1); c.meal!.got = r;
+  return true;
 }
 function finishMeal(w: World, c: Colonist) {
   const hall = buildingByUid(w, c.meal?.at ?? null);
+  const got = c.meal?.got ?? null;
   c.meal = null;
-  const meal = MEALS.find(r => w.res[r] >= 1 && !w.forbidden.includes(r));
+  if (!got) return;
+  const meal = MEALS.includes(got) ? got : undefined;
   const bonus = (has(c, 'glutton') ? 4 : 0) + (hasPerk(w, 'communalPot') ? 3 : 0);
   if (meal) {
-    w.res[meal] -= 1; c.hunger = 100; w.stats.mealsEaten++;
+    c.hunger = 100; w.stats.mealsEaten++;
     const v = { pie: 8, smokedFish: 6, stew: 5 }[meal as 'pie' | 'smokedFish' | 'stew'] + bonus;
     const label = { pie: 'Ate pie', smokedFish: 'Ate smoked fish', stew: 'Ate a hot stew' }[meal as 'pie'];
     addMemory(w, c, 'meal', label, v, 14);
   } else {
-    const raw = [...RAW_FOODS].sort((p, q) => w.res[q] - w.res[p]).find(r => w.res[r] >= 1 && !w.forbidden.includes(r));
-    if (!raw) return;
-    w.res[raw] -= 1; c.hunger = 85;
+    const raw = got;
+    c.hunger = 85;
     addMemory(w, c, 'meal', `Ate raw ${raw}`, has(c, 'picky') ? -8 : -3, 14);
     if (nextRand(w) < 0.02) { fallIll(w, c, 'tummy'); addLog(w, `${first(c)} ate some questionable ${raw} and now has a bad tummy.`, 'bad'); }
   }
+  if (bedridden(c)) return; // fed in bed
   if (hall && bdef(hall).seats) {
     hall.clean = Math.max(0, hall.clean - 2.5);
     if (hall.clean >= 70) addMemory(w, c, 'table', 'Ate in a spotless dining hall', 4, 14);
@@ -1318,6 +1378,8 @@ const INSULTS = [
 ];
 const BREAKUP_REASONS = ['a disagreement about soup', 'who let the hearth go out', 'a poem that rhymed "love" with "turnip"', 'snoring', 'the correct way to hold a spoon', 'an incident involving a goat', 'whose turn it was to fetch water'];
 
+/** mutual opinion two singles need before sparks can fly */
+const ROMANCE_AT = 25;
 function socialHour(w: World) {
   const groups = new Map<number, Colonist[]>();
   for (const c of alive(w)) {
@@ -1331,7 +1393,11 @@ function socialHour(w: World) {
     const tavernBoost = b.def === 'tavern' ? 2 : 1;
     for (const c of group) {
       if (evening) c.hadCompany = true;
-      const other = pick(w, group.filter(o => o.id !== c.id));
+      // people drift towards the company they already enjoy, and away from people they can't stand
+      const others = group.filter(o => o.id !== c.id);
+      const weight = (o: Colonist) => { const op = opinion(w, c.id, o.id); return op < -20 ? 0.3 : 1 + Math.max(0, op) / 12; };
+      let roll = nextRand(w) * others.reduce((n, o) => n + weight(o), 0), other = others[others.length - 1];
+      for (const o of others) { roll -= weight(o); if (roll <= 0) { other = o; break; } }
       if (!evening) {
         if (has(other, 'grumbler')) changeOpinion(w, c, other, hasPerk(w, 'earplugs') ? -0.7 : -1.5);
         else changeOpinion(w, c, other, 0.6);
@@ -1348,10 +1414,12 @@ function socialHour(w: World) {
       } else {
         const gain = (2 + nextRand(w) * 3) * tavernBoost * (has(c, 'butterfly') ? 1.5 : 1) * (has(c, 'loner') ? 0.6 : 1);
         changeOpinion(w, c, other, gain);
+        // a good chat warms both sides, a little less for the one who was talked at
+        if (!has(other, 'loner')) changeOpinion(w, other, c, gain * 0.5);
       }
       if (c.partner == null && other.partner == null && c.id < other.id
-        && opinion(w, c.id, other.id) > 30 && opinion(w, other.id, c.id) > 30) {
-        const chance = 0.05 * (has(c, 'romantic') ? 3 : 1) * (has(other, 'romantic') ? 3 : 1) * (hasPerk(w, 'matchmaker') ? 2 : 1);
+        && opinion(w, c.id, other.id) > ROMANCE_AT && opinion(w, other.id, c.id) > ROMANCE_AT) {
+        const chance = 0.12 * (has(c, 'romantic') ? 2.5 : 1) * (has(other, 'romantic') ? 2.5 : 1) * (hasPerk(w, 'matchmaker') ? 2 : 1);
         if (nextRand(w) < chance) {
           c.partner = other.id; other.partner = c.id; w.stats.couples++;
           addMemory(w, c, 'love', `Fell for ${first(other)}`, 10, 72);
@@ -1560,8 +1628,16 @@ function charterValue(w: World, c: CharterDef): { value: number; target: number;
     case 'population': { const v = alive(w).length; return { value: v, target: m.amount, label: `${v} / ${m.amount} colonists` }; }
     case 'buildings': { const v = built(w).filter(b => !bdef(b).decor).length; return { value: v, target: m.amount, label: `${v} / ${m.amount} buildings finished` }; }
     case 'couples': { const v = couples(w); return { value: v, target: m.amount, label: `${v} / ${m.amount} couples` }; }
-    case 'avgMood': return { value: w.charterHours, target: m.hours, label: `${Math.round(avgMood(w))} mood · ${w.charterHours}h / ${m.hours}h` };
-    case 'contentPop': return { value: w.charterHours, target: m.hours, label: `${alive(w).length} colonists · ${Math.round(avgMood(w))} mood · ${w.charterHours}h / ${m.hours}h` };
+    case 'avgMood': case 'contentPop': {
+      // judged on the average over the last full day, so the dip before breakfast doesn't reset everything
+      const target = m.kind === 'avgMood' ? m.amount : m.mood;
+      const log = w.moodLog ?? [];
+      const avg = log.length ? log.reduce((a, b) => a + b, 0) / log.length : avgMood(w);
+      const full = log.length >= m.hours;
+      const pop = m.kind === 'contentPop' ? `${alive(w).length}/${m.pop} colonists · ` : '';
+      const value = full && avg >= target ? 1 : Math.min(0.99, (avg / target) * Math.min(1, log.length / m.hours));
+      return { value, target: 1, label: `${pop}24h average ${Math.round(avg)} / ${target}${full ? '' : ` · ${m.hours - log.length}h to go`}` };
+    }
     case 'feast': {
       const meals = mealTotal(w), ale = w.res.ale;
       return { value: Math.min(meals / m.meals, ale / m.ale), target: 1, label: `${Math.floor(meals)}/${m.meals} meals · ${Math.floor(ale)}/${m.ale} ale` };
@@ -1590,8 +1666,10 @@ function checkCharter(w: World) {
   const c = CHARTERS.find(x => x.id === w.charter);
   if (!c || w.status !== 'playing') return;
   const m = c.metric;
-  if (m.kind === 'avgMood') w.charterHours = avgMood(w) >= m.amount ? w.charterHours + 1 : 0;
-  if (m.kind === 'contentPop') w.charterHours = avgMood(w) >= m.mood && alive(w).length >= m.pop ? w.charterHours + 1 : 0;
+  if (m.kind === 'avgMood' || m.kind === 'contentPop') {
+    if (m.kind === 'contentPop' && alive(w).length < m.pop) w.moodLog = [];
+    else { (w.moodLog ??= []).push(avgMood(w)); if (w.moodLog.length > m.hours) w.moodLog.shift(); }
+  }
   if (m.kind === 'allTable') w.charterHours = w.ateOffTable ? 0 : w.charterHours + 1;
   if (m.kind === 'avgBeauty') w.charterHours = avgBeauty(w) >= m.amount ? w.charterHours + 1 : 0;
   if (m.kind === 'calm') w.charterHours = alive(w).length >= m.pop && !alive(w).some(c => c.sulking) ? w.charterHours + 1 : 0;
