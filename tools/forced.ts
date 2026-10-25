@@ -3,7 +3,8 @@
 // Usage: npx tsx tools/forced.ts [runsPerCharter=40] [onlyCharterId]
 import { createWorld, tick, day, hourOfDay, TICKS_PER_HOUR } from '../src/sim/world';
 import { CHARTERS } from '../src/sim/content';
-import { autoDecide, autoBuild } from '../src/sim/autoplayer';
+import { autoDecide, autoBuild, BOT } from '../src/sim/autoplayer';
+if (process.env.BOT_DEPOT) BOT.foodDepot = process.env.BOT_DEPOT === 'none' ? false : process.env.BOT_DEPOT as 'food' | 'meals';
 import { ISSUES } from './issues';
 
 const runs = Number(process.argv[2] ?? 40);

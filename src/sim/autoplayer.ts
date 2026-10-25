@@ -1,12 +1,15 @@
 // A heuristic player, used by the balance harness to play thousands of runs headlessly.
 // It reads the active charter and plays towards it, the way a person would.
-import { BUILDING_BY_ID, CHARTERS, EVENTS, ResourceId } from './content';
+import { BUILDING_BY_ID, CHARTERS, EVENTS, ResourceId, MEALS } from './content';
 import { World, apply, alive, beds, mealTotal, sites, findSpot, CENTER, CHARTER_HELPERS, avgMood, built, MAP_SIZE, pathAt, terrainAt, T_WATER, bdef, workersAt, blockedReason, opinion, Building, Colonist, hourOfDay, charterProgress, buildingByUid, storageFree, storages, FOODS, GOODS, bedridden, foodTotal } from './world';
 
 const BLUEPRINT_PRIORITY = ['sawmill', 'pieoven', 'dock', 'cottage', 'brewery', 'tavern', 'smokehouse', 'cellar', 'stage', 'bathhouse'];
 const PERK_PRIORITY = ['saintsDay', 'ironWill', 'communalPot', 'overtime', 'rations', 'earplugs', 'warmHearth', 'gossipBan', 'matchmaker'];
 const MOOD_BUILDINGS = ['tavern', 'brewery', 'pieoven', 'bathhouse', 'cottage', 'stage'];
 const MOOD_CHARTERS = ['cheer', 'harmony', 'calm'];
+/** experiment switches for the balance tools */
+export const BOT: { foodDepot: false | 'food' | 'meals'; laborersPer: number } = { foodDepot: 'food', laborersPer: 3.5 };
+const depots = new WeakMap<World, number>();
 
 /** how far along a charter would already be if picked now, 0..1 */
 function progressIf(w: World, id: string) {
@@ -46,7 +49,9 @@ export function autoDecide(w: World, style: 'greedy' | 'random' = 'greedy', rand
     } else if (d.kind === 'blueprint') {
       const helpers = CHARTER_HELPERS[w.charter ?? ''] ?? [];
       const feedable = (id: string) => id !== 'smokehouse' || w.owned.includes('dock');
-      const rank = (id: string) => (helpers.includes(id) && feedable(id) ? -100 + helpers.indexOf(id) : 0) + BLUEPRINT_PRIORITY.indexOf(id);
+      // a blueprint that needs planks is dead weight until there's a sawmill; a tavern without a brewery serves nothing
+      const usable = (id: string) => (BUILDING_BY_ID[id].cost.planks && !w.owned.includes('sawmill') && id !== 'sawmill' ? 6 : 0) + (id === 'tavern' && !w.owned.includes('brewery') ? 3 : 0);
+      const rank = (id: string) => (helpers.includes(id) && feedable(id) ? -100 + helpers.indexOf(id) : 0) + BLUEPRINT_PRIORITY.indexOf(id) + usable(id);
       option = d.options.map(rank).reduce((best, p, i, arr) => (p < arr[best] ? i : best), 0);
     } else if (d.kind === 'perk') {
       option = d.options.map(o => PERK_PRIORITY.indexOf(o)).reduce((best, p, i, arr) => (p < arr[best] ? i : best), 0);
@@ -161,6 +166,12 @@ export function autoBuild(w: World) {
       }
     }
   }
+  // experiment: a small high-priority food pile between the kitchen and the dining hall
+  if (BOT.foodDepot && !w.buildings.some(b => b.uid === depots.get(w)) && built(w).some(b => b.def === 'storehouse') && built(w).some(b => b.def === 'dining')) {
+    const near = centroid(w, ['dining', 'kitchen']);
+    const spot = findSpot(w, 'stockpile', near.x, near.y, true);
+    if (spot && !apply(w, { type: 'place', def: 'stockpile', x: spot.x, y: spot.y })) depots.set(w, w.buildings[w.buildings.length - 1].uid);
+  }
   autoStorage(w);
   if (Math.round(hourOfDay(w)) % 3 === 0) autoStaff(w);
   autoFoodRules(w);
@@ -178,13 +189,20 @@ export function staffWants(w: World): Record<string, number> {
     woodcutter: 1 + Math.floor(pop / 5) + (ch === 'woodpile' ? 2 : ['paved', 'garden', 'lumber', 'township', ...MOOD_CHARTERS].includes(ch) ? 1 : 0) + (w.res.wood < 25 ? 1 : 0),
     rawFood: rawFoodWorkers(w, pop) + (raw < pop * 4 ? 1 : 0) + (['pantry', 'feast', 'pieday'].includes(ch) ? 1 : 0),
     kitchen: Math.max(1, Math.ceil(pop / 9)) + (['pantry', 'feast'].includes(ch) ? 1 : 0),
-    sawmill: (w.res.planks < 25 ? 1 : 0) + (['lumber', 'pieday', 'garden', 'pretty', ...MOOD_CHARTERS].includes(ch) ? 1 : 0),
+    sawmill: (w.res.planks < planksWanted(w) ? 2 : w.res.planks < 25 ? 1 : 0) + (['lumber', 'pieday', 'garden', 'pretty', ...MOOD_CHARTERS].includes(ch) ? 1 : 0),
     pieoven: ch === 'pieday' ? 2 : ['cheer', 'feast', 'harmony', 'calm'].includes(ch) ? 1 : 0,
     brewery: ch === 'feast' ? 2 : w.res.ale < 15 && built(w).some(b => b.def === 'tavern') ? 1 : 0,
     smokehouse: w.res.fish > 20 ? 1 : 0,
     tavern: built(w).some(b => b.def === 'tavern') ? 1 : 0,
     clinic: alive(w).some(c => bedridden(c)) ? 1 : 0,
   };
+}
+/** planks the colony could spend right now: owned blueprints not yet built, plus what sites still need */
+function planksWanted(w: World) {
+  let n = 0;
+  for (const id of w.owned) if (!w.buildings.some(b => b.def === id)) n += BUILDING_BY_ID[id].cost.planks ?? 0;
+  for (const b of sites(w)) n += Math.max(0, (BUILDING_BY_ID[b.def].cost.planks ?? 0) - (b.delivered.planks ?? 0));
+  return n;
 }
 /** foragers and fishers needed to feed everyone, from how productive the existing huts actually are */
 function rawFoodWorkers(w: World, pop: number) {
@@ -201,7 +219,7 @@ export function staffPlan(w: World): Map<number, number> {
   const ch = w.charter ?? '';
   const want = staffWants(w);
   // a skeleton crew keeps its jobs going and builds with whoever is left
-  const keepFree = pop <= 5 ? 1 : Math.max(3, Math.ceil(pop / 3.5)) + (sites(w).length > 1 ? 1 : 0);
+  const keepFree = pop <= 5 ? 1 : Math.max(2, Math.ceil(pop / BOT.laborersPer)) + (sites(w).length > 1 ? 1 : 0);
   let budget = Math.max(0, pop - keepFree);
   const given: Record<string, number> = {};
   const plan = new Map<number, number>();
@@ -210,11 +228,14 @@ export function staffPlan(w: World): Map<number, number> {
     while (budget > 0 && (given[kind] ?? 0) < Math.min(upTo, want[kind] ?? 0, capacity(kind))) { given[kind] = (given[kind] ?? 0) + 1; budget--; }
   };
   // 1. essentials, one each
-  give('clinic', 1); give('rawFood', 1); give('woodcutter', 1); give('kitchen', 1);
-  // 1b. shortages come before everything but the essentials
+  // food and wood first: everything else is built from them
+  give('rawFood', 1); give('woodcutter', 1); give('kitchen', 1);
   const rawStock = w.res.berries + w.res.fish + w.res.mushrooms;
   if (rawStock < pop * 4) give('rawFood', 99);
   if (w.res.wood < 30) give('woodcutter', 99);
+  give('clinic', 1);
+  // planks unlock every mood building, so the sawmill counts as an essential once there's something to spend them on
+  give('sawmill', 1);
   // 2. whatever the charter leans on
   const focus: Record<string, string[]> = {
     lumber: ['sawmill'], pieday: ['pieoven', 'sawmill'], feast: ['brewery', 'kitchen'], pantry: ['kitchen', 'rawFood'],
@@ -310,8 +331,15 @@ function storageSpot(w: World, id: string) {
 }
 /** keep food in storehouses, where it stays fresh, and goods on stockpiles */
 export function autoStorage(w: World) {
-  const piles = storages(w).filter(b => !bdef(b).keepsFresh);
+  const depot = storages(w).find(b => b.uid === depots.get(w));
+  if (depot) {
+    if (!depot.high) apply(w, { type: 'storagePriority', building: depot.uid, high: true });
+    const allow = BOT.foodDepot === 'meals' ? MEALS : FOODS;
+    if (!depot.allow || depot.allow.length !== allow.length) apply(w, { type: 'storageFilter', building: depot.uid, allow });
+  }
+  const piles = storages(w).filter(b => !bdef(b).keepsFresh && b !== depot);
   for (const b of storages(w)) {
+    if (b === depot) continue;
     const want = bdef(b).keepsFresh && piles.length ? FOODS : null;
     const same = want === null ? b.allow === null : !!b.allow && b.allow.length === want.length;
     if (!same) apply(w, { type: 'storageFilter', building: b.uid, allow: want });

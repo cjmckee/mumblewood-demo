@@ -1,7 +1,10 @@
 // Why do bot runs fail, and where does the time go?
 // Usage: npx tsx tools/losses.ts [runs=200] [seedBase=90000] [difficulty=normal]
 import { createWorld, tick, day, TICKS_PER_HOUR, Difficulty, alive, avgMood } from '../src/sim/world';
-import { autoDecide, autoBuild } from '../src/sim/autoplayer';
+import { autoDecide, autoBuild, BOT } from '../src/sim/autoplayer';
+// experiments: BOT_DEPOT=food|meals, BOT_LABORERS=3.5
+if (process.env.BOT_DEPOT) BOT.foodDepot = process.env.BOT_DEPOT === 'none' ? false : process.env.BOT_DEPOT as 'food' | 'meals';
+if (process.env.BOT_LABORERS) BOT.laborersPer = Number(process.env.BOT_LABORERS);
 
 const runs = Number(process.argv[2] ?? 200);
 const base = Number(process.argv[3] ?? 90000);
