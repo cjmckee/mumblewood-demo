@@ -1,9 +1,9 @@
 // DOM overlay: HUD, bottom sheet, decision modals. Talks to the sim only through commands.
-import { BUILDING_BY_ID, CHARTERS, EVENTS, JOB_NAMES, PERK_BY_ID, RESOURCES, TRAIT_BY_ID, ResourceId } from '../sim/content';
+import { BUILDING_BY_ID, CHARTERS, EVENTS, JOB_NAMES, PERK_BY_ID, RESOURCES, TRAIT_BY_ID, ResourceId, SKILL_NAMES, JOB_KINDS, JobKind } from '../sim/content';
 import {
   World, Command, Colonist, alive, avgMood, beds, buildingByUid, charterProgress, colonistById,
   day, hourOfDay, opinion, workersAt, MAX_DEPARTURES, sites, siteWork, remainingCost, storageCap, stored,
-  keepsFresh, findSpot, canPlace, laborers, centerOf, built, Building, efficiencyAt, pathAt, MAP_SIZE,
+  keepsFresh, findSpot, canPlace, laborers, centerOf, built, Building, efficiencyAt, pathAt, MAP_SIZE, blockedReason, Errand, Difficulty, patientsAt,
 } from '../sim/world';
 import type { IsoView, Picked } from '../render/iso';
 
@@ -32,6 +32,8 @@ function activityText(w: World, c: Colonist) {
     case 'eating': { const at = buildingByUid(w, c.meal?.at ?? null); return at && BUILDING_BY_ID[at.def].seats ? 'Eating in the dining hall' : 'Eating standing up'; }
     case 'building': { const t = c.task; if (t?.kind === 'pave') return 'Laying a path'; const b = t && 'site' in t ? buildingByUid(w, t.site) : undefined; return b ? `Building the ${BUILDING_BY_ID[b.def].name.toLowerCase()}` : 'Building'; }
     case 'cleaning': return 'Cleaning the dining hall';
+    case 'sick': { const at = buildingByUid(w, c.place); return `${c.illness?.name ?? 'Sick'} · ${at && BUILDING_BY_ID[at.def].patients ? 'at the clinic' : 'resting in bed'}`; }
+    case 'errand': { const e = w.errands.find(x => x.id === c.errand); return e ? `On a job: ${e.title.toLowerCase()}` : 'On a job'; }
     case 'hauling': {
       const t = c.task; if (!t) return 'Hauling';
       const r = RESOURCES.find(x => x.id === (t as { res: ResourceId }).res)?.name.toLowerCase() ?? 'goods';
@@ -41,6 +43,7 @@ function activityText(w: World, c: Colonist) {
     }
   }
 }
+function topSkills(c: Colonist) { return [...JOB_KINDS].sort((a, b) => c.skills[b] - c.skills[a]).slice(0, 2).map(k => `${SKILL_NAMES[k].toLowerCase()} ${Math.floor(c.skills[k])}`).join(', '); }
 function moodClass(m: number, sulking: boolean) { return sulking ? 'sulk' : m >= 60 ? 'good' : m >= 35 ? 'warn' : 'bad'; }
 
 type Tab = 'colonists' | 'build' | 'log';
@@ -53,7 +56,10 @@ export class UI {
   speed = 1;
   private lastHud = ''; private lastSheet = ''; private lastModal = '';
   onSpeed: (s: number) => void = () => {};
-  onRestart: () => void = () => {};
+  onRestart: (d: Difficulty) => void = () => {};
+  /** run history from this browser, shown on the end screen */
+  profile: { runs: { result: string; day: number; charters: number; difficulty: string }[] } = { runs: [] };
+  private picking: number | null = null; // errand id whose colonist picker is open
 
   constructor(private root: HTMLElement, private getWorld: () => World, private send: (c: Command) => string | null, private view: IsoView) {
     root.addEventListener('click', e => this.click(e));
@@ -115,7 +121,14 @@ export class UI {
       case 'assign': { const [cid, bid] = arg.split(':').map(x => (x === 'none' ? null : Number(x))); const err = this.send({ type: 'assign', colonist: cid!, building: bid }); if (err) this.toast(err); break; }
       case 'auto': this.send({ type: 'autoAssign' }); this.toast('The foreman has reassigned everyone.'); break;
       case 'resolve': this.send({ type: 'resolve', option: Number(arg) }); this.lastModal = ''; break;
-      case 'restart': this.onRestart(); break;
+      case 'restart': this.onRestart((arg || 'normal') as Difficulty); break;
+      case 'errand-open': this.picking = Number(arg); break;
+      case 'errand-close': this.picking = null; break;
+      case 'errand-send': { const [eid, cid] = arg.split(':').map(Number); const d0 = w.decisions[0];
+        if (d0?.kind === 'errand' && d0.errandId === eid) this.send({ type: 'resolve', option: cid });
+        else { const err = this.send({ type: 'sendOnErrand', errand: eid, colonist: cid }); if (err) this.toast(err); }
+        this.picking = null; this.lastModal = ''; break; }
+      case 'errand-later': this.send({ type: 'resolve', option: 0 }); this.lastModal = ''; break;
     }
     this.render(true);
   }
@@ -158,8 +171,30 @@ export class UI {
           <div class="strain" title="Frontier strain: a mood penalty that grows every day"><span>Strain</span><b>−${strain}</b></div>
           <div class="leavers" title="If ${MAX_DEPARTURES} settlers leave, the colony collapses"><span>Left</span><div class="pips">${pips}</div></div>
         </div>
-      </div>`;
+      </div>
+      ${w.errands.length ? `<div class="errands">${w.errands.map(e => this.errandChip(w, e)).join('')}</div>` : ''}`;
     if (force || html !== this.lastHud) { (this.root.querySelector('#hud') as HTMLElement).innerHTML = html; this.lastHud = html; }
+  }
+
+  private errandChip(w: World, e: Errand) {
+    const c = colonistById(w, e.assignee);
+    const left = Math.max(0, Math.ceil(e.deadline - w.hour));
+    return `<button type="button" class="errand${c ? '' : ' unassigned'}" data-act="errand-open" data-arg="${e.id}"><b>${esc(e.title)}</b><small>${c ? `${esc(first(c))} · ${Math.round((e.done / e.hours) * 100)}%` : 'Nobody assigned'} · ${left}h left</small></button>`;
+  }
+
+  private errandPicker(w: World, e: Errand, fromDecision: boolean) {
+    const ok = alive(w).filter(c => !(c.illness && c.illness.severity > 15));
+    const rank = (c: Colonist) => (e.skill ? c.skills[e.skill] * 2 : 0) + (c.job == null ? 3 : 0) + (e.def === 'feud' && c.traits.includes('sunny') ? 8 : 0) - (e.pair?.includes(c.id) ? 20 : 0);
+    const rows = ok.sort((a, b) => rank(b) - rank(a)).map(c => {
+      const job = buildingByUid(w, c.job);
+      const note = [e.skill ? `${SKILL_NAMES[e.skill]} ${Math.floor(c.skills[e.skill])}` : '', job ? `leaves the ${BUILDING_BY_ID[job.def].name.toLowerCase()}` : 'laborer', e.def === 'feud' && c.traits.includes('sunny') ? 'sunny, twice as persuasive' : '', e.pair?.includes(c.id) ? 'part of the feud' : ''].filter(Boolean).join(' · ');
+      return `<button type="button" class="row${c.id === e.assignee ? ' chosen' : ''}" data-act="errand-send" data-arg="${e.id}:${c.id}"><span class="dot" style="background:${hex(c.shirt)}"></span><span class="who"><b>${esc(c.name)}</b><small>${esc(note)}</small></span><span class="add">${c.id === e.assignee ? 'Sent' : 'Send'}</span></button>`;
+    }).join('');
+    const def = { hours: e.hours, left: Math.max(0, Math.ceil(e.deadline - w.hour)) };
+    return `<div class="card-wrap event"><p class="eyebrow">Someone needs to go</p><h2>${esc(e.title)}</h2><p class="lede">${esc(e.text)}</p>
+      <p class="terms">About ${def.hours} hours of work${e.skill ? `, faster with ${SKILL_NAMES[e.skill].toLowerCase()} skill` : ''}. ${def.left} hours before it goes wrong.</p>
+      <div class="rows picker">${rows}</div>
+      ${fromDecision ? `<button type="button" class="ghost skip" data-act="errand-later">Decide later</button>` : `<button type="button" class="ghost skip" data-act="errand-close">Close</button>`}</div>`;
   }
 
   // ---------- Bottom sheet ----------
@@ -229,7 +264,9 @@ export class UI {
         <div class="mood-big ${moodClass(c.mood, c.sulking)}"><b>${Math.round(c.mood)}</b><small>heading to ${Math.round(c.moodTarget)}</small></div></div>
       ${c.sulking ? '<p class="warnline">Sulking. Won’t work until mood climbs above 32.</p>' : c.mood < 15 ? '<p class="warnline">Thinking about leaving the colony.</p>' : ''}
       <div class="traits">${traits}</div>
+      ${c.illness ? `<p class="warnline">${esc(c.illness.name)} · severity ${Math.round(c.illness.severity)} of 100. ${built(w).some(b => b.def === 'clinic') ? 'A clinic with a doctor speeds recovery.' : 'Build a clinic and assign a doctor to speed recovery.'} At 100 they leave for a city physician.</p>` : ''}
       <p class="prefs">Loves <b>${JOB_NAMES[c.likes]}</b> · hates <b>${JOB_NAMES[c.dislikes]}</b> · hunger ${Math.round(c.hunger)} · fun ${Math.round(c.fun)}</p>
+      <h3>Skills</h3><div class="skills">${JOB_KINDS.map(k => `<div class="skill${k === c.likes ? ' fav' : ''}"><span>${SKILL_NAMES[k]}</span><i><b style="width:${c.skills[k] * 10}%"></b></i><em>${Math.floor(c.skills[k])}</em></div>`).join('')}</div>
       <h3>Why they feel this way</h3><ul class="thoughts">${thoughts}</ul>
       <h3>Relationships</h3><div class="rels">${rel}</div>
       <h3>Job ${job ? '' : '<span class="muted">· none</span>'}</h3>
@@ -251,7 +288,7 @@ export class UI {
     const queue = sites(w).map(b => this.siteRow(w, b)).join('');
     const done = built(w).filter(b => !BUILDING_BY_ID[b.def].decor).map(b => {
       const def = BUILDING_BY_ID[b.def];
-      const info = def.slots ? `${workersAt(w, b.uid).length}/${def.slots} workers` : def.beds ? `${def.beds} beds` : def.seats ? `${def.seats} seats · ${Math.round(b.clean)}% clean` : def.storage ? `holds ${def.storage}` : def.id === 'hearth' ? 'gathering place' : 'passive';
+      const info = blockedReason(w, b) ? 'idle: no ingredients' : def.slots ? `${workersAt(w, b.uid).length}/${def.slots} workers` : def.beds ? `${def.beds} beds` : def.seats ? `${def.seats} seats · ${Math.round(b.clean)}% clean` : def.storage ? `holds ${def.storage}` : def.id === 'hearth' ? 'gathering place' : 'passive';
       return `<button type="button" class="row compact" data-act="building" data-arg="${b.uid}"><span class="who"><b>${esc(def.name)}</b></span><small>${info}</small></button>`;
     }).join('');
     return `${queue ? `<h3 class="first">Under construction</h3><div class="rows">${queue}</div>` : ''}
@@ -320,12 +357,14 @@ export class UI {
     const recipe = def.recipe ? `<p class="prefs">${Object.keys(def.recipe.inputs).length ? `Uses ${Object.entries(def.recipe.inputs).map(([r, n]) => `${n} ${r === 'rawFood' ? 'raw food' : RESOURCES.find(x => x.id === r)!.name.toLowerCase()}`).join(' + ')} → ` : 'Makes '}1 ${RESOURCES.find(x => x.id === def.recipe!.output)!.name.toLowerCase()} · ${def.recipe.rate} per worker-hour</p>` : '';
     const effLine = def.needs ? `<p class="prefs">${esc(efficiencyAt(w, b.def, b.x, b.y).label)} · works at <b>${Math.round(b.eff * 100)}%</b></p>` : '';
     const inboxLine = def.recipe && Object.keys(def.recipe.inputs).length ? `<p class="prefs">Ingredients on hand: ${Object.entries(b.inbox).filter(([, n]) => (n ?? 0) >= 0.5).map(([r, n]) => `${Math.floor(n ?? 0)} ${RESOURCES.find(x => x.id === r)!.name.toLowerCase()}`).join(', ') || '<b>none</b>. Laborers carry them in from storage.'}</p>` : '';
-    let staff = effLine + inboxLine;
+    const blocked = blockedReason(w, b);
+    const patients = def.patients ? `<p class="prefs">Patients: ${patientsAt(w, b).map(c => `${esc(first(c))} (${esc(c.illness!.name.toLowerCase())}, ${Math.round(c.illness!.severity)})`).join(', ') || 'none right now. The doctor helps out as a laborer until someone is ill.'}</p>` : '';
+    let staff = (blocked ? `<p class="warnline">${esc(blocked)}</p>` : '') + effLine + inboxLine + patients;
     if (def.slots) {
-      const cur = workers.map(c => `<div class="row static"><span class="dot" style="background:${hex(c.shirt)}"></span><span class="who"><b>${esc(c.name)}</b><small>${def.job === c.likes ? 'loves this job' : def.job === c.dislikes ? 'hates this job' : 'doesn’t mind it'}</small></span><button type="button" class="ghost" data-act="assign" data-arg="${c.id}:none">Remove</button></div>`).join('');
-      const cand = workers.length < def.slots ? alive(w).filter(c => c.job !== b.uid).sort((a, z) => Number(z.likes === def.job) - Number(a.likes === def.job) || Number(a.dislikes === def.job) - Number(z.dislikes === def.job)).map(c => {
+      const cur = workers.map(c => `<div class="row static"><span class="dot" style="background:${hex(c.shirt)}"></span><span class="who"><b>${esc(c.name)}</b><small>${def.job ? `${SKILL_NAMES[def.job]} ${Math.floor(c.skills[def.job])} · ` : ''}${def.job === c.likes ? 'loves this job' : def.job === c.dislikes ? 'hates this job' : 'doesn’t mind it'}</small></span><button type="button" class="ghost" data-act="assign" data-arg="${c.id}:none">Remove</button></div>`).join('');
+      const cand = workers.length < def.slots ? alive(w).filter(c => c.job !== b.uid).sort((a, z) => (def.job ? z.skills[def.job] - a.skills[def.job] : 0) + (Number(z.likes === def.job) - Number(a.likes === def.job)) * 2).map(c => {
         const cw = buildingByUid(w, c.job);
-        return `<button type="button" class="row" data-act="assign" data-arg="${c.id}:${b.uid}"><span class="dot" style="background:${hex(c.shirt)}"></span><span class="who"><b>${esc(c.name)}</b><small>${cw ? `now at ${esc(BUILDING_BY_ID[cw.def].name)}` : 'no job'}${c.likes === def.job ? ' · loves this' : c.dislikes === def.job ? ' · hates this' : ''}</small></span><span class="add">Assign</span></button>`;
+        return `<button type="button" class="row" data-act="assign" data-arg="${c.id}:${b.uid}"><span class="dot" style="background:${hex(c.shirt)}"></span><span class="who"><b>${esc(c.name)}</b><small>${def.job ? `${SKILL_NAMES[def.job]} ${Math.floor(c.skills[def.job])} · ` : ''}${cw ? `now at ${esc(BUILDING_BY_ID[cw.def].name)}` : 'laborer'}${c.likes === def.job ? ' · loves this' : c.dislikes === def.job ? ' · hates this' : ''}</small></span><span class="add">Assign</span></button>`;
       }).join('') : '';
       staff += `<h3>Workers ${workers.length}/${def.slots}</h3><div class="rows">${cur || '<p class="muted">Nobody works here.</p>'}</div>${cand ? `<h3>Assign someone</h3><div class="rows">${cand}</div>` : ''}`;
     } else if (def.beds) {
@@ -356,8 +395,9 @@ export class UI {
         case 'perk': html = this.cards('The Crown grants a boon', 'Choose one. It lasts the rest of the run.',
           d.options.map(id => ({ title: PERK_BY_ID[id].name, body: PERK_BY_ID[id].desc, tag: 'Boon' }))); break;
         case 'recruit': html = this.cards('Settlers at the edge of camp', `They’d like to join. You have ${beds(w)} beds for ${alive(w).length} colonists.`,
-          d.options.map(c => ({ title: c.name, body: c.traits.map(t => `${TRAIT_BY_ID[t].name}: ${TRAIT_BY_ID[t].desc}`).join('\n'), tag: `Loves ${JOB_NAMES[c.likes]} · hates ${JOB_NAMES[c.dislikes]}`, color: hex(c.shirt) })),
+          d.options.map(c => ({ title: c.name, body: c.traits.map(t => `${TRAIT_BY_ID[t].name}: ${TRAIT_BY_ID[t].desc}`).join('\n'), tag: `Loves ${JOB_NAMES[c.likes]} · hates ${JOB_NAMES[c.dislikes]} · best at ${topSkills(c)}`, color: hex(c.shirt) })),
           'Send them all away'); break;
+        case 'errand': { const e = w.errands.find(x => x.id === d.errandId); if (e) html = this.errandPicker(w, e, true); break; }
         case 'event': {
           const ev = EVENTS.find(e => e.id === d.eventId)!;
           html = `<div class="card-wrap event"><p class="eyebrow">Something has happened</p><h2>${esc(ev.title)}</h2><p class="lede">${esc(ev.text)}</p>
@@ -366,6 +406,7 @@ export class UI {
         }
       }
     }
+    if (!html && this.picking != null) { const e = w.errands.find(x => x.id === this.picking); if (e) html = this.errandPicker(w, e, false); else this.picking = null; }
     if (force || html !== this.lastModal) { el.innerHTML = html; this.lastModal = html; }
     el.hidden = !html;
   }
@@ -383,10 +424,25 @@ export class UI {
     const s = w.stats;
     return `<div class="card-wrap end ${won ? 'won' : 'lost'}"><p class="eyebrow">${won ? 'Victory' : 'The colony collapsed'}</p>
       <h2>${won ? 'Mumblewood is a town' : 'The kettle remains'}</h2>
-      <p class="lede">${won ? 'All three charters complete.' : `Too many settlers walked off into the woods.`} You lasted ${day(w)} days.</p>
+      <p class="lede">${won ? 'All three charters complete.' : `Too many settlers walked off into the woods.`} You lasted ${day(w)} day${day(w) === 1 ? '' : 's'} on ${w.difficulty[0].toUpperCase() + w.difficulty.slice(1)}.</p>
       <dl class="stats"><div><dt>Charters</dt><dd>${w.chartersDone.length} / 3</dd></div><div><dt>Peak population</dt><dd>${s.peakPop}</dd></div>
       <div><dt>Couples formed</dt><dd>${s.couples}</dd></div><div><dt>Breakups</dt><dd>${s.breakups}</dd></div>
-      <div><dt>Settlers who left</dt><dd>${s.departures}</dd></div><div><dt>Meals eaten</dt><dd>${s.mealsEaten}</dd></div></dl>
-      <button type="button" class="act big" data-act="restart">Start a new colony</button></div>`;
+      <div><dt>Settlers who left</dt><dd>${s.departures}</dd></div><div><dt>Meals eaten</dt><dd>${s.mealsEaten}</dd></div>
+      <div><dt>Errands done</dt><dd>${s.errands}</dd></div><div><dt>Recoveries</dt><dd>${s.cured}</dd></div></dl>
+      ${this.ledger()}
+      <h3>Start a new colony</h3>
+      <div class="diffs">
+        <button type="button" class="opt" data-act="restart" data-arg="gentle"><b>Gentle</b><span>Strain grows about a third slower.</span></button>
+        <button type="button" class="opt" data-act="restart" data-arg="normal"><b>Normal</b><span>The frontier as intended.</span></button>
+        <button type="button" class="opt" data-act="restart" data-arg="harsh"><b>Harsh</b><span>Strain grows half again as fast.</span></button>
+      </div></div>`;
+  }
+
+  private ledger() {
+    const runs = this.profile.runs;
+    if (!runs.length) return '';
+    const wins = runs.filter(r => r.result === 'won');
+    const best = wins.length ? Math.min(...wins.map(r => r.day)) : null;
+    return `<p class="terms">Your ledger: ${runs.length} run${runs.length > 1 ? 's' : ''}, ${wins.length} won${best != null ? `, fastest win on day ${best}` : ''}.</p>`;
   }
 }

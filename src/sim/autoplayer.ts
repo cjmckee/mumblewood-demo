@@ -3,7 +3,7 @@
 import { BUILDING_BY_ID, CHARTERS, EVENTS, ResourceId } from './content';
 import { World, apply, alive, beds, mealTotal, sites, findSpot, CENTER, CHARTER_HELPERS, avgMood, built, MAP_SIZE, pathAt, terrainAt, T_WATER, bdef } from './world';
 
-const BLUEPRINT_PRIORITY = ['kitchen', 'sawmill', 'dock', 'cottage', 'brewery', 'tavern', 'pieoven', 'smokehouse', 'cellar', 'stage', 'bathhouse'];
+const BLUEPRINT_PRIORITY = ['sawmill', 'pieoven', 'dock', 'cottage', 'brewery', 'tavern', 'smokehouse', 'cellar', 'stage', 'bathhouse'];
 const PERK_PRIORITY = ['saintsDay', 'ironWill', 'communalPot', 'overtime', 'rations', 'earplugs', 'warmHearth', 'gossipBan', 'matchmaker'];
 const MOOD_BUILDINGS = ['tavern', 'stage', 'cottage', 'bathhouse', 'pieoven', 'brewery'];
 
@@ -14,7 +14,13 @@ export function autoDecide(w: World, style: 'greedy' | 'random' = 'greedy', rand
   while (w.decisions.length) {
     const d = w.decisions[0];
     let option = 0;
-    if (style === 'random') {
+    if (d.kind === 'errand') {
+      // send a healthy laborer, or the best-skilled person if the job uses a skill
+      const e = w.errands.find(x => x.id === d.errandId);
+      const pool = alive(w).filter(c => !c.illness && c.errand == null);
+      const best = pool.sort((a, b) => (e?.skill ? b.skills[e.skill] - a.skills[e.skill] : 0) + (Number(a.job != null) - Number(b.job != null)) * 2)[0];
+      option = style === 'random' && rand() < 0.3 ? 0 : best?.id ?? 0;
+    } else if (style === 'random') {
       const n = d.kind === 'event' ? 2 : d.kind === 'recruit' ? 3 : d.options.length;
       option = Math.floor(rand() * n);
     } else if (d.kind === 'charter') {
@@ -23,7 +29,8 @@ export function autoDecide(w: World, style: 'greedy' | 'random' = 'greedy', rand
       option = d.options.map(score).reduce((b, s, i, arr) => (s > arr[b] ? i : b), 0);
     } else if (d.kind === 'blueprint') {
       const helpers = CHARTER_HELPERS[w.charter ?? ''] ?? [];
-      const rank = (id: string) => (helpers.includes(id) ? -100 + helpers.indexOf(id) : 0) + BLUEPRINT_PRIORITY.indexOf(id);
+      const feedable = (id: string) => id !== 'smokehouse' || w.owned.includes('dock');
+      const rank = (id: string) => (helpers.includes(id) && feedable(id) ? -100 + helpers.indexOf(id) : 0) + BLUEPRINT_PRIORITY.indexOf(id);
       option = d.options.map(rank).reduce((best, p, i, arr) => (p < arr[best] ? i : best), 0);
     } else if (d.kind === 'perk') {
       option = d.options.map(o => PERK_PRIORITY.indexOf(o)).reduce((best, p, i, arr) => (p < arr[best] ? i : best), 0);
@@ -65,9 +72,14 @@ export function autoBuild(w: World) {
   const count = (id: string) => w.buildings.filter(b => b.def === id).length;
   if (sites(w).length < 2) {
     const want: string[] = [];
+    // wood is the economy: keep about one woodcutter per three settlers, more while short
+    const cutters = count('woodcutter');
+    if (w.res.wood < 45 && cutters < Math.ceil(pop / 3)) want.push('woodcutter');
     const pendingBeds = sites(w).reduce((n, b) => n + (BUILDING_BY_ID[b.def].beds ?? 0), 0);
     if (beds(w) + pendingBeds < pop + 1) want.push(w.owned.includes('cottage') && w.res.planks >= 10 && !saving.includes('planks') ? 'cottage' : 'leanto');
     if (count('dining') < Math.ceil(pop / 6)) want.push('dining');
+    if (count('kitchen') === 0) want.push('kitchen');
+    if (count('clinic') === 0 && (day(w) >= 4 || alive(w).some(c => c.illness))) want.push('clinic');
     for (const id of CHARTER_HELPERS[w.charter ?? ''] ?? []) if (w.owned.includes(id) && count(id) === 0) want.push(id);
     for (const id of BLUEPRINT_PRIORITY.slice(0, 2)) if (w.owned.includes(id) && count(id) === 0) want.push(id);
     if (count('storehouse') === 0 && day(w) >= 3) want.push('storehouse');
@@ -80,11 +92,14 @@ export function autoBuild(w: World) {
     for (const id of BLUEPRINT_PRIORITY.slice(2)) if (w.owned.includes(id) && count(id) === 0) want.push(id);
     if (count('forager') < Math.ceil(pop / 5)) want.push('forager');
     if (count('woodcutter') < Math.ceil(pop / 6)) want.push('woodcutter');
-    if (w.owned.includes('kitchen') && count('kitchen') < Math.ceil(pop / 9)) want.push('kitchen');
+    if (w.owned.includes('kitchen') && count('kitchen') < Math.ceil(pop / 8)) want.push('kitchen');
+    if (count('storehouse') === 0) want.push('storehouse');
     if (w.owned.includes('sawmill') && w.charter === 'lumber' && count('sawmill') < 2) want.push('sawmill');
     for (const id of want) {
       if (sites(w).some(b => b.def === id)) continue;
       const def = BUILDING_BY_ID[id];
+      if (id === 'smokehouse' && !w.buildings.some(b => b.def === 'dock')) continue;
+      if (id === 'pieoven' && !w.buildings.some(b => b.def === 'sawmill') && w.res.planks < 8) continue;
       const short = Object.entries(def.cost).some(([r, n]) => w.res[r as ResourceId] < (n ?? 0) + (r === 'wood' ? 10 : 0) || saving.includes(r as ResourceId));
       if (short) continue;
       // decorations go by the hearth; everything else near the centre

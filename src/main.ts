@@ -1,4 +1,4 @@
-import { createWorld, tick, apply, runHours, TICKS_PER_HOUR, World, Command, day } from './sim/world';
+import { createWorld, tick, apply, runHours, TICKS_PER_HOUR, World, Command, day, Difficulty, debugEvent } from './sim/world';
 import { IsoView } from './render/iso';
 import { UI } from './ui/ui';
 import { autoDecide, autoBuild } from './sim/autoplayer';
@@ -10,12 +10,24 @@ async function boot() {
   const root = document.getElementById('game')!;
   const view = new IsoView();
   await view.init(document.getElementById('stage')!);
-  let world: World = createWorld((Date.now() ^ (Math.random() * 1e9)) >>> 0);
+  // a small profile kept in this browser: run history now, unlocks later
+  const PROFILE_KEY = 'mumblewood.profile.v1';
+  type Profile = { runs: { result: string; day: number; charters: number; difficulty: string; at: string }[]; unlocks: string[]; lastDifficulty: Difficulty };
+  let profile: Profile = { runs: [], unlocks: [], lastDifficulty: 'normal' };
+  try { const raw = localStorage.getItem(PROFILE_KEY); if (raw) profile = { ...profile, ...JSON.parse(raw) }; } catch { /* storage unavailable */ }
+  const saveProfile = () => { try { localStorage.setItem(PROFILE_KEY, JSON.stringify(profile)); } catch { /* storage unavailable */ } };
+  let world: World = createWorld((Date.now() ^ (Math.random() * 1e9)) >>> 0, profile.lastDifficulty);
+  let recorded = false;
   let speed = 1, acc = 0;
   const send = (c: Command) => apply(world, c);
   const ui = new UI(root, () => world, send, view);
   ui.onSpeed = s => (speed = s);
-  ui.onRestart = () => { world = createWorld((Date.now() ^ (Math.random() * 1e9)) >>> 0); acc = 0; view.selected = null; ui.detail = null; ui.render(true); };
+  ui.profile = profile;
+  ui.onRestart = (d: Difficulty) => {
+    profile.lastDifficulty = d; saveProfile();
+    world = createWorld((Date.now() ^ (Math.random() * 1e9)) >>> 0, d); recorded = false;
+    acc = 0; view.selected = null; view.placing = null; view.pathMode = false; ui.detail = null; ui.render(true);
+  };
 
   let last = performance.now(), uiTimer = 0;
   view.app.ticker.add(() => {
@@ -24,6 +36,11 @@ async function boot() {
     if (!world.decisions.length && world.status === 'playing') {
       acc += dt * SPEEDS[speed] * TICKS_PER_HOUR;
       while (acc >= 1) { tick(world); acc -= 1; if (world.decisions.length) { acc = 0; break; } }
+    }
+    if (world.status !== 'playing' && !recorded) {
+      recorded = true;
+      profile.runs.push({ result: world.status, day: day(world), charters: world.chartersDone.length, difficulty: world.difficulty, at: new Date().toISOString() });
+      saveProfile();
     }
     view.lastWorld = world;
     view.update(world, world.decisions.length ? 1 : acc, now);
@@ -41,6 +58,7 @@ async function boot() {
     autoplay(hours: number) { for (let h = 0; h < hours; h++) { autoDecide(world); for (let t = 0; t < TICKS_PER_HOUR; t++) { tick(world); autoDecide(world); } autoBuild(world); } ui.render(true); },
     setSpeed(s: number) { speed = s; ui.speed = s; ui.render(true); },
     day: () => day(world),
+    event(id: string) { debugEvent(world, id); ui.render(true); },
   };
 }
 boot();

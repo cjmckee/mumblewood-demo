@@ -174,6 +174,24 @@ h3.first { margin-top: 4px; }
 .mini i { display: block; height: 100%; background: var(--accent); }
 .mini.haul i { background: var(--muted); }
 .danger { color: #f3b39f; border-color: rgba(224,105,74,.5); margin-top: 14px; }
+/* errands strip */
+.errands { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+.errands::-webkit-scrollbar { display: none; }
+.errand { flex: none; text-align: left; background: var(--panel); border: 1px solid var(--accent); border-radius: 10px; padding: 6px 10px; display: grid; gap: 1px; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.errand b { font-size: 13px; }
+.errand small { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.errand.unassigned { border-color: var(--bad); }
+.errand.unassigned small { color: #f3b39f; }
+.terms { margin: 0; font-size: 13px; color: var(--muted); }
+.picker { max-height: 44vh; overflow-y: auto; }
+.row.chosen { border-color: var(--accent); }
+.skills { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 14px; }
+.skill { display: grid; grid-template-columns: 74px 1fr 18px; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.skill i { display: block; height: 5px; border-radius: 3px; background: #2c332b; overflow: hidden; }
+.skill i b { display: block; height: 100%; background: var(--muted); }
+.skill.fav i b { background: var(--accent); }
+.skill em { font-style: normal; color: var(--text); text-align: right; font-variant-numeric: tabular-nums; }
+.diffs { display: grid; gap: 8px; }
 #toast { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom, 0px) + 74px); background: #2c342b; border: 1px solid var(--line); color: var(--text); padding: 8px 14px; border-radius: 999px; font-size: 13px; z-index: 6; max-width: calc(100% - 32px); }
 @media (min-width: 900px) {
   #hud { grid-template-columns: auto 1fr; align-items: start; }

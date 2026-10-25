@@ -15,11 +15,17 @@ export const RESOURCES: { id: ResourceId; name: string; kind: 'raw' | 'meal' | '
 export const RAW_FOODS: ResourceId[] = ['berries', 'fish', 'mushrooms'];
 export const MEALS: ResourceId[] = ['pie', 'smokedFish', 'stew'];
 
-export type JobKind = 'chopping' | 'foraging' | 'fishing' | 'cooking' | 'crafting' | 'brewing' | 'serving';
+export type JobKind = 'chopping' | 'foraging' | 'fishing' | 'cooking' | 'crafting' | 'brewing' | 'serving' | 'medicine';
 export const JOB_NAMES: Record<JobKind, string> = {
   chopping: 'chopping wood', foraging: 'foraging', fishing: 'fishing', cooking: 'cooking',
-  crafting: 'carpentry', brewing: 'brewing', serving: 'tavern work',
+  crafting: 'carpentry', brewing: 'brewing', serving: 'tavern work', medicine: 'doctoring',
 };
+/** short labels for skill bars */
+export const SKILL_NAMES: Record<JobKind, string> = {
+  chopping: 'Chopping', foraging: 'Foraging', fishing: 'Fishing', cooking: 'Cooking',
+  crafting: 'Carpentry', brewing: 'Brewing', serving: 'Serving', medicine: 'Medicine',
+};
+export const JOB_KINDS = Object.keys(JOB_NAMES) as JobKind[];
 
 export interface Recipe {
   /** inputs consumed per unit of output; "rawFood" means any raw food */
@@ -51,6 +57,8 @@ export interface BuildingDef {
   walkable?: boolean;
   /** what has to be nearby for full output */
   needs?: 'trees' | 'bushes' | 'water';
+  /** patient beds, for a clinic */
+  patients?: number;
   /** a small decoration with no door */
   decor?: boolean;
   /** how much it brightens the tiles around it */
@@ -72,6 +80,8 @@ export const BUILDINGS: BuildingDef[] = [
   { id: 'dining', name: 'Dining hall', blurb: 'Tables and benches for 6. Eating here beats eating in the dirt, as long as someone keeps it clean.', cost: { wood: 20 }, w: 2, h: 2, slots: 0, seats: 6, wall: 0x9a7a58, roof: 0x8a4a3a, height: 0.9, basic: true },
   { id: 'storehouse', name: 'Storehouse', blurb: 'Holds 250 more goods, and while you have one, no food spoils.', cost: { wood: 25 }, w: 2, h: 2, slots: 0, storage: 250, keepsFresh: true, wall: 0x7a6a58, roof: 0x5a6a7a, height: 1.0, basic: true },
 
+  { id: 'clinic', name: 'Clinic', blurb: 'Two cots and a doctor. The sick and injured recover here much faster, faster still with a skilled doctor.', cost: { wood: 15 }, w: 2, h: 1, slots: 1, job: 'medicine', patients: 2, wall: 0xd8d0c0, roof: 0x9a3a3a, height: 0.8, basic: true },
+
   { id: 'flowerbed', name: 'Flower bed', blurb: 'Beauty 3. Somebody planted petunias in a wheelbarrow.', cost: { wood: 2 }, w: 1, h: 1, slots: 0, decor: true, beauty: 3, wall: 0x6b4f33, roof: 0xd66a9a, height: 0, basic: true },
   { id: 'lantern', name: 'Lantern post', blurb: 'Beauty 2. Glows at night, which moths appreciate.', cost: { wood: 4 }, w: 1, h: 1, slots: 0, decor: true, beauty: 2, wall: 0x4a3a2a, roof: 0xf2c46a, height: 0, basic: true },
   { id: 'bench', name: 'Bench', blurb: 'Beauty 2. A good place to sit and judge passers-by.', cost: { planks: 3 }, w: 1, h: 1, slots: 0, decor: true, beauty: 2, wall: 0x8a6038, roof: 0x8a6038, height: 0, basic: true },
@@ -79,7 +89,7 @@ export const BUILDINGS: BuildingDef[] = [
 
   { id: 'dock', name: 'Fishing dock', blurb: 'Fish, plentiful and mildly judgmental. Must touch water.', cost: { wood: 15 }, w: 1, h: 2, slots: 2, job: 'fishing', needs: 'water', recipe: { inputs: {}, output: 'fish', rate: 1.5 }, wall: 0x6d5844, roof: 0x3d7b9a, height: 0.6, draftable: true },
   { id: 'cellar', name: 'Mushroom cellar', blurb: 'Dark, damp, productive. Like a bard.', cost: { wood: 12, planks: 5 }, w: 1, h: 1, slots: 2, job: 'foraging', recipe: { inputs: {}, output: 'mushrooms', rate: 1.5 }, wall: 0x5d5448, roof: 0x8d7aa8, height: 0.5, draftable: true },
-  { id: 'kitchen', name: 'Stew kitchen', blurb: 'Turns any raw food into stew. Someone has to carry the ingredients in.', cost: { wood: 18 }, w: 2, h: 1, slots: 2, job: 'cooking', recipe: { inputs: { rawFood: 1.5 }, output: 'stew', rate: 1.2 }, wall: 0x8a6448, roof: 0xc4703a, height: 0.8, draftable: true },
+  { id: 'kitchen', name: 'Stew kitchen', blurb: 'Turns any raw food into stew. Someone has to carry the ingredients in.', cost: { wood: 18 }, w: 2, h: 1, slots: 2, job: 'cooking', recipe: { inputs: { rawFood: 1.5 }, output: 'stew', rate: 1.2 }, wall: 0x8a6448, roof: 0xc4703a, height: 0.8, basic: true },
   { id: 'pieoven', name: 'Pie oven', blurb: 'Berries plus wood make pie. Pie is the best thing that has ever happened.', cost: { wood: 12, planks: 8 }, w: 1, h: 1, slots: 2, job: 'cooking', recipe: { inputs: { berries: 2, wood: 0.5 }, output: 'pie', rate: 0.9 }, wall: 0x9b7452, roof: 0xd6a33c, height: 0.8, draftable: true },
   { id: 'smokehouse', name: 'Smokehouse', blurb: 'Fish goes in, better fish comes out.', cost: { wood: 15 }, w: 1, h: 1, slots: 2, job: 'cooking', recipe: { inputs: { fish: 1.2 }, output: 'smokedFish', rate: 1.2 }, wall: 0x5f4d3f, roof: 0x8a8a8a, height: 0.9, draftable: true },
   { id: 'sawmill', name: 'Sawmill', blurb: 'Wood becomes planks. Planks become nicer buildings.', cost: { wood: 20 }, w: 2, h: 1, slots: 2, job: 'crafting', recipe: { inputs: { wood: 2 }, output: 'planks', rate: 1.0 }, wall: 0x7c6148, roof: 0xb08a5a, height: 0.8, draftable: true },
@@ -198,3 +208,34 @@ export const FIRST_NAMES = ['Bramwell', 'Odette', 'Tobias', 'Wren', 'Mirabel', '
 export const SURNAMES = ['Pottsworth', 'Mudd', 'Thistledown', 'Grubb', 'Ashby', 'Crumble', 'Fernsby', 'Kettle', 'Hobb', 'Wimble', 'Larder', 'Quigley', 'Bunt', 'Marrow', 'Pennywhistle', 'Sprocket', 'Tumble', 'Underhill', 'Gristle', 'Bramble'];
 export const SHIRTS = [0xc8553d, 0x3d7b9a, 0x6a8d3a, 0xd6a33c, 0x8d5ba8, 0x2f8f7a, 0xb0466a, 0x5a6fb0, 0xa86d3a, 0x4f7f4f];
 export const SKINS = [0xf1c9a5, 0xd9a27e, 0xb27b56, 0x8a5a3c, 0xf5d7b8, 0x6b4430];
+
+/** Events that create a short job someone has to be sent to do. {a} and {b} are filled with colonist names. */
+export interface JobEventDef {
+  id: string; title: string; text: string;
+  /** in-game hours of work */
+  hours: number;
+  /** hours until it goes wrong if nobody finishes it */
+  deadline: number;
+  /** a skill that speeds it up, if any */
+  skill?: JobKind;
+  /** where it happens */
+  at: 'storage' | 'hearth' | 'edge' | 'clinic' | 'pair';
+  reward: string; penalty: string;
+  requires?: 'rivals';
+}
+export const JOB_EVENTS: JobEventDef[] = [
+  { id: 'badger', title: 'A badger in the stores', text: 'A badger has moved into the storage. It is eating everything and it has opinions about it.', hours: 3, deadline: 12, at: 'storage', reward: 'Chase it off and nothing is lost.', penalty: 'Lose a quarter of all food.' },
+  { id: 'cat', title: 'The cat is up a tree', text: 'The colony cat climbed the tallest tree on the frontier and is now yowling about it.', hours: 2, deadline: 8, at: 'edge', skill: 'chopping', reward: 'Everyone +3 mood for a day.', penalty: 'Everyone −3 mood for a day, from the yowling.' },
+  { id: 'feud', title: 'A feud is brewing', text: '{a} and {b} are not speaking, except to say very loud things about each other. Someone should mediate.', hours: 3, deadline: 16, at: 'pair', reward: 'They patch things up a bit (+25 opinion each way).', penalty: 'Both −6 mood for two days, and they like each other even less.', requires: 'rivals' },
+  { id: 'bog', title: 'Someone is stuck in the bog', text: 'A traveller has wandered into the bog at the edge of the woods and is sinking at a dignified pace.', hours: 4, deadline: 10, at: 'edge', reward: 'They join the colony out of gratitude.', penalty: 'They get out on their own and tell everyone how rude you were (−2 mood for a day).' },
+  { id: 'remedy', title: 'Brew a remedy', text: 'The frontier flu is going around. Someone handy with medicine could brew a remedy.', hours: 4, deadline: 18, at: 'clinic', skill: 'medicine', reward: 'Everyone who is sick feels much better.', penalty: 'The flu runs its course.' },
+];
+
+export interface IllnessDef { id: string; name: string; start: number; /** severity change per hour while untreated and up */ worsen: number; contagious?: boolean }
+export const ILLNESSES: IllnessDef[] = [
+  { id: 'flu', name: 'Frontier flu', start: 22, worsen: 0.55, contagious: true },
+  { id: 'tummy', name: 'Bad tummy', start: 20, worsen: 0 },
+  { id: 'thumb', name: 'Hammered thumb', start: 18, worsen: 0 },
+  { id: 'ankle', name: 'Sprained ankle', start: 26, worsen: 0 },
+  { id: 'splinter', name: 'Heroic splinter', start: 16, worsen: 0 },
+];

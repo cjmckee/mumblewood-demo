@@ -278,6 +278,7 @@ export class IsoView {
     if (def.id === 'woodcutter' || def.id === 'sawmill') { const p = iso(x1 + 0.1, y1 - 0.6); g.rect(p.sx, p.sy - 6, 16, 5).fill(0x8a6038); g.rect(p.sx + 2, p.sy - 11, 14, 5).fill(0x9a7044); }
     if (def.id === 'dock') { const a = iso(x1, y0 + 0.5), b = iso(x1 + 1.2, y0 + 0.5), c2 = iso(x1 + 1.2, y0 + 1.5), d = iso(x1, y0 + 1.5); g.poly(flat(a, b, c2, d)).fill(0x7a5a3c); this.tile(g, x1 + 1, y0, 0x3d6f8a, 0.9); this.tile(g, x1 + 1, y0 + 1, 0x3d6f8a, 0.9); this.tile(g, x1 + 1, y0 + 2, 0x3d6f8a, 0.9); }
     if (['kitchen', 'smokehouse', 'pieoven', 'brewery', 'tavern'].includes(def.id)) { const p = up(iso(x0 + def.w * 0.7, y0 + 0.5), wallH + 14); g.rect(p.sx - 3, p.sy - 18, 7, 20).fill(0x5a5048); }
+    if (def.id === 'clinic') { const p = up(iso(x0 + 0.5, y1), wallH - 4); g.rect(p.sx - 8, p.sy - 8, 16, 16).fill(0xf4f1e8); g.rect(p.sx - 2.5, p.sy - 6, 5, 12).fill(0xc23a3a); g.rect(p.sx - 6, p.sy - 2.5, 12, 5).fill(0xc23a3a); }
     if (def.seats && b.clean < 35) { for (let i = 0; i < 4; i++) { const p = iso(x0 + 0.4 + i * 0.6, y1 + 0.25); g.ellipse(p.sx, p.sy, 5, 2.5).fill({ color: 0x4a3a20, alpha: 0.7 }); } }
     // finished goods waiting by the door
     const out = (Object.entries(b.outbox) as [ResourceId, number][]).filter(([, n]) => n >= 2);
