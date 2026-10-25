@@ -160,6 +160,18 @@ h3.first { margin-top: 4px; }
 .stats dd { margin: 2px 0 0; font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .end.won h2 { color: var(--accent); }
 
+#placebar { position: absolute; left: 0; right: 0; bottom: 0; background: var(--panel-solid); border-top: 1px solid var(--line); border-radius: 16px 16px 0 0;
+  display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center;
+  padding-block: 12px calc(env(safe-area-inset-bottom, 0px) + 12px); padding-left: max(14px, env(safe-area-inset-left, 0px)); padding-right: max(14px, env(safe-area-inset-right, 0px)); z-index: 4; }
+.pb-text { display: grid; gap: 2px; min-width: 0; }
+.pb-text small { color: var(--muted); font-size: 12px; }
+.chip.store { color: var(--text); }
+.chip.store.full b { color: var(--bad); }
+.hint { margin: -2px 0 8px; font-size: 12px; }
+.mini { width: 64px; height: 5px; border-radius: 3px; background: #2c332b; overflow: hidden; }
+.mini i { display: block; height: 100%; background: var(--accent); }
+.mini.haul i { background: var(--muted); }
+.danger { color: #f3b39f; border-color: rgba(224,105,74,.5); margin-top: 14px; }
 #toast { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom, 0px) + 74px); background: #2c342b; border: 1px solid var(--line); color: var(--text); padding: 8px 14px; border-radius: 999px; font-size: 13px; z-index: 6; max-width: calc(100% - 32px); }
 @media (min-width: 900px) {
   #hud { grid-template-columns: auto 1fr; align-items: start; }
@@ -174,6 +186,7 @@ h3.first { margin-top: 4px; }
   <div id="stage"></div>
   <header id="hud"></header>
   <section id="sheet" aria-label="Colony panel"></section>
+  <div id="placebar" hidden></div>
   <div id="modal" hidden></div>
   <div id="toast" role="status" hidden></div>
 </div>

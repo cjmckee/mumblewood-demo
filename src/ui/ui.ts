@@ -1,13 +1,15 @@
 // DOM overlay: HUD, bottom sheet, decision modals. Talks to the sim only through commands.
 import { BUILDING_BY_ID, CHARTERS, EVENTS, JOB_NAMES, PERK_BY_ID, RESOURCES, TRAIT_BY_ID, ResourceId } from '../sim/content';
 import {
-  World, Command, Colonist, alive, avgMood, beds, buildingByUid, canAfford, charterProgress, colonistById,
-  day, hourOfDay, opinion, workersAt, MAX_DEPARTURES,
+  World, Command, Colonist, alive, avgMood, beds, buildingByUid, charterProgress, colonistById,
+  day, hourOfDay, opinion, workersAt, MAX_DEPARTURES, sites, siteWork, remainingCost, storageCap, stored,
+  keepsFresh, findSpot, canPlace, laborers, centerOf, built, Building,
 } from '../sim/world';
 import type { IsoView, Picked } from '../render/iso';
 
 const esc = (s: string) => s.replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]!));
 const first = (c: Colonist) => c.name.split(' ')[0];
+const sum = (o: Partial<Record<string, number>>) => Object.values(o).reduce<number>((n, v) => n + (v ?? 0), 0);
 const hex = (n: number) => `#${n.toString(16).padStart(6, '0')}`;
 const RES_COLOR: Record<ResourceId, string> = {
   wood: '#a07a4c', planks: '#d2a96a', berries: '#c04a6a', fish: '#5b9cc2', mushrooms: '#b39ad0',
@@ -27,6 +29,15 @@ function activityText(w: World, c: Colonist) {
     case 'working': return job ? BUILDING_BY_ID[job.def].name : 'Working';
     case 'idle': return 'Idle at the hearth';
     case 'leisure': return c.place != null && buildingByUid(w, c.place)?.def === 'tavern' ? 'At the tavern' : 'At the hearth';
+    case 'eating': { const at = buildingByUid(w, c.meal?.at ?? null); return at && BUILDING_BY_ID[at.def].seats ? 'Eating in the dining hall' : 'Eating standing up'; }
+    case 'building': { const t = c.task; const b = t && 'site' in t ? buildingByUid(w, t.site) : undefined; return b ? `Building the ${BUILDING_BY_ID[b.def].name.toLowerCase()}` : 'Building'; }
+    case 'cleaning': return 'Cleaning the dining hall';
+    case 'hauling': {
+      const t = c.task; if (!t) return 'Hauling';
+      const r = RESOURCES.find(x => x.id === (t as { res: ResourceId }).res)?.name.toLowerCase() ?? 'goods';
+      if (t.kind === 'deliver') { const b = buildingByUid(w, t.site); return c.carrying ? `Carrying ${r} to the ${b ? BUILDING_BY_ID[b.def].name.toLowerCase() : 'site'}` : `Fetching ${r} for the ${b ? BUILDING_BY_ID[b.def].name.toLowerCase() : 'site'}`; }
+      return c.carrying ? `Carrying ${r} to storage` : `Collecting ${r}`;
+    }
   }
 }
 function moodClass(m: number, sulking: boolean) { return sulking ? 'sulk' : m >= 60 ? 'good' : m >= 35 ? 'warn' : 'bad'; }
@@ -78,8 +89,18 @@ export class UI {
       case 'colonist': this.detail = { kind: 'colonist', id: Number(arg) }; this.view.selected = { kind: 'colonist', id: Number(arg) };
         { const c = colonistById(w, Number(arg)); if (c) this.view.focus(c.x, c.y); } break;
       case 'building': this.detail = { kind: 'building', id: Number(arg) }; this.view.selected = { kind: 'building', id: Number(arg) };
-        { const b = buildingByUid(w, Number(arg)); if (b) this.view.focus(b.x, b.y); } break;
-      case 'build': { const err = this.send({ type: 'build', def: arg }); this.toast(err ?? `${BUILDING_BY_ID[arg].name} built.`); break; }
+        { const b = buildingByUid(w, Number(arg)); if (b) { const p = centerOf(b); this.view.focus(p.x, p.y); } } break;
+      case 'build': this.startPlacing(arg); break;
+      case 'place-confirm': {
+        const pl = this.view.placing; if (!pl) break;
+        const err = this.send({ type: 'place', def: pl.def, x: pl.x, y: pl.y });
+        if (err) { this.toast(err); break; }
+        this.view.placing = null;
+        this.toast(laborers(w).length ? 'Blueprint placed. Laborers will haul materials and build it.' : 'Blueprint placed, but nobody is free to build. Take someone off a job.');
+        break;
+      }
+      case 'place-cancel': this.view.placing = null; break;
+      case 'cancel-site': { const err = this.send({ type: 'cancel', building: Number(arg) }); if (err) this.toast(err); this.detail = null; this.view.selected = null; break; }
       case 'assign': { const [cid, bid] = arg.split(':').map(x => (x === 'none' ? null : Number(x))); const err = this.send({ type: 'assign', colonist: cid!, building: bid }); if (err) this.toast(err); break; }
       case 'auto': this.send({ type: 'autoAssign' }); this.toast('The foreman has reassigned everyone.'); break;
       case 'resolve': this.send({ type: 'resolve', option: Number(arg) }); this.lastModal = ''; break;
@@ -93,6 +114,8 @@ export class UI {
     this.renderHud(w, force);
     this.renderSheet(w, force);
     this.renderModal(w, force);
+    this.renderPlaceBar(w);
+    (this.root.querySelector('#sheet') as HTMLElement).hidden = !!this.view.placing;
   }
 
   // ---------- HUD ----------
@@ -102,7 +125,9 @@ export class UI {
     const prog = charterProgress(w);
     const pips = Array.from({ length: MAX_DEPARTURES }, (_, i) => `<i class="pip${i < w.stats.departures ? ' on' : ''}"></i>`).join('');
     const strain = Math.round(w.strain);
-    const res = RESOURCES.filter(r => w.res[r.id] >= 0.5 || ['wood', 'berries', 'stew'].includes(r.id))
+    const cap = storageCap(w), st = stored(w);
+    const storeChip = `<span class="chip store${st >= cap ? ' full' : ''}"><b>${Math.floor(st)}/${cap}</b> stored${keepsFresh(w) ? '' : ' · food spoils'}</span>`;
+    const res = storeChip + RESOURCES.filter(r => w.res[r.id] >= 0.5 || ['wood', 'berries', 'stew'].includes(r.id))
       .map(r => `<span class="chip"><i style="background:${RES_COLOR[r.id]}"></i><b>${Math.floor(w.res[r.id])}</b> ${r.name}</span>`).join('');
     const html = `
       <div class="bar">
@@ -162,7 +187,8 @@ export class UI {
       </button>`;
     }).join('');
     return `<div class="list-head"><span>${alive(w).length} colonists · ${beds(w)} beds · average mood ${Math.round(avgMood(w))}</span>
-      <button type="button" class="ghost" data-act="auto">Auto-assign jobs</button></div><div class="rows">${rows}</div>`;
+      <button type="button" class="ghost" data-act="auto">Auto-assign jobs</button></div>
+      <p class="muted hint">${laborers(w).length} laborers. Anyone without a job builds, hauls and cleans.</p><div class="rows">${rows}</div>`;
   }
 
   private colonistDetail(w: World, id: number) {
@@ -180,7 +206,7 @@ export class UI {
       ...rivals.map(x => `<span class="rel rival">Can’t stand ${esc(first(x.o))}</span>`),
     ].join('') || '<span class="muted">No strong feelings about anyone yet.</span>';
     const job = buildingByUid(w, c.job);
-    const jobs = w.buildings.filter(b => BUILDING_BY_ID[b.def].slots > 0).map(b => {
+    const jobs = built(w).filter(b => BUILDING_BY_ID[b.def].slots > 0).map(b => {
       const def = BUILDING_BY_ID[b.def];
       const n = workersAt(w, b.uid).length, full = n >= def.slots && c.job !== b.uid;
       const fit = def.job === c.likes ? ' likes' : def.job === c.dislikes ? ' dislikes' : '';
@@ -196,27 +222,72 @@ export class UI {
       <h3>Why they feel this way</h3><ul class="thoughts">${thoughts}</ul>
       <h3>Relationships</h3><div class="rels">${rel}</div>
       <h3>Job ${job ? '' : '<span class="muted">· none</span>'}</h3>
-      <div class="jobs">${jobs}<button type="button" class="job${c.job == null ? ' on' : ''}" data-act="assign" data-arg="${c.id}:none">No job<small>rests at the hearth</small></button></div>
+      <div class="jobs">${jobs}<button type="button" class="job${c.job == null ? ' on' : ''}" data-act="assign" data-arg="${c.id}:none">Laborer<small>builds, hauls and cleans</small></button></div>
     </div>`;
   }
 
   private buildList(w: World) {
+    const short = (cost: Partial<Record<ResourceId, number>>) => Object.entries(cost).filter(([r, n]) => w.res[r as ResourceId] < (n ?? 0)).map(([r]) => RESOURCES.find(x => x.id === r)!.name.toLowerCase());
     const owned = w.owned.map(id => BUILDING_BY_ID[id]).map(def => {
-      const ok = canAfford(w, def);
-      return `<div class="bp"><div><b>${esc(def.name)}</b><small>${esc(def.blurb)}</small><small class="cost">Costs ${esc(costText(def.cost))}</small></div>
-        <button type="button" class="act" data-act="build" data-arg="${def.id}" ${ok ? '' : 'disabled'}>Build</button></div>`;
+      const miss = short(def.cost);
+      return `<div class="bp"><div><b>${esc(def.name)}</b><small>${esc(def.blurb)}</small><small class="cost">${Object.keys(def.cost).length ? `Needs ${esc(costText(def.cost))}` : 'Free'} · ${def.w}×${def.h}${miss.length ? ` · short on ${esc(miss.join(', '))}` : ''}</small></div>
+        <button type="button" class="act" data-act="build" data-arg="${def.id}">Place</button></div>`;
     }).join('');
-    const built = w.buildings.map(b => {
+    const queue = sites(w).map(b => this.siteRow(w, b)).join('');
+    const done = built(w).map(b => {
       const def = BUILDING_BY_ID[b.def];
-      const info = def.slots ? `${workersAt(w, b.uid).length}/${def.slots} workers` : def.beds ? `${def.beds} beds` : def.id === 'hearth' ? 'gathering place' : 'passive';
+      const info = def.slots ? `${workersAt(w, b.uid).length}/${def.slots} workers` : def.beds ? `${def.beds} beds` : def.seats ? `${def.seats} seats · ${Math.round(b.clean)}% clean` : def.storage ? `holds ${def.storage}` : def.id === 'hearth' ? 'gathering place' : 'passive';
       return `<button type="button" class="row compact" data-act="building" data-arg="${b.uid}"><span class="who"><b>${esc(def.name)}</b></span><small>${info}</small></button>`;
     }).join('');
-    return `<h3 class="first">Blueprints you own</h3><div class="bps">${owned}</div><h3>In the colony</h3><div class="rows">${built}</div>`;
+    return `${queue ? `<h3 class="first">Under construction</h3><div class="rows">${queue}</div>` : ''}
+      <h3 class="${queue ? '' : 'first'}">Blueprints</h3><div class="bps">${owned}</div><h3>In the colony</h3><div class="rows">${done}</div>`;
+  }
+
+  private siteRow(w: World, b: Building) {
+    const def = BUILDING_BY_ID[b.def];
+    const left = remainingCost(b);
+    const need = Object.keys(left).length;
+    const pct = Math.round((b.progress / siteWork(b)) * 100);
+    const status = need ? `Waiting on ${Object.entries(left).map(([r, n]) => `${Math.ceil(n ?? 0)} ${RESOURCES.find(x => x.id === r)!.name.toLowerCase()}`).join(', ')}` : `Building · ${pct}%`;
+    const ratio = need ? 1 - sum(left) / Math.max(1, sum(def.cost)) : b.progress / siteWork(b);
+    return `<button type="button" class="row compact site" data-act="building" data-arg="${b.uid}"><span class="who"><b>${esc(def.name)}</b><small>${esc(status)}</small></span><span class="mini ${need ? 'haul' : ''}"><i style="width:${Math.round(ratio * 100)}%"></i></span></button>`;
+  }
+
+  startPlacing(defId: string) {
+    const w = this.getWorld();
+    const c = this.view.viewCenter();
+    const spot = findSpot(w, defId, c.x, c.y, false) ?? { x: Math.round(c.x), y: Math.round(c.y) };
+    this.view.placing = { def: defId, x: spot.x, y: spot.y };
+    this.view.focus(spot.x + BUILDING_BY_ID[defId].w / 2, spot.y + BUILDING_BY_ID[defId].h / 2, 0.55);
+    this.open = false; this.detail = null; this.view.selected = null;
+    this.render(true);
+  }
+
+  private renderPlaceBar(w: World) {
+    const el = this.root.querySelector('#placebar') as HTMLElement;
+    const pl = this.view.placing;
+    if (!pl) { el.hidden = true; el.innerHTML = ''; return; }
+    const def = BUILDING_BY_ID[pl.def];
+    const chk = canPlace(w, pl.def, pl.x, pl.y);
+    const html = `<div class="pb-text"><b>Placing ${esc(def.name)}</b><small>${chk.ok ? 'Tap the ground to move it. The light square is its door.' : esc(chk.reason)}</small></div>
+      <button type="button" class="ghost" data-act="place-cancel">Cancel</button>
+      <button type="button" class="act" data-act="place-confirm" ${chk.ok ? '' : 'disabled'}>Place here</button>`;
+    if (el.innerHTML !== html) el.innerHTML = html;
+    el.hidden = false;
   }
 
   private buildingDetail(w: World, uid: number) {
     const b = buildingByUid(w, uid); if (!b) return '';
     const def = BUILDING_BY_ID[b.def];
+    if (!b.built) {
+      const builders = alive(w).filter(c => c.task && 'site' in c.task && c.task.site === b.uid);
+      const mats = Object.entries(def.cost).map(([r, n]) => `<li><span>${RESOURCES.find(x => x.id === r)!.name}</span><b>${Math.floor(b.delivered[r as ResourceId] ?? 0)} / ${n}</b></li>`).join('');
+      return `<div class="detail"><div class="d-head"><button type="button" class="ghost back" data-act="back">All buildings</button></div>
+        <h2>${esc(def.name)}</h2><p class="blurb">Under construction.</p>
+        <h3>Materials delivered</h3><ul class="thoughts">${mats || '<li><span>No materials needed</span></li>'}</ul>
+        <h3>Work</h3><p class="prefs">${Math.round(b.progress * 10) / 10} of ${siteWork(b)} builder-hours. ${builders.length ? `${builders.map(c => esc(first(c))).join(', ')} on it now.` : laborers(w).length ? 'Laborers will get to it.' : 'Nobody is free. Take someone off a job to make them a laborer.'}</p>
+        <button type="button" class="ghost danger" data-act="cancel-site" data-arg="${b.uid}">Cancel and return materials</button></div>`;
+    }
     const workers = workersAt(w, b.uid);
     const recipe = def.recipe ? `<p class="prefs">${Object.keys(def.recipe.inputs).length ? `Uses ${Object.entries(def.recipe.inputs).map(([r, n]) => `${n} ${r === 'rawFood' ? 'raw food' : RESOURCES.find(x => x.id === r)!.name.toLowerCase()}`).join(' + ')} → ` : 'Makes '}1 ${RESOURCES.find(x => x.id === def.recipe!.output)!.name.toLowerCase()} · ${def.recipe.rate} per worker-hour</p>` : '';
     let staff = '';

@@ -1,7 +1,7 @@
 // Deterministic colony simulation. No DOM, no rendering: runs in the browser and in Node.
 import {
   BUILDING_BY_ID, BuildingDef, CHARTERS, CharterDef, EVENTS, FIRST_NAMES, JOB_NAMES, JobKind,
-  MEALS, PERKS, RAW_FOODS, ResourceId, SHIRTS, SKINS, SURNAMES, TRAITS, TRAIT_BY_ID, BUILDINGS,
+  MEALS, PERKS, RAW_FOODS, ResourceId, SHIRTS, SKINS, SURNAMES, TRAITS, TRAIT_BY_ID, BUILDINGS, buildWork,
 } from './content';
 
 // ---------- RNG ----------
@@ -22,21 +22,36 @@ function shuffle<T>(w: World, arr: T[]): T[] {
 // ---------- Types ----------
 export interface Memory { key: string; label: string; value: number; until: number }
 export interface Thought { label: string; value: number }
-export type Activity = 'working' | 'idle' | 'leisure' | 'sleeping' | 'sulking';
+export type Activity = 'working' | 'idle' | 'leisure' | 'sleeping' | 'sulking' | 'eating' | 'hauling' | 'building' | 'cleaning';
+export type Task =
+  | { kind: 'deliver'; site: number; res: ResourceId; amount: number }
+  | { kind: 'haul'; from: number; res: ResourceId; amount: number }
+  | { kind: 'build'; site: number }
+  | { kind: 'clean'; building: number };
+export interface Carry { res: ResourceId; amount: number }
 
 export interface Colonist {
   id: number; name: string; traits: string[]; likes: JobKind; dislikes: JobKind;
   shirt: number; skin: number;
   x: number; y: number; px: number; py: number; jitter: number;
+  path: { x: number; y: number }[]; goalKey: string; goalReached: boolean;
   hunger: number; fun: number; mood: number; moodTarget: number;
   sulking: boolean; lowMoodHours: number; left: boolean;
   job: number | null; bed: number | null; partner: number | null;
-  activity: Activity; place: number | null;
+  task: Task | null; carrying: Carry | null;
+  meal: { at: number | null; until: number } | null; // eating: where, and when finished (until = 0 while walking there)
+  activity: Activity; place: number | null; inside: number | null;
   memories: Memory[]; thoughts: Thought[];
   hadCompany: boolean; hadCompanyLastNight: boolean; drankTonight: boolean;
   joinedDay: number;
 }
-export interface Building { uid: number; def: string; x: number; y: number }
+export interface Building {
+  uid: number; def: string; x: number; y: number;
+  built: boolean; progress: number;
+  delivered: Partial<Record<ResourceId, number>>;
+  outbox: Partial<Record<ResourceId, number>>;
+  clean: number;
+}
 
 export type Decision =
   | { kind: 'charter'; tier: 1 | 2 | 3; options: string[] }
@@ -58,20 +73,24 @@ export interface World {
   opinions: Record<string, number>;
   status: 'playing' | 'won' | 'lost';
   strain: number; nextEventHour: number;
-  plots: { x: number; y: number }[];
   nextUid: number; nextColonistId: number;
   autoAssignNew: boolean;
-  stats: { peakPop: number; couples: number; breakups: number; departures: number; mealsEaten: number };
-  version: number; // bumps when buildings/colonists change, for the renderer
+  stats: { peakPop: number; couples: number; breakups: number; departures: number; mealsEaten: number; built: number };
+  version: number; // bumps when buildings change shape or state, for the renderer
 }
 
 export const TICKS_PER_HOUR = 6;
+export const MAP_SIZE = 32;
+export const CENTER = 16;
+/** buildings must sit inside [BUILD_MIN, BUILD_MAX] */
+export const BUILD_MIN = 2, BUILD_MAX = MAP_SIZE - 3;
 /** The colony collapses when this many settlers have left. */
 export const MAX_DEPARTURES = 6;
 /** Workshops won't burn the last of the wood. */
 export const WOOD_RESERVE = 20;
-export const MAP_SIZE = 25;
-const CENTER = 12;
+export const CARRY = 15;
+export const OUTBOX_CAP = 15;
+const WALK_SPEED = 7; // tiles per hour
 
 // ---------- Helpers ----------
 export const day = (w: World) => Math.floor(w.hour / 24) + 1;
@@ -79,11 +98,14 @@ export const hourOfDay = (w: World) => w.hour % 24;
 export const alive = (w: World) => w.colonists.filter(c => !c.left);
 const has = (c: Colonist, t: string) => c.traits.includes(t);
 const hasPerk = (w: World, p: string) => w.perks.includes(p);
-const bdef = (b: Building): BuildingDef => BUILDING_BY_ID[b.def];
+export const bdef = (b: Building): BuildingDef => BUILDING_BY_ID[b.def];
 export const buildingByUid = (w: World, uid: number | null) => (uid == null ? undefined : w.buildings.find(b => b.uid === uid));
 export const colonistById = (w: World, id: number | null) => (id == null ? undefined : w.colonists.find(c => c.id === id));
 const okey = (a: number, b: number) => `${a}>${b}`;
 export const opinion = (w: World, from: number, to: number) => w.opinions[okey(from, to)] ?? 0;
+export const first = (c: Colonist) => c.name.split(' ')[0];
+export const built = (w: World) => w.buildings.filter(b => b.built);
+const sum = (o: Partial<Record<string, number>>) => Object.values(o).reduce<number>((n, v) => n + (v ?? 0), 0);
 
 function changeOpinion(w: World, from: Colonist, to: Colonist, delta: number) {
   if (has(to, 'drama') || has(from, 'drama')) delta *= 2;
@@ -101,12 +123,115 @@ function addMemory(w: World, c: Colonist, key: string, label: string, value: num
   else c.memories.push({ key, label, value, until });
 }
 export function workersAt(w: World, uid: number) { return alive(w).filter(c => c.job === uid); }
-export function beds(w: World) { return w.buildings.reduce((n, b) => n + (bdef(b).beds ?? 0), 0); }
+export function beds(w: World) { return built(w).reduce((n, b) => n + (bdef(b).beds ?? 0), 0); }
 export function foodTotal(w: World) { return [...RAW_FOODS, ...MEALS].reduce((n, r) => n + w.res[r], 0); }
 export function mealTotal(w: World) { return MEALS.reduce((n, r) => n + w.res[r], 0); }
 export function avgMood(w: World) { const a = alive(w); return a.length ? a.reduce((s, c) => s + c.mood, 0) / a.length : 0; }
 export function couples(w: World) { return alive(w).filter(c => c.partner != null && c.id < c.partner).length; }
-function hasBuilding(w: World, def: string) { return w.buildings.some(b => b.def === def); }
+function hasBuilt(w: World, def: string) { return w.buildings.some(b => b.def === def && b.built); }
+export function storageCap(w: World) { return built(w).reduce((n, b) => n + (bdef(b).storage ?? 0), 0); }
+export function stored(w: World) { return sum(w.res); }
+export function storageFree(w: World) { return Math.max(0, storageCap(w) - stored(w)); }
+export function keepsFresh(w: World) { return built(w).some(b => bdef(b).keepsFresh); }
+export function laborers(w: World) { return alive(w).filter(c => c.job == null); }
+
+// ---------- Geometry ----------
+/** the tile people stand on to use a building: just in front of its lower edge */
+export function spotOf(b: Building): { x: number; y: number } {
+  const d = bdef(b);
+  if (d.walkable) return { x: b.x + d.w / 2, y: b.y + d.h / 2 };
+  return { x: b.x + Math.floor(d.w / 2) + 0.5, y: b.y + d.h + 0.5 };
+}
+export const centerOf = (b: Building) => ({ x: b.x + bdef(b).w / 2, y: b.y + bdef(b).h / 2 });
+
+function blockedGrid(w: World, ignore?: number): Uint8Array {
+  const g = new Uint8Array(MAP_SIZE * MAP_SIZE);
+  for (const b of w.buildings) {
+    if (b.uid === ignore) continue;
+    const d = bdef(b);
+    for (let x = b.x; x < b.x + d.w; x++) for (let y = b.y; y < b.y + d.h; y++) g[y * MAP_SIZE + x] = d.walkable ? 2 : 1;
+  }
+  return g;
+}
+
+export type PlaceCheck = { ok: true } | { ok: false; reason: string };
+export function canPlace(w: World, defId: string, x: number, y: number): PlaceCheck {
+  const d = BUILDING_BY_ID[defId];
+  if (!d) return { ok: false, reason: 'Unknown building.' };
+  if (x < BUILD_MIN || y < BUILD_MIN || x + d.w - 1 > BUILD_MAX || y + d.h - 1 > BUILD_MAX) return { ok: false, reason: 'Too close to the forest.' };
+  const g = blockedGrid(w);
+  for (let tx = x; tx < x + d.w; tx++) for (let ty = y; ty < y + d.h; ty++) if (g[ty * MAP_SIZE + tx]) return { ok: false, reason: 'Something is already there.' };
+  if (!d.walkable) {
+    const sx = x + Math.floor(d.w / 2), sy = y + d.h;
+    if (sy > BUILD_MAX + 1 || g[sy * MAP_SIZE + sx] === 1) return { ok: false, reason: 'The doorway is blocked.' };
+    // don't block another building's doorway
+  }
+  for (const b of w.buildings) {
+    if (bdef(b).walkable) continue;
+    const s = spotOf(b), sx = Math.floor(s.x), sy = Math.floor(s.y);
+    if (sx >= x && sx < x + d.w && sy >= y && sy < y + d.h) return { ok: false, reason: `That would block the ${bdef(b).name.toLowerCase()} door.` };
+  }
+  return { ok: true };
+}
+
+/** Find a free spot for a building, spiralling out from a point. Leaves a 1-tile path around it. */
+export function findSpot(w: World, defId: string, nearX = CENTER, nearY = CENTER, margin = true): { x: number; y: number } | null {
+  const d = BUILDING_BY_ID[defId];
+  const g = blockedGrid(w);
+  const cands: { x: number; y: number; dist: number }[] = [];
+  for (let x = BUILD_MIN; x <= BUILD_MAX - d.w + 1; x++) for (let y = BUILD_MIN; y <= BUILD_MAX - d.h + 1; y++) {
+    cands.push({ x, y, dist: Math.hypot(x + d.w / 2 - nearX, y + d.h / 2 - nearY) });
+  }
+  cands.sort((a, b) => a.dist - b.dist || a.x - b.x || a.y - b.y);
+  for (const c of cands) {
+    if (!canPlace(w, defId, c.x, c.y).ok) continue;
+    if (margin) {
+      let clear = true;
+      for (let tx = c.x - 1; tx <= c.x + d.w && clear; tx++) for (let ty = c.y - 1; ty <= c.y + d.h + 1 && clear; ty++) {
+        if (tx < 0 || ty < 0 || tx >= MAP_SIZE || ty >= MAP_SIZE) continue;
+        if (g[ty * MAP_SIZE + tx] === 1) clear = false;
+      }
+      if (!clear) continue;
+    }
+    return { x: c.x, y: c.y };
+  }
+  return null;
+}
+
+// A* on the tile grid, 8 directions, no corner cutting. Returns waypoints at tile centres.
+function findPath(w: World, grid: Uint8Array, fx: number, fy: number, tx: number, ty: number): { x: number; y: number }[] | null {
+  const sx = Math.floor(fx), sy = Math.floor(fy), gx = Math.floor(tx), gy = Math.floor(ty);
+  const N = MAP_SIZE, idx = (x: number, y: number) => y * N + x;
+  const inb = (x: number, y: number) => x >= 0 && y >= 0 && x < N && y < N;
+  if (!inb(sx, sy) || !inb(gx, gy)) return null;
+  const pass = (x: number, y: number) => inb(x, y) && (grid[idx(x, y)] !== 1 || (x === gx && y === gy) || (x === sx && y === sy));
+  const gS = new Float32Array(N * N).fill(Infinity), from = new Int32Array(N * N).fill(-1), closed = new Uint8Array(N * N);
+  const open: number[] = [idx(sx, sy)]; gS[idx(sx, sy)] = 0;
+  const h = (i: number) => { const x = i % N, y = (i / N) | 0; const dx = Math.abs(x - gx), dy = Math.abs(y - gy); return Math.max(dx, dy) + 0.414 * Math.min(dx, dy); };
+  let found = false, guard = 0;
+  while (open.length && guard++ < 4000) {
+    let bi = 0; for (let i = 1; i < open.length; i++) if (gS[open[i]] + h(open[i]) < gS[open[bi]] + h(open[bi])) bi = i;
+    const cur = open.splice(bi, 1)[0];
+    if (cur === idx(gx, gy)) { found = true; break; }
+    closed[cur] = 1;
+    const cx = cur % N, cy = (cur / N) | 0;
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+      if (!dx && !dy) continue;
+      const nx = cx + dx, ny = cy + dy;
+      if (!pass(nx, ny)) continue;
+      if (dx && dy && (!pass(cx + dx, cy) || !pass(cx, cy + dy))) continue;
+      const ni = idx(nx, ny); if (closed[ni]) continue;
+      const ng = gS[cur] + (dx && dy ? 1.414 : 1);
+      if (ng < gS[ni]) { gS[ni] = ng; from[ni] = cur; if (!open.includes(ni)) open.push(ni); }
+    }
+  }
+  if (!found) return null;
+  const pts: { x: number; y: number }[] = [];
+  for (let i = idx(gx, gy); i !== idx(sx, sy) && i >= 0; i = from[i]) pts.push({ x: (i % N) + 0.5, y: ((i / N) | 0) + 0.5 });
+  pts.reverse();
+  if (pts.length) pts.pop(); // last waypoint replaced by the exact goal
+  return pts;
+}
 
 // ---------- Creation ----------
 function makeColonist(w: World, usedNames: Set<string>): Colonist {
@@ -114,8 +239,7 @@ function makeColonist(w: World, usedNames: Set<string>): Colonist {
   for (let i = 0; i < 50; i++) { name = `${pick(w, FIRST_NAMES)} ${pick(w, SURNAMES)}`; if (!usedNames.has(name.split(' ')[0])) break; }
   usedNames.add(name.split(' ')[0]);
   const traits: string[] = [];
-  const pool = shuffle(w, TRAITS);
-  for (const t of pool) {
+  for (const t of shuffle(w, TRAITS)) {
     if (traits.length >= 2) break;
     if (t.group && traits.some(x => TRAIT_BY_ID[x].group === t.group)) continue;
     traits.push(t.id);
@@ -127,68 +251,57 @@ function makeColonist(w: World, usedNames: Set<string>): Colonist {
   return {
     id: w.nextColonistId++, name, traits, likes, dislikes,
     shirt: pick(w, SHIRTS), skin: pick(w, SKINS),
-    x: CENTER + nextRand(w) * 2 - 1, y: CENTER + 1.5 + nextRand(w), px: 0, py: 0, jitter: nextRand(w),
+    x: CENTER + nextRand(w) * 2 - 1, y: CENTER + 2.5 + nextRand(w), px: 0, py: 0, jitter: nextRand(w),
+    path: [], goalKey: '', goalReached: false,
     hunger: 70 + nextRand(w) * 30, fun: 60, mood: 55, moodTarget: 55,
     sulking: false, lowMoodHours: 0, left: false,
-    job: null, bed: null, partner: null, activity: 'idle', place: null,
+    job: null, bed: null, partner: null, task: null, carrying: null, meal: null,
+    activity: 'idle', place: null, inside: null,
     memories: [], thoughts: [], hadCompany: true, hadCompanyLastNight: true, drankTonight: false,
     joinedDay: 1,
   };
 }
 
-function makePlots(): { x: number; y: number }[] {
-  const plots: { x: number; y: number; d: number; a: number }[] = [];
-  for (let dx = -9; dx <= 9; dx += 3) for (let dy = -9; dy <= 9; dy += 3) {
-    if (dx === 0 && dy === 0) continue;
-    plots.push({ x: CENTER + dx, y: CENTER + dy, d: Math.hypot(dx, dy), a: Math.atan2(dy, dx) });
-  }
-  plots.sort((p, q) => p.d - q.d || p.a - q.a);
-  return plots.map(({ x, y }) => ({ x, y }));
+function newBuilding(w: World, def: string, x: number, y: number, isBuilt: boolean): Building {
+  const b: Building = { uid: w.nextUid++, def, x, y, built: isBuilt, progress: 0, delivered: {}, outbox: {}, clean: 100 };
+  w.buildings.push(b); w.version++;
+  return b;
 }
 
 export function createWorld(seed: number): World {
   const w: World = {
     seed, rngState: seed >>> 0, hour: 6,
     colonists: [], buildings: [],
-    res: { wood: 40, berries: 50, fish: 0, mushrooms: 0, stew: 10, pie: 0, smokedFish: 0, planks: 0, ale: 0 },
-    owned: BUILDINGS.filter(b => b.starting && b.id !== 'hearth').map(b => b.id), perks: [],
+    res: { wood: 60, berries: 50, fish: 0, mushrooms: 0, stew: 10, pie: 0, smokedFish: 0, planks: 0, ale: 0 },
+    owned: BUILDINGS.filter(b => b.basic).map(b => b.id), perks: [],
     charterTier: 1, charter: null, charterHours: 0, chartersDone: [],
     decisions: [], log: [], opinions: {}, status: 'playing', strain: 0, nextEventHour: 24 * 2.5,
-    plots: makePlots(), nextUid: 1, nextColonistId: 1, autoAssignNew: true,
-    stats: { peakPop: 6, couples: 0, breakups: 0, departures: 0, mealsEaten: 0 },
+    nextUid: 1, nextColonistId: 1, autoAssignNew: true,
+    stats: { peakPop: 6, couples: 0, breakups: 0, departures: 0, mealsEaten: 0, built: 0 },
     version: 0,
   };
-  for (let i = 0; i < 20; i++) nextRand(w); // warm up
-  w.buildings.push({ uid: w.nextUid++, def: 'hearth', x: CENTER, y: CENTER });
-  for (const id of ['leanto', 'leanto', 'woodcutter', 'forager']) placeBuilding(w, id);
+  for (let i = 0; i < 20; i++) nextRand(w);
+  newBuilding(w, 'hearth', CENTER - 1, CENTER - 1, true);
+  newBuilding(w, 'stockpile', CENTER + 3, CENTER - 2, true);
+  for (const [id, x, y] of [['leanto', CENTER - 5, CENTER - 4], ['woodcutter', CENTER - 5, CENTER + 2], ['forager', CENTER + 1, CENTER + 4]] as const) newBuilding(w, id, x, y, true);
   const names = new Set<string>();
   for (let i = 0; i < 6; i++) w.colonists.push(makeColonist(w, names));
   for (const c of w.colonists) { c.px = c.x; c.py = c.y; }
   assignBeds(w);
   autoAssign(w);
   addLog(w, 'Six settlers arrive at the edge of the Mumblewood with a cart, a kettle, and great optimism.', 'good');
+  addLog(w, 'There are only four beds. Someone should build another lean-to.', 'neutral');
   w.decisions.push({ kind: 'charter', tier: 1, options: shuffle(w, CHARTERS.filter(c => c.tier === 1)).slice(0, 2).map(c => c.id) });
   w.decisions.push(blueprintDecision(w));
   return w;
 }
 
-function placeBuilding(w: World, defId: string): Building | null {
-  const taken = new Set(w.buildings.map(b => `${b.x},${b.y}`));
-  const plot = w.plots.find(p => !taken.has(`${p.x},${p.y}`));
-  if (!plot) return null;
-  const b = { uid: w.nextUid++, def: defId, x: plot.x, y: plot.y };
-  w.buildings.push(b);
-  w.version++;
-  return b;
-}
-
 function assignBeds(w: World) {
-  const slots: { uid: number; q: string }[] = [];
+  const slots: { uid: number }[] = [];
   const order = { cozy: 0, basic: 1, rough: 2 } as Record<string, number>;
-  for (const b of [...w.buildings].sort((a, b2) => order[bdef(a).bedQuality ?? 'rough'] - order[bdef(b2).bedQuality ?? 'rough'])) {
-    for (let i = 0; i < (bdef(b).beds ?? 0); i++) slots.push({ uid: b.uid, q: bdef(b).bedQuality! });
+  for (const b of built(w).sort((a, b2) => order[bdef(a).bedQuality ?? 'rough'] - order[bdef(b2).bedQuality ?? 'rough'])) {
+    for (let i = 0; i < (bdef(b).beds ?? 0); i++) slots.push({ uid: b.uid });
   }
-  // vain colonists claim cozy beds first, then partners share a building where possible
   const people = alive(w).sort((a, b) => Number(has(b, 'vain')) - Number(has(a, 'vain')));
   for (const c of people) c.bed = null;
   for (const c of people) {
@@ -223,14 +336,19 @@ function blueprintDecision(w: World): Decision {
 // ---------- Commands (the only way the UI changes the world) ----------
 export type Command =
   | { type: 'assign'; colonist: number; building: number | null }
-  | { type: 'build'; def: string }
+  | { type: 'place'; def: string; x: number; y: number }
+  | { type: 'cancel'; building: number }
   | { type: 'resolve'; option: number }
   | { type: 'autoAssign' }
   | { type: 'setAutoAssignNew'; value: boolean };
 
-export function canAfford(w: World, def: BuildingDef) {
-  return Object.entries(def.cost).every(([r, n]) => w.res[r as ResourceId] >= (n ?? 0));
+export function remainingCost(b: Building): Partial<Record<ResourceId, number>> {
+  const out: Partial<Record<ResourceId, number>> = {};
+  for (const [r, n] of Object.entries(bdef(b).cost)) { const left = (n ?? 0) - (b.delivered[r as ResourceId] ?? 0); if (left > 0.001) out[r as ResourceId] = left; }
+  return out;
 }
+export function siteWork(b: Building) { return bdef(b).walkable ? 3 : buildWork(bdef(b)); }
+export const sites = (w: World) => w.buildings.filter(b => !b.built);
 
 export function apply(w: World, cmd: Command): string | null {
   switch (cmd.type) {
@@ -238,20 +356,30 @@ export function apply(w: World, cmd: Command): string | null {
       const c = colonistById(w, cmd.colonist); if (!c || c.left) return 'No such colonist.';
       if (cmd.building == null) { c.job = null; return null; }
       const b = buildingByUid(w, cmd.building); if (!b) return 'No such building.';
+      if (!b.built) return `${bdef(b).name} isn’t built yet.`;
       const others = workersAt(w, b.uid).filter(o => o.id !== c.id);
       if (others.length >= bdef(b).slots) return `${bdef(b).name} is full.`;
+      dropTask(w, c);
       c.job = b.uid; return null;
     }
-    case 'build': {
+    case 'place': {
       const def = BUILDING_BY_ID[cmd.def];
       if (!def || !w.owned.includes(def.id)) return 'You don’t have that blueprint.';
-      if (!canAfford(w, def)) return 'Not enough materials.';
-      const b = placeBuilding(w, def.id);
-      if (!b) return 'No room left to build.';
-      for (const [r, n] of Object.entries(def.cost)) w.res[r as ResourceId] -= n ?? 0;
-      addLog(w, `A new ${def.name.toLowerCase()} goes up.`, 'good');
-      if (def.beds) assignBeds(w);
-      if (def.slots && w.autoAssignNew) fillSlots(w);
+      const chk = canPlace(w, cmd.def, cmd.x, cmd.y);
+      if (!chk.ok) return chk.reason;
+      newBuilding(w, def.id, cmd.x, cmd.y, false);
+      for (const c of alive(w)) c.goalKey = ''; // paths may be blocked now
+      addLog(w, `Blueprint laid out for a ${def.name.toLowerCase()}.`, 'neutral');
+      return null;
+    }
+    case 'cancel': {
+      const b = buildingByUid(w, cmd.building);
+      if (!b || b.built) return 'Only unfinished buildings can be cancelled.';
+      for (const [r, n] of Object.entries(b.delivered)) w.res[r as ResourceId] += n ?? 0;
+      for (const c of alive(w)) if (c.task && ('site' in c.task) && c.task.site === b.uid) dropTask(w, c);
+      w.buildings = w.buildings.filter(x => x !== b); w.version++;
+      for (const c of alive(w)) c.goalKey = '';
+      addLog(w, `Plans for the ${bdef(b).name.toLowerCase()} are scrapped. Materials go back to storage.`);
       return null;
     }
     case 'autoAssign': autoAssign(w); return null;
@@ -268,10 +396,9 @@ function resolveDecision(w: World, option: number): string | null {
     case 'charter': {
       const id = d.options[option] ?? d.options[0];
       w.charter = id; w.charterHours = 0;
-      // re-roll a pending blueprint draft so it can respond to the new charter
       const next = w.decisions[0];
       if (next?.kind === 'blueprint') w.decisions[0] = blueprintDecision(w);
-      addLog(w, `New charter from the Crown: ${CHARTERS.find(c => c.id === id)!.name}.`, 'neutral');
+      addLog(w, `New charter from the Crown: ${CHARTERS.find(c => c.id === id)!.name}.`);
       break;
     }
     case 'blueprint': {
@@ -283,12 +410,12 @@ function resolveDecision(w: World, option: number): string | null {
       const c = d.options[option];
       if (c) {
         c.joinedDay = day(w);
-        w.colonists.push(c); w.version++;
+        w.colonists.push(c);
         assignBeds(w);
         if (w.autoAssignNew) fillSlots(w);
         addLog(w, `${c.name} arrives with a suspicious amount of luggage.`, 'good');
         w.stats.peakPop = Math.max(w.stats.peakPop, alive(w).length);
-      } else addLog(w, 'The recruits are sent on their way. One of them waves sadly.', 'neutral');
+      } else addLog(w, 'The recruits are sent on their way. One of them waves sadly.');
       break;
     }
     case 'perk': {
@@ -340,13 +467,13 @@ function applyEventEffect(w: World, effect: string) {
     case 'ghost': everyone(w, 'ghost', 'The outhouse ghost judged me', -3, 72); break;
     case 'peddlerPlanks':
       if (w.res.wood >= 30) { w.res.wood -= 30; w.res.planks += 12; addLog(w, 'The peddler trades fairly, which is the most suspicious thing of all.'); }
-      else addLog(w, 'You don’t have the wood. The peddler sighs theatrically.', 'neutral');
+      else addLog(w, 'You don’t have the wood. The peddler sighs theatrically.');
       break;
     case 'relic': takeFood(w, 10); everyone(w, 'relic', 'We own a holy spoon', 3, 72); addLog(w, 'The Holy Spoon of Saint Pomfrey is installed above the hearth.', 'good'); break;
   }
 }
 
-// ---------- Assignment ----------
+// ---------- Job assignment ----------
 function slotScore(w: World, c: Colonist, b: Building, coworkers: Colonist[]) {
   const def = bdef(b);
   let s = 0;
@@ -373,15 +500,19 @@ function buildingPriority(w: World, b: Building): number {
     default: return 4;
   }
 }
-/** Fill empty slots with idle colonists, without moving anyone already working. */
+/** How many colonists to keep free as laborers (builders and haulers). */
+export function laborersWanted(w: World) { return Math.max(2, Math.ceil(alive(w).length / 4)); }
+/** Fill empty job slots with laborers, keeping enough laborers free to build and haul. */
 export function fillSlots(w: World) {
+  const keepFree = laborersWanted(w);
   const free = alive(w).filter(c => c.job == null);
-  const blds = w.buildings.filter(b => bdef(b).slots > 0).sort((a, b) => buildingPriority(w, b) - buildingPriority(w, a));
+  const blds = built(w).filter(b => bdef(b).slots > 0).sort((a, b) => buildingPriority(w, b) - buildingPriority(w, a));
   for (const b of blds) {
-    while (free.length && workersAt(w, b.uid).length < bdef(b).slots) {
+    while (free.length > keepFree && workersAt(w, b.uid).length < bdef(b).slots) {
       const co = workersAt(w, b.uid);
       free.sort((p, q) => slotScore(w, q, b, co) - slotScore(w, p, b, co));
-      free.shift()!.job = b.uid;
+      const c = free.shift()!;
+      dropTask(w, c); c.job = b.uid;
     }
   }
 }
@@ -390,41 +521,154 @@ export function autoAssign(w: World) {
   fillSlots(w);
 }
 
-// ---------- Simulation ----------
-function placeFor(w: World, c: Colonist): { x: number; y: number; uid: number | null } {
-  const h = hourOfDay(w);
-  const hearth = w.buildings[0];
-  const ring = (cx: number, cy: number, r: number) => {
-    const a = c.jitter * Math.PI * 2 + c.id * 2.399;
-    return { x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r };
+// ---------- Tasks for laborers ----------
+function dropTask(w: World, c: Colonist) {
+  if (c.carrying) { w.res[c.carrying.res] += c.carrying.amount; c.carrying = null; }
+  c.task = null;
+}
+function nearestStorage(w: World, x: number, y: number): Building | undefined {
+  let best: Building | undefined, bd = 1e9;
+  for (const b of built(w)) if (bdef(b).storage) { const s = spotOf(b); const d = Math.hypot(s.x - x, s.y - y); if (d < bd) { bd = d; best = b; } }
+  return best;
+}
+function enroute(w: World, site: number, res: ResourceId) {
+  return alive(w).reduce((n, c) => n + (c.task?.kind === 'deliver' && c.task.site === site && c.task.res === res ? c.task.amount : 0), 0);
+}
+function taskCount(w: World, pred: (t: Task) => boolean) { return alive(w).filter(c => c.task && pred(c.task)).length; }
+
+function chooseTask(w: World, c: Colonist): Task | null {
+  const opts: { t: Task; pri: number; x: number; y: number }[] = [];
+  // construction: deliver materials, then build
+  for (const b of sites(w)) {
+    const left = remainingCost(b);
+    const s = spotOf(b);
+    let missing = false;
+    for (const [r, n] of Object.entries(left) as [ResourceId, number][]) {
+      const need = n - enroute(w, b.uid, r);
+      if (need <= 0.001) continue;
+      missing = true;
+      const amount = Math.min(CARRY, need, w.res[r]);
+      if (amount >= 1 || (amount > 0 && amount >= need - 0.001)) opts.push({ t: { kind: 'deliver', site: b.uid, res: r, amount }, pri: 3, x: s.x, y: s.y });
+    }
+    if (!missing && Object.keys(left).length === 0 && taskCount(w, t => t.kind === 'build' && t.site === b.uid) < 3) opts.push({ t: { kind: 'build', site: b.uid }, pri: 3.5, x: s.x, y: s.y });
+  }
+  // hauling finished goods to storage
+  if (storageFree(w) > 0) for (const b of built(w)) {
+    for (const [r, n] of Object.entries(b.outbox) as [ResourceId, number][]) {
+      if (n < 4 || taskCount(w, t => t.kind === 'haul' && t.from === b.uid && t.res === r) > 0) continue;
+      const s = spotOf(b);
+      opts.push({ t: { kind: 'haul', from: b.uid, res: r, amount: Math.min(CARRY, n) }, pri: n >= OUTBOX_CAP ? 3.2 : 2, x: s.x, y: s.y });
+    }
+  }
+  // cleaning
+  for (const b of built(w)) if (bdef(b).seats && b.clean < 70 && taskCount(w, t => t.kind === 'clean' && t.building === b.uid) === 0) {
+    const s = spotOf(b); opts.push({ t: { kind: 'clean', building: b.uid }, pri: b.clean < 35 ? 2.8 : 1.5, x: s.x, y: s.y });
+  }
+  if (!opts.length) return null;
+  opts.sort((a, b) => b.pri - a.pri || Math.hypot(a.x - c.x, a.y - c.y) - Math.hypot(b.x - c.x, b.y - c.y));
+  return opts[0].t;
+}
+
+// ---------- Where each colonist is headed ----------
+interface Goal { x: number; y: number; uid: number | null; inside: boolean; key: string }
+function ringAt(c: Colonist, x: number, y: number, r: number) {
+  const a = c.jitter * Math.PI * 2 + c.id * 2.399;
+  return { x: x + Math.cos(a) * r, y: y + Math.sin(a) * r };
+}
+function goalFor(w: World, c: Colonist): Goal {
+  const at = (b: Building, r: number, inside = false, tag = ''): Goal => {
+    const s = spotOf(b); const p = r ? ringAt(c, s.x, s.y, r) : s;
+    return { ...p, uid: b.uid, inside, key: `${b.uid}:${inside ? 'in' : tag}` };
   };
-  if (h >= 22 || h < 6) {
-    const bed = buildingByUid(w, c.bed);
-    if (bed) return { ...ring(bed.x, bed.y, 0.35), uid: bed.uid };
-    return { ...ring(hearth.x, hearth.y, 2.2), uid: null };
+  const hearth = w.buildings[0];
+  const hearthSpot = (r: number): Goal => { const ctr = centerOf(hearth); const p = ringAt(c, ctr.x, ctr.y, r); return { ...p, uid: hearth.uid, inside: false, key: `h${r}` }; };
+  switch (c.activity) {
+    case 'sleeping': { const bed = buildingByUid(w, c.bed); return bed ? at(bed, 0, true) : hearthSpot(2.4); }
+    case 'eating': { const m = buildingByUid(w, c.meal?.at ?? null); if (m && bdef(m).seats) return at(m, 0, true); const st = m ?? nearestStorage(w, c.x, c.y); return st ? at(st, 0.8, false, 'eat') : hearthSpot(2); }
+    case 'hauling': {
+      const t = c.task!;
+      if (t.kind === 'deliver') {
+        if (c.carrying) return at(buildingByUid(w, t.site)!, 0.4, false, 'drop');
+        const st = nearestStorage(w, c.x, c.y); return st ? at(st, 0.6, false, 'pick') : hearthSpot(2);
+      }
+      if (t.kind === 'haul') {
+        if (c.carrying) { const st = nearestStorage(w, c.x, c.y); return st ? at(st, 0.6, false, 'store') : hearthSpot(2); }
+        return at(buildingByUid(w, t.from)!, 0.4, false, 'pick');
+      }
+      break;
+    }
+    case 'building': { const t = c.task as { site: number }; return at(buildingByUid(w, t.site)!, 0.7, false, 'build'); }
+    case 'cleaning': { const t = c.task as { building: number }; return at(buildingByUid(w, t.building)!, 0, true); }
+    case 'working': {
+      const job = buildingByUid(w, c.job);
+      if (job) return at(job, 0.6, false, 'work');
+      break;
+    }
+    case 'leisure': {
+      const tavern = built(w).find(b => b.def === 'tavern' && workersAt(w, b.uid).length > 0);
+      if (tavern && w.res.ale > 0) return at(tavern, 1.1, false, 'tav');
+      return hearthSpot(1.9);
+    }
+    case 'sulking': return hearthSpot(2.9);
   }
-  if (h >= 6 && h < 18 && !c.sulking) {
-    const job = buildingByUid(w, c.job);
-    if (job) return { ...ring(job.x, job.y, 0.9), uid: job.uid };
-  }
-  const myJob = buildingByUid(w, c.job);
-  if (h >= 18 && myJob?.def === 'tavern' && !c.sulking) return { ...ring(myJob.x, myJob.y, 0.5), uid: myJob.uid };
-  const tavern = w.buildings.find(b => b.def === 'tavern' && workersAt(w, b.uid).length > 0);
-  if (h >= 18 && tavern && w.res.ale > 0 && !c.sulking) {
-    const server = workersAt(w, tavern.uid)[0];
-    if (server && server.id !== c.id) return { ...ring(tavern.x, tavern.y, 1.1), uid: tavern.uid };
-  }
-  return { ...ring(hearth.x, hearth.y, c.sulking ? 2.6 : 1.6), uid: hearth.uid };
+  return hearthSpot(2.2);
 }
 
 function activityFor(w: World, c: Colonist): Activity {
   const h = hourOfDay(w);
+  if (c.carrying) return 'hauling'; // always finish a delivery
+  if (c.meal) return 'eating';
   if (h >= 22 || h < 6) return 'sleeping';
   if (c.sulking) return 'sulking';
-  if (h < 18) return c.job != null ? 'working' : 'idle';
-  const tav = buildingByUid(w, c.job);
-  if (tav?.def === 'tavern') return 'working';
-  return 'leisure';
+  if (h >= 18) { const j = buildingByUid(w, c.job); return j?.def === 'tavern' ? 'working' : 'leisure'; }
+  const job = buildingByUid(w, c.job);
+  if (job) {
+    const full = sum(job.outbox) >= OUTBOX_CAP;
+    if (full && bdef(job).recipe && storageFree(w) > 0 && !c.task) {
+      const [r] = Object.entries(job.outbox).sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0))[0] as [ResourceId, number];
+      if (taskCount(w, t => t.kind === 'haul' && t.from === job.uid) === 0) c.task = { kind: 'haul', from: job.uid, res: r, amount: Math.min(CARRY, job.outbox[r] ?? 0) };
+    }
+    if (c.task) return 'hauling';
+    return 'working';
+  }
+  if (!c.task) c.task = chooseTask(w, c);
+  if (!c.task) return 'idle';
+  return c.task.kind === 'build' ? 'building' : c.task.kind === 'clean' ? 'cleaning' : 'hauling';
+}
+
+function arrive(w: World, c: Colonist) {
+  // act on arrival at the goal
+  const t = c.task;
+  if (c.activity === 'hauling' && t) {
+    if (t.kind === 'deliver') {
+      const site = buildingByUid(w, t.site);
+      if (!site) { dropTask(w, c); return; }
+      if (!c.carrying) {
+        const amt = Math.min(t.amount, w.res[t.res]);
+        if (amt <= 0) { c.task = null; return; }
+        w.res[t.res] -= amt; c.carrying = { res: t.res, amount: amt }; t.amount = amt;
+      } else {
+        site.delivered[t.res] = (site.delivered[t.res] ?? 0) + c.carrying.amount;
+        c.carrying = null; c.task = null; w.version++;
+      }
+    } else if (t.kind === 'haul') {
+      const from = buildingByUid(w, t.from);
+      if (!c.carrying) {
+        const avail = from?.outbox[t.res] ?? 0;
+        const amt = Math.min(t.amount, avail, CARRY);
+        if (!from || amt <= 0) { c.task = null; return; }
+        from.outbox[t.res] = avail - amt; c.carrying = { res: t.res, amount: amt };
+      } else {
+        const space = storageFree(w);
+        const put = Math.min(space, c.carrying.amount);
+        w.res[c.carrying.res] += put; c.carrying.amount -= put;
+        if (c.carrying.amount <= 0.001) { c.carrying = null; c.task = null; }
+        else { w.res[c.carrying.res] += c.carrying.amount; c.carrying = null; c.task = null; } // storage full: dump it anyway
+      }
+    }
+  } else if (c.activity === 'eating' && c.meal && c.meal.until === 0) {
+    c.meal.until = w.hour + 0.5;
+  }
 }
 
 function workSpeed(w: World, c: Colonist) {
@@ -437,14 +681,13 @@ function workSpeed(w: World, c: Colonist) {
 }
 
 function produce(w: World, dt: number) {
-  for (const b of w.buildings) {
+  for (const b of built(w)) {
     const def = bdef(b); if (!def.recipe) continue;
     for (const c of workersAt(w, b.uid)) {
-      if (c.activity !== 'working' || Math.hypot(c.x - b.x, c.y - b.y) > 1.3) continue;
+      if (c.activity !== 'working' || !c.goalReached) continue;
+      if (sum(b.outbox) >= OUTBOX_CAP) continue;
       let amount = def.recipe.rate * workSpeed(w, c) * dt;
-      // limit by inputs
       for (const [r, per] of Object.entries(def.recipe.inputs)) {
-        // keep a reserve of wood for the hearth, so workshops can't let it go cold
         const avail = r === 'rawFood' ? RAW_FOODS.reduce((n, x) => n + w.res[x], 0) : r === 'wood' ? Math.max(0, w.res.wood - WOOD_RESERVE) : w.res[r as ResourceId];
         amount = Math.min(amount, avail / (per as number));
       }
@@ -455,12 +698,44 @@ function produce(w: World, dt: number) {
           for (const x of [...RAW_FOODS].sort((p, q) => w.res[q] - w.res[p])) { const t = Math.min(w.res[x], need); w.res[x] -= t; need -= t; }
         } else w.res[r as ResourceId] -= need;
       }
-      w.res[def.recipe.output] += amount;
+      b.outbox[def.recipe.output] = (b.outbox[def.recipe.output] ?? 0) + amount;
+    }
+  }
+  // construction and cleaning
+  for (const c of alive(w)) {
+    if (!c.goalReached) continue;
+    if (c.activity === 'building' && c.task?.kind === 'build') {
+      const b = buildingByUid(w, c.task.site);
+      if (!b) { c.task = null; continue; }
+      b.progress += workSpeed(w, c) * dt;
+      if (b.progress >= siteWork(b)) completeBuilding(w, b);
+    } else if (c.activity === 'cleaning' && c.task?.kind === 'clean') {
+      const b = buildingByUid(w, c.task.building);
+      if (!b) { c.task = null; continue; }
+      b.clean = Math.min(100, b.clean + 30 * dt);
+      if (b.clean >= 100) c.task = null;
     }
   }
 }
 
-function eat(w: World, c: Colonist) {
+function completeBuilding(w: World, b: Building) {
+  b.built = true; b.progress = siteWork(b); w.version++; w.stats.built++;
+  for (const c of alive(w)) if (c.task?.kind === 'build' && c.task.site === b.uid) c.task = null;
+  const def = bdef(b);
+  addLog(w, pick(w, [`The ${def.name.toLowerCase()} is finished. Only one thumb was hammered.`, `The ${def.name.toLowerCase()} is done, and it is mostly level.`, `Work on the ${def.name.toLowerCase()} is complete. Everyone admires it briefly.`]), 'good');
+  if (def.beds) assignBeds(w);
+  if (def.slots && w.autoAssignNew) fillSlots(w);
+}
+
+function startMeal(w: World, c: Colonist) {
+  if (foodTotal(w) < 1) return;
+  const halls = built(w).filter(b => bdef(b).seats);
+  const hall = halls.find(b => alive(w).filter(o => o.meal?.at === b.uid).length < (bdef(b).seats ?? 0));
+  c.meal = { at: hall?.uid ?? nearestStorage(w, c.x, c.y)?.uid ?? null, until: 0 };
+}
+function finishMeal(w: World, c: Colonist) {
+  const hall = buildingByUid(w, c.meal?.at ?? null);
+  c.meal = null;
   const meal = MEALS.find(r => w.res[r] >= 1);
   const bonus = (has(c, 'glutton') ? 4 : 0) + (hasPerk(w, 'communalPot') ? 3 : 0);
   if (meal) {
@@ -468,13 +743,18 @@ function eat(w: World, c: Colonist) {
     const v = { pie: 8, smokedFish: 6, stew: 5 }[meal as 'pie' | 'smokedFish' | 'stew'] + bonus;
     const label = { pie: 'Ate pie', smokedFish: 'Ate smoked fish', stew: 'Ate a hot stew' }[meal as 'pie'];
     addMemory(w, c, 'meal', label, v, 14);
-    return;
-  }
-  const raw = [...RAW_FOODS].sort((p, q) => w.res[q] - w.res[p]).find(r => w.res[r] >= 1);
-  if (raw) {
+  } else {
+    const raw = [...RAW_FOODS].sort((p, q) => w.res[q] - w.res[p]).find(r => w.res[r] >= 1);
+    if (!raw) return;
     w.res[raw] -= 1; c.hunger = 85;
-    addMemory(w, c, 'meal', `Ate raw ${raw === 'berries' ? 'berries' : raw}`, has(c, 'picky') ? -8 : -3, 14);
+    addMemory(w, c, 'meal', `Ate raw ${raw}`, has(c, 'picky') ? -8 : -3, 14);
   }
+  if (hall && bdef(hall).seats) {
+    hall.clean = Math.max(0, hall.clean - 2.5);
+    if (hall.clean >= 70) addMemory(w, c, 'table', 'Ate in a spotless dining hall', 4, 14);
+    else if (hall.clean < 30) addMemory(w, c, 'table', 'Ate in a filthy dining hall', -3, 14);
+    else addMemory(w, c, 'table', 'Ate at a proper table', 2, 14);
+  } else addMemory(w, c, 'table', 'Ate without a table', -4, 14);
 }
 
 const INSULTS = [
@@ -490,7 +770,7 @@ const BREAKUP_REASONS = ['a disagreement about soup', 'who let the hearth go out
 function socialHour(w: World) {
   const groups = new Map<number, Colonist[]>();
   for (const c of alive(w)) {
-    if ((c.activity !== 'leisure' && c.activity !== 'working') || c.place == null) continue;
+    if (!['leisure', 'working', 'building', 'eating'].includes(c.activity) || c.place == null || !c.goalReached) continue;
     const g = groups.get(c.place) ?? []; g.push(c); groups.set(c.place, g);
   }
   for (const [uid, group] of groups) {
@@ -502,7 +782,6 @@ function socialHour(w: World) {
       if (evening) c.hadCompany = true;
       const other = pick(w, group.filter(o => o.id !== c.id));
       if (!evening) {
-        // coworker friction or bonding
         if (has(other, 'grumbler')) changeOpinion(w, c, other, hasPerk(w, 'earplugs') ? -0.7 : -1.5);
         else changeOpinion(w, c, other, 0.6);
         continue;
@@ -513,21 +792,20 @@ function socialHour(w: World) {
       if (nextRand(w) < insultChance) {
         changeOpinion(w, other, c, -rint(w, 8, 14));
         changeOpinion(w, c, other, -2);
-        addMemory(w, other, `insult${c.id}`, `Insulted by ${c.name.split(' ')[0]}`, -4, 12);
-        if (nextRand(w) < 0.35) addLog(w, pick(w, INSULTS).replace('{a}', c.name.split(' ')[0]).replace('{b}', other.name.split(' ')[0]), 'bad');
+        addMemory(w, other, `insult${c.id}`, `Insulted by ${first(c)}`, -4, 12);
+        if (nextRand(w) < 0.35) addLog(w, pick(w, INSULTS).replace('{a}', first(c)).replace('{b}', first(other)), 'bad');
       } else {
         const gain = (2 + nextRand(w) * 3) * tavernBoost * (has(c, 'butterfly') ? 1.5 : 1) * (has(c, 'loner') ? 0.6 : 1);
         changeOpinion(w, c, other, gain);
       }
-      // romance
       if (c.partner == null && other.partner == null && c.id < other.id
         && opinion(w, c.id, other.id) > 40 && opinion(w, other.id, c.id) > 40) {
-        let chance = 0.025 * (has(c, 'romantic') ? 3 : 1) * (has(other, 'romantic') ? 3 : 1) * (hasPerk(w, 'matchmaker') ? 2 : 1);
+        const chance = 0.025 * (has(c, 'romantic') ? 3 : 1) * (has(other, 'romantic') ? 3 : 1) * (hasPerk(w, 'matchmaker') ? 2 : 1);
         if (nextRand(w) < chance) {
           c.partner = other.id; other.partner = c.id; w.stats.couples++;
-          addMemory(w, c, 'love', `Fell for ${other.name.split(' ')[0]}`, 10, 72);
-          addMemory(w, other, 'love', `Fell for ${c.name.split(' ')[0]}`, 10, 72);
-          addLog(w, `${c.name.split(' ')[0]} and ${other.name.split(' ')[0]} are now an item. Everyone pretends to be surprised.`, 'love');
+          addMemory(w, c, 'love', `Fell for ${first(other)}`, 10, 72);
+          addMemory(w, other, 'love', `Fell for ${first(c)}`, 10, 72);
+          addLog(w, `${first(c)} and ${first(other)} are now an item. Everyone pretends to be surprised.`, 'love');
           assignBeds(w);
         }
       }
@@ -546,11 +824,11 @@ function dailyRelationships(w: World) {
     if (nextRand(w) < chance) {
       c.partner = null; p.partner = null; w.stats.breakups++;
       for (const [x, y] of [[c, p], [p, c]] as const) {
-        addMemory(w, x, 'breakup', `Broke up with ${y.name.split(' ')[0]}`, has(x, 'romantic') ? -24 : -12, 72);
+        addMemory(w, x, 'breakup', `Broke up with ${first(y)}`, has(x, 'romantic') ? -24 : -12, 72);
         x.memories = x.memories.filter(m => m.key !== 'love');
         changeOpinion(w, x, y, -30);
       }
-      addLog(w, `${c.name.split(' ')[0]} and ${p.name.split(' ')[0]} broke up over ${pick(w, BREAKUP_REASONS)}.`, 'bad');
+      addLog(w, `${first(c)} and ${first(p)} broke up over ${pick(w, BREAKUP_REASONS)}.`, 'bad');
     }
   }
 }
@@ -570,21 +848,20 @@ function computeThoughts(w: World, c: Colonist): Thought[] {
     if (kind === c.dislikes) add(`Hates ${JOB_NAMES[kind]}`, -6);
     const co = workersAt(w, job.uid).filter(o => o.id !== c.id);
     for (const o of co) {
-      const first = o.name.split(' ')[0];
-      if (has(o, 'grumbler')) add(`${first} won’t stop complaining`, hasPerk(w, 'earplugs') ? -1.5 : -3);
-      if (has(o, 'sunny')) add(`${first} is a ray of sunshine`, 2);
-      if (opinion(w, c.id, o.id) < -30) add(`Has to work with ${first}`, -6);
+      if (has(o, 'grumbler')) add(`${first(o)} won’t stop complaining`, hasPerk(w, 'earplugs') ? -1.5 : -3);
+      if (has(o, 'sunny')) add(`${first(o)} is a ray of sunshine`, 2);
+      if (opinion(w, c.id, o.id) < -30) add(`Has to work with ${first(o)}`, -6);
     }
     if (has(c, 'loner') && co.length) add('Loner: crowded workplace', -4);
-  } else add('Nothing to do', -2);
+  }
   const partner = colonistById(w, c.partner);
-  if (partner && !partner.left) add(`In love with ${partner.name.split(' ')[0]}`, 6);
+  if (partner && !partner.left) add(`In love with ${first(partner)}`, 6);
   if (c.fun < 25) add('Bored', -6); else if (c.fun > 70) add('Entertained', 4);
   if (has(c, 'butterfly') && !c.hadCompanyLastNight) add('Lonely evening', -6);
   if (has(c, 'sunny')) add('Sunny disposition', 5);
   if (has(c, 'lazy')) add('Doesn’t work too hard', 3);
   if (has(c, 'tippler') && w.res.ale < 1) add('No ale in the stores', -4);
-  if (hasBuilding(w, 'bathhouse') && w.res.wood > 0) add('Feeling fresh from the bathhouse', has(c, 'grumbler') ? 5 : 3);
+  if (hasBuilt(w, 'bathhouse') && w.res.wood > 0) add('Feeling fresh from the bathhouse', has(c, 'grumbler') ? 5 : 3);
   if (hasPerk(w, 'saintsDay')) add("Saint Pomfrey's blessing", 4);
   const strain = w.strain * (has(c, 'stoic') ? 0.5 : 1);
   if (strain >= 1) add('The frontier wears on me', -strain);
@@ -596,30 +873,28 @@ function hourly(w: World) {
   const h = Math.round(hourOfDay(w)) % 24;
   const pop = alive(w).length;
   const d = day(w) - 1 + (hourOfDay(w) - 6) / 24;
-  w.strain = (d * 0.55 + d * d * 0.014) * (hasPerk(w, 'ironWill') ? 0.75 : 1) + Math.max(0, pop - 8) * 0.5;
-  w.strain = Math.max(0, w.strain);
+  w.strain = Math.max(0, (d * 0.45 + d * d * 0.012) * (hasPerk(w, 'ironWill') ? 0.75 : 1) + Math.max(0, pop - 8) * 0.5);
 
-  // hearth and bathhouse fuel
   if (h >= 18 || h < 6) {
     const burn = hasPerk(w, 'warmHearth') ? 0.5 : 1;
     if (w.res.wood >= burn) w.res.wood -= burn;
     else everyone(w, 'cold', 'The hearth went cold', -5, 12);
   }
-  if (hasBuilding(w, 'bathhouse') && h >= 6 && h < 18) w.res.wood = Math.max(0, w.res.wood - 0.4);
-  // tavern ale
-  const tavern = w.buildings.find(b => b.def === 'tavern');
-  const stage = hasBuilding(w, 'stage');
+  if (hasBuilt(w, 'bathhouse') && h >= 6 && h < 18) w.res.wood = Math.max(0, w.res.wood - 0.4);
+  // spoilage without a storehouse
+  if (!keepsFresh(w)) for (const r of [...RAW_FOODS, ...MEALS]) w.res[r] *= 1 - 0.035 / 24;
+  const tavern = built(w).find(b => b.def === 'tavern');
+  const stage = hasBuilt(w, 'stage');
 
   if (h === 18) for (const c of alive(w)) { c.hadCompanyLastNight = c.hadCompany; c.hadCompany = false; c.drankTonight = false; }
 
   for (const c of alive(w)) {
-    // needs
     if (c.activity !== 'sleeping') {
       c.hunger -= (100 / 26) * (has(c, 'glutton') ? 1.6 : 1) * (hasPerk(w, 'rations') ? 0.8 : 1);
       c.fun -= 2;
     } else c.hunger -= 1.2;
     c.hunger = Math.max(0, c.hunger);
-    if (c.hunger < 45 && c.activity !== 'sleeping') eat(w, c);
+    if (c.hunger < 45 && !c.meal && !c.carrying && c.activity !== 'sleeping') startMeal(w, c);
     if (c.activity === 'leisure' || c.activity === 'sulking' || c.activity === 'idle') {
       const atTavern = tavern && c.place === tavern.uid;
       if (atTavern && w.res.ale >= 0.3) {
@@ -632,16 +907,15 @@ function hourly(w: World) {
     c.memories = c.memories.filter(m => m.until > w.hour);
     c.thoughts = computeThoughts(w, c);
     c.moodTarget = Math.max(0, Math.min(100, 50 + c.thoughts.reduce((s, x) => s + x.value, 0)));
-    const diff = c.moodTarget - c.mood;
-    c.mood += Math.max(-6, Math.min(10, diff));
+    c.mood += Math.max(-6, Math.min(10, c.moodTarget - c.mood));
 
-    // mental state
-    const first = c.name.split(' ')[0];
-    if (!c.sulking && c.mood < 20) { c.sulking = true; addLog(w, `${first} is sulking behind the woodpile and refuses to work.`, 'bad'); }
-    else if (c.sulking && c.mood > 32) { c.sulking = false; addLog(w, `${first} has stopped sulking. For now.`, 'neutral'); }
+    if (!c.sulking && c.mood < 20) { c.sulking = true; dropTask(w, c); addLog(w, `${first(c)} is sulking behind the woodpile and refuses to work.`, 'bad'); }
+    else if (c.sulking && c.mood > 32) { c.sulking = false; addLog(w, `${first(c)} has stopped sulking. For now.`); }
     c.lowMoodHours = c.mood < 10 ? c.lowMoodHours + 1 : 0;
     if (c.lowMoodHours >= 20) leave(w, c);
   }
+  // employed colonists finishing the workday drop unstarted tasks
+  if (h === 18) for (const c of alive(w)) if (c.task && !c.carrying) c.task = null;
 
   socialHour(w);
   if (h === 6) dailyRelationships(w);
@@ -655,12 +929,13 @@ function hourly(w: World) {
 }
 
 function leave(w: World, c: Colonist) {
-  c.left = true; c.job = null; w.stats.departures++; w.version++;
+  dropTask(w, c);
+  c.left = true; c.job = null; c.meal = null; w.stats.departures++;
   addLog(w, `${c.name} packed a sack and wandered off into the woods, muttering.`, 'bad');
   const p = colonistById(w, c.partner);
-  if (p) { p.partner = null; addMemory(w, p, 'abandoned', `${c.name.split(' ')[0]} left me`, -14, 72); }
+  if (p) { p.partner = null; addMemory(w, p, 'abandoned', `${first(c)} left me`, -14, 72); }
   c.partner = null;
-  for (const o of alive(w)) if (opinion(w, o.id, c.id) > 30) addMemory(w, o, `missing${c.id}`, `Misses ${c.name.split(' ')[0]}`, -4, 48);
+  for (const o of alive(w)) if (opinion(w, o.id, c.id) > 30) addMemory(w, o, `missing${c.id}`, `Misses ${first(c)}`, -4, 48);
   assignBeds(w);
 }
 
@@ -668,9 +943,9 @@ function dawn(w: World) {
   const d = day(w);
   if (d % 3 === 1 && d > 1) w.decisions.push(blueprintDecision(w));
   if (d % 3 === 2) {
-    const names = new Set(w.colonists.map(c => c.name.split(' ')[0]));
+    const names = new Set(w.colonists.map(c => first(c)));
     const opts = [0, 1, 2].map(() => makeColonist(w, names));
-    for (const o of opts) { o.x = 1 + nextRand(w) * 2; o.y = MAP_SIZE - 3; o.px = o.x; o.py = o.y; }
+    for (const o of opts) { o.x = 3 + nextRand(w) * 2; o.y = MAP_SIZE - 4; o.px = o.x; o.py = o.y; }
     w.decisions.push({ kind: 'recruit', options: opts });
   }
 }
@@ -686,16 +961,15 @@ function triggerEvent(w: World) {
 function charterValue(w: World, c: CharterDef): { value: number; target: number; label: string } {
   const m = c.metric;
   switch (m.kind) {
-    case 'stock': { const v = m.resources.reduce((n, r) => n + w.res[r], 0); return { value: v, target: m.amount, label: `${Math.floor(v)} / ${m.amount}` }; }
+    case 'stock': { const v = m.resources.reduce((n, r) => n + w.res[r], 0); return { value: v, target: m.amount, label: `${Math.floor(v)} / ${m.amount} in storage` }; }
     case 'population': { const v = alive(w).length; return { value: v, target: m.amount, label: `${v} / ${m.amount} colonists` }; }
-    case 'buildings': { const v = w.buildings.length; return { value: v, target: m.amount, label: `${v} / ${m.amount} buildings` }; }
+    case 'buildings': { const v = built(w).length; return { value: v, target: m.amount, label: `${v} / ${m.amount} buildings finished` }; }
     case 'couples': { const v = couples(w); return { value: v, target: m.amount, label: `${v} / ${m.amount} couples` }; }
     case 'avgMood': return { value: w.charterHours, target: m.hours, label: `${Math.round(avgMood(w))} mood · ${w.charterHours}h / ${m.hours}h` };
     case 'contentPop': return { value: w.charterHours, target: m.hours, label: `${alive(w).length} colonists · ${Math.round(avgMood(w))} mood · ${w.charterHours}h / ${m.hours}h` };
     case 'feast': {
       const meals = mealTotal(w), ale = w.res.ale;
-      const v = Math.min(meals / m.meals, ale / m.ale);
-      return { value: v, target: 1, label: `${Math.floor(meals)}/${m.meals} meals · ${Math.floor(ale)}/${m.ale} ale` };
+      return { value: Math.min(meals / m.meals, ale / m.ale), target: 1, label: `${Math.floor(meals)}/${m.meals} meals · ${Math.floor(ale)}/${m.ale} ale` };
     }
   }
 }
@@ -722,19 +996,41 @@ function checkCharter(w: World) {
   w.decisions.push({ kind: 'charter', tier: w.charterTier as 2 | 3, options: shuffle(w, CHARTERS.filter(x => x.tier === w.charterTier)).slice(0, 2).map(x => x.id) });
 }
 
+// ---------- Tick ----------
+function move(w: World, c: Colonist, grid: Uint8Array, dt: number) {
+  const goal = goalFor(w, c);
+  c.place = goal.uid;
+  if (goal.key !== c.goalKey) {
+    c.goalKey = goal.key;
+    c.path = findPath(w, grid, c.x, c.y, goal.x, goal.y) ?? [];
+    c.goalReached = false;
+  }
+  let step = WALK_SPEED * dt * (c.carrying ? 0.85 : 1);
+  const pts = [...c.path, { x: goal.x, y: goal.y }];
+  while (step > 0 && pts.length) {
+    const p = pts[0];
+    const dx = p.x - c.x, dy = p.y - c.y, dist = Math.hypot(dx, dy);
+    if (dist <= step) { c.x = p.x; c.y = p.y; step -= dist; pts.shift(); if (c.path.length) c.path.shift(); }
+    else { c.x += (dx / dist) * step; c.y += (dy / dist) * step; step = 0; }
+  }
+  const reached = Math.hypot(goal.x - c.x, goal.y - c.y) < 0.05;
+  c.inside = reached && goal.inside ? goal.uid : null;
+  if (reached && !c.goalReached) { c.goalReached = true; arrive(w, c); }
+}
+
 /** Advance one tick (1/TICKS_PER_HOUR of an hour). Does nothing while a decision is pending. */
 export function tick(w: World): void {
   if (w.status !== 'playing' || w.decisions.length) return;
   const dt = 1 / TICKS_PER_HOUR;
   const before = Math.floor(w.hour + 1e-6);
+  const grid = blockedGrid(w);
   for (const c of alive(w)) {
     c.px = c.x; c.py = c.y;
+    if (c.meal && c.meal.until > 0 && w.hour >= c.meal.until) finishMeal(w, c);
+    const prev = c.activity;
     c.activity = activityFor(w, c);
-    const target = placeFor(w, c);
-    c.place = target.uid;
-    const dx = target.x - c.x, dy = target.y - c.y, dist = Math.hypot(dx, dy);
-    const step = 5 * dt;
-    if (dist > 0.01) { const k = Math.min(1, step / dist); c.x += dx * k; c.y += dy * k; }
+    if (prev !== c.activity) c.goalKey = '';
+    move(w, c, grid, dt);
   }
   produce(w, dt);
   w.hour = Math.round((w.hour + dt) * TICKS_PER_HOUR) / TICKS_PER_HOUR;

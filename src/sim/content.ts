@@ -34,36 +34,52 @@ export interface BuildingDef {
   name: string;
   blurb: string;
   cost: Partial<Record<ResourceId, number>>;
+  /** footprint in tiles */
+  w: number; h: number;
   slots: number;
   job?: JobKind;
   recipe?: Recipe;
   beds?: number;
   bedQuality?: 'rough' | 'basic' | 'cozy';
+  /** units of goods this building can hold */
+  storage?: number;
+  /** stops raw food and meals spoiling */
+  keepsFresh?: boolean;
+  /** dining seats */
+  seats?: number;
+  /** colonists can walk across it (open stockpile) */
+  walkable?: boolean;
   /** colours for the vector renderer */
   wall: number; roof: number;
   height: number;
-  starting?: boolean;
+  /** always buildable, never drafted */
+  basic?: boolean;
   draftable?: boolean;
 }
 
 export const BUILDINGS: BuildingDef[] = [
-  { id: 'hearth', name: 'Hearth', blurb: 'Where everyone gathers in the evening to gossip. Burns wood at night.', cost: {}, slots: 0, wall: 0x6b5a4a, roof: 0xe07a2e, height: 0.3, starting: true },
-  { id: 'leanto', name: 'Lean-to', blurb: 'Sleeps 4. Drafty, but it counts as a roof.', cost: { wood: 15 }, slots: 0, beds: 4, bedQuality: 'basic', wall: 0x8a6e4f, roof: 0x7d8f55, height: 0.7, starting: true },
-  { id: 'woodcutter', name: 'Woodcutter', blurb: 'Fells trees. Wood for building and for the hearth.', cost: { wood: 10 }, slots: 2, job: 'chopping', recipe: { inputs: {}, output: 'wood', rate: 1.5 }, wall: 0x7a5a3c, roof: 0x5c7a3e, height: 0.8, starting: true },
-  { id: 'forager', name: 'Forager hut', blurb: 'Picks berries. Edible, if nobody is fussy.', cost: { wood: 10 }, slots: 2, job: 'foraging', recipe: { inputs: {}, output: 'berries', rate: 1.1 }, wall: 0x8c6b4a, roof: 0xa0465a, height: 0.8, starting: true },
+  { id: 'hearth', name: 'Hearth', blurb: 'Where everyone gathers in the evening to gossip. Burns wood at night.', cost: {}, w: 2, h: 2, slots: 0, wall: 0x6b5a4a, roof: 0xe07a2e, height: 0.3 },
+  { id: 'stockpile', name: 'Stockpile', blurb: 'An open patch of ground for goods. Holds 200. Food left out here spoils.', cost: {}, w: 3, h: 3, slots: 0, storage: 200, walkable: true, wall: 0x8a7a5a, roof: 0x8a7a5a, height: 0, basic: true },
+  { id: 'leanto', name: 'Lean-to', blurb: 'Sleeps 4. Drafty, but it counts as a roof.', cost: { wood: 15 }, w: 2, h: 2, slots: 0, beds: 4, bedQuality: 'basic', wall: 0x8a6e4f, roof: 0x7d8f55, height: 0.7, basic: true },
+  { id: 'woodcutter', name: 'Woodcutter', blurb: 'Fells trees. Wood for building and for the hearth.', cost: { wood: 10 }, w: 2, h: 2, slots: 2, job: 'chopping', recipe: { inputs: {}, output: 'wood', rate: 1.6 }, wall: 0x7a5a3c, roof: 0x5c7a3e, height: 0.8, basic: true },
+  { id: 'forager', name: 'Forager hut', blurb: 'Picks berries. Edible, if nobody is fussy.', cost: { wood: 10 }, w: 2, h: 2, slots: 2, job: 'foraging', recipe: { inputs: {}, output: 'berries', rate: 1.2 }, wall: 0x8c6b4a, roof: 0xa0465a, height: 0.8, basic: true },
+  { id: 'dining', name: 'Dining hall', blurb: 'Tables and benches for 8. Eating here beats eating in the dirt, as long as someone keeps it clean.', cost: { wood: 25 }, w: 3, h: 3, slots: 0, seats: 8, wall: 0x9a7a58, roof: 0x8a4a3a, height: 1.0, basic: true },
+  { id: 'storehouse', name: 'Storehouse', blurb: 'Holds 300 more goods, and while you have one, no food spoils.', cost: { wood: 30 }, w: 3, h: 3, slots: 0, storage: 300, keepsFresh: true, wall: 0x7a6a58, roof: 0x5a6a7a, height: 1.1, basic: true },
 
-  { id: 'dock', name: 'Fishing dock', blurb: 'Fish, plentiful and mildly judgmental.', cost: { wood: 20 }, slots: 2, job: 'fishing', recipe: { inputs: {}, output: 'fish', rate: 1.5 }, wall: 0x6d5844, roof: 0x3d7b9a, height: 0.7, draftable: true },
-  { id: 'cellar', name: 'Mushroom cellar', blurb: 'Dark, damp, productive. Like a bard.', cost: { wood: 15, planks: 5 }, slots: 2, job: 'foraging', recipe: { inputs: {}, output: 'mushrooms', rate: 1.6 }, wall: 0x5d5448, roof: 0x8d7aa8, height: 0.6, draftable: true },
-  { id: 'kitchen', name: 'Stew kitchen', blurb: 'Turns any raw food into stew. Stew makes people happy.', cost: { wood: 20 }, slots: 2, job: 'cooking', recipe: { inputs: { rawFood: 1.5 }, output: 'stew', rate: 1.2 }, wall: 0x8a6448, roof: 0xc4703a, height: 0.9, draftable: true },
-  { id: 'pieoven', name: 'Pie oven', blurb: 'Berries plus wood make pie. Pie is the best thing that has ever happened.', cost: { wood: 15, planks: 8 }, slots: 2, job: 'cooking', recipe: { inputs: { berries: 2, wood: 0.5 }, output: 'pie', rate: 0.9 }, wall: 0x9b7452, roof: 0xd6a33c, height: 0.9, draftable: true },
-  { id: 'smokehouse', name: 'Smokehouse', blurb: 'Fish goes in, better fish comes out.', cost: { wood: 20 }, slots: 2, job: 'cooking', recipe: { inputs: { fish: 1.2 }, output: 'smokedFish', rate: 1.2 }, wall: 0x5f4d3f, roof: 0x8a8a8a, height: 1.0, draftable: true },
-  { id: 'sawmill', name: 'Sawmill', blurb: 'Wood becomes planks. Planks become nicer buildings.', cost: { wood: 25 }, slots: 2, job: 'crafting', recipe: { inputs: { wood: 2 }, output: 'planks', rate: 1.0 }, wall: 0x7c6148, roof: 0xb08a5a, height: 0.9, draftable: true },
-  { id: 'brewery', name: 'Brewery', blurb: 'Berries become ale. Ale becomes poor decisions.', cost: { wood: 20, planks: 10 }, slots: 2, job: 'brewing', recipe: { inputs: { berries: 2 }, output: 'ale', rate: 0.8 }, wall: 0x7a5640, roof: 0x9c5b2f, height: 1.0, draftable: true },
-  { id: 'tavern', name: 'Tavern', blurb: 'Evenings here use ale and give big fun. Gossip travels twice as fast.', cost: { wood: 25, planks: 15 }, slots: 1, job: 'serving', wall: 0x8e5f3c, roof: 0x7a2f2f, height: 1.2, draftable: true },
-  { id: 'cottage', name: 'Cottage', blurb: 'Sleeps 3, cozily. Waking up here is a +5 mood.', cost: { wood: 10, planks: 15 }, slots: 0, beds: 3, bedQuality: 'cozy', wall: 0xc7a983, roof: 0x4f6f9a, height: 1.0, draftable: true },
-  { id: 'bathhouse', name: 'Bathhouse', blurb: 'Uses wood. Everyone feels fresher, and grumblers grumble less.', cost: { wood: 20, planks: 10 }, slots: 0, wall: 0xb8b0a0, roof: 0x4f8f8a, height: 0.8, draftable: true },
-  { id: 'stage', name: "Bard's stage", blurb: 'Evening music at the hearth. Fun builds faster for everyone.', cost: { wood: 15, planks: 5 }, slots: 0, wall: 0x8a5f7a, roof: 0xc25c8a, height: 0.5, draftable: true },
+  { id: 'dock', name: 'Fishing dock', blurb: 'Fish, plentiful and mildly judgmental.', cost: { wood: 20 }, w: 2, h: 3, slots: 2, job: 'fishing', recipe: { inputs: {}, output: 'fish', rate: 1.5 }, wall: 0x6d5844, roof: 0x3d7b9a, height: 0.7, draftable: true },
+  { id: 'cellar', name: 'Mushroom cellar', blurb: 'Dark, damp, productive. Like a bard.', cost: { wood: 15, planks: 5 }, w: 2, h: 2, slots: 2, job: 'foraging', recipe: { inputs: {}, output: 'mushrooms', rate: 1.6 }, wall: 0x5d5448, roof: 0x8d7aa8, height: 0.6, draftable: true },
+  { id: 'kitchen', name: 'Stew kitchen', blurb: 'Turns any raw food into stew. Stew makes people happy.', cost: { wood: 20 }, w: 3, h: 2, slots: 2, job: 'cooking', recipe: { inputs: { rawFood: 1.5 }, output: 'stew', rate: 1.2 }, wall: 0x8a6448, roof: 0xc4703a, height: 0.9, draftable: true },
+  { id: 'pieoven', name: 'Pie oven', blurb: 'Berries plus wood make pie. Pie is the best thing that has ever happened.', cost: { wood: 15, planks: 8 }, w: 2, h: 2, slots: 2, job: 'cooking', recipe: { inputs: { berries: 2, wood: 0.5 }, output: 'pie', rate: 0.9 }, wall: 0x9b7452, roof: 0xd6a33c, height: 0.9, draftable: true },
+  { id: 'smokehouse', name: 'Smokehouse', blurb: 'Fish goes in, better fish comes out.', cost: { wood: 20 }, w: 2, h: 2, slots: 2, job: 'cooking', recipe: { inputs: { fish: 1.2 }, output: 'smokedFish', rate: 1.2 }, wall: 0x5f4d3f, roof: 0x8a8a8a, height: 1.0, draftable: true },
+  { id: 'sawmill', name: 'Sawmill', blurb: 'Wood becomes planks. Planks become nicer buildings.', cost: { wood: 25 }, w: 3, h: 2, slots: 2, job: 'crafting', recipe: { inputs: { wood: 2 }, output: 'planks', rate: 1.0 }, wall: 0x7c6148, roof: 0xb08a5a, height: 0.9, draftable: true },
+  { id: 'brewery', name: 'Brewery', blurb: 'Berries become ale. Ale becomes poor decisions.', cost: { wood: 20, planks: 10 }, w: 3, h: 2, slots: 2, job: 'brewing', recipe: { inputs: { berries: 2 }, output: 'ale', rate: 0.8 }, wall: 0x7a5640, roof: 0x9c5b2f, height: 1.0, draftable: true },
+  { id: 'tavern', name: 'Tavern', blurb: 'Evenings here use ale and give big fun. Gossip travels twice as fast.', cost: { wood: 25, planks: 15 }, w: 3, h: 3, slots: 1, job: 'serving', wall: 0x8e5f3c, roof: 0x7a2f2f, height: 1.2, draftable: true },
+  { id: 'cottage', name: 'Cottage', blurb: 'Sleeps 3, cozily. Waking up here is a +5 mood.', cost: { wood: 10, planks: 15 }, w: 2, h: 2, slots: 0, beds: 3, bedQuality: 'cozy', wall: 0xc7a983, roof: 0x4f6f9a, height: 1.0, draftable: true },
+  { id: 'bathhouse', name: 'Bathhouse', blurb: 'Uses wood. Everyone feels fresher, and grumblers grumble less.', cost: { wood: 20, planks: 10 }, w: 3, h: 2, slots: 0, wall: 0xb8b0a0, roof: 0x4f8f8a, height: 0.8, draftable: true },
+  { id: 'stage', name: "Bard's stage", blurb: 'Evening music at the hearth. Fun builds faster for everyone.', cost: { wood: 15, planks: 5 }, w: 2, h: 2, slots: 0, wall: 0x8a5f7a, roof: 0xc25c8a, height: 0.5, draftable: true },
 ];
+/** builder-hours of work to finish a building */
+export const buildWork = (d: BuildingDef) => Math.max(4, d.w * d.h * 2);
 export const BUILDING_BY_ID: Record<string, BuildingDef> = Object.fromEntries(BUILDINGS.map(b => [b.id, b]));
 
 export interface TraitDef {
