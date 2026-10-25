@@ -36,7 +36,10 @@ export function autoDecide(w: World, style: 'greedy' | 'random' = 'greedy', rand
       const score = (id: string) => {
         const c = CHARTERS.find(x => x.id === id)!;
         const hold = ['avgMood', 'contentPop', 'calm', 'avgBeauty'].includes(c.metric.kind) ? -1 : 0;
-        return progressIf(w, id) * 3 + hold;
+        // a charter that needs a building we don't own (and can't build) is a bad bet
+        const needs: Record<string, string[]> = { feast: ['brewery'], pieday: ['pieoven'], lumber: ['sawmill'] };
+        const missing = (needs[id] ?? []).filter(b => !w.owned.includes(b)).length * -2;
+        return progressIf(w, id) * 3 + hold + missing;
       };
       option = d.options.map(score).reduce((b, s, i, arr) => (s > arr[b] ? i : b), 0);
     } else if (d.kind === 'blueprint') {
@@ -53,7 +56,10 @@ export function autoDecide(w: World, style: 'greedy' | 'random' = 'greedy', rand
       const kind = charterKind(w);
       const wantsPeople = kind === 'population' || kind === 'contentPop';
       const cap = wantsPeople ? 30 : 12;
-      const ok = alive(w).length < cap && alive(w).length < beds(w) + 2 && (wantsPeople || avgMood(w) > 40);
+      // only take on mouths the larder can feed
+      const raw = w.res.berries + w.res.fish + w.res.mushrooms + mealTotal(w);
+      const fed = raw > alive(w).length * 3;
+      const ok = alive(w).length < cap && alive(w).length < beds(w) + 2 && (wantsPeople || avgMood(w) > 40) && fed;
       option = ok ? bestI : 99;
     } else if (d.kind === 'event') {
       const ev = EVENTS.find(e => e.id === d.eventId)!;
