@@ -3,7 +3,7 @@ import { BUILDING_BY_ID, CHARTERS, EVENTS, JOB_NAMES, PERK_BY_ID, RESOURCES, TRA
 import {
   World, Command, Colonist, alive, avgMood, beds, buildingByUid, charterProgress, colonistById,
   day, hourOfDay, opinion, workersAt, MAX_DEPARTURES, sites, siteWork, remainingCost, storageCap, stored,
-  keepsFresh, findSpot, canPlace, laborers, centerOf, built, Building,
+  keepsFresh, findSpot, canPlace, laborers, centerOf, built, Building, efficiencyAt, pathAt, MAP_SIZE,
 } from '../sim/world';
 import type { IsoView, Picked } from '../render/iso';
 
@@ -30,11 +30,12 @@ function activityText(w: World, c: Colonist) {
     case 'idle': return 'Idle at the hearth';
     case 'leisure': return c.place != null && buildingByUid(w, c.place)?.def === 'tavern' ? 'At the tavern' : 'At the hearth';
     case 'eating': { const at = buildingByUid(w, c.meal?.at ?? null); return at && BUILDING_BY_ID[at.def].seats ? 'Eating in the dining hall' : 'Eating standing up'; }
-    case 'building': { const t = c.task; const b = t && 'site' in t ? buildingByUid(w, t.site) : undefined; return b ? `Building the ${BUILDING_BY_ID[b.def].name.toLowerCase()}` : 'Building'; }
+    case 'building': { const t = c.task; if (t?.kind === 'pave') return 'Laying a path'; const b = t && 'site' in t ? buildingByUid(w, t.site) : undefined; return b ? `Building the ${BUILDING_BY_ID[b.def].name.toLowerCase()}` : 'Building'; }
     case 'cleaning': return 'Cleaning the dining hall';
     case 'hauling': {
       const t = c.task; if (!t) return 'Hauling';
       const r = RESOURCES.find(x => x.id === (t as { res: ResourceId }).res)?.name.toLowerCase() ?? 'goods';
+      if (t.kind === 'supply') { const b = buildingByUid(w, t.to); return c.carrying ? `Carrying ${r} to the ${b ? BUILDING_BY_ID[b.def].name.toLowerCase() : 'workshop'}` : `Fetching ${r} for the ${b ? BUILDING_BY_ID[b.def].name.toLowerCase() : 'workshop'}`; }
       if (t.kind === 'deliver') { const b = buildingByUid(w, t.site); return c.carrying ? `Carrying ${r} to the ${b ? BUILDING_BY_ID[b.def].name.toLowerCase() : 'site'}` : `Fetching ${r} for the ${b ? BUILDING_BY_ID[b.def].name.toLowerCase() : 'site'}`; }
       return c.carrying ? `Carrying ${r} to storage` : `Collecting ${r}`;
     }
@@ -57,6 +58,14 @@ export class UI {
   constructor(private root: HTMLElement, private getWorld: () => World, private send: (c: Command) => string | null, private view: IsoView) {
     root.addEventListener('click', e => this.click(e));
     view.onPick = p => this.picked(p);
+    view.onPathTap = (x, y) => {
+      const w = this.getWorld();
+      const cur = pathAt(w, x, y);
+      if (cur === 2) { this.toast('There\u2019s already a path here.'); return; }
+      const err = this.send({ type: 'path', x, y, on: cur === 0 });
+      if (err) this.toast(err);
+      this.render(true);
+    };
   }
 
   private picked(p: Picked | null) {
@@ -100,6 +109,8 @@ export class UI {
         break;
       }
       case 'place-cancel': this.view.placing = null; break;
+      case 'paths': this.view.pathMode = true; this.view.placing = null; this.open = false; this.detail = null; break;
+      case 'paths-done': this.view.pathMode = false; this.open = true; this.tab = 'build'; break;
       case 'cancel-site': { const err = this.send({ type: 'cancel', building: Number(arg) }); if (err) this.toast(err); this.detail = null; this.view.selected = null; break; }
       case 'assign': { const [cid, bid] = arg.split(':').map(x => (x === 'none' ? null : Number(x))); const err = this.send({ type: 'assign', colonist: cid!, building: bid }); if (err) this.toast(err); break; }
       case 'auto': this.send({ type: 'autoAssign' }); this.toast('The foreman has reassigned everyone.'); break;
@@ -115,7 +126,7 @@ export class UI {
     this.renderSheet(w, force);
     this.renderModal(w, force);
     this.renderPlaceBar(w);
-    (this.root.querySelector('#sheet') as HTMLElement).hidden = !!this.view.placing;
+    (this.root.querySelector('#sheet') as HTMLElement).hidden = !!this.view.placing || this.view.pathMode;
   }
 
   // ---------- HUD ----------
@@ -131,7 +142,7 @@ export class UI {
       .map(r => `<span class="chip"><i style="background:${RES_COLOR[r.id]}"></i><b>${Math.floor(w.res[r.id])}</b> ${r.name}</span>`).join('');
     const html = `
       <div class="bar">
-        <div class="clock"><span class="day">Day ${day(w)}</span><span class="time">${hh}:00 · ${timeOfDay(h)}</span></div>
+        <div class="clock"><span class="day">Day ${day(w)}</span><span class="time">${hh}:00<span class="phase"> · ${timeOfDay(h)}</span></span></div>
         <div class="speeds" role="group" aria-label="Game speed">
           ${[['0', 'Pause'], ['1', '1×'], ['2', '2×'], ['3', '3×']].map(([s, l]) => `<button type="button" data-act="speed" data-arg="${s}" class="${this.speed === Number(s) ? 'on' : ''}" aria-pressed="${this.speed === Number(s)}">${l}</button>`).join('')}
         </div>
@@ -228,19 +239,26 @@ export class UI {
 
   private buildList(w: World) {
     const short = (cost: Partial<Record<ResourceId, number>>) => Object.entries(cost).filter(([r, n]) => w.res[r as ResourceId] < (n ?? 0)).map(([r]) => RESOURCES.find(x => x.id === r)!.name.toLowerCase());
-    const owned = w.owned.map(id => BUILDING_BY_ID[id]).map(def => {
+    const card = (def: typeof BUILDING_BY_ID[string]) => {
       const miss = short(def.cost);
       return `<div class="bp"><div><b>${esc(def.name)}</b><small>${esc(def.blurb)}</small><small class="cost">${Object.keys(def.cost).length ? `Needs ${esc(costText(def.cost))}` : 'Free'} · ${def.w}×${def.h}${miss.length ? ` · short on ${esc(miss.join(', '))}` : ''}</small></div>
         <button type="button" class="act" data-act="build" data-arg="${def.id}">Place</button></div>`;
-    }).join('');
+    };
+    const defs = w.owned.map(id => BUILDING_BY_ID[id]);
+    const owned = defs.filter(d => !d.decor).map(card).join('');
+    const decor = defs.filter(d => d.decor).map(card).join('');
+    const planned = w.paths.filter(p => p === 1).length, laid = w.paths.filter(p => p === 2).length;
     const queue = sites(w).map(b => this.siteRow(w, b)).join('');
-    const done = built(w).map(b => {
+    const done = built(w).filter(b => !BUILDING_BY_ID[b.def].decor).map(b => {
       const def = BUILDING_BY_ID[b.def];
       const info = def.slots ? `${workersAt(w, b.uid).length}/${def.slots} workers` : def.beds ? `${def.beds} beds` : def.seats ? `${def.seats} seats · ${Math.round(b.clean)}% clean` : def.storage ? `holds ${def.storage}` : def.id === 'hearth' ? 'gathering place' : 'passive';
       return `<button type="button" class="row compact" data-act="building" data-arg="${b.uid}"><span class="who"><b>${esc(def.name)}</b></span><small>${info}</small></button>`;
     }).join('');
     return `${queue ? `<h3 class="first">Under construction</h3><div class="rows">${queue}</div>` : ''}
-      <h3 class="${queue ? '' : 'first'}">Blueprints</h3><div class="bps">${owned}</div><h3>In the colony</h3><div class="rows">${done}</div>`;
+      <h3 class="${queue ? '' : 'first'}">Buildings</h3><div class="bps">${owned}</div>
+      <h3>Paths</h3><div class="bp"><div><b>Lay paths</b><small>People walk 25% faster on paths, and they\u2019re a little prettier than mud. 1 wood per tile, laid by laborers.</small><small class="cost">${laid} laid${planned ? ` · ${planned} planned` : ''}</small></div><button type="button" class="act" data-act="paths">Plan</button></div>
+      <h3>Decorations</h3><div class="bps">${decor}</div>
+      <h3>In the colony</h3><div class="rows">${done}</div>`;
   }
 
   private siteRow(w: World, b: Building) {
@@ -265,11 +283,21 @@ export class UI {
 
   private renderPlaceBar(w: World) {
     const el = this.root.querySelector('#placebar') as HTMLElement;
+    if (this.view.pathMode) {
+      const planned = w.paths.filter(p => p === 1).length;
+      const html = `<div class="pb-text"><b>Planning paths</b><small>Tap tiles to plan, tap again to remove. ${planned} planned${planned > w.res.wood ? `, but only ${Math.floor(w.res.wood)} wood` : ''}.</small></div>
+        <button type="button" class="act" data-act="paths-done">Done</button>`;
+      if (el.innerHTML !== html) el.innerHTML = html;
+      el.classList.add('two'); el.hidden = false; return;
+    }
+    el.classList.remove('two');
     const pl = this.view.placing;
     if (!pl) { el.hidden = true; el.innerHTML = ''; return; }
     const def = BUILDING_BY_ID[pl.def];
     const chk = canPlace(w, pl.def, pl.x, pl.y);
-    const html = `<div class="pb-text"><b>Placing ${esc(def.name)}</b><small>${chk.ok ? 'Tap the ground to move it. The light square is its door.' : esc(chk.reason)}</small></div>
+    const eff = def.needs ? efficiencyAt(w, pl.def, pl.x, pl.y) : null;
+    const effText = eff && chk.ok ? `${eff.label} · works at ${Math.round(eff.eff * 100)}%` : '';
+    const html = `<div class="pb-text"><b>Placing ${esc(def.name)}</b><small${eff && chk.ok && eff.eff < 0.6 ? ' class="low"' : ''}>${chk.ok ? (effText ? esc(effText) : def.decor ? 'Tap the ground to move it. It brightens the tiles around it.' : 'Tap the ground to move it. The light square is its door.') : esc(chk.reason)}</small></div>
       <button type="button" class="ghost" data-act="place-cancel">Cancel</button>
       <button type="button" class="act" data-act="place-confirm" ${chk.ok ? '' : 'disabled'}>Place here</button>`;
     if (el.innerHTML !== html) el.innerHTML = html;
@@ -290,17 +318,19 @@ export class UI {
     }
     const workers = workersAt(w, b.uid);
     const recipe = def.recipe ? `<p class="prefs">${Object.keys(def.recipe.inputs).length ? `Uses ${Object.entries(def.recipe.inputs).map(([r, n]) => `${n} ${r === 'rawFood' ? 'raw food' : RESOURCES.find(x => x.id === r)!.name.toLowerCase()}`).join(' + ')} → ` : 'Makes '}1 ${RESOURCES.find(x => x.id === def.recipe!.output)!.name.toLowerCase()} · ${def.recipe.rate} per worker-hour</p>` : '';
-    let staff = '';
+    const effLine = def.needs ? `<p class="prefs">${esc(efficiencyAt(w, b.def, b.x, b.y).label)} · works at <b>${Math.round(b.eff * 100)}%</b></p>` : '';
+    const inboxLine = def.recipe && Object.keys(def.recipe.inputs).length ? `<p class="prefs">Ingredients on hand: ${Object.entries(b.inbox).filter(([, n]) => (n ?? 0) >= 0.5).map(([r, n]) => `${Math.floor(n ?? 0)} ${RESOURCES.find(x => x.id === r)!.name.toLowerCase()}`).join(', ') || '<b>none</b>. Laborers carry them in from storage.'}</p>` : '';
+    let staff = effLine + inboxLine;
     if (def.slots) {
       const cur = workers.map(c => `<div class="row static"><span class="dot" style="background:${hex(c.shirt)}"></span><span class="who"><b>${esc(c.name)}</b><small>${def.job === c.likes ? 'loves this job' : def.job === c.dislikes ? 'hates this job' : 'doesn’t mind it'}</small></span><button type="button" class="ghost" data-act="assign" data-arg="${c.id}:none">Remove</button></div>`).join('');
       const cand = workers.length < def.slots ? alive(w).filter(c => c.job !== b.uid).sort((a, z) => Number(z.likes === def.job) - Number(a.likes === def.job) || Number(a.dislikes === def.job) - Number(z.dislikes === def.job)).map(c => {
         const cw = buildingByUid(w, c.job);
         return `<button type="button" class="row" data-act="assign" data-arg="${c.id}:${b.uid}"><span class="dot" style="background:${hex(c.shirt)}"></span><span class="who"><b>${esc(c.name)}</b><small>${cw ? `now at ${esc(BUILDING_BY_ID[cw.def].name)}` : 'no job'}${c.likes === def.job ? ' · loves this' : c.dislikes === def.job ? ' · hates this' : ''}</small></span><span class="add">Assign</span></button>`;
       }).join('') : '';
-      staff = `<h3>Workers ${workers.length}/${def.slots}</h3><div class="rows">${cur || '<p class="muted">Nobody works here.</p>'}</div>${cand ? `<h3>Assign someone</h3><div class="rows">${cand}</div>` : ''}`;
+      staff += `<h3>Workers ${workers.length}/${def.slots}</h3><div class="rows">${cur || '<p class="muted">Nobody works here.</p>'}</div>${cand ? `<h3>Assign someone</h3><div class="rows">${cand}</div>` : ''}`;
     } else if (def.beds) {
       const sleepers = alive(w).filter(c => c.bed === b.uid).map(c => esc(first(c))).join(', ');
-      staff = `<p class="prefs">Sleeps ${def.beds}${sleepers ? `: ${sleepers}` : ''}.</p>`;
+      staff += `<p class="prefs">Sleeps ${def.beds}${sleepers ? `: ${sleepers}` : ''}.</p>`;
     }
     return `<div class="detail"><div class="d-head"><button type="button" class="ghost back" data-act="back">All buildings</button></div>
       <h2>${esc(def.name)}</h2><p class="blurb">${esc(def.blurb)}</p>${recipe}${staff}</div>`;

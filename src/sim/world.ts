@@ -26,7 +26,9 @@ export type Activity = 'working' | 'idle' | 'leisure' | 'sleeping' | 'sulking' |
 export type Task =
   | { kind: 'deliver'; site: number; res: ResourceId; amount: number }
   | { kind: 'haul'; from: number; res: ResourceId; amount: number }
+  | { kind: 'supply'; to: number; res: ResourceId; amount: number }
   | { kind: 'build'; site: number }
+  | { kind: 'pave'; x: number; y: number; progress: number }
   | { kind: 'clean'; building: number };
 export interface Carry { res: ResourceId; amount: number }
 
@@ -44,13 +46,19 @@ export interface Colonist {
   memories: Memory[]; thoughts: Thought[];
   hadCompany: boolean; hadCompanyLastNight: boolean; drankTonight: boolean;
   joinedDay: number;
+  /** smoothed beauty of where they've been lately */
+  beauty: number;
 }
 export interface Building {
   uid: number; def: string; x: number; y: number;
   built: boolean; progress: number;
   delivered: Partial<Record<ResourceId, number>>;
   outbox: Partial<Record<ResourceId, number>>;
+  /** ingredients carried in, waiting to be used */
+  inbox: Partial<Record<ResourceId, number>>;
   clean: number;
+  /** output multiplier from what's nearby (trees, bushes, water) */
+  eff: number;
 }
 
 export type Decision =
@@ -66,6 +74,10 @@ export interface World {
   seed: number; rngState: number;
   hour: number; // absolute hours since start (day 1, 06:00 = hour 6)
   colonists: Colonist[]; buildings: Building[];
+  /** per tile: 0 grass, 1 tree, 2 berry bush, 3 water */
+  terrain: number[];
+  /** per tile: 0 none, 1 planned path, 2 laid path */
+  paths: number[];
   res: Record<ResourceId, number>;
   owned: string[]; perks: string[];
   charterTier: number; charter: string | null; charterHours: number; chartersDone: string[];
@@ -91,6 +103,9 @@ export const WOOD_RESERVE = 20;
 export const CARRY = 15;
 export const OUTBOX_CAP = 15;
 const WALK_SPEED = 7; // tiles per hour
+export const PATH_SPEED = 1.25;
+export const INBOX_TARGET = 12;
+export const T_GRASS = 0, T_TREE = 1, T_BUSH = 2, T_WATER = 3;
 
 // ---------- Helpers ----------
 export const day = (w: World) => Math.floor(w.hour / 24) + 1;
@@ -135,17 +150,89 @@ export function storageFree(w: World) { return Math.max(0, storageCap(w) - store
 export function keepsFresh(w: World) { return built(w).some(b => bdef(b).keepsFresh); }
 export function laborers(w: World) { return alive(w).filter(c => c.job == null); }
 
+// ---------- Terrain ----------
+const inMap = (x: number, y: number) => x >= 0 && y >= 0 && x < MAP_SIZE && y < MAP_SIZE;
+/** what's on a tile; everything past the map edge is forest */
+export function terrainAt(w: World, x: number, y: number) { return inMap(x, y) ? w.terrain[y * MAP_SIZE + x] : T_TREE; }
+export function pathAt(w: World, x: number, y: number) { return inMap(x, y) ? w.paths[y * MAP_SIZE + x] : 0; }
+
+function genTerrain(w: World) {
+  const t = new Array(MAP_SIZE * MAP_SIZE).fill(T_GRASS);
+  const set = (x: number, y: number, v: number) => { if (inMap(x, y) && Math.hypot(x + 0.5 - CENTER, y + 0.5 - CENTER) > 4.5) t[y * MAP_SIZE + x] = v; };
+  for (let x = 0; x < MAP_SIZE; x++) for (let y = 0; y < MAP_SIZE; y++) if (x < BUILD_MIN || y < BUILD_MIN || x > BUILD_MAX || y > BUILD_MAX) t[y * MAP_SIZE + x] = T_TREE;
+  const blob = (cx: number, cy: number, r: number, v: number, density: number) => {
+    for (let x = Math.floor(cx - r - 1); x <= cx + r + 1; x++) for (let y = Math.floor(cy - r - 1); y <= cy + r + 1; y++) {
+      const d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy) / r;
+      if (d < 1 && nextRand(w) < density * (1.15 - d * 0.6)) set(x, y, v);
+    }
+  };
+  const around = (minR: number, maxR: number) => { const a = nextRand(w) * Math.PI * 2, r = minR + nextRand(w) * (maxR - minR); return { x: CENTER + Math.cos(a) * r, y: CENTER + Math.sin(a) * r }; };
+  // a pond, three groves, three berry patches, scattered at different angles from the hearth
+  const pond = around(8, 10.5);
+  for (let x = Math.floor(pond.x - 4); x <= pond.x + 4; x++) for (let y = Math.floor(pond.y - 4); y <= pond.y + 4; y++) {
+    const d = Math.hypot((x + 0.5 - pond.x) / 2.8, (y + 0.5 - pond.y) / 2.1);
+    if (d < 1 + (nextRand(w) - 0.5) * 0.25 && x >= BUILD_MIN && y >= BUILD_MIN && x <= BUILD_MAX && y <= BUILD_MAX) set(x, y, T_WATER);
+  }
+  for (let i = 0; i < 3; i++) { const g = around(7, 11); blob(g.x, g.y, 2.6 + nextRand(w), T_TREE, 0.75); }
+  for (let i = 0; i < 3; i++) { const g = around(5.5, 10); blob(g.x, g.y, 1.7, T_BUSH, 0.8); }
+  w.terrain = t;
+  w.paths = new Array(MAP_SIZE * MAP_SIZE).fill(0);
+}
+
+/** how well a building would work at (x, y), from 0.15 to 1 */
+export function efficiencyAt(w: World, defId: string, x: number, y: number): { eff: number; count: number; label: string } {
+  const d = BUILDING_BY_ID[defId];
+  const cx = x + d.w / 2, cy = y + d.h / 2;
+  const count = (kind: number, r: number) => {
+    let n = 0;
+    for (let tx = Math.floor(cx - r); tx <= cx + r; tx++) for (let ty = Math.floor(cy - r); ty <= cy + r; ty++)
+      if (Math.hypot(tx + 0.5 - cx, ty + 0.5 - cy) <= r && terrainAt(w, tx, ty) === kind) n++;
+    return n;
+  };
+  if (d.needs === 'trees') { const n = count(T_TREE, 4); return { eff: Math.max(0.15, Math.min(1, n / 14)), count: n, label: `${n} trees nearby` }; }
+  if (d.needs === 'bushes') { const n = count(T_BUSH, 2.6); return { eff: Math.max(0.15, Math.min(1, n / 6)), count: n, label: `${n} berry bushes nearby` }; }
+  if (d.needs === 'water') return { eff: touchesWater(w, defId, x, y) ? 1 : 0, count: 0, label: touchesWater(w, defId, x, y) ? 'On the water' : 'Must touch water' };
+  return { eff: 1, count: 0, label: '' };
+}
+function touchesWater(w: World, defId: string, x: number, y: number) {
+  const d = BUILDING_BY_ID[defId];
+  for (let tx = x - 1; tx <= x + d.w; tx++) for (let ty = y - 1; ty <= y + d.h; ty++) if (terrainAt(w, tx, ty) === T_WATER) return true;
+  return false;
+}
+
+/** beauty of a spot: decorations nearby, laid paths, bushes and water; mess makes it worse */
+export function beautyAt(w: World, x: number, y: number): number {
+  let b = 0;
+  for (const bd of w.buildings) {
+    const d = bdef(bd);
+    const cx = bd.x + d.w / 2, cy = bd.y + d.h / 2;
+    const dist = Math.hypot(cx - x, cy - y);
+    if (bd.built && d.beauty && dist < 3.5) b += d.beauty * (1 - dist / 4);
+    if (!bd.built && dist < 2.5) b -= 1.5;
+    if (bd.built && d.walkable && d.storage && dist < 2.5) b -= 1;
+  }
+  const tx = Math.floor(x), ty = Math.floor(y);
+  if (pathAt(w, tx, ty) === 2) b += 1;
+  for (let ax = tx - 1; ax <= tx + 1; ax++) for (let ay = ty - 1; ay <= ty + 1; ay++) {
+    const t = terrainAt(w, ax, ay);
+    if (t === T_BUSH || t === T_WATER) b += 0.3;
+  }
+  return b;
+}
+
 // ---------- Geometry ----------
 /** the tile people stand on to use a building: just in front of its lower edge */
 export function spotOf(b: Building): { x: number; y: number } {
   const d = bdef(b);
   if (d.walkable) return { x: b.x + d.w / 2, y: b.y + d.h / 2 };
+  if (d.decor) return { x: b.x + 0.5, y: b.y + 1.5 };
   return { x: b.x + Math.floor(d.w / 2) + 0.5, y: b.y + d.h + 0.5 };
 }
 export const centerOf = (b: Building) => ({ x: b.x + bdef(b).w / 2, y: b.y + bdef(b).h / 2 });
 
 function blockedGrid(w: World, ignore?: number): Uint8Array {
   const g = new Uint8Array(MAP_SIZE * MAP_SIZE);
+  for (let i = 0; i < g.length; i++) if (w.terrain[i] === T_WATER) g[i] = 1;
   for (const b of w.buildings) {
     if (b.uid === ignore) continue;
     const d = bdef(b);
@@ -160,14 +247,20 @@ export function canPlace(w: World, defId: string, x: number, y: number): PlaceCh
   if (!d) return { ok: false, reason: 'Unknown building.' };
   if (x < BUILD_MIN || y < BUILD_MIN || x + d.w - 1 > BUILD_MAX || y + d.h - 1 > BUILD_MAX) return { ok: false, reason: 'Too close to the forest.' };
   const g = blockedGrid(w);
-  for (let tx = x; tx < x + d.w; tx++) for (let ty = y; ty < y + d.h; ty++) if (g[ty * MAP_SIZE + tx]) return { ok: false, reason: 'Something is already there.' };
-  if (!d.walkable) {
+  for (let tx = x; tx < x + d.w; tx++) for (let ty = y; ty < y + d.h; ty++) {
+    if (g[ty * MAP_SIZE + tx] && terrainAt(w, tx, ty) !== T_WATER) return { ok: false, reason: 'Something is already there.' };
+    const t = terrainAt(w, tx, ty);
+    if (t === T_WATER) return { ok: false, reason: 'You can\u2019t build on water.' };
+    if (t === T_TREE) return { ok: false, reason: 'There are trees in the way.' };
+    if (t === T_BUSH) return { ok: false, reason: 'There are berry bushes in the way.' };
+  }
+  if (!d.walkable && !d.decor) {
     const sx = x + Math.floor(d.w / 2), sy = y + d.h;
     if (sy > BUILD_MAX + 1 || g[sy * MAP_SIZE + sx] === 1) return { ok: false, reason: 'The doorway is blocked.' };
-    // don't block another building's doorway
   }
+  if (d.needs === 'water' && !touchesWater(w, defId, x, y)) return { ok: false, reason: 'A dock has to touch the water.' };
   for (const b of w.buildings) {
-    if (bdef(b).walkable) continue;
+    if (bdef(b).walkable || bdef(b).decor) continue;
     const s = spotOf(b), sx = Math.floor(s.x), sy = Math.floor(s.y);
     if (sx >= x && sx < x + d.w && sy >= y && sy < y + d.h) return { ok: false, reason: `That would block the ${bdef(b).name.toLowerCase()} door.` };
   }
@@ -176,6 +269,21 @@ export function canPlace(w: World, defId: string, x: number, y: number): PlaceCh
 
 /** Find a free spot for a building, spiralling out from a point. Leaves a 1-tile path around it. */
 export function findSpot(w: World, defId: string, nearX = CENTER, nearY = CENTER, margin = true): { x: number; y: number } | null {
+  if (BUILDING_BY_ID[defId].needs) {
+    // try the closest 300 candidates and keep the best output, nudged towards the centre
+    let best: { x: number; y: number } | null = null, bestScore = -1e9;
+    const d = BUILDING_BY_ID[defId];
+    for (let x = BUILD_MIN; x <= BUILD_MAX - d.w + 1; x++) for (let y = BUILD_MIN; y <= BUILD_MAX - d.h + 1; y++) {
+      const dist = Math.hypot(x + d.w / 2 - nearX, y + d.h / 2 - nearY);
+      if (dist > 12) continue;
+      const e = efficiencyAt(w, defId, x, y).eff;
+      if (e <= 0.2) continue;
+      if (!canPlace(w, defId, x, y).ok) continue;
+      const score = e * 10 - dist * 0.35;
+      if (score > bestScore) { bestScore = score; best = { x, y }; }
+    }
+    if (best) return best;
+  }
   const d = BUILDING_BY_ID[defId];
   const g = blockedGrid(w);
   const cands: { x: number; y: number; dist: number }[] = [];
@@ -221,7 +329,7 @@ function findPath(w: World, grid: Uint8Array, fx: number, fy: number, tx: number
       if (!pass(nx, ny)) continue;
       if (dx && dy && (!pass(cx + dx, cy) || !pass(cx, cy + dy))) continue;
       const ni = idx(nx, ny); if (closed[ni]) continue;
-      const ng = gS[cur] + (dx && dy ? 1.414 : 1);
+      const ng = gS[cur] + (dx && dy ? 1.414 : 1) * (w.paths[ni] === 2 ? 0.8 : 1);
       if (ng < gS[ni]) { gS[ni] = ng; from[ni] = cur; if (!open.includes(ni)) open.push(ni); }
     }
   }
@@ -258,12 +366,12 @@ function makeColonist(w: World, usedNames: Set<string>): Colonist {
     job: null, bed: null, partner: null, task: null, carrying: null, meal: null,
     activity: 'idle', place: null, inside: null,
     memories: [], thoughts: [], hadCompany: true, hadCompanyLastNight: true, drankTonight: false,
-    joinedDay: 1,
+    joinedDay: 1, beauty: 0,
   };
 }
 
 function newBuilding(w: World, def: string, x: number, y: number, isBuilt: boolean): Building {
-  const b: Building = { uid: w.nextUid++, def, x, y, built: isBuilt, progress: 0, delivered: {}, outbox: {}, clean: 100 };
+  const b: Building = { uid: w.nextUid++, def, x, y, built: isBuilt, progress: 0, delivered: {}, outbox: {}, inbox: {}, clean: 100, eff: efficiencyAt(w, def, x, y).eff || 1 };
   w.buildings.push(b); w.version++;
   return b;
 }
@@ -271,7 +379,7 @@ function newBuilding(w: World, def: string, x: number, y: number, isBuilt: boole
 export function createWorld(seed: number): World {
   const w: World = {
     seed, rngState: seed >>> 0, hour: 6,
-    colonists: [], buildings: [],
+    colonists: [], buildings: [], terrain: [], paths: [],
     res: { wood: 60, berries: 50, fish: 0, mushrooms: 0, stew: 10, pie: 0, smokedFish: 0, planks: 0, ale: 0 },
     owned: BUILDINGS.filter(b => b.basic).map(b => b.id), perks: [],
     charterTier: 1, charter: null, charterHours: 0, chartersDone: [],
@@ -281,16 +389,24 @@ export function createWorld(seed: number): World {
     version: 0,
   };
   for (let i = 0; i < 20; i++) nextRand(w);
+  genTerrain(w);
   newBuilding(w, 'hearth', CENTER - 1, CENTER - 1, true);
-  newBuilding(w, 'stockpile', CENTER + 3, CENTER - 2, true);
-  for (const [id, x, y] of [['leanto', CENTER - 5, CENTER - 4], ['woodcutter', CENTER - 5, CENTER + 2], ['forager', CENTER + 1, CENTER + 4]] as const) newBuilding(w, id, x, y, true);
+  for (const id of ['stockpile', 'leanto', 'leanto', 'woodcutter', 'forager']) {
+    const s = findSpot(w, id, CENTER, CENTER, true);
+    if (s) newBuilding(w, id, s.x, s.y, true);
+  }
+  // a little ring of path around the hearth
+  for (let x = CENTER - 2; x <= CENTER + 1; x++) for (let y = CENTER - 2; y <= CENTER + 1; y++) {
+    const edge = x === CENTER - 2 || x === CENTER + 1 || y === CENTER - 2 || y === CENTER + 1;
+    if (edge && !blockedGrid(w)[y * MAP_SIZE + x]) w.paths[y * MAP_SIZE + x] = 2;
+  }
   const names = new Set<string>();
   for (let i = 0; i < 6; i++) w.colonists.push(makeColonist(w, names));
   for (const c of w.colonists) { c.px = c.x; c.py = c.y; }
   assignBeds(w);
   autoAssign(w);
   addLog(w, 'Six settlers arrive at the edge of the Mumblewood with a cart, a kettle, and great optimism.', 'good');
-  addLog(w, 'There are only four beds. Someone should build another lean-to.', 'neutral');
+  addLog(w, 'There are only four beds for six people. Someone should build another lean-to.', 'neutral');
   w.decisions.push({ kind: 'charter', tier: 1, options: shuffle(w, CHARTERS.filter(c => c.tier === 1)).slice(0, 2).map(c => c.id) });
   w.decisions.push(blueprintDecision(w));
   return w;
@@ -318,7 +434,7 @@ function assignBeds(w: World) {
 }
 
 /** Buildings that help each charter. A draft always offers one of these if none is owned yet. */
-const CHARTER_HELPERS: Record<string, string[]> = {
+export const CHARTER_HELPERS: Record<string, string[]> = {
   pantry: ['kitchen', 'pieoven', 'smokehouse'], feast: ['kitchen', 'pieoven', 'smokehouse', 'brewery'],
   lumber: ['sawmill'], township: ['sawmill', 'dock'], growing: ['cottage', 'kitchen'], boomtown: ['cottage', 'kitchen'],
   cheer: ['tavern', 'stage', 'cottage', 'bathhouse', 'pieoven'], harmony: ['tavern', 'stage', 'cottage', 'bathhouse'],
@@ -338,6 +454,7 @@ export type Command =
   | { type: 'assign'; colonist: number; building: number | null }
   | { type: 'place'; def: string; x: number; y: number }
   | { type: 'cancel'; building: number }
+  | { type: 'path'; x: number; y: number; on: boolean }
   | { type: 'resolve'; option: number }
   | { type: 'autoAssign' }
   | { type: 'setAutoAssignNew'; value: boolean };
@@ -376,10 +493,21 @@ export function apply(w: World, cmd: Command): string | null {
       const b = buildingByUid(w, cmd.building);
       if (!b || b.built) return 'Only unfinished buildings can be cancelled.';
       for (const [r, n] of Object.entries(b.delivered)) w.res[r as ResourceId] += n ?? 0;
-      for (const c of alive(w)) if (c.task && ('site' in c.task) && c.task.site === b.uid) dropTask(w, c);
+      for (const c of alive(w)) if (c.task && (('site' in c.task && c.task.site === b.uid) || ('to' in c.task && c.task.to === b.uid))) dropTask(w, c);
       w.buildings = w.buildings.filter(x => x !== b); w.version++;
       for (const c of alive(w)) c.goalKey = '';
       addLog(w, `Plans for the ${bdef(b).name.toLowerCase()} are scrapped. Materials go back to storage.`);
+      return null;
+    }
+    case 'path': {
+      const { x, y } = cmd;
+      if (x < BUILD_MIN || y < BUILD_MIN || x > BUILD_MAX || y > BUILD_MAX) return 'Too close to the forest.';
+      const i = y * MAP_SIZE + x;
+      if (!cmd.on) { if (w.paths[i] === 1) w.paths[i] = 0; return null; }
+      if (w.terrain[i] === T_WATER) return 'Paths can\u2019t go on water.';
+      if (blockedGrid(w)[i] === 1) return 'A building is in the way.';
+      if (w.paths[i] === 0) w.paths[i] = 1;
+      w.version++;
       return null;
     }
     case 'autoAssign': autoAssign(w); return null;
@@ -560,6 +688,20 @@ function chooseTask(w: World, c: Colonist): Task | null {
       opts.push({ t: { kind: 'haul', from: b.uid, res: r, amount: Math.min(CARRY, n) }, pri: n >= OUTBOX_CAP ? 3.2 : 2, x: s.x, y: s.y });
     }
   }
+  // carrying ingredients to staffed workshops
+  for (const b of built(w)) {
+    const rec = bdef(b).recipe;
+    if (!rec || !Object.keys(rec.inputs).length || workersAt(w, b.uid).length === 0) continue;
+    for (const need of supplyNeeds(w, b)) opts.push({ t: need, pri: (b.inbox[need.res] ?? 0) < 2 ? 3.1 : 2.4, x: spotOf(b).x, y: spotOf(b).y });
+  }
+  // laying planned paths
+  if (w.res.wood >= 1) {
+    let n = 0;
+    for (let i = 0; i < w.paths.length && n < 6; i++) if (w.paths[i] === 1 && taskCount(w, t => t.kind === 'pave' && t.y * MAP_SIZE + t.x === i) === 0) {
+      const x = i % MAP_SIZE, y = Math.floor(i / MAP_SIZE); n++;
+      opts.push({ t: { kind: 'pave', x, y, progress: 0 }, pri: 1.2, x: x + 0.5, y: y + 0.5 });
+    }
+  }
   // cleaning
   for (const b of built(w)) if (bdef(b).seats && b.clean < 70 && taskCount(w, t => t.kind === 'clean' && t.building === b.uid) === 0) {
     const s = spotOf(b); opts.push({ t: { kind: 'clean', building: b.uid }, pri: b.clean < 35 ? 2.8 : 1.5, x: s.x, y: s.y });
@@ -567,6 +709,26 @@ function chooseTask(w: World, c: Colonist): Task | null {
   if (!opts.length) return null;
   opts.sort((a, b) => b.pri - a.pri || Math.hypot(a.x - c.x, a.y - c.y) - Math.hypot(b.x - c.x, b.y - c.y));
   return opts[0].t;
+}
+
+/** ingredient deliveries a workshop needs right now */
+type SupplyTask = Extract<Task, { kind: 'supply' }>;
+function supplyNeeds(w: World, b: Building): SupplyTask[] {
+  const rec = bdef(b).recipe!;
+  const out: SupplyTask[] = [];
+  for (const key of Object.keys(rec.inputs)) {
+    let r: ResourceId;
+    if (key === 'rawFood') {
+      const best = [...RAW_FOODS].sort((p, q) => w.res[q] - w.res[p])[0];
+      r = best;
+    } else r = key as ResourceId;
+    const have = key === 'rawFood' ? RAW_FOODS.reduce((n, x) => n + (b.inbox[x] ?? 0), 0) : (b.inbox[r] ?? 0);
+    const coming = alive(w).reduce((n, c) => n + (c.task?.kind === 'supply' && c.task.to === b.uid && (key === 'rawFood' ? RAW_FOODS.includes(c.task.res) : c.task.res === r) ? c.task.amount : 0), 0);
+    const avail = r === 'wood' ? Math.max(0, w.res.wood - WOOD_RESERVE) : w.res[r];
+    const want = INBOX_TARGET - have - coming;
+    if (want >= 3 && avail >= 1) out.push({ kind: 'supply', to: b.uid, res: r, amount: Math.min(CARRY, want, avail) });
+  }
+  return out;
 }
 
 // ---------- Where each colonist is headed ----------
@@ -595,9 +757,17 @@ function goalFor(w: World, c: Colonist): Goal {
         if (c.carrying) { const st = nearestStorage(w, c.x, c.y); return st ? at(st, 0.6, false, 'store') : hearthSpot(2); }
         return at(buildingByUid(w, t.from)!, 0.4, false, 'pick');
       }
+      if (t.kind === 'supply') {
+        if (c.carrying) return at(buildingByUid(w, t.to)!, 0.3, false, 'drop');
+        const st = nearestStorage(w, c.x, c.y); return st ? at(st, 0.6, false, 'pick') : hearthSpot(2);
+      }
       break;
     }
-    case 'building': { const t = c.task as { site: number }; return at(buildingByUid(w, t.site)!, 0.7, false, 'build'); }
+    case 'building': {
+      const t = c.task!;
+      if (t.kind === 'pave') return { x: t.x + 0.5, y: t.y + 0.5, uid: null, inside: false, key: `pave${t.x},${t.y}` };
+      return at(buildingByUid(w, (t as { site: number }).site)!, 0.7, false, 'build');
+    }
     case 'cleaning': { const t = c.task as { building: number }; return at(buildingByUid(w, t.building)!, 0, true); }
     case 'working': {
       const job = buildingByUid(w, c.job);
@@ -628,12 +798,18 @@ function activityFor(w: World, c: Colonist): Activity {
       const [r] = Object.entries(job.outbox).sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0))[0] as [ResourceId, number];
       if (taskCount(w, t => t.kind === 'haul' && t.from === job.uid) === 0) c.task = { kind: 'haul', from: job.uid, res: r, amount: Math.min(CARRY, job.outbox[r] ?? 0) };
     }
+    // nobody brought ingredients: fetch them yourself
+    const rec = bdef(job).recipe;
+    if (!c.task && rec && Object.keys(rec.inputs).length && !canCook(w, job)) {
+      const need = supplyNeeds(w, job)[0];
+      if (need) c.task = need;
+    }
     if (c.task) return 'hauling';
     return 'working';
   }
   if (!c.task) c.task = chooseTask(w, c);
   if (!c.task) return 'idle';
-  return c.task.kind === 'build' ? 'building' : c.task.kind === 'clean' ? 'cleaning' : 'hauling';
+  return c.task.kind === 'build' || c.task.kind === 'pave' ? 'building' : c.task.kind === 'clean' ? 'cleaning' : 'hauling';
 }
 
 function arrive(w: World, c: Colonist) {
@@ -666,6 +842,19 @@ function arrive(w: World, c: Colonist) {
         else { w.res[c.carrying.res] += c.carrying.amount; c.carrying = null; c.task = null; } // storage full: dump it anyway
       }
     }
+    else if (t.kind === 'supply') {
+      const to = buildingByUid(w, t.to);
+      if (!to) { dropTask(w, c); return; }
+      if (!c.carrying) {
+        const avail = t.res === 'wood' ? Math.max(0, w.res.wood - WOOD_RESERVE) : w.res[t.res];
+        const amt = Math.min(t.amount, avail);
+        if (amt <= 0) { c.task = null; return; }
+        w.res[t.res] -= amt; c.carrying = { res: t.res, amount: amt }; t.amount = amt;
+      } else {
+        to.inbox[t.res] = (to.inbox[t.res] ?? 0) + c.carrying.amount;
+        c.carrying = null; c.task = null; w.version++;
+      }
+    }
   } else if (c.activity === 'eating' && c.meal && c.meal.until === 0) {
     c.meal.until = w.hour + 0.5;
   }
@@ -686,25 +875,33 @@ function produce(w: World, dt: number) {
     for (const c of workersAt(w, b.uid)) {
       if (c.activity !== 'working' || !c.goalReached) continue;
       if (sum(b.outbox) >= OUTBOX_CAP) continue;
-      let amount = def.recipe.rate * workSpeed(w, c) * dt;
+      let amount = def.recipe.rate * workSpeed(w, c) * dt * b.eff;
       for (const [r, per] of Object.entries(def.recipe.inputs)) {
-        const avail = r === 'rawFood' ? RAW_FOODS.reduce((n, x) => n + w.res[x], 0) : r === 'wood' ? Math.max(0, w.res.wood - WOOD_RESERVE) : w.res[r as ResourceId];
+        const avail = r === 'rawFood' ? RAW_FOODS.reduce((n, x) => n + (b.inbox[x] ?? 0), 0) : (b.inbox[r as ResourceId] ?? 0);
         amount = Math.min(amount, avail / (per as number));
       }
       if (amount <= 0) continue;
       for (const [r, per] of Object.entries(def.recipe.inputs)) {
         let need = amount * (per as number);
         if (r === 'rawFood') {
-          for (const x of [...RAW_FOODS].sort((p, q) => w.res[q] - w.res[p])) { const t = Math.min(w.res[x], need); w.res[x] -= t; need -= t; }
-        } else w.res[r as ResourceId] -= need;
+          for (const x of [...RAW_FOODS].sort((p, q) => (b.inbox[q] ?? 0) - (b.inbox[p] ?? 0))) { const t = Math.min(b.inbox[x] ?? 0, need); b.inbox[x] = (b.inbox[x] ?? 0) - t; need -= t; }
+        } else b.inbox[r as ResourceId] = (b.inbox[r as ResourceId] ?? 0) - need;
       }
       b.outbox[def.recipe.output] = (b.outbox[def.recipe.output] ?? 0) + amount;
     }
   }
-  // construction and cleaning
+  // construction, paving and cleaning
   for (const c of alive(w)) {
     if (!c.goalReached) continue;
-    if (c.activity === 'building' && c.task?.kind === 'build') {
+    if (c.activity === 'building' && c.task?.kind === 'pave') {
+      const t = c.task, i = t.y * MAP_SIZE + t.x;
+      if (w.paths[i] !== 1) { c.task = null; continue; }
+      t.progress += workSpeed(w, c) * dt;
+      if (t.progress >= 0.4) {
+        if (w.res.wood >= 1) { w.res.wood -= 1; w.paths[i] = 2; w.version++; }
+        c.task = null;
+      }
+    } else if (c.activity === 'building' && c.task?.kind === 'build') {
       const b = buildingByUid(w, c.task.site);
       if (!b) { c.task = null; continue; }
       b.progress += workSpeed(w, c) * dt;
@@ -718,6 +915,12 @@ function produce(w: World, dt: number) {
   }
 }
 
+/** does the workshop have enough ingredients for a little more work? */
+function canCook(w: World, b: Building) {
+  const rec = bdef(b).recipe!;
+  return Object.entries(rec.inputs).every(([r, per]) => (r === 'rawFood' ? RAW_FOODS.reduce((n, x) => n + (b.inbox[x] ?? 0), 0) : (b.inbox[r as ResourceId] ?? 0)) >= (per as number) * 0.2);
+}
+
 function completeBuilding(w: World, b: Building) {
   b.built = true; b.progress = siteWork(b); w.version++; w.stats.built++;
   for (const c of alive(w)) if (c.task?.kind === 'build' && c.task.site === b.uid) c.task = null;
@@ -725,6 +928,8 @@ function completeBuilding(w: World, b: Building) {
   addLog(w, pick(w, [`The ${def.name.toLowerCase()} is finished. Only one thumb was hammered.`, `The ${def.name.toLowerCase()} is done, and it is mostly level.`, `Work on the ${def.name.toLowerCase()} is complete. Everyone admires it briefly.`]), 'good');
   if (def.beds) assignBeds(w);
   if (def.slots && w.autoAssignNew) fillSlots(w);
+  // a finished building replaces any planned path under it
+  for (let x = b.x; x < b.x + def.w; x++) for (let y = b.y; y < b.y + def.h; y++) if (!def.walkable) w.paths[y * MAP_SIZE + x] = 0;
 }
 
 function startMeal(w: World, c: Colonist) {
@@ -863,6 +1068,9 @@ function computeThoughts(w: World, c: Colonist): Thought[] {
   if (has(c, 'tippler') && w.res.ale < 1) add('No ale in the stores', -4);
   if (hasBuilt(w, 'bathhouse') && w.res.wood > 0) add('Feeling fresh from the bathhouse', has(c, 'grumbler') ? 5 : 3);
   if (hasPerk(w, 'saintsDay')) add("Saint Pomfrey's blessing", 4);
+  if (c.beauty >= 5) add('Beautiful surroundings', 5);
+  else if (c.beauty >= 2) add('Pleasant surroundings', 2);
+  else if (c.beauty <= -1.2) add('Ugly surroundings', -3);
   const strain = w.strain * (has(c, 'stoic') ? 0.5 : 1);
   if (strain >= 1) add('The frontier wears on me', -strain);
   for (const m of c.memories) add(m.label, m.value);
@@ -904,6 +1112,7 @@ function hourly(w: World) {
       if (c.activity === 'leisure' && hasPerk(w, 'warmHearth')) addMemory(w, c, 'hearthWarm', 'Warm evening by the hearth', 2, 6);
     }
     c.fun = Math.max(0, Math.min(100, c.fun));
+    if (c.activity !== 'sleeping') c.beauty = c.beauty * 0.85 + beautyAt(w, c.x, c.y) * 0.15;
     c.memories = c.memories.filter(m => m.until > w.hour);
     c.thoughts = computeThoughts(w, c);
     c.moodTarget = Math.max(0, Math.min(100, 50 + c.thoughts.reduce((s, x) => s + x.value, 0)));
@@ -963,7 +1172,7 @@ function charterValue(w: World, c: CharterDef): { value: number; target: number;
   switch (m.kind) {
     case 'stock': { const v = m.resources.reduce((n, r) => n + w.res[r], 0); return { value: v, target: m.amount, label: `${Math.floor(v)} / ${m.amount} in storage` }; }
     case 'population': { const v = alive(w).length; return { value: v, target: m.amount, label: `${v} / ${m.amount} colonists` }; }
-    case 'buildings': { const v = built(w).length; return { value: v, target: m.amount, label: `${v} / ${m.amount} buildings finished` }; }
+    case 'buildings': { const v = built(w).filter(b => !bdef(b).decor).length; return { value: v, target: m.amount, label: `${v} / ${m.amount} buildings finished` }; }
     case 'couples': { const v = couples(w); return { value: v, target: m.amount, label: `${v} / ${m.amount} couples` }; }
     case 'avgMood': return { value: w.charterHours, target: m.hours, label: `${Math.round(avgMood(w))} mood · ${w.charterHours}h / ${m.hours}h` };
     case 'contentPop': return { value: w.charterHours, target: m.hours, label: `${alive(w).length} colonists · ${Math.round(avgMood(w))} mood · ${w.charterHours}h / ${m.hours}h` };
@@ -1005,7 +1214,7 @@ function move(w: World, c: Colonist, grid: Uint8Array, dt: number) {
     c.path = findPath(w, grid, c.x, c.y, goal.x, goal.y) ?? [];
     c.goalReached = false;
   }
-  let step = WALK_SPEED * dt * (c.carrying ? 0.85 : 1);
+  let step = WALK_SPEED * dt * (c.carrying ? 0.85 : 1) * (pathAt(w, Math.floor(c.x), Math.floor(c.y)) === 2 ? PATH_SPEED : 1);
   const pts = [...c.path, { x: goal.x, y: goal.y }];
   while (step > 0 && pts.length) {
     const p = pts[0];

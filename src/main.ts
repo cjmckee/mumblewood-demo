@@ -1,6 +1,7 @@
 import { createWorld, tick, apply, runHours, TICKS_PER_HOUR, World, Command, day } from './sim/world';
 import { IsoView } from './render/iso';
 import { UI } from './ui/ui';
+import { autoDecide, autoBuild } from './sim/autoplayer';
 
 /** in-game hours per real second at each speed setting (1x ≈ 90 s per day) */
 const SPEEDS = [0, 0.27, 0.55, 1.1];
@@ -36,6 +37,8 @@ async function boot() {
     get world() { return world; }, ui, view,
     advance(hours: number) { runHours(world, hours); ui.render(true); },
     resolve(option = 0) { apply(world, { type: 'resolve', option }); ui.render(true); },
+    /** let the bot play for a while (for screenshots and testing) */
+    autoplay(hours: number) { for (let h = 0; h < hours; h++) { autoDecide(world); for (let t = 0; t < TICKS_PER_HOUR; t++) { tick(world); autoDecide(world); } autoBuild(world); } ui.render(true); },
     setSpeed(s: number) { speed = s; ui.speed = s; ui.render(true); },
     day: () => day(world),
   };

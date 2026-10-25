@@ -1,7 +1,7 @@
 // Isometric vector renderer. Reads the world, never changes it.
 import { Application, Container, Graphics, Text } from 'pixi.js';
 import { BUILDING_BY_ID, ResourceId } from '../sim/content';
-import { World, Building, MAP_SIZE, BUILD_MIN, BUILD_MAX, CENTER, alive, hourOfDay, workersAt, bdef, siteWork, canPlace, spotOf, built } from '../sim/world';
+import { World, Building, MAP_SIZE, BUILD_MIN, BUILD_MAX, CENTER, alive, hourOfDay, workersAt, bdef, siteWork, canPlace, spotOf, built, terrainAt, T_TREE, T_BUSH, T_WATER } from '../sim/world';
 
 const TW = 64, TH = 32; // tile width/height in px
 /** world (tile) coordinates to screen; tile (i, j) spans [i, i+1] x [j, j+1] */
@@ -30,7 +30,13 @@ export class IsoView {
   app = new Application();
   camera = new Container();
   ground = new Graphics();
+  pathG = new Graphics();
   ghost = new Graphics();
+  private terrainRef: number[] | null = null;
+  private terrainObjs: Graphics[] = [];
+  private pathKey = '';
+  pathMode = false;
+  onPathTap: (x: number, y: number) => void = () => {};
   objects = new Container();
   night = new Graphics();
   glow = new Graphics();
@@ -49,9 +55,8 @@ export class IsoView {
     await this.app.init({ resizeTo: host, background: 0x22301f, antialias: true, autoDensity: true, resolution: Math.min(2, window.devicePixelRatio || 1) });
     host.appendChild(this.app.canvas);
     this.app.stage.addChild(this.camera, this.night);
-    this.camera.addChild(this.ground, this.glow, this.ghost, this.objects, this.labels);
+    this.camera.addChild(this.ground, this.pathG, this.glow, this.ghost, this.objects, this.labels);
     this.objects.sortableChildren = true;
-    this.drawGround();
     this.center();
     this.bindInput();
     window.addEventListener('resize', () => this.center());
@@ -75,25 +80,71 @@ export class IsoView {
     g.poly(flat(a, b, c, d)).fill({ color, alpha });
   }
 
-  private drawGround() {
-    const g = this.ground;
+  private drawGround(w: World) {
+    const g = this.ground; g.clear();
+    for (const o of this.terrainObjs) o.destroy();
+    this.terrainObjs = [];
     for (let x = -3; x < MAP_SIZE + 3; x++) for (let y = -3; y < MAP_SIZE + 3; y++) {
       const n = hash(x, y);
       const inside = x >= BUILD_MIN && y >= BUILD_MIN && x <= BUILD_MAX && y <= BUILD_MAX;
+      const t = terrainAt(w, x, y);
       let col = n < 0.5 ? 0x5d7f3f : n < 0.85 ? 0x577a3a : 0x648946;
-      const d = Math.hypot(x + 0.5 - CENTER, y + 0.5 - CENTER);
-      if (d < 3.3) col = n < 0.5 ? 0x8a7a5a : 0x84744f;
+      if (Math.hypot(x + 0.5 - CENTER, y + 0.5 - CENTER) < 3.3) col = n < 0.5 ? 0x8a7a5a : 0x84744f;
+      if (t === T_TREE) col = shade(col, 0.86);
       if (!inside) col = shade(col, 0.8);
+      if (t === T_WATER) {
+        this.tile(g, x, y, n < 0.5 ? 0x3d6f8a : 0x3a6a85);
+        const p = iso(x + 0.5, y + 0.5);
+        if (n > 0.55) g.moveTo(p.sx - 9, p.sy).lineTo(p.sx + 5, p.sy - 2).stroke({ width: 1.5, color: 0x8cc0d8, alpha: 0.5 });
+        continue;
+      }
       this.tile(g, x, y, col);
     }
-    // faint build-area border
+    // a sandy rim where water meets grass
+    for (let x = 0; x < MAP_SIZE; x++) for (let y = 0; y < MAP_SIZE; y++) if (terrainAt(w, x, y) === T_WATER) {
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (terrainAt(w, x + dx, y + dy) !== T_WATER) {
+        const a = dx === 1 ? [iso(x + 1, y), iso(x + 1, y + 1)] : dx === -1 ? [iso(x, y), iso(x, y + 1)] : dy === 1 ? [iso(x, y + 1), iso(x + 1, y + 1)] : [iso(x, y), iso(x + 1, y)];
+        g.moveTo(a[0].sx, a[0].sy).lineTo(a[1].sx, a[1].sy).stroke({ width: 3, color: 0xc8b47e, alpha: 0.8 });
+      }
+    }
     const a = iso(BUILD_MIN, BUILD_MIN), b = iso(BUILD_MAX + 1, BUILD_MIN), c = iso(BUILD_MAX + 1, BUILD_MAX + 1), d = iso(BUILD_MIN, BUILD_MAX + 1);
     g.poly(flat(a, b, c, d)).stroke({ width: 2, color: 0x2f4426, alpha: 0.6 });
     for (let x = -4; x < MAP_SIZE + 4; x++) for (let y = -4; y < MAP_SIZE + 4; y++) {
-      const inside = x >= BUILD_MIN - 1 && y >= BUILD_MIN - 1 && x <= BUILD_MAX + 1 && y <= BUILD_MAX + 1;
-      const n = hash(x + 99, y + 7);
-      if (inside || n > 0.72) continue;
-      this.addTree(x + 0.5 + (n - 0.5) * 0.5, y + 0.5 + (hash(y, x) - 0.5) * 0.5, n);
+      const t = terrainAt(w, x, y), n = hash(x + 99, y + 7);
+      if (t === T_TREE) {
+        const edge = x < BUILD_MIN || y < BUILD_MIN || x > BUILD_MAX || y > BUILD_MAX;
+        if (edge && n > 0.72) continue;
+        this.addTree(x + 0.5 + (n - 0.5) * 0.4, y + 0.5 + (hash(y, x) - 0.5) * 0.4, n);
+      } else if (t === T_BUSH) this.addBush(x + 0.5, y + 0.5, n);
+    }
+  }
+
+  private addBush(x: number, y: number, n: number) {
+    const t = new Graphics();
+    const { sx, sy } = iso(x, y);
+    t.ellipse(sx, sy + 3, 15, 6).fill({ color: 0x000000, alpha: 0.15 });
+    t.ellipse(sx - 6, sy - 4, 9, 7).fill(0x3f6b33);
+    t.ellipse(sx + 6, sy - 3, 9, 7).fill(0x36602e);
+    t.ellipse(sx, sy - 9, 10, 8).fill(0x4a7a3a);
+    for (let i = 0; i < 5; i++) t.circle(sx - 9 + ((i * 37 + n * 50) % 18), sy - 12 + ((i * 23) % 11), 2.2).fill(0xc8385a);
+    t.zIndex = sy;
+    this.objects.addChild(t); this.terrainObjs.push(t);
+  }
+
+  private drawPaths(w: World) {
+    const g = this.pathG; g.clear();
+    for (let i = 0; i < w.paths.length; i++) {
+      if (!w.paths[i]) continue;
+      const x = i % MAP_SIZE, y = Math.floor(i / MAP_SIZE);
+      if (w.paths[i] === 2) {
+        this.tile(g, x, y, 0xb39a6e, 0.95, 0.02);
+        const p = iso(x + 0.5, y + 0.5), n = hash(x * 3, y * 5);
+        g.ellipse(p.sx - 8 + n * 6, p.sy - 2, 5, 2.5).fill({ color: 0xc9b38a, alpha: 0.8 });
+        g.ellipse(p.sx + 6 - n * 4, p.sy + 3, 4, 2).fill({ color: 0xa08a5e, alpha: 0.8 });
+      } else {
+        const a = iso(x + 0.15, y + 0.15), b = iso(x + 0.85, y + 0.15), c = iso(x + 0.85, y + 0.85), d = iso(x + 0.15, y + 0.85);
+        g.poly(flat(a, b, c, d)).fill({ color: 0xe8c58a, alpha: 0.18 }).stroke({ width: 1.5, color: 0xe8c58a, alpha: 0.7 });
+      }
     }
   }
 
@@ -108,7 +159,7 @@ export class IsoView {
     t.poly([sx, sy - h, sx + w, sy - 6, sx, sy - 9]).fill(shade(leaf, 0.78));
     t.poly([sx, sy - h - 10, sx + w * 0.7, sy - h * 0.45, sx - w * 0.7, sy - h * 0.45]).fill(shade(leaf, 1.12));
     t.zIndex = sy;
-    this.objects.addChild(t);
+    this.objects.addChild(t); this.terrainObjs.push(t);
   }
 
   /** an isometric box with a hip roof over footprint (x0,y0)-(x1,y1) */
@@ -219,6 +270,7 @@ export class IsoView {
       const lp = iso(x0 + def.w / 2, y1 + 0.15); label.position.set(lp.sx, lp.sy);
       return { c, label };
     }
+    if (def.decor) { this.drawDecor(g, def.id, x0 + 0.5, y0 + 0.5); c.addChild(g); c.zIndex = ctr.sy; return { c }; }
     const wallH = 18 + def.height * 22;
     // shadow
     g.poly(flat(iso(x0 + 0.2, y0 + 0.3), iso(x1 + 0.45, y0 + 0.3), iso(x1 + 0.45, y1 + 0.35), iso(x0 + 0.2, y1 + 0.35))).fill({ color: 0x000000, alpha: 0.16 });
@@ -230,11 +282,46 @@ export class IsoView {
     // finished goods waiting by the door
     const out = (Object.entries(b.outbox) as [ResourceId, number][]).filter(([, n]) => n >= 2);
     if (out.length) this.crates(g, x1 - 0.1, y1 - 0.5, out.map(([r, n]) => [r, n * 2]), 2);
+    const inn = (Object.entries(b.inbox) as [ResourceId, number][]).filter(([, n]) => n >= 2);
+    if (inn.length) this.crates(g, x0 - 0.55, y1 - 0.5, inn.map(([r, n]) => [r, n * 2]), 2);
     c.addChild(g);
     const label = this.makeLabel(def.name);
     const lp = iso(x0 + def.w / 2, y1 + 0.25); label.position.set(lp.sx, lp.sy);
     c.zIndex = ctr.sy;
     return { c, label };
+  }
+
+  private drawDecor(g: Graphics, id: string, x: number, y: number) {
+    const { sx, sy } = iso(x, y);
+    if (id === 'flowerbed') {
+      const a = iso(x - 0.38, y - 0.38), b = iso(x + 0.38, y - 0.38), c = iso(x + 0.38, y + 0.38), d = iso(x - 0.38, y + 0.38);
+      g.poly(flat(a, b, c, d)).fill(0x6b4f33);
+      g.poly(flat(d, c, up(c, 4), up(d, 4))).fill(0x5a4029);
+      const cols = [0xd66a9a, 0xf2c94c, 0xf4f1e8, 0xd66a9a, 0xb07ad6, 0xf2c94c];
+      for (let i = 0; i < 9; i++) { const px = sx - 16 + (i % 3) * 16 + ((i * 7) % 5), py = sy - 7 + Math.floor(i / 3) * 6; g.circle(px, py - 4, 3).fill(cols[i % cols.length]); g.circle(px + 2, py - 1, 1.5).fill(0x4a7a3a); }
+    } else if (id === 'lantern') {
+      g.ellipse(sx, sy + 2, 6, 3).fill({ color: 0x000000, alpha: 0.2 });
+      g.rect(sx - 1.5, sy - 34, 3, 34).fill(0x3a2e24);
+      g.roundRect(sx - 5, sy - 44, 10, 11, 2).fill(0xf2c46a).stroke({ width: 1.5, color: 0x3a2e24 });
+      g.poly([sx - 6, sy - 44, sx + 6, sy - 44, sx, sy - 50]).fill(0x3a2e24);
+    } else if (id === 'bench') {
+      g.ellipse(sx, sy + 2, 16, 6).fill({ color: 0x000000, alpha: 0.18 });
+      const a = iso(x - 0.35, y - 0.1), b = iso(x + 0.35, y - 0.1), c = iso(x + 0.35, y + 0.1), d = iso(x - 0.35, y + 0.1);
+      g.poly(flat(up(a, 8), up(b, 8), up(c, 8), up(d, 8))).fill(0xa07448);
+      g.poly(flat(up(d, 8), up(c, 8), up(c, 5), up(d, 5))).fill(0x7a5634);
+      for (const p of [a, b, c, d]) g.rect(p.sx - 1, p.sy - 8, 2, 8).fill(0x5a4029);
+      g.poly(flat(up(a, 8), up(b, 8), up(b, 16), up(a, 16))).fill(0x8a6038);
+    } else if (id === 'statue') {
+      g.ellipse(sx, sy + 2, 14, 6).fill({ color: 0x000000, alpha: 0.2 });
+      const a = iso(x - 0.28, y - 0.28), b = iso(x + 0.28, y - 0.28), c = iso(x + 0.28, y + 0.28), d = iso(x - 0.28, y + 0.28);
+      g.poly(flat(d, c, up(c, 12), up(d, 12))).fill(0x8a8a82);
+      g.poly(flat(c, b, up(b, 12), up(c, 12))).fill(0x6e6e68);
+      g.poly(flat(up(a, 12), up(b, 12), up(c, 12), up(d, 12))).fill(0xa8a8a0);
+      g.roundRect(sx - 6, sy - 38, 12, 22, 5).fill(0xb8b8b0);
+      g.circle(sx, sy - 43, 5.5).fill(0xc4c4bc);
+      g.poly([sx - 7, sy - 46, sx + 7, sy - 46, sx, sy - 51]).fill(0x9a9a92); // a disappointed little hat
+      g.rect(sx + 5, sy - 34, 7, 2.5).fill(0xb0b0a8); // pointing, sternly
+    }
   }
 
   private makeLabel(text: string, color = 0xf4ecdc) {
@@ -288,6 +375,9 @@ export class IsoView {
   /** alpha: interpolation between the last two sim ticks, 0..1 */
   update(w: World, alpha: number, time: number) {
     this.lastWorld = w;
+    if (this.terrainRef !== w.terrain) { this.drawGround(w); this.terrainRef = w.terrain; this.pathKey = ''; }
+    const pk = `${w.version}|${w.paths.reduce((n, p, i) => n + p * (i % 7 + 1), 0)}`;
+    if (pk !== this.pathKey) { this.drawPaths(w); this.pathKey = pk; }
     const key = `${w.version}|${this.selected?.kind}${this.selected?.id}|${Math.floor(w.hour)}`;
     if (key !== this.builtKey) { this.rebuildBuildings(w); this.builtKey = key; }
     this.drawGhost(w);
@@ -332,8 +422,12 @@ export class IsoView {
     const gAlpha = 0.18 + dark * 0.7;
     for (let r = 5; r >= 1; r--) this.glow.ellipse(hearth.sx, hearth.sy, 40 * r * flicker, 20 * r * flicker).fill({ color: 0xf2a54a, alpha: gAlpha / 6 });
     this.labels.alpha = 1 - dark * 0.45;
+    for (const b of built(w)) if (b.def === 'lantern' && dark > 0) {
+      const p = iso(b.x + 0.5, b.y + 0.5);
+      for (let r = 3; r >= 1; r--) this.glow.ellipse(p.sx, p.sy, 22 * r, 11 * r).fill({ color: 0xf2c46a, alpha: dark * 0.12 });
+    }
     for (const b of built(w)) if (b.def === 'tavern' && workersAt(w, b.uid).length && h >= 18) {
-      const p = iso(b.x + 1.5, b.y + 1.5);
+      const p = iso(b.x + 1, b.y + 1);
       for (let r = 3; r >= 1; r--) this.glow.ellipse(p.sx, p.sy, 34 * r, 17 * r).fill({ color: 0xf2c46a, alpha: (0.06 + dark * 0.2) / 3 });
     }
   }
@@ -372,6 +466,7 @@ export class IsoView {
   private tap(cx: number, cy: number) {
     const w = this.lastWorld; if (!w) return;
     const p = this.screenToWorld(cx, cy);
+    if (this.pathMode) { this.onPathTap(Math.floor(p.x), Math.floor(p.y)); return; }
     if (this.placing) {
       const def = BUILDING_BY_ID[this.placing.def];
       this.placing = { ...this.placing, x: Math.round(p.x - def.w / 2), y: Math.round(p.y - def.h / 2) };
