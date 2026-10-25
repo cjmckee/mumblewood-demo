@@ -3,7 +3,7 @@ import { BUILDING_BY_ID, CHARTERS, EVENTS, JOB_NAMES, PERK_BY_ID, RESOURCES, TRA
 import {
   World, Command, Colonist, alive, avgMood, beds, buildingByUid, charterProgress, colonistById,
   day, hourOfDay, opinion, workersAt, MAX_DEPARTURES, sites, siteWork, remainingCost, storageCap, stored,
-  keepsFresh, findSpot, canPlace, laborers, centerOf, built, Building, efficiencyAt, pathAt, MAP_SIZE, blockedReason, Errand, Difficulty, patientsAt, lost,
+  keepsFresh, findSpot, canPlace, laborers, centerOf, built, Building, efficiencyAt, pathAt, MAP_SIZE, blockedReason, Errand, Difficulty, patientsAt, lost, bedridden, spoilingFood, accepts, roomIn, FOODS, GOODS,
 } from '../sim/world';
 import type { IsoView, Picked } from '../render/iso';
 
@@ -119,6 +119,14 @@ export class UI {
       case 'paths-done': this.view.pathMode = false; this.open = true; this.tab = 'build'; break;
       case 'cancel-site': { const err = this.send({ type: 'cancel', building: Number(arg) }); if (err) this.toast(err); this.detail = null; this.view.selected = null; break; }
       case 'assign': { const [cid, bid] = arg.split(':').map(x => (x === 'none' ? null : Number(x))); const err = this.send({ type: 'assign', colonist: cid!, building: bid }); if (err) this.toast(err); break; }
+      case 'store-preset': { const [bid, m] = arg.split(':'); this.send({ type: 'storageFilter', building: Number(bid), allow: m === 'food' ? FOODS : m === 'goods' ? GOODS : null }); break; }
+      case 'store-item': {
+        const [bid, r] = arg.split(':'); const b = buildingByUid(w, Number(bid)); if (!b) break;
+        const cur = b.allow ?? RESOURCES.map(x => x.id);
+        const next = cur.includes(r as ResourceId) ? cur.filter(x => x !== r) : [...cur, r as ResourceId];
+        if (!next.length) { this.toast('Storage has to take something.'); break; }
+        this.send({ type: 'storageFilter', building: b.uid, allow: next }); break;
+      }
       case 'food': { const f = arg as ResourceId; this.send({ type: 'foodRule', food: f, allowed: w.forbidden.includes(f) }); break; }
       case 'auto': this.send({ type: 'autoAssign' }); this.toast('The foreman has reassigned everyone.'); break;
       case 'resolve': this.send({ type: 'resolve', option: Number(arg) }); this.lastModal = ''; break;
@@ -151,7 +159,7 @@ export class UI {
     const pips = Array.from({ length: MAX_DEPARTURES }, (_, i) => `<i class="pip${i < lost(w) ? ' on' : ''}"></i>`).join('');
     const strain = Math.round(w.strain);
     const cap = storageCap(w), st = stored(w);
-    const storeChip = `<span class="chip store${st >= cap ? ' full' : ''}"><b>${Math.floor(st)}/${cap}</b> stored${keepsFresh(w) ? '' : ' · food spoils'}</span>`;
+    const storeChip = `<span class="chip store${st >= cap ? ' full' : ''}"><b>${Math.floor(st)}/${cap}</b> stored${spoilingFood(w) >= 5 ? ' · food spoiling' : ''}</span>`;
     const res = storeChip + RESOURCES.filter(r => w.res[r.id] >= 0.5 || ['wood', 'berries', 'stew'].includes(r.id))
       .map(r => `<span class="chip"><i style="background:${RES_COLOR[r.id]}"></i><b>${Math.floor(w.res[r.id])}</b> ${r.name}</span>`).join('');
     const html = `
@@ -184,7 +192,7 @@ export class UI {
   }
 
   private errandPicker(w: World, e: Errand, fromDecision: boolean) {
-    const ok = alive(w).filter(c => !(c.illness && c.illness.severity > 15));
+    const ok = alive(w).filter(c => !bedridden(c));
     const rank = (c: Colonist) => (e.skill ? c.skills[e.skill] * 2 : 0) + (c.job == null ? 3 : 0) + (e.def === 'feud' && c.traits.includes('sunny') ? 8 : 0) - (e.pair?.includes(c.id) ? 20 : 0);
     const rows = ok.sort((a, b) => rank(b) - rank(a)).map(c => {
       const job = buildingByUid(w, c.job);
@@ -294,7 +302,7 @@ export class UI {
     const queue = sites(w).map(b => this.siteRow(w, b)).join('');
     const done = built(w).filter(b => !BUILDING_BY_ID[b.def].decor).map(b => {
       const def = BUILDING_BY_ID[b.def];
-      const info = blockedReason(w, b) ? 'idle: no ingredients' : def.slots ? `${workersAt(w, b.uid).length}/${def.slots} workers` : def.beds ? `${def.beds} beds` : def.seats ? `${def.seats} seats · ${Math.round(b.clean)}% clean` : def.storage ? `holds ${def.storage}` : def.id === 'hearth' ? 'gathering place' : 'passive';
+      const info = blockedReason(w, b) ? 'idle: no ingredients' : def.slots ? `${workersAt(w, b.uid).length}/${def.slots} workers` : def.beds ? `${def.beds} beds` : def.seats ? `${def.seats} seats · ${Math.round(b.clean)}% clean` : def.storage ? `${Math.round(Object.values(b.stock).reduce((n, x) => n + (x ?? 0), 0))}/${def.storage} · ${storeLabel(b)}` : def.id === 'hearth' ? 'gathering place' : 'passive';
       return `<button type="button" class="row compact" data-act="building" data-arg="${b.uid}"><span class="who"><b>${esc(def.name)}</b></span><small>${info}</small></button>`;
     }).join('');
     return `${queue ? `<h3 class="first">Under construction</h3><div class="rows">${queue}</div>` : ''}
@@ -373,6 +381,16 @@ export class UI {
         return `<button type="button" class="row" data-act="assign" data-arg="${c.id}:${b.uid}"><span class="dot" style="background:${hex(c.shirt)}"></span><span class="who"><b>${esc(c.name)}</b><small>${def.job ? `${SKILL_NAMES[def.job]} ${Math.floor(c.skills[def.job])} · ` : ''}${cw ? `now at ${esc(BUILDING_BY_ID[cw.def].name)}` : 'laborer'}${c.likes === def.job ? ' · loves this' : c.dislikes === def.job ? ' · hates this' : ''}</small></span><span class="add">Assign</span></button>`;
       }).join('') : '';
       staff += `<h3>Workers ${workers.length}/${def.slots}</h3><div class="rows">${cur || '<p class="muted">Nobody works here.</p>'}</div>${cand ? `<h3>Assign someone</h3><div class="rows">${cand}</div>` : ''}`;
+    } else if (def.storage) {
+      const held = Object.values(b.stock).reduce((n, x) => n + (x ?? 0), 0);
+      const contents = RESOURCES.filter(r => (b.stock[r.id] ?? 0) >= 0.5).map(r => `${Math.floor(b.stock[r.id] ?? 0)} ${r.name.toLowerCase()}`).join(', ');
+      const mode = !b.allow ? 'all' : b.allow.length === FOODS.length && FOODS.every(f => b.allow!.includes(f)) ? 'food' : b.allow.length === GOODS.length && GOODS.every(f => b.allow!.includes(f)) ? 'goods' : 'custom';
+      const preset = (id: string, label: string) => `<button type="button" class="seg${mode === id ? ' on' : ''}" data-act="store-preset" data-arg="${b.uid}:${id}" aria-pressed="${mode === id}">${label}</button>`;
+      const items = RESOURCES.map(r => { const on = accepts(b, r.id); return `<button type="button" class="rule${on ? ' on' : ''}" data-act="store-item" data-arg="${b.uid}:${r.id}" aria-pressed="${on}"><i style="background:${RES_COLOR[r.id]}"></i>${r.name}<small>${on ? 'stored here' : 'not here'}</small></button>`; }).join('');
+      staff += `<p class="prefs">Holding <b>${Math.round(held)} / ${def.storage}</b>${contents ? `: ${contents}` : ''}.${def.keepsFresh ? ' Food here stays fresh.' : ' Food left here slowly spoils.'}</p>
+        <h3>What goes here</h3><p class="muted">Haulers take each good to the nearest storage that accepts it, and fetch from the nearest one that has it.</p>
+        <div class="segs">${preset('all', 'Everything')}${preset('food', 'Food only')}${preset('goods', 'Goods only')}</div>
+        <div class="rules">${items}</div>`;
     } else if (def.beds) {
       const sleepers = alive(w).filter(c => c.bed === b.uid).map(c => esc(first(c))).join(', ');
       staff += `<p class="prefs">Sleeps ${def.beds}${sleepers ? `: ${sleepers}` : ''}.</p>`;
@@ -451,4 +469,11 @@ export class UI {
     const best = wins.length ? Math.min(...wins.map(r => r.day)) : null;
     return `<p class="terms">Your ledger: ${runs.length} run${runs.length > 1 ? 's' : ''}, ${wins.length} won${best != null ? `, fastest win on day ${best}` : ''}.</p>`;
   }
+}
+
+function storeLabel(b: Building) {
+  if (!b.allow) return 'everything';
+  if (b.allow.length === FOODS.length && FOODS.every(f => b.allow!.includes(f))) return 'food only';
+  if (b.allow.length === GOODS.length && GOODS.every(f => b.allow!.includes(f))) return 'goods only';
+  return `${b.allow.length} kinds`;
 }

@@ -1,7 +1,7 @@
 // A heuristic player, used by the balance harness to play thousands of runs headlessly.
 // It reads the active charter and plays towards it, the way a person would.
 import { BUILDING_BY_ID, CHARTERS, EVENTS, ResourceId } from './content';
-import { World, apply, alive, beds, mealTotal, sites, findSpot, CENTER, CHARTER_HELPERS, avgMood, built, MAP_SIZE, pathAt, terrainAt, T_WATER, bdef, workersAt, blockedReason, opinion, Building, Colonist, hourOfDay, charterProgress } from './world';
+import { World, apply, alive, beds, mealTotal, sites, findSpot, CENTER, CHARTER_HELPERS, avgMood, built, MAP_SIZE, pathAt, terrainAt, T_WATER, bdef, workersAt, blockedReason, opinion, Building, Colonist, hourOfDay, charterProgress, storageFree, storages, FOODS, GOODS, bedridden, foodTotal } from './world';
 
 const BLUEPRINT_PRIORITY = ['sawmill', 'pieoven', 'dock', 'cottage', 'brewery', 'tavern', 'smokehouse', 'cellar', 'stage', 'bathhouse'];
 const PERK_PRIORITY = ['saintsDay', 'ironWill', 'communalPot', 'overtime', 'rations', 'earplugs', 'warmHearth', 'gossipBan', 'matchmaker'];
@@ -88,7 +88,8 @@ export function autoBuild(w: World) {
   const saving: ResourceId[] = w.charter === 'lumber' ? ['planks'] : w.charter === 'woodpile' ? ['wood'] : [];
   const pop = alive(w).length;
   const count = (id: string) => w.buildings.filter(b => b.def === id).length;
-  const maxSites = w.charter === 'township' || w.charter === 'garden' ? 3 : 2;
+  // running low on food opens an extra site, so a new forager never waits behind flowerbeds
+  const maxSites = (w.charter === 'township' || w.charter === 'garden' ? 3 : 2) + (foodTotal(w) < pop * 4 ? 1 : 0);
   if (sites(w).length < maxSites) {
     const want: string[] = [];
     // wood is the economy: keep about one woodcutter per three settlers, more while short
@@ -115,10 +116,16 @@ export function autoBuild(w: World) {
     // only add producers when the colony wants more workers there than it has slots for
     const short = staffShortfall(w);
     if (short.includes('woodcutter')) want.unshift('woodcutter');
-    if (short.includes('rawFood')) want.push(w.owned.includes('dock') && count('dock') === 0 ? 'dock' : 'forager');
+    if (short.includes('rawFood')) {
+      const hut = w.owned.includes('dock') && count('dock') === 0 ? 'dock' : 'forager';
+      if (foodTotal(w) < pop * 5) want.unshift(hut); else want.push(hut);
+    }
     if (short.includes('kitchen')) want.push('kitchen');
     for (const k of ['sawmill', 'pieoven', 'brewery']) if (short.includes(k) && w.owned.includes(k)) want.push(k);
     if (count('storehouse') === 0) want.push('storehouse');
+    // more room when one kind of good runs out of space
+    if (storageFree(w, 'wood') < 30 && storages(w).length > 0) want.unshift('stockpile');
+    if (count('storehouse') > 0 && storageFree(w, 'berries') < 30) want.unshift(count('storehouse') < 2 ? 'storehouse' : 'stockpile');
     if (w.owned.includes('sawmill') && w.charter === 'lumber' && count('sawmill') < 2) want.push('sawmill');
     for (const id of want) {
       if (sites(w).some(b => b.def === id)) continue;
@@ -129,8 +136,9 @@ export function autoBuild(w: World) {
       const essential = id === 'leanto' || (saving.includes('wood') && id === 'woodcutter') || (saving.includes('planks') && id === 'sawmill');
       const short = Object.entries(def.cost).some(([r, n]) => w.res[r as ResourceId] < (n ?? 0) + (r === 'wood' ? 10 : 0) || (saving.includes(r as ResourceId) && !essential));
       if (short) continue;
-      // decorations go by the hearth; everything else near the centre
-      const spot = findSpot(w, id, CENTER, CENTER, !def.decor);
+      // decorations go by the hearth; storage next to what it serves; everything else near the centre
+      const near = storageSpot(w, id);
+      const spot = findSpot(w, id, near.x, near.y, !def.decor);
       if (!spot) continue;
       apply(w, { type: 'place', def: id, x: spot.x, y: spot.y });
       break;
@@ -149,6 +157,7 @@ export function autoBuild(w: World) {
       }
     }
   }
+  autoStorage(w);
   if (Math.round(hourOfDay(w)) % 3 === 0) autoStaff(w);
   autoFoodRules(w);
   void MAP_SIZE;
@@ -158,36 +167,37 @@ export function autoBuild(w: World) {
 // ---------- Staffing ----------
 /** What the colony wants, in workers per kind of building, before counting how many people it has. */
 export function staffWants(w: World): Record<string, number> {
-  const pop = alive(w).filter(c => !(c.illness && c.illness.severity > 15)).length;
+  const pop = alive(w).filter(c => !bedridden(c)).length;
   const ch = w.charter ?? '';
   const raw = w.res.berries + w.res.fish + w.res.mushrooms;
   return {
     woodcutter: 1 + Math.floor(pop / 5) + (ch === 'woodpile' ? 2 : ['paved', 'garden', 'lumber', 'township'].includes(ch) ? 1 : 0) + (w.res.wood < 25 ? 1 : 0),
-    rawFood: rawFoodWorkers(w, pop) + (raw < pop * 3 ? 1 : 0) + (['pantry', 'feast', 'pieday'].includes(ch) ? 1 : 0),
+    rawFood: rawFoodWorkers(w, pop) + (raw < pop * 4 ? 1 : 0) + (['pantry', 'feast', 'pieday'].includes(ch) ? 1 : 0),
     kitchen: Math.max(1, Math.ceil(pop / 9)) + (['pantry', 'feast'].includes(ch) ? 1 : 0),
     sawmill: (w.res.planks < 25 ? 1 : 0) + (['lumber', 'pieday', 'garden', 'pretty'].includes(ch) ? 1 : 0),
     pieoven: ch === 'pieday' ? 2 : ['cheer', 'feast', 'harmony', 'calm'].includes(ch) ? 1 : 0,
     brewery: ch === 'feast' ? 2 : w.res.ale < 15 && built(w).some(b => b.def === 'tavern') ? 1 : 0,
     smokehouse: w.res.fish > 20 ? 1 : 0,
     tavern: built(w).some(b => b.def === 'tavern') ? 1 : 0,
-    clinic: alive(w).some(c => c.illness && c.illness.severity > 15) ? 1 : 0,
+    clinic: alive(w).some(c => bedridden(c)) ? 1 : 0,
   };
 }
 /** foragers and fishers needed to feed everyone, from how productive the existing huts actually are */
 function rawFoodWorkers(w: World, pop: number) {
   const huts = built(w).filter(b => ['forager', 'dock', 'cellar'].includes(b.def));
   const perWorker = 12 * (huts.length ? huts.reduce((n, b) => n + (bdef(b).recipe!.rate * b.eff), 0) / huts.length : 1.0);
-  return Math.max(1, Math.ceil((pop * 2.1) / perWorker));
+  return Math.max(1, Math.ceil((pop * 2.6) / perWorker));
 }
 const KIND_DEFS: Record<string, string[]> = { rawFood: ['forager', 'dock', 'cellar'] };
 const defsOf = (kind: string) => KIND_DEFS[kind] ?? [kind];
 
 /** How many workers the bot wants in each building right now: essentials first, then the charter, then extras. */
 export function staffPlan(w: World): Map<number, number> {
-  const pop = alive(w).filter(c => !(c.illness && c.illness.severity > 15)).length;
+  const pop = alive(w).filter(c => !bedridden(c)).length;
   const ch = w.charter ?? '';
   const want = staffWants(w);
-  const keepFree = Math.max(3, Math.ceil(pop / 3.5)) + (sites(w).length > 1 ? 1 : 0);
+  // a skeleton crew keeps its jobs going and builds with whoever is left
+  const keepFree = pop <= 5 ? 1 : Math.max(3, Math.ceil(pop / 3.5)) + (sites(w).length > 1 ? 1 : 0);
   let budget = Math.max(0, pop - keepFree);
   const given: Record<string, number> = {};
   const plan = new Map<number, number>();
@@ -235,7 +245,7 @@ function fit(w: World, c: Colonist, b: Building) {
   const job = bdef(b).job!;
   let s = c.skills[job] + (c.likes === job ? 3 : 0) - (c.dislikes === job ? 4 : 0);
   for (const o of workersAt(w, b.uid)) if (o.id !== c.id && (opinion(w, c.id, o.id) < -30 || opinion(w, o.id, c.id) < -30)) s -= 4;
-  if (c.illness && c.illness.severity > 15) s -= 50;
+  if (bedridden(c)) s -= 50;
   return s;
 }
 
@@ -252,7 +262,7 @@ export function autoStaff(w: World) {
   for (const [uid, n] of [...plan].sort((a, b) => b[1] - a[1])) {
     const b = w.buildings.find(x => x.uid === uid)!;
     while (workersAt(w, uid).length < n) {
-      const free = alive(w).filter(c => c.job == null && c.errand == null && !(c.illness && c.illness.severity > 15));
+      const free = alive(w).filter(c => c.job == null && c.errand == null && !bedridden(c));
       if (!free.length) break;
       free.sort((a, z) => fit(w, z, b) - fit(w, a, b));
       apply(w, { type: 'assign', colonist: free[0].id, building: uid });
@@ -271,5 +281,32 @@ export function autoFoodRules(w: World) {
   for (const f of ['stew', 'pie', 'smokedFish', 'berries', 'fish', 'mushrooms'] as ResourceId[]) {
     const allowed = !keep.includes(f);
     if (allowed === w.forbidden.includes(f)) apply(w, { type: 'foodRule', food: f, allowed });
+  }
+}
+
+// ---------- Storage ----------
+const centroid = (w: World, ids: string[]) => {
+  const bs = built(w).filter(b => ids.includes(b.def));
+  if (!bs.length) return { x: CENTER, y: CENTER };
+  const x = bs.reduce((n, b) => n + b.x + bdef(b).w / 2, 0) / bs.length, y = bs.reduce((n, b) => n + b.y + bdef(b).h / 2, 0) / bs.length;
+  return { x: (x + CENTER) / 2, y: (y + CENTER) / 2 };
+};
+/** storehouses (food) go between the food producers and the kitchens; extra stockpiles (goods) by the woodcutters */
+function storageSpot(w: World, id: string) {
+  if (id === 'storehouse') return centroid(w, ['forager', 'dock', 'kitchen', 'pieoven', 'smokehouse']);
+  if (id === 'stockpile' && w.buildings.some(b => b.def === 'stockpile')) return centroid(w, ['woodcutter', 'sawmill', 'brewery']);
+  return { x: CENTER, y: CENTER };
+}
+/** keep food in storehouses, where it stays fresh, and goods on stockpiles */
+export function autoStorage(w: World) {
+  const piles = storages(w).filter(b => !bdef(b).keepsFresh);
+  for (const b of storages(w)) {
+    const want = bdef(b).keepsFresh && piles.length ? FOODS : null;
+    const same = want === null ? b.allow === null : !!b.allow && b.allow.length === want.length;
+    if (!same) apply(w, { type: 'storageFilter', building: b.uid, allow: want });
+  }
+  if (storages(w).some(b => bdef(b).keepsFresh)) for (const b of piles) {
+    const same = !!b.allow && b.allow.length === GOODS.length;
+    if (!same) apply(w, { type: 'storageFilter', building: b.uid, allow: GOODS });
   }
 }

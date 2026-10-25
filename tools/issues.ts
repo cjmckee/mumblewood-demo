@@ -1,5 +1,5 @@
 // Problems the diagnostics look for every in-game hour.
-import { World, alive, built, sites, workersAt, laborers, mealTotal, storageFree, beds, blockedReason, remainingCost, avgMood, bdef } from '../src/sim/world';
+import { World, alive, built, sites, workersAt, laborers, mealTotal, storageFree, beds, blockedReason, remainingCost, avgMood, bdef, bedridden } from '../src/sim/world';
 import { RAW_FOODS, ResourceId } from '../src/sim/content';
 
 export const ISSUES: Record<string, (w: World) => boolean> = {
@@ -15,8 +15,8 @@ export const ISSUES: Record<string, (w: World) => boolean> = {
   'not enough beds': w => beds(w) < alive(w).length,
   'someone sulking': w => alive(w).some(c => c.sulking),
   'someone starving': w => alive(w).some(c => c.hunger <= 0),
-  'sick with no clinic': w => alive(w).some(c => c.illness && c.illness.severity > 15) && !built(w).some(b => b.def === 'clinic'),
-  'sick, but the clinic has no doctor': w => alive(w).some(c => c.illness && c.illness.severity > 15) && built(w).some(b => b.def === 'clinic') && !built(w).some(b => b.def === 'clinic' && workersAt(w, b.uid).length > 0),
+  'sick with no clinic': w => alive(w).some(c => bedridden(c)) && !built(w).some(b => b.def === 'clinic'),
+  'sick, but the clinic has no doctor': w => alive(w).some(c => bedridden(c)) && built(w).some(b => b.def === 'clinic') && !built(w).some(b => b.def === 'clinic' && workersAt(w, b.uid).length > 0),
   'more workplaces than workers': w => built(w).reduce((n, b) => n + (bdef(b).recipe ? bdef(b).slots : 0), 0) > alive(w).length - 2,
   'unassigned urgent job': w => w.errands.some(e => e.assignee == null),
   'low mood (avg < 35)': w => avgMood(w) < 35,

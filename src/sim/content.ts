@@ -78,7 +78,7 @@ export const BUILDINGS: BuildingDef[] = [
   { id: 'woodcutter', name: 'Woodcutter', blurb: 'Fells trees. Works best with lots of trees close by.', cost: { wood: 8 }, w: 1, h: 1, slots: 2, job: 'chopping', needs: 'trees', recipe: { inputs: {}, output: 'wood', rate: 1.6 }, wall: 0x7a5a3c, roof: 0x5c7a3e, height: 0.7, basic: true },
   { id: 'forager', name: 'Forager hut', blurb: 'Picks berries. Works best right next to berry bushes.', cost: { wood: 8 }, w: 1, h: 1, slots: 2, job: 'foraging', needs: 'bushes', recipe: { inputs: {}, output: 'berries', rate: 1.3 }, wall: 0x8c6b4a, roof: 0xa0465a, height: 0.7, basic: true },
   { id: 'dining', name: 'Dining hall', blurb: 'Tables and benches for 6. Eating here beats eating in the dirt, as long as someone keeps it clean.', cost: { wood: 20 }, w: 2, h: 2, slots: 0, seats: 6, wall: 0x9a7a58, roof: 0x8a4a3a, height: 0.9, basic: true },
-  { id: 'storehouse', name: 'Storehouse', blurb: 'Holds 250 more goods, and while you have one, no food spoils.', cost: { wood: 25 }, w: 2, h: 2, slots: 0, storage: 250, keepsFresh: true, wall: 0x7a6a58, roof: 0x5a6a7a, height: 1.0, basic: true },
+  { id: 'storehouse', name: 'Storehouse', blurb: 'Holds 250 goods under a roof. Food stored here doesn\u2019t spoil.', cost: { wood: 25 }, w: 2, h: 2, slots: 0, storage: 250, keepsFresh: true, wall: 0x7a6a58, roof: 0x5a6a7a, height: 1.0, basic: true },
 
   { id: 'clinic', name: 'Clinic', blurb: 'Two cots and a doctor. The sick and injured recover here much faster, faster still with a skilled doctor.', cost: { wood: 15 }, w: 2, h: 1, slots: 1, job: 'medicine', patients: 2, wall: 0xd8d0c0, roof: 0x9a3a3a, height: 0.8, basic: true },
 
@@ -243,9 +243,9 @@ export const JOB_EVENTS: JobEventDef[] = [
 
 export interface IllnessDef { id: string; name: string; start: number; /** severity change per hour while untreated and up */ worsen: number; contagious?: boolean }
 export const ILLNESSES: IllnessDef[] = [
-  { id: 'flu', name: 'Frontier flu', start: 22, worsen: 0.55, contagious: true },
-  { id: 'tummy', name: 'Bad tummy', start: 20, worsen: 0 },
-  { id: 'thumb', name: 'Hammered thumb', start: 18, worsen: 0 },
-  { id: 'ankle', name: 'Sprained ankle', start: 26, worsen: 0 },
-  { id: 'splinter', name: 'Heroic splinter', start: 16, worsen: 0 },
+  { id: 'flu', name: 'Frontier flu', start: 22, worsen: 1.0, contagious: true },
+  { id: 'tummy', name: 'Bad tummy', start: 20, worsen: 0.15 },
+  { id: 'thumb', name: 'Hammered thumb', start: 18, worsen: 0.15 },
+  { id: 'ankle', name: 'Sprained ankle', start: 26, worsen: 0.2 },
+  { id: 'splinter', name: 'Heroic splinter', start: 16, worsen: 0.15 },
 ];

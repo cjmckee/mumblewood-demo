@@ -262,9 +262,8 @@ export class IsoView {
       for (let x = x0; x < x1; x++) for (let y = y0; y < y1; y++) this.tile(g, x, y, (x + y) % 2 ? 0x8a7a5a : 0x7f6f50, 1, 0.04);
       const N = iso(x0, y0), E = iso(x1, y0), S = iso(x1, y1), W = iso(x0, y1);
       for (const [p, q] of [[N, E], [E, S], [S, W], [W, N]]) g.moveTo(p.sx, p.sy - 5).lineTo(q.sx, q.sy - 5).stroke({ width: 2, color: 0x6b5236 });
-      const goods = (Object.entries(w.res) as [ResourceId, number][]).filter(([, n]) => n >= 1).sort((a, b) => b[1] - a[1]);
-      const hasHouse = built(w).some(x => x.def === 'storehouse');
-      this.crates(g, x0 + 0.2, y0 + 0.2, hasHouse ? goods.slice(0, 4) : goods, 9);
+      const goods = (Object.entries(b.stock) as [ResourceId, number][]).filter(([, n]) => n >= 1).sort((a, b) => b[1] - a[1]);
+      this.crates(g, x0 + 0.2, y0 + 0.2, goods, 9);
       c.addChild(g); c.zIndex = ctr.sy - 10;
       const label = this.makeLabel(def.name);
       const lp = iso(x0 + def.w / 2, y1 + 0.15); label.position.set(lp.sx, lp.sy);
