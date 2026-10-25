@@ -1,0 +1,173 @@
+// All game content lives here as plain data. The sim reads it; nothing here knows about rendering.
+
+export type ResourceId = 'wood' | 'berries' | 'fish' | 'mushrooms' | 'stew' | 'pie' | 'smokedFish' | 'planks' | 'ale';
+export const RESOURCES: { id: ResourceId; name: string; kind: 'raw' | 'meal' | 'material' | 'luxury' }[] = [
+  { id: 'wood', name: 'Wood', kind: 'material' },
+  { id: 'planks', name: 'Planks', kind: 'material' },
+  { id: 'berries', name: 'Berries', kind: 'raw' },
+  { id: 'fish', name: 'Fish', kind: 'raw' },
+  { id: 'mushrooms', name: 'Mushrooms', kind: 'raw' },
+  { id: 'stew', name: 'Stew', kind: 'meal' },
+  { id: 'pie', name: 'Pie', kind: 'meal' },
+  { id: 'smokedFish', name: 'Smoked fish', kind: 'meal' },
+  { id: 'ale', name: 'Ale', kind: 'luxury' },
+];
+export const RAW_FOODS: ResourceId[] = ['berries', 'fish', 'mushrooms'];
+export const MEALS: ResourceId[] = ['pie', 'smokedFish', 'stew'];
+
+export type JobKind = 'chopping' | 'foraging' | 'fishing' | 'cooking' | 'crafting' | 'brewing' | 'serving';
+export const JOB_NAMES: Record<JobKind, string> = {
+  chopping: 'chopping wood', foraging: 'foraging', fishing: 'fishing', cooking: 'cooking',
+  crafting: 'carpentry', brewing: 'brewing', serving: 'tavern work',
+};
+
+export interface Recipe {
+  /** inputs consumed per unit of output; "rawFood" means any raw food */
+  inputs: Partial<Record<ResourceId | 'rawFood', number>>;
+  output: ResourceId;
+  /** output units per worker-hour at work speed 1 */
+  rate: number;
+}
+
+export interface BuildingDef {
+  id: string;
+  name: string;
+  blurb: string;
+  cost: Partial<Record<ResourceId, number>>;
+  slots: number;
+  job?: JobKind;
+  recipe?: Recipe;
+  beds?: number;
+  bedQuality?: 'rough' | 'basic' | 'cozy';
+  /** colours for the vector renderer */
+  wall: number; roof: number;
+  height: number;
+  starting?: boolean;
+  draftable?: boolean;
+}
+
+export const BUILDINGS: BuildingDef[] = [
+  { id: 'hearth', name: 'Hearth', blurb: 'Where everyone gathers in the evening to gossip. Burns wood at night.', cost: {}, slots: 0, wall: 0x6b5a4a, roof: 0xe07a2e, height: 0.3, starting: true },
+  { id: 'leanto', name: 'Lean-to', blurb: 'Sleeps 4. Drafty, but it counts as a roof.', cost: { wood: 15 }, slots: 0, beds: 4, bedQuality: 'basic', wall: 0x8a6e4f, roof: 0x7d8f55, height: 0.7, starting: true },
+  { id: 'woodcutter', name: 'Woodcutter', blurb: 'Fells trees. Wood for building and for the hearth.', cost: { wood: 10 }, slots: 2, job: 'chopping', recipe: { inputs: {}, output: 'wood', rate: 1.5 }, wall: 0x7a5a3c, roof: 0x5c7a3e, height: 0.8, starting: true },
+  { id: 'forager', name: 'Forager hut', blurb: 'Picks berries. Edible, if nobody is fussy.', cost: { wood: 10 }, slots: 2, job: 'foraging', recipe: { inputs: {}, output: 'berries', rate: 1.1 }, wall: 0x8c6b4a, roof: 0xa0465a, height: 0.8, starting: true },
+
+  { id: 'dock', name: 'Fishing dock', blurb: 'Fish, plentiful and mildly judgmental.', cost: { wood: 20 }, slots: 2, job: 'fishing', recipe: { inputs: {}, output: 'fish', rate: 1.5 }, wall: 0x6d5844, roof: 0x3d7b9a, height: 0.7, draftable: true },
+  { id: 'cellar', name: 'Mushroom cellar', blurb: 'Dark, damp, productive. Like a bard.', cost: { wood: 15, planks: 5 }, slots: 2, job: 'foraging', recipe: { inputs: {}, output: 'mushrooms', rate: 1.6 }, wall: 0x5d5448, roof: 0x8d7aa8, height: 0.6, draftable: true },
+  { id: 'kitchen', name: 'Stew kitchen', blurb: 'Turns any raw food into stew. Stew makes people happy.', cost: { wood: 20 }, slots: 2, job: 'cooking', recipe: { inputs: { rawFood: 1.5 }, output: 'stew', rate: 1.2 }, wall: 0x8a6448, roof: 0xc4703a, height: 0.9, draftable: true },
+  { id: 'pieoven', name: 'Pie oven', blurb: 'Berries plus wood make pie. Pie is the best thing that has ever happened.', cost: { wood: 15, planks: 8 }, slots: 2, job: 'cooking', recipe: { inputs: { berries: 2, wood: 0.5 }, output: 'pie', rate: 0.9 }, wall: 0x9b7452, roof: 0xd6a33c, height: 0.9, draftable: true },
+  { id: 'smokehouse', name: 'Smokehouse', blurb: 'Fish goes in, better fish comes out.', cost: { wood: 20 }, slots: 2, job: 'cooking', recipe: { inputs: { fish: 1.2 }, output: 'smokedFish', rate: 1.2 }, wall: 0x5f4d3f, roof: 0x8a8a8a, height: 1.0, draftable: true },
+  { id: 'sawmill', name: 'Sawmill', blurb: 'Wood becomes planks. Planks become nicer buildings.', cost: { wood: 25 }, slots: 2, job: 'crafting', recipe: { inputs: { wood: 2 }, output: 'planks', rate: 1.0 }, wall: 0x7c6148, roof: 0xb08a5a, height: 0.9, draftable: true },
+  { id: 'brewery', name: 'Brewery', blurb: 'Berries become ale. Ale becomes poor decisions.', cost: { wood: 20, planks: 10 }, slots: 2, job: 'brewing', recipe: { inputs: { berries: 2 }, output: 'ale', rate: 0.8 }, wall: 0x7a5640, roof: 0x9c5b2f, height: 1.0, draftable: true },
+  { id: 'tavern', name: 'Tavern', blurb: 'Evenings here use ale and give big fun. Gossip travels twice as fast.', cost: { wood: 25, planks: 15 }, slots: 1, job: 'serving', wall: 0x8e5f3c, roof: 0x7a2f2f, height: 1.2, draftable: true },
+  { id: 'cottage', name: 'Cottage', blurb: 'Sleeps 3, cozily. Waking up here is a +5 mood.', cost: { wood: 10, planks: 15 }, slots: 0, beds: 3, bedQuality: 'cozy', wall: 0xc7a983, roof: 0x4f6f9a, height: 1.0, draftable: true },
+  { id: 'bathhouse', name: 'Bathhouse', blurb: 'Uses wood. Everyone feels fresher, and grumblers grumble less.', cost: { wood: 20, planks: 10 }, slots: 0, wall: 0xb8b0a0, roof: 0x4f8f8a, height: 0.8, draftable: true },
+  { id: 'stage', name: "Bard's stage", blurb: 'Evening music at the hearth. Fun builds faster for everyone.', cost: { wood: 15, planks: 5 }, slots: 0, wall: 0x8a5f7a, roof: 0xc25c8a, height: 0.5, draftable: true },
+];
+export const BUILDING_BY_ID: Record<string, BuildingDef> = Object.fromEntries(BUILDINGS.map(b => [b.id, b]));
+
+export interface TraitDef {
+  id: string;
+  name: string;
+  desc: string;
+  /** traits in the same group are mutually exclusive */
+  group?: string;
+}
+export const TRAITS: TraitDef[] = [
+  { id: 'grumbler', name: 'Grumbler', desc: 'Complains constantly. Coworkers −3 mood.', group: 'temper' },
+  { id: 'sunny', name: 'Sunny', desc: '+5 mood. Coworkers +2 mood.', group: 'temper' },
+  { id: 'glutton', name: 'Glutton', desc: 'Gets hungry 60% faster. Meals are +4 better.' },
+  { id: 'picky', name: 'Picky eater', desc: 'Raw food is a personal insult: −8 instead of −3.' },
+  { id: 'romantic', name: 'Hopeless romantic', desc: 'Falls in love 3× as easily. Breakups hit twice as hard.' },
+  { id: 'loner', name: 'Loner', desc: '−4 when sharing a workplace. Doesn’t need evening company.', group: 'social' },
+  { id: 'butterfly', name: 'Social butterfly', desc: 'Makes friends fast. −6 without an evening of company.', group: 'social' },
+  { id: 'lazy', name: 'Lazy', desc: 'Works at 70% speed. +3 mood, honestly.', group: 'work' },
+  { id: 'diligent', name: 'Diligent', desc: 'Works at 130% speed.', group: 'work' },
+  { id: 'drama', name: 'Drama magnet', desc: 'Every opinion change about them is doubled.' },
+  { id: 'hummer', name: 'Hums loudly', desc: 'Everyone nearby slowly likes them less.' },
+  { id: 'stoic', name: 'Stoic', desc: 'Frontier strain affects them half as much.' },
+  { id: 'vain', name: 'Vain', desc: '−5 unless sleeping in a cottage.' },
+  { id: 'tippler', name: 'Tippler', desc: 'Ale gives +4 extra. −4 when there is no ale.' },
+];
+export const TRAIT_BY_ID: Record<string, TraitDef> = Object.fromEntries(TRAITS.map(t => [t.id, t]));
+
+export interface PerkDef { id: string; name: string; desc: string }
+export const PERKS: PerkDef[] = [
+  { id: 'communalPot', name: 'Communal pot', desc: 'Meals give +3 more mood.' },
+  { id: 'matchmaker', name: "Matchmaker's charm", desc: 'Romance is twice as likely; breakups half as likely.' },
+  { id: 'earplugs', name: 'Earplugs for all', desc: 'Grumblers and hummers bother people half as much.' },
+  { id: 'ironWill', name: 'Iron constitution', desc: 'Frontier strain grows 25% slower.' },
+  { id: 'overtime', name: 'Overtime bell', desc: 'Everyone works 15% faster.' },
+  { id: 'rations', name: 'Hearty rations', desc: 'Hunger drains 20% slower.' },
+  { id: 'saintsDay', name: "Saint Pomfrey's blessing", desc: '+4 mood for everyone, forever.' },
+  { id: 'gossipBan', name: 'Gossip ordinance', desc: 'Insults happen half as often.' },
+  { id: 'warmHearth', name: 'Everburning hearth', desc: 'The hearth burns half as much wood, and evenings there are +2.' },
+];
+export const PERK_BY_ID: Record<string, PerkDef> = Object.fromEntries(PERKS.map(p => [p.id, p]));
+
+export type CharterMetric =
+  | { kind: 'stock'; resources: ResourceId[]; amount: number }
+  | { kind: 'population'; amount: number }
+  | { kind: 'buildings'; amount: number }
+  | { kind: 'avgMood'; amount: number; hours: number }
+  | { kind: 'couples'; amount: number }
+  | { kind: 'feast'; meals: number; ale: number }
+  | { kind: 'contentPop'; pop: number; mood: number; hours: number };
+
+export interface CharterDef { id: string; tier: 1 | 2 | 3; name: string; desc: string; metric: CharterMetric }
+export const CHARTERS: CharterDef[] = [
+  { id: 'pantry', tier: 1, name: 'A proper pantry', desc: 'Have 40 meals stored at once.', metric: { kind: 'stock', resources: ['stew', 'pie', 'smokedFish'], amount: 40 } },
+  { id: 'growing', tier: 1, name: 'Room to grow', desc: 'Reach 9 colonists.', metric: { kind: 'population', amount: 9 } },
+  { id: 'township', tier: 1, name: 'Township papers', desc: 'Have 8 buildings.', metric: { kind: 'buildings', amount: 8 } },
+  { id: 'cheer', tier: 2, name: 'Measurable cheer', desc: 'Keep average mood at 62+ for a full day.', metric: { kind: 'avgMood', amount: 62, hours: 24 } },
+  { id: 'lovebirds', tier: 2, name: 'Lovebirds', desc: 'Have 2 couples at the same time.', metric: { kind: 'couples', amount: 2 } },
+  { id: 'lumber', tier: 2, name: 'Lumber baron', desc: 'Have 40 planks stored at once.', metric: { kind: 'stock', resources: ['planks'], amount: 40 } },
+  { id: 'feast', tier: 3, name: 'The Great Feast', desc: 'Have 60 meals and 30 ale stored at once.', metric: { kind: 'feast', meals: 60, ale: 30 } },
+  { id: 'harmony', tier: 3, name: 'Frontier harmony', desc: '14+ colonists with average mood 60+ for a full day.', metric: { kind: 'contentPop', pop: 14, mood: 60, hours: 24 } },
+  { id: 'boomtown', tier: 3, name: 'Boomtown', desc: 'Reach 16 colonists.', metric: { kind: 'population', amount: 16 } },
+];
+
+export interface EventOption { label: string; detail: string; effect: string }
+export interface EventDef { id: string; title: string; text: string; options: EventOption[]; requires?: 'couple' }
+export const EVENTS: EventDef[] = [
+  { id: 'goblinTax', title: 'The goblin tax collector', text: 'A goblin in a very official hat demands a "frontier levy". He has a clipboard. Nobody knows where he got it.',
+    options: [
+      { label: 'Pay 20 food', detail: 'Lose 20 food, raw first.', effect: 'payFood20' },
+      { label: 'Refuse', detail: 'Everyone −6 mood for 2 days (goblin graffiti).', effect: 'graffiti' },
+    ] },
+  { id: 'bard', title: 'A travelling bard', text: 'A bard offers to play "The Ballad of Your Colony" for a modest fee. He has not yet written it.',
+    options: [
+      { label: 'Pay 6 ale', detail: 'Everyone +6 mood for a day.', effect: 'bardPlay' },
+      { label: 'Shoo him away', detail: 'Nothing happens. He writes a mean song anyway.', effect: 'none' },
+    ] },
+  { id: 'pigeons', title: 'Pigeon uprising', text: 'The pigeons have unionised. Their demands are berries.',
+    options: [
+      { label: 'Pay 15 berries', detail: 'Lose 15 berries.', effect: 'pigeonBribe' },
+      { label: 'Stand firm', detail: 'Lose 40% of all berries.', effect: 'pigeonRiot' },
+    ] },
+  { id: 'wedding', title: 'A wedding is proposed', text: 'A couple wants to make it official. Everyone is invited, whether they like it or not.', requires: 'couple',
+    options: [
+      { label: 'Host it (8 meals, 5 ale)', detail: 'Everyone +7 mood for 2 days.', effect: 'wedding' },
+      { label: 'Elope quietly', detail: 'The couple is −8 mood for 2 days.', effect: 'elope' },
+    ] },
+  { id: 'frogs', title: 'It is raining frogs', text: 'Small, confused frogs. Some colonists find it delightful. Others are holding umbrellas very tightly.',
+    options: [
+      { label: 'Collect them', detail: '+15 fish (close enough). Grumblers −5 for a day.', effect: 'frogFish' },
+      { label: 'Stay indoors', detail: 'Everyone −2 mood for a day.', effect: 'frogHide' },
+    ] },
+  { id: 'outhouse', title: 'The outhouse is haunted', text: 'Witnesses describe moaning, rattling, and "a judgmental presence".',
+    options: [
+      { label: 'Rebuild it (10 planks)', detail: 'Lose 10 planks.', effect: 'outhouseFix' },
+      { label: 'Live with the ghost', detail: 'Everyone −3 mood for 3 days.', effect: 'ghost' },
+    ] },
+  { id: 'peddler', title: 'A peddler with a cart', text: 'She is selling "authentic" relics and also, more usefully, planks.',
+    options: [
+      { label: 'Trade 30 wood for 12 planks', detail: 'A decent deal.', effect: 'peddlerPlanks' },
+      { label: 'Buy the relic (10 food)', detail: 'Everyone +3 mood for 3 days. It is a spoon.', effect: 'relic' },
+    ] },
+];
+
+export const FIRST_NAMES = ['Bramwell', 'Odette', 'Tobias', 'Wren', 'Mirabel', 'Gus', 'Hester', 'Pip', 'Clement', 'Agnes', 'Barnaby', 'Fennick', 'Ottilie', 'Rufus', 'Delphine', 'Hamish', 'Prudence', 'Ignatius', 'Marigold', 'Silas', 'Tansy', 'Cuthbert', 'Elspeth', 'Lysander', 'Winnie', 'Mortimer', 'Bertha', 'Quill', 'Rosalind', 'Thaddeus', 'Nell', 'Osric', 'Juniper', 'Percival', 'Beatrix', 'Alfie'];
+export const SURNAMES = ['Pottsworth', 'Mudd', 'Thistledown', 'Grubb', 'Ashby', 'Crumble', 'Fernsby', 'Kettle', 'Hobb', 'Wimble', 'Larder', 'Quigley', 'Bunt', 'Marrow', 'Pennywhistle', 'Sprocket', 'Tumble', 'Underhill', 'Gristle', 'Bramble'];
+export const SHIRTS = [0xc8553d, 0x3d7b9a, 0x6a8d3a, 0xd6a33c, 0x8d5ba8, 0x2f8f7a, 0xb0466a, 0x5a6fb0, 0xa86d3a, 0x4f7f4f];
+export const SKINS = [0xf1c9a5, 0xd9a27e, 0xb27b56, 0x8a5a3c, 0xf5d7b8, 0x6b4430];
