@@ -28,6 +28,8 @@
 html, body { height: 100%; }
 body { background: var(--ground); color: var(--text); font-family: var(--font-body); overflow: hidden; -webkit-tap-highlight-color: transparent; }
 #game { position: relative; height: 100%; overflow: hidden; }
+/* elements with their own display rule (the modal is a grid) must still disappear when hidden */
+[hidden] { display: none !important; }
 #stage { position: absolute; inset: 0; }
 #stage canvas { display: block; }
 button { font: inherit; color: inherit; cursor: pointer; }
