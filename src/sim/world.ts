@@ -2,7 +2,7 @@
 import {
   BUILDING_BY_ID, BuildingDef, CHARTERS, CharterDef, EVENTS, FIRST_NAMES, JOB_NAMES, JobKind,
   MEALS, PERKS, RAW_FOODS, ResourceId, SHIRTS, SKINS, SURNAMES, TRAITS, TRAIT_BY_ID, BUILDINGS, buildWork,
-  JOB_KINDS, JOB_EVENTS, JobEventDef, ILLNESSES, RESOURCES,
+  JOB_KINDS, JOB_EVENTS, JobEventDef, ILLNESSES, RESOURCES, Recipe, InputKey, CATEGORIES, isCategory, membersOf, inputName, recipeRate,
 } from './content';
 
 // ---------- RNG ----------
@@ -84,6 +84,8 @@ export interface Building {
   allow: ResourceId[] | null;
   /** storage buildings: high-priority storage fills first and is topped up from low */
   high: boolean;
+  /** workshops: indices of recipes the player has switched off */
+  off?: number[];
 }
 
 export type Decision =
@@ -186,6 +188,38 @@ export function mealTotal(w: World) { return MEALS.reduce((n, r) => n + w.res[r]
 export function avgMood(w: World) { const a = alive(w); return a.length ? a.reduce((s, c) => s + c.mood, 0) / a.length : 0; }
 export function couples(w: World) { return alive(w).filter(c => c.partner != null && c.id < c.partner).length; }
 function hasBuilt(w: World, def: string) { return w.buildings.some(b => b.def === def && b.built); }
+
+// ---------- Recipes ----------
+export const recipesOf = (b: Building): Recipe[] => bdef(b).recipes ?? [];
+export const recipeOn = (b: Building, i: number) => !b.off?.includes(i);
+/** switched-on recipes, best first (most stars, then the order the building lists them) */
+export function enabledRecipes(b: Building): Recipe[] {
+  return recipesOf(b).map((r, i) => ({ r, i })).filter(x => recipeOn(b, x.i)).sort((p, q) => q.r.stars - p.r.stars || p.i - q.i).map(x => x.r);
+}
+/** how much of an input (one good, or any good in a category) sits in a workshop's inbox */
+export function inInbox(b: Building, key: InputKey) { return isCategory(key) ? membersOf(key).reduce((n, x) => n + (b.inbox[x] ?? 0), 0) : (b.inbox[key] ?? 0); }
+/** how much of an input a workshop could get: its inbox plus storage, keeping the wood reserve */
+function obtainable(w: World, b: Building, key: InputKey) {
+  return membersOf(key).reduce((n, x) => n + w.res[x] + (b.inbox[x] ?? 0), 0) - (membersOf(key).includes('wood') ? WOOD_RESERVE : 0);
+}
+const recipeReady = (w: World, b: Building, r: Recipe) => Object.keys(r.inputs).every(k => obtainable(w, b, k as InputKey) >= 1);
+/** The recipe a workshop is working toward: the best switched-on one whose ingredients can be had, else the best switched-on one. */
+export function currentRecipe(w: World, b: Building): Recipe | undefined {
+  const on = enabledRecipes(b);
+  return on.length > 1 ? (on.find(r => recipeReady(w, b, r)) ?? on[0]) : on[0];
+}
+/** total drinks in storage (ale, and later cider, mead…) */
+export function drinkTotal(w: World) { return CATEGORIES.drink.members.reduce((n, r) => n + w.res[r], 0); }
+/** take drinks out of storage, the most plentiful first; returns what was taken */
+function takeDrink(w: World, n: number, why: string) {
+  let left = n;
+  for (const r of [...CATEGORIES.drink.members].sort((p, q) => w.res[q] - w.res[p])) {
+    const t = Math.min(w.res[r], left); if (t <= 0) continue;
+    w.res[r] -= t; flow(w, `${r}:-${why}`, t); left -= t;
+    if (left <= 0) break;
+  }
+  return n - left;
+}
 export function flow(w: World, key: string, n: number) { if (w.flows) w.flows[key] = (w.flows[key] ?? 0) + n; }
 export function storageCap(w: World) { return built(w).reduce((n, b) => n + (bdef(b).storage ?? 0), 0); }
 export function stored(w: World) { return sum(w.res); }
@@ -570,7 +604,7 @@ export const CHARTER_HELPERS: Record<string, string[]> = {
 function blueprintDecision(w: World): Decision {
   const pool = BUILDINGS.filter(b => b.draftable && !w.owned.includes(b.id)).map(b => b.id);
   const options = shuffle(w, pool).slice(0, 3);
-  const usable = (id: string) => { const rec = BUILDING_BY_ID[id].recipe; if (!rec) return true; return Object.keys(rec.inputs).every(k => k === 'rawFood' || k === 'wood' || k === 'berries' || (k === 'fish' && w.owned.includes('dock')) || (k === 'planks' && w.owned.includes('sawmill'))); };
+  const usable = (id: string) => { const recs = BUILDING_BY_ID[id].recipes; if (!recs) return true; return recs.some(rec => Object.keys(rec.inputs).every(k => k === 'rawFood' || k === 'wood' || k === 'berries' || (k === 'fish' && w.owned.includes('dock')) || (k === 'planks' && w.owned.includes('sawmill')))); };
   const helpers = (CHARTER_HELPERS[w.charter ?? ''] ?? []).filter(id => pool.includes(id) && usable(id));
   const ownsHelper = (CHARTER_HELPERS[w.charter ?? ''] ?? []).some(id => w.owned.includes(id) && usable(id));
   if (helpers.length && !ownsHelper && !options.some(o => helpers.includes(o))) options[options.length - 1] = pick(w, helpers);
@@ -589,7 +623,8 @@ export type Command =
   | { type: 'autoAssign' }
   | { type: 'setAutoAssignNew'; value: boolean }
   | { type: 'storageFilter'; building: number; allow: ResourceId[] | null }
-  | { type: 'storagePriority'; building: number; high: boolean };
+  | { type: 'storagePriority'; building: number; high: boolean }
+  | { type: 'toggleRecipe'; building: number; recipe: number; on: boolean };
 
 export function remainingCost(b: Building): Partial<Record<ResourceId, number>> {
   const out: Partial<Record<ResourceId, number>> = {};
@@ -632,6 +667,15 @@ export function apply(w: World, cmd: Command): string | null {
       const b = buildingByUid(w, cmd.building);
       if (!b || !bdef(b).storage) return 'Only storage has a priority.';
       b.high = cmd.high; w.version++;
+      return null;
+    }
+    case 'toggleRecipe': {
+      const b = buildingByUid(w, cmd.building);
+      if (!b || !recipesOf(b)[cmd.recipe]) return 'No such recipe.';
+      const off = (b.off ?? []).filter(i => i !== cmd.recipe);
+      if (!cmd.on) off.push(cmd.recipe);
+      b.off = off.sort((x, y) => x - y); w.version++;
+      // anyone fetching ingredients for a recipe that's now off will notice when they arrive
       return null;
     }
     case 'cancel': {
@@ -933,12 +977,12 @@ function buildingPriority(w: World, b: Building): number {
 }
 /** Why a workshop can't run right now, or null if it can. */
 export function blockedReason(w: World, b: Building): string | null {
-  const rec = bdef(b).recipe;
-  if (!rec || !b.built) return null;
-  for (const key of Object.keys(rec.inputs)) {
-    const inStore = key === 'rawFood' ? RAW_FOODS.reduce((n, x) => n + w.res[x] + (b.inbox[x] ?? 0), 0) : w.res[key as ResourceId] + (b.inbox[key as ResourceId] ?? 0) - (key === 'wood' ? WOOD_RESERVE : 0);
-    if (inStore < 1) {
-      const name = key === 'rawFood' ? 'raw food' : key === 'smokedFish' ? 'smoked fish' : key;
+  if (!recipesOf(b).length || !b.built) return null;
+  const rec = currentRecipe(w, b);
+  if (!rec) return 'Every recipe here is switched off.';
+  for (const key of Object.keys(rec.inputs) as InputKey[]) {
+    if (obtainable(w, b, key) < 1) {
+      const name = inputName(key);
       const hint = key === 'fish' ? ' Build a fishing dock.' : key === 'planks' ? ' Build a sawmill.' : key === 'wood' ? ' Keep more than 20 wood.' : '';
       return `No ${name} to work with.${hint}`;
     }
@@ -1018,9 +1062,9 @@ function chooseTask(w: World, c: Colonist): Task | null {
   }
   // carrying ingredients to staffed workshops
   for (const b of built(w)) {
-    const rec = bdef(b).recipe;
+    const rec = currentRecipe(w, b);
     if (!rec || !Object.keys(rec.inputs).length || workersAt(w, b.uid).length === 0) continue;
-    for (const need of supplyNeeds(w, b)) opts.push({ t: need, pri: (b.inbox[need.res] ?? 0) < 2 ? 3.1 : 2.4, x: spotOf(b).x, y: spotOf(b).y });
+    for (const need of supplyNeeds(w, b, rec)) opts.push({ t: need, pri: (b.inbox[need.res] ?? 0) < 2 ? 3.1 : 2.4, x: spotOf(b).x, y: spotOf(b).y });
   }
   // laying planned paths
   if (w.res.wood >= 1) {
@@ -1041,17 +1085,15 @@ function chooseTask(w: World, c: Colonist): Task | null {
 
 /** ingredient deliveries a workshop needs right now */
 type SupplyTask = Extract<Task, { kind: 'supply' }>;
-function supplyNeeds(w: World, b: Building): SupplyTask[] {
-  const rec = bdef(b).recipe!;
+function supplyNeeds(w: World, b: Building, rec: Recipe | undefined = currentRecipe(w, b)): SupplyTask[] {
   const out: SupplyTask[] = [];
-  for (const key of Object.keys(rec.inputs)) {
-    let r: ResourceId;
-    if (key === 'rawFood') {
-      const best = [...RAW_FOODS].sort((p, q) => w.res[q] - w.res[p])[0];
-      r = best;
-    } else r = key as ResourceId;
-    const have = key === 'rawFood' ? RAW_FOODS.reduce((n, x) => n + (b.inbox[x] ?? 0), 0) : (b.inbox[r] ?? 0);
-    const coming = alive(w).reduce((n, c) => n + (c.task?.kind === 'supply' && c.task.to === b.uid && (key === 'rawFood' ? RAW_FOODS.includes(c.task.res) : c.task.res === r) ? c.task.amount : 0), 0);
+  if (!rec) return out;
+  for (const key of Object.keys(rec.inputs) as InputKey[]) {
+    const members = membersOf(key);
+    // for "any raw food" and the like, fetch whichever kind storage has most of
+    const r = isCategory(key) ? [...members].sort((p, q) => w.res[q] - w.res[p])[0] : key;
+    const have = inInbox(b, key);
+    const coming = alive(w).reduce((n, c) => n + (c.task?.kind === 'supply' && c.task.to === b.uid && members.includes(c.task.res) ? c.task.amount : 0), 0);
     const avail = r === 'wood' ? Math.max(0, w.res.wood - WOOD_RESERVE) : w.res[r];
     const want = INBOX_TARGET - have - coming;
     if (want >= 3 && avail >= 1) out.push({ kind: 'supply', to: b.uid, res: r, amount: Math.min(CARRY, want, avail) });
@@ -1112,7 +1154,7 @@ function goalFor(w: World, c: Colonist): Goal {
     }
     case 'leisure': {
       const tavern = built(w).find(b => b.def === 'tavern' && workersAt(w, b.uid).length > 0);
-      if (tavern && w.res.ale > 0) return at(tavern, 1.1, false, 'tav');
+      if (tavern && drinkTotal(w) > 0) return at(tavern, 1.1, false, 'tav');
       return hearthSpot(1.9);
     }
     case 'sulking': return hearthSpot(2.9);
@@ -1144,14 +1186,14 @@ function activityFor(w: World, c: Colonist): Activity {
   const job = idleDoctor ? undefined : job0;
   if (job) {
     const full = sum(job.outbox) >= OUTBOX_CAP;
-    if (full && bdef(job).recipe && !c.task) {
+    if (full && recipesOf(job).length && !c.task) {
       const [r] = Object.entries(job.outbox).sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0))[0] as [ResourceId, number];
       if (storageFree(w, r) > 0 && taskCount(w, t => t.kind === 'haul' && t.from === job.uid) === 0) c.task = { kind: 'haul', from: job.uid, res: r, amount: Math.min(CARRY, job.outbox[r] ?? 0) };
     }
     // nobody brought ingredients: fetch them yourself
-    const rec = bdef(job).recipe;
-    if (!c.task && rec && Object.keys(rec.inputs).length && !canCook(w, job)) {
-      const need = supplyNeeds(w, job)[0];
+    const rec = currentRecipe(w, job);
+    if (!c.task && rec && Object.keys(rec.inputs).length && !canCook(w, job, rec)) {
+      const need = supplyNeeds(w, job, rec)[0];
       if (need) c.task = need;
     }
     if (c.task) return 'hauling';
@@ -1234,24 +1276,25 @@ function workSpeed(w: World, c: Colonist, skill?: JobKind) {
 
 function produce(w: World, dt: number) {
   for (const b of built(w)) {
-    const def = bdef(b); if (!def.recipe) continue;
+    const def = bdef(b); if (!def.recipes) continue;
+    // work on the current recipe; if its ingredients aren't here yet, use up whatever another switched-on recipe can
+    const cur = currentRecipe(w, b);
+    const rec = cur && canCook(w, b, cur, 0) ? cur : (enabledRecipes(b).find(r => canCook(w, b, r, 0)) ?? cur);
+    if (!rec) continue;
     for (const c of workersAt(w, b.uid)) {
       if (c.activity !== 'working' || !c.goalReached) continue;
       if (sum(b.outbox) >= OUTBOX_CAP) continue;
-      let amount = def.recipe.rate * workSpeed(w, c, def.job) * dt * b.eff;
-      for (const [r, per] of Object.entries(def.recipe.inputs)) {
-        const avail = r === 'rawFood' ? RAW_FOODS.reduce((n, x) => n + (b.inbox[x] ?? 0), 0) : (b.inbox[r as ResourceId] ?? 0);
-        amount = Math.min(amount, avail / (per as number));
-      }
+      let amount = recipeRate(rec) * workSpeed(w, c, def.job) * dt * b.eff;
+      for (const [r, per] of Object.entries(rec.inputs)) amount = Math.min(amount, inInbox(b, r as InputKey) / (per as number));
       if (amount <= 0) continue;
-      for (const [r, per] of Object.entries(def.recipe.inputs)) {
+      for (const [r, per] of Object.entries(rec.inputs)) {
         let need = amount * (per as number);
-        if (r === 'rawFood') {
-          for (const x of [...RAW_FOODS].sort((p, q) => (b.inbox[q] ?? 0) - (b.inbox[p] ?? 0))) { const t = Math.min(b.inbox[x] ?? 0, need); b.inbox[x] = (b.inbox[x] ?? 0) - t; need -= t; flow(w, `${x}:-${b.def}`, t); }
+        if (isCategory(r)) {
+          for (const x of [...membersOf(r)].sort((p, q) => (b.inbox[q] ?? 0) - (b.inbox[p] ?? 0))) { const t = Math.min(b.inbox[x] ?? 0, need); b.inbox[x] = (b.inbox[x] ?? 0) - t; need -= t; flow(w, `${x}:-${b.def}`, t); }
         } else { b.inbox[r as ResourceId] = (b.inbox[r as ResourceId] ?? 0) - need; flow(w, `${r}:-${b.def}`, need); }
       }
-      b.outbox[def.recipe.output] = (b.outbox[def.recipe.output] ?? 0) + amount;
-      flow(w, `${def.recipe.output}:+${b.def}`, amount);
+      b.outbox[rec.output] = (b.outbox[rec.output] ?? 0) + amount;
+      flow(w, `${rec.output}:+${b.def}`, amount);
       if (def.job) c.skills[def.job] = Math.min(10, c.skills[def.job] + 0.004 * dt * 6);
       // the occasional workplace mishap, likelier for the unskilled
       if (def.job && nextRand(w) < dt * 0.0025 * (def.job === 'chopping' ? 2 : 1) * (11 - c.skills[def.job]) / 6) {
@@ -1295,9 +1338,8 @@ function produce(w: World, dt: number) {
 }
 
 /** does the workshop have enough ingredients for a little more work? */
-function canCook(w: World, b: Building) {
-  const rec = bdef(b).recipe!;
-  return Object.entries(rec.inputs).every(([r, per]) => (r === 'rawFood' ? RAW_FOODS.reduce((n, x) => n + (b.inbox[x] ?? 0), 0) : (b.inbox[r as ResourceId] ?? 0)) >= (per as number) * 0.2);
+function canCook(w: World, b: Building, rec: Recipe, share = 0.2) {
+  return Object.entries(rec.inputs).every(([r, per]) => (share ? inInbox(b, r as InputKey) >= (per as number) * share : inInbox(b, r as InputKey) > 0));
 }
 
 function completeBuilding(w: World, b: Building) {
@@ -1489,7 +1531,7 @@ function computeThoughts(w: World, c: Colonist): Thought[] {
   if (has(c, 'butterfly') && !c.hadCompanyLastNight) add('Lonely evening', -6);
   if (has(c, 'sunny')) add('Sunny disposition', 5);
   if (has(c, 'lazy')) add('Doesn’t work too hard', 3);
-  if (has(c, 'tippler') && w.res.ale < 1) add('No ale in the stores', -4);
+  if (has(c, 'tippler') && drinkTotal(w) < 1) add('No ale in the stores', -4);
   if (hasBuilt(w, 'bathhouse') && w.res.wood > 0) add('Feeling fresh from the bathhouse', has(c, 'grumbler') ? 5 : 3);
   if (hasPerk(w, 'saintsDay')) add("Saint Pomfrey's blessing", 4);
   if (c.beauty >= 5) add('Beautiful surroundings', 5);
@@ -1552,8 +1594,8 @@ function hourly(w: World) {
     if (c.hunger < 45 && !c.meal && !c.carrying && c.activity !== 'sleeping') startMeal(w, c);
     if (c.activity === 'leisure' || c.activity === 'sulking' || c.activity === 'idle') {
       const atTavern = tavern && c.place === tavern.uid;
-      if (atTavern && w.res.ale >= 0.3) {
-        w.res.ale -= 0.3; flow(w, 'ale:-drunk', 0.3); c.fun += 18;
+      if (atTavern && drinkTotal(w) >= 0.3) {
+        takeDrink(w, 0.3, 'drunk'); c.fun += 18;
         if (!c.drankTonight) { c.drankTonight = true; addMemory(w, c, 'ale', 'Drank ale at the tavern', 6 + (has(c, 'tippler') ? 4 : 0), 14); }
       } else c.fun += (c.activity === 'idle' ? 3 : 9) + (stage && h >= 18 ? 5 : 0) + (hasPerk(w, 'warmHearth') ? 1 : 0);
       if (c.activity === 'leisure' && hasPerk(w, 'warmHearth')) addMemory(w, c, 'hearthWarm', 'Warm evening by the hearth', 2, 6);
@@ -1661,7 +1703,7 @@ function charterValue(w: World, c: CharterDef): { value: number; target: number;
       return { value, target: 1, label: `${pop}24h average ${Math.round(avg)} / ${target}${full ? '' : ` · ${m.hours - log.length}h to go`}` };
     }
     case 'feast': {
-      const meals = mealTotal(w), ale = w.res.ale;
+      const meals = mealTotal(w), ale = drinkTotal(w);
       return { value: Math.min(meals / m.meals, ale / m.ale), target: 1, label: `${Math.floor(meals)}/${m.meals} meals · ${Math.floor(ale)}/${m.ale} ale` };
     }
     case 'paths': { const v = w.paths.filter(p => p === 2).length; return { value: v, target: m.amount, label: `${v} / ${m.amount} path tiles laid` }; }

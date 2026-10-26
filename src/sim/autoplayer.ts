@@ -1,8 +1,8 @@
 // A heuristic player, used by the balance harness to play thousands of runs headlessly.
 // It reads the active charter and plays towards it, the way a person would.
-import { BUILDING_BY_ID, CHARTERS, EVENTS, ResourceId, MEALS } from './content';
+import { BUILDING_BY_ID, CHARTERS, EVENTS, ResourceId, MEALS, recipeRate } from './content';
 import { assess, Concern, defsOf } from './advisor';
-import { World, apply, alive, beds, mealTotal, sites, findSpot, CENTER, CHARTER_HELPERS, avgMood, built, MAP_SIZE, pathAt, terrainAt, T_WATER, bdef, workersAt, blockedReason, opinion, Building, Colonist, hourOfDay, charterProgress, buildingByUid, storageFree, storages, FOODS, GOODS, bedridden, foodTotal } from './world';
+import { World, apply, alive, beds, mealTotal, sites, findSpot, CENTER, CHARTER_HELPERS, avgMood, built, MAP_SIZE, pathAt, terrainAt, T_WATER, bdef, workersAt, blockedReason, opinion, Building, Colonist, hourOfDay, charterProgress, buildingByUid, storageFree, storages, FOODS, GOODS, bedridden, foodTotal, currentRecipe } from './world';
 
 const BLUEPRINT_PRIORITY = ['sawmill', 'pieoven', 'dock', 'cottage', 'brewery', 'tavern', 'smokehouse', 'cellar', 'stage', 'bathhouse'];
 const PERK_PRIORITY = ['saintsDay', 'ironWill', 'communalPot', 'overtime', 'rations', 'earplugs', 'warmHearth', 'gossipBan', 'matchmaker'];
@@ -235,7 +235,7 @@ function planksWanted(w: World) {
 /** foragers and fishers needed to feed everyone, from how productive the existing huts actually are */
 function rawFoodWorkers(w: World, pop: number) {
   const huts = built(w).filter(b => ['forager', 'dock', 'cellar'].includes(b.def));
-  const perWorker = 12 * (huts.length ? huts.reduce((n, b) => n + (bdef(b).recipe!.rate * b.eff), 0) / huts.length : 1.0);
+  const perWorker = 12 * (huts.length ? huts.reduce((n, b) => n + (recipeRate(currentRecipe(w, b) ?? bdef(b).recipes![0]) * b.eff), 0) / huts.length : 1.0);
   return Math.max(1, Math.ceil((pop * 2.6) / perWorker));
 }
 

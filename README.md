@@ -22,6 +22,8 @@ npx tsx tools/advise.ts 2       # what a player could conclude from the screen a
 npx tsx tools/economy.ts 60     # food, wood, laborers and mood over a run, winners vs losers
 npx tsx tools/notes.ts 60       # notes bot vs rules bot on the same seeds: unresolved notes and why fixes fail
 BOT_ADVISOR=1 npx tsx tools/losses.ts 150   # let the bot play from the on-screen complaints instead of its own rules
+npx tsx tools/variety.ts 80     # how different runs are: blueprint coverage, draft-to-built lag, events seen
+npx tsx tools/recipes-check.ts  # multi-recipe engine: star preference, fallback, per-recipe toggles
 npx tsc -p .                   # type-check
 ```
 

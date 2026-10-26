@@ -27,13 +27,37 @@ export const SKILL_NAMES: Record<JobKind, string> = {
 };
 export const JOB_KINDS = Object.keys(JOB_NAMES) as JobKind[];
 
+/** Groups of goods a recipe, need or charter can ask for: "any drink", "any meal". */
+export type Category = 'rawFood' | 'meal' | 'drink' | 'fine';
+export const CATEGORIES: Record<Category, { name: string; members: ResourceId[] }> = {
+  rawFood: { name: 'raw food', members: RAW_FOODS },
+  meal: { name: 'meals', members: MEALS },
+  drink: { name: 'drinks', members: ['ale'] },
+  fine: { name: 'fine materials', members: ['planks'] },
+};
+/** what a recipe input names: one good, or any good in a category */
+export type InputKey = ResourceId | Category;
+export const isCategory = (k: string): k is Category => k in CATEGORIES;
+export const membersOf = (k: InputKey): ResourceId[] => (isCategory(k) ? CATEGORIES[k].members : [k]);
+export const inputName = (k: InputKey) => (isCategory(k) ? CATEGORIES[k].name : RESOURCES.find(r => r.id === k)!.name.toLowerCase());
+
+/** output units per worker-hour at work speed 1, for a ★★★ recipe */
+export const BASE_RATE: Record<ResourceId, number> = {
+  wood: 1.6, berries: 1.3, fish: 1.5, mushrooms: 1.5, stew: 1.2, pie: 0.9, smokedFish: 1.2, planks: 1.0, ale: 0.8,
+};
+/** how good a building is at a recipe: ★★★ is full speed */
+export type Stars = 1 | 2 | 3;
+export const STAR_MULT: Record<Stars, number> = { 1: 0.5, 2: 0.75, 3: 1 };
+
 export interface Recipe {
-  /** inputs consumed per unit of output; "rawFood" means any raw food */
-  inputs: Partial<Record<ResourceId | 'rawFood', number>>;
+  /** inputs consumed per unit of output; a category means any good in it */
+  inputs: Partial<Record<InputKey, number>>;
   output: ResourceId;
-  /** output units per worker-hour at work speed 1 */
-  rate: number;
+  stars: Stars;
 }
+/** output units per worker-hour at work speed 1 */
+export const recipeRate = (r: Recipe) => BASE_RATE[r.output] * STAR_MULT[r.stars];
+export const stars = (n: Stars) => '★'.repeat(n) + '☆'.repeat(3 - n);
 
 export interface BuildingDef {
   id: string;
@@ -44,7 +68,8 @@ export interface BuildingDef {
   w: number; h: number;
   slots: number;
   job?: JobKind;
-  recipe?: Recipe;
+  /** what the workers here can make; each can be switched on or off per building */
+  recipes?: Recipe[];
   beds?: number;
   bedQuality?: 'rough' | 'basic' | 'cozy';
   /** units of goods this building can hold */
@@ -75,8 +100,8 @@ export const BUILDINGS: BuildingDef[] = [
   { id: 'hearth', name: 'Hearth', blurb: 'Where everyone gathers in the evening to gossip. Burns wood at night.', cost: {}, w: 2, h: 2, slots: 0, wall: 0x6b5a4a, roof: 0xe07a2e, height: 0.3 },
   { id: 'stockpile', name: 'Stockpile', blurb: 'An open patch of ground for goods. Holds 150. Food left out here spoils.', cost: {}, w: 2, h: 2, slots: 0, storage: 150, walkable: true, wall: 0x8a7a5a, roof: 0x8a7a5a, height: 0, basic: true },
   { id: 'leanto', name: 'Lean-to', blurb: 'Sleeps 2. Drafty, but it counts as a roof.', cost: { wood: 8 }, w: 1, h: 1, slots: 0, beds: 2, bedQuality: 'basic', wall: 0x8a6e4f, roof: 0x7d8f55, height: 0.6, basic: true },
-  { id: 'woodcutter', name: 'Woodcutter', blurb: 'Fells trees. Works best with lots of trees close by.', cost: { wood: 8 }, w: 1, h: 1, slots: 2, job: 'chopping', needs: 'trees', recipe: { inputs: {}, output: 'wood', rate: 1.6 }, wall: 0x7a5a3c, roof: 0x5c7a3e, height: 0.7, basic: true },
-  { id: 'forager', name: 'Forager hut', blurb: 'Picks berries. Works best right next to berry bushes.', cost: { wood: 8 }, w: 1, h: 1, slots: 2, job: 'foraging', needs: 'bushes', recipe: { inputs: {}, output: 'berries', rate: 1.3 }, wall: 0x8c6b4a, roof: 0xa0465a, height: 0.7, basic: true },
+  { id: 'woodcutter', name: 'Woodcutter', blurb: 'Fells trees. Works best with lots of trees close by.', cost: { wood: 8 }, w: 1, h: 1, slots: 2, job: 'chopping', needs: 'trees', recipes: [{ inputs: {}, output: 'wood', stars: 3 }], wall: 0x7a5a3c, roof: 0x5c7a3e, height: 0.7, basic: true },
+  { id: 'forager', name: 'Forager hut', blurb: 'Picks berries. Works best right next to berry bushes.', cost: { wood: 8 }, w: 1, h: 1, slots: 2, job: 'foraging', needs: 'bushes', recipes: [{ inputs: {}, output: 'berries', stars: 3 }], wall: 0x8c6b4a, roof: 0xa0465a, height: 0.7, basic: true },
   { id: 'dining', name: 'Dining hall', blurb: 'Tables and benches for 6. Eating here beats eating in the dirt, as long as someone keeps it clean.', cost: { wood: 20 }, w: 2, h: 2, slots: 0, seats: 6, wall: 0x9a7a58, roof: 0x8a4a3a, height: 0.9, basic: true },
   { id: 'storehouse', name: 'Storehouse', blurb: 'Holds 250 goods under a roof. Food stored here doesn\u2019t spoil.', cost: { wood: 25 }, w: 2, h: 2, slots: 0, storage: 250, keepsFresh: true, wall: 0x7a6a58, roof: 0x5a6a7a, height: 1.0, basic: true },
 
@@ -87,13 +112,13 @@ export const BUILDINGS: BuildingDef[] = [
   { id: 'bench', name: 'Bench', blurb: 'Beauty 2. A good place to sit and judge passers-by.', cost: { planks: 3 }, w: 1, h: 1, slots: 0, decor: true, beauty: 2, wall: 0x8a6038, roof: 0x8a6038, height: 0, basic: true },
   { id: 'statue', name: 'Statue of Saint Pomfrey', blurb: 'Beauty 7. He looks mildly disappointed, as in life.', cost: { planks: 12 }, w: 1, h: 1, slots: 0, decor: true, beauty: 7, wall: 0x9a9a92, roof: 0xb8b8b0, height: 0, basic: true },
 
-  { id: 'dock', name: 'Fishing dock', blurb: 'Fish, plentiful and mildly judgmental. Must touch water.', cost: { wood: 15 }, w: 1, h: 2, slots: 2, job: 'fishing', needs: 'water', recipe: { inputs: {}, output: 'fish', rate: 1.5 }, wall: 0x6d5844, roof: 0x3d7b9a, height: 0.6, draftable: true },
-  { id: 'cellar', name: 'Mushroom cellar', blurb: 'Dark, damp, productive. Like a bard.', cost: { wood: 12, planks: 5 }, w: 1, h: 1, slots: 2, job: 'foraging', recipe: { inputs: {}, output: 'mushrooms', rate: 1.5 }, wall: 0x5d5448, roof: 0x8d7aa8, height: 0.5, draftable: true },
-  { id: 'kitchen', name: 'Stew kitchen', blurb: 'Turns any raw food into stew. Someone has to carry the ingredients in.', cost: { wood: 18 }, w: 2, h: 1, slots: 2, job: 'cooking', recipe: { inputs: { rawFood: 1.5 }, output: 'stew', rate: 1.2 }, wall: 0x8a6448, roof: 0xc4703a, height: 0.8, basic: true },
-  { id: 'pieoven', name: 'Pie oven', blurb: 'Berries plus wood make pie. Pie is the best thing that has ever happened.', cost: { wood: 12, planks: 8 }, w: 1, h: 1, slots: 2, job: 'cooking', recipe: { inputs: { berries: 2, wood: 0.5 }, output: 'pie', rate: 0.9 }, wall: 0x9b7452, roof: 0xd6a33c, height: 0.8, draftable: true },
-  { id: 'smokehouse', name: 'Smokehouse', blurb: 'Fish goes in, better fish comes out.', cost: { wood: 15 }, w: 1, h: 1, slots: 2, job: 'cooking', recipe: { inputs: { fish: 1.2 }, output: 'smokedFish', rate: 1.2 }, wall: 0x5f4d3f, roof: 0x8a8a8a, height: 0.9, draftable: true },
-  { id: 'sawmill', name: 'Sawmill', blurb: 'Wood becomes planks. Planks become nicer buildings.', cost: { wood: 20 }, w: 2, h: 1, slots: 2, job: 'crafting', recipe: { inputs: { wood: 2 }, output: 'planks', rate: 1.0 }, wall: 0x7c6148, roof: 0xb08a5a, height: 0.8, draftable: true },
-  { id: 'brewery', name: 'Brewery', blurb: 'Berries become ale. Ale becomes poor decisions.', cost: { wood: 15, planks: 8 }, w: 2, h: 1, slots: 2, job: 'brewing', recipe: { inputs: { berries: 2 }, output: 'ale', rate: 0.8 }, wall: 0x7a5640, roof: 0x9c5b2f, height: 0.9, draftable: true },
+  { id: 'dock', name: 'Fishing dock', blurb: 'Fish, plentiful and mildly judgmental. Must touch water.', cost: { wood: 15 }, w: 1, h: 2, slots: 2, job: 'fishing', needs: 'water', recipes: [{ inputs: {}, output: 'fish', stars: 3 }], wall: 0x6d5844, roof: 0x3d7b9a, height: 0.6, draftable: true },
+  { id: 'cellar', name: 'Mushroom cellar', blurb: 'Dark, damp, productive. Like a bard.', cost: { wood: 12, planks: 5 }, w: 1, h: 1, slots: 2, job: 'foraging', recipes: [{ inputs: {}, output: 'mushrooms', stars: 3 }], wall: 0x5d5448, roof: 0x8d7aa8, height: 0.5, draftable: true },
+  { id: 'kitchen', name: 'Stew kitchen', blurb: 'Turns any raw food into stew. Someone has to carry the ingredients in.', cost: { wood: 18 }, w: 2, h: 1, slots: 2, job: 'cooking', recipes: [{ inputs: { rawFood: 1.5 }, output: 'stew', stars: 3 }], wall: 0x8a6448, roof: 0xc4703a, height: 0.8, basic: true },
+  { id: 'pieoven', name: 'Pie oven', blurb: 'Berries plus wood make pie. Pie is the best thing that has ever happened.', cost: { wood: 12, planks: 8 }, w: 1, h: 1, slots: 2, job: 'cooking', recipes: [{ inputs: { berries: 2, wood: 0.5 }, output: 'pie', stars: 3 }], wall: 0x9b7452, roof: 0xd6a33c, height: 0.8, draftable: true },
+  { id: 'smokehouse', name: 'Smokehouse', blurb: 'Fish goes in, better fish comes out.', cost: { wood: 15 }, w: 1, h: 1, slots: 2, job: 'cooking', recipes: [{ inputs: { fish: 1.2 }, output: 'smokedFish', stars: 3 }], wall: 0x5f4d3f, roof: 0x8a8a8a, height: 0.9, draftable: true },
+  { id: 'sawmill', name: 'Sawmill', blurb: 'Wood becomes planks. Planks become nicer buildings.', cost: { wood: 20 }, w: 2, h: 1, slots: 2, job: 'crafting', recipes: [{ inputs: { wood: 2 }, output: 'planks', stars: 3 }], wall: 0x7c6148, roof: 0xb08a5a, height: 0.8, draftable: true },
+  { id: 'brewery', name: 'Brewery', blurb: 'Berries become ale. Ale becomes poor decisions.', cost: { wood: 15, planks: 8 }, w: 2, h: 1, slots: 2, job: 'brewing', recipes: [{ inputs: { berries: 2 }, output: 'ale', stars: 3 }], wall: 0x7a5640, roof: 0x9c5b2f, height: 0.9, draftable: true },
   { id: 'tavern', name: 'Tavern', blurb: 'Evenings here use ale and give big fun. Gossip travels twice as fast.', cost: { wood: 20, planks: 12 }, w: 2, h: 2, slots: 1, job: 'serving', wall: 0x8e5f3c, roof: 0x7a2f2f, height: 1.1, draftable: true },
   { id: 'cottage', name: 'Cottage', blurb: 'Sleeps 2, cozily. Waking up here is a +5 mood.', cost: { wood: 6, planks: 10 }, w: 1, h: 1, slots: 0, beds: 2, bedQuality: 'cozy', wall: 0xc7a983, roof: 0x4f6f9a, height: 0.9, draftable: true },
   { id: 'bathhouse', name: 'Bathhouse', blurb: 'Uses wood. Everyone feels fresher, and grumblers grumble less.', cost: { wood: 15, planks: 8 }, w: 2, h: 1, slots: 0, wall: 0xb8b0a0, roof: 0x4f8f8a, height: 0.7, draftable: true },

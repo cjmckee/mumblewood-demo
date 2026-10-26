@@ -5,7 +5,7 @@
 import { BUILDING_BY_ID, MEALS, RAW_FOODS } from './content';
 import {
   World, Colonist, alive, built, bdef, beds, workersAt, blockedReason, storageCap, stored, spoilingFood, mealTotal,
-  storageFree,
+  storageFree, currentRecipe,
 } from './world';
 import { economy } from './economy';
 
@@ -166,7 +166,7 @@ export function assess(w: World): Concern[] {
     const r = blockedReason(w, b);
     if (!r || !workersAt(w, b.uid).length) continue;
     const def = bdef(b);
-    const inputs = Object.keys(def.recipe?.inputs ?? {});
+    const inputs = Object.keys(currentRecipe(w, b)?.inputs ?? {});
     const upstream = inputs.includes('rawFood') || inputs.includes('berries') ? 'rawFood' : inputs.includes('fish') ? 'dock' : inputs.includes('wood') ? 'woodcutter' : null;
     if (upstream) add(`idle-${b.def}`, `${def.name} idle`, `Its card says: ${r}`, `more ${upstream === 'rawFood' ? 'foragers' : upstream === 'woodcutter' ? 'woodcutters' : 'fishers'} to feed it`, 6, 0, [{ staff: upstream, n: workersOf(w, upstream) + 1 }]);
   }

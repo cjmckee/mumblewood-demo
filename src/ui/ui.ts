@@ -1,9 +1,10 @@
 // DOM overlay: HUD, bottom sheet, decision modals. Talks to the sim only through commands.
-import { BUILDING_BY_ID, CHARTERS, EVENTS, JOB_NAMES, PERK_BY_ID, RESOURCES, TRAIT_BY_ID, ResourceId, SKILL_NAMES, JOB_KINDS, JobKind } from '../sim/content';
+import { BUILDING_BY_ID, CHARTERS, EVENTS, JOB_NAMES, PERK_BY_ID, RESOURCES, TRAIT_BY_ID, ResourceId, SKILL_NAMES, JOB_KINDS, JobKind, Recipe, InputKey, inputName, recipeRate, Stars } from '../sim/content';
 import {
   World, Command, Colonist, alive, avgMood, beds, buildingByUid, charterProgress, colonistById,
   day, hourOfDay, opinion, workersAt, MAX_DEPARTURES, sites, siteWork, remainingCost, storageCap, stored,
   keepsFresh, findSpot, canPlace, laborers, centerOf, built, Building, efficiencyAt, pathAt, MAP_SIZE, blockedReason, Errand, Difficulty, patientsAt, lost, bedridden, spoilingFood, accepts, roomIn, FOODS, GOODS,
+  recipesOf, recipeOn, currentRecipe,
 } from '../sim/world';
 import { assess } from '../sim/advisor';
 import { economy, Account } from '../sim/economy';
@@ -53,6 +54,9 @@ function moodClass(m: number, sulking: boolean) { return sulking ? 'sulk' : m >=
 
 type Tab = 'colonists' | 'build' | 'ledger' | 'log';
 type Detail = { kind: 'colonist' | 'building'; id: number } | null;
+
+/** filled stars in the accent colour, missing ones dimmed, so ★★ reads as two of three */
+const starHtml = (n: Stars) => `<span class="stars" aria-label="${n} of 3 stars">${'★'.repeat(n)}<s>${'★'.repeat(3 - n)}</s></span>`;
 
 export class UI {
   tab: Tab = 'colonists';
@@ -125,6 +129,7 @@ export class UI {
       case 'cancel-site': { const err = this.send({ type: 'cancel', building: Number(arg) }); if (err) this.toast(err); this.detail = null; this.view.selected = null; break; }
       case 'assign': { const [cid, bid] = arg.split(':').map(x => (x === 'none' ? null : Number(x))); const err = this.send({ type: 'assign', colonist: cid!, building: bid }); if (err) this.toast(err); break; }
       case 'store-preset': { const [bid, m] = arg.split(':'); this.send({ type: 'storageFilter', building: Number(bid), allow: m === 'food' ? FOODS : m === 'goods' ? GOODS : null }); break; }
+      case 'recipe-toggle': { const [bid, i] = arg.split(':').map(Number); const b = buildingByUid(w, bid); if (!b) break; this.send({ type: 'toggleRecipe', building: bid, recipe: i, on: !recipeOn(b, i) }); break; }
       case 'store-prio': { const [bid, m] = arg.split(':'); this.send({ type: 'storagePriority', building: Number(bid), high: m === 'high' }); break; }
       case 'store-item': {
         const [bid, r] = arg.split(':'); const b = buildingByUid(w, Number(bid)); if (!b) break;
@@ -375,9 +380,16 @@ export class UI {
         <button type="button" class="ghost danger" data-act="cancel-site" data-arg="${b.uid}">Cancel and return materials</button></div>`;
     }
     const workers = workersAt(w, b.uid);
-    const recipe = def.recipe ? `<p class="prefs">${Object.keys(def.recipe.inputs).length ? `Uses ${Object.entries(def.recipe.inputs).map(([r, n]) => `${n} ${r === 'rawFood' ? 'raw food' : RESOURCES.find(x => x.id === r)!.name.toLowerCase()}`).join(' + ')} → ` : 'Makes '}1 ${RESOURCES.find(x => x.id === def.recipe!.output)!.name.toLowerCase()} · ${def.recipe.rate} per worker-hour</p>` : '';
+    const recs = recipesOf(b), cur = currentRecipe(w, b);
+    const recipeText = (r: Recipe) => `${Object.keys(r.inputs).length ? `${Object.entries(r.inputs).map(([k, n]) => `${n} ${inputName(k as InputKey)}`).join(' + ')} → ` : ''}${RESOURCES.find(x => x.id === r.output)!.name.toLowerCase()}`;
+    const recipe = !recs.length ? '' : recs.length === 1 && recipeOn(b, 0)
+      ? `<p class="prefs">${starHtml(recs[0].stars)} ${Object.keys(recs[0].inputs).length ? 'Makes' : 'Gathers'} ${esc(recipeText(recs[0]))} · ${+recipeRate(recs[0]).toFixed(2)} per worker-hour</p>`
+      : `<h3>Recipes</h3><p class="muted">Workers make the best switched-on recipe they can get ingredients for. Tap to switch one on or off.</p><div class="recipes">${recs.map((r, i) => {
+          const on = recipeOn(b, i), now = on && r === cur;
+          return `<button type="button" class="recipe${on ? ' on' : ''}" data-act="recipe-toggle" data-arg="${b.uid}:${i}" aria-pressed="${on}">${starHtml(r.stars)}<span>${esc(recipeText(r))}<small>${+recipeRate(r).toFixed(2)} per worker-hour${now ? ' · making now' : on ? '' : ' · switched off'}</small></span></button>`;
+        }).join('')}</div>`;
     const effLine = def.needs ? `<p class="prefs">${esc(efficiencyAt(w, b.def, b.x, b.y).label)} · works at <b>${Math.round(b.eff * 100)}%</b></p>` : '';
-    const inboxLine = def.recipe && Object.keys(def.recipe.inputs).length ? `<p class="prefs">Ingredients on hand: ${Object.entries(b.inbox).filter(([, n]) => (n ?? 0) >= 0.5).map(([r, n]) => `${Math.floor(n ?? 0)} ${RESOURCES.find(x => x.id === r)!.name.toLowerCase()}`).join(', ') || '<b>none</b>. Laborers carry them in from storage.'}</p>` : '';
+    const inboxLine = recs.some(r => Object.keys(r.inputs).length) ? `<p class="prefs">Ingredients on hand: ${Object.entries(b.inbox).filter(([, n]) => (n ?? 0) >= 0.5).map(([r, n]) => `${Math.floor(n ?? 0)} ${RESOURCES.find(x => x.id === r)!.name.toLowerCase()}`).join(', ') || '<b>none</b>. Laborers carry them in from storage.'}</p>` : '';
     const blocked = blockedReason(w, b);
     const patients = def.patients ? `<p class="prefs">Patients: ${patientsAt(w, b).map(c => `${esc(first(c))} (${esc(c.illness!.name.toLowerCase())}, ${Math.round(c.illness!.severity)})`).join(', ') || 'none right now. The doctor helps out as a laborer until someone is ill.'}</p>` : '';
     let staff = (blocked ? `<p class="warnline">${esc(blocked)}</p>` : '') + effLine + inboxLine + patients;
