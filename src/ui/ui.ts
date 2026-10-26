@@ -55,6 +55,12 @@ function moodClass(m: number, sulking: boolean) { return sulking ? 'sulk' : m >=
 type Tab = 'colonists' | 'build' | 'ledger' | 'log';
 type Detail = { kind: 'colonist' | 'building'; id: number } | null;
 
+const goodName = (r: ResourceId) => RESOURCES.find(x => x.id === r)!.name.toLowerCase();
+/** " · favourite food pie · not stew", with bold for the detail page */
+const tasteLine = (c: Colonist, bold = true) => {
+  const b = (t: string) => (bold ? `<b>${esc(t)}</b>` : t);
+  return c.tastes.loves.map((r, i) => ` · favourite ${b(goodName(r))}, not ${b(goodName(c.tastes.dislikes[i]))}`).join('');
+};
 /** filled stars in the accent colour, missing ones dimmed, so ★★ reads as two of three */
 const starHtml = (n: Stars) => `<span class="stars" aria-label="${n} of 3 stars">${'★'.repeat(n)}<s>${'★'.repeat(3 - n)}</s></span>`;
 
@@ -291,7 +297,7 @@ export class UI {
       ${c.sulking ? '<p class="warnline">Sulking. Won’t work until mood climbs above 32.</p>' : c.mood < 15 ? '<p class="warnline">Thinking about leaving the colony.</p>' : ''}
       <div class="traits">${traits}</div>
       ${c.illness ? `<p class="warnline">${esc(c.illness.name)} · severity ${Math.round(c.illness.severity)} of 100. ${built(w).some(b => b.def === 'clinic') ? 'A clinic with a doctor speeds recovery.' : 'Build a clinic and assign a doctor to speed recovery.'} At 100 they leave for a city physician.</p>` : ''}
-      <p class="prefs">Loves <b>${JOB_NAMES[c.likes]}</b> · hates <b>${JOB_NAMES[c.dislikes]}</b> · hunger ${Math.round(c.hunger)} · fun ${Math.round(c.fun)}</p>
+      <p class="prefs">Loves <b>${JOB_NAMES[c.likes]}</b> · hates <b>${JOB_NAMES[c.dislikes]}</b>${tasteLine(c)} · hunger ${Math.round(c.hunger)} · fun ${Math.round(c.fun)}</p>
       <h3>Skills</h3><div class="skills">${JOB_KINDS.map(k => `<div class="skill${k === c.likes ? ' fav' : ''}"><span>${SKILL_NAMES[k]}</span><i><b style="width:${c.skills[k] * 10}%"></b></i><em>${Math.floor(c.skills[k])}</em></div>`).join('')}</div>
       <h3>Why they feel this way</h3>${moodLedger(c)}<ul class="thoughts">${thoughts}</ul>
       <h3>Relationships</h3><div class="rels">${rel}</div>
@@ -440,7 +446,7 @@ export class UI {
         case 'perk': html = this.cards('The Crown grants a boon', 'Choose one. It lasts the rest of the run.',
           d.options.map(id => ({ title: PERK_BY_ID[id].name, body: PERK_BY_ID[id].desc, tag: 'Boon' }))); break;
         case 'recruit': html = this.cards('Settlers at the edge of camp', `They’d like to join. You have ${beds(w)} beds for ${alive(w).length} colonists.`,
-          d.options.map(c => ({ title: c.name, body: c.traits.map(t => `${TRAIT_BY_ID[t].name}: ${TRAIT_BY_ID[t].desc}`).join('\n'), tag: `Loves ${JOB_NAMES[c.likes]} · hates ${JOB_NAMES[c.dislikes]} · best at ${topSkills(c)}`, color: hex(c.shirt) })),
+          d.options.map(c => ({ title: c.name, body: c.traits.map(t => `${TRAIT_BY_ID[t].name}: ${TRAIT_BY_ID[t].desc}`).join('\n'), tag: `Loves ${JOB_NAMES[c.likes]} · hates ${JOB_NAMES[c.dislikes]} · best at ${topSkills(c)}${tasteLine(c, false)}`, color: hex(c.shirt) })),
           'Send them all away'); break;
         case 'errand': { const e = w.errands.find(x => x.id === d.errandId); if (e) html = this.errandPicker(w, e, true); break; }
         case 'event': {

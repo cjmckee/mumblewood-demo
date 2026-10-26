@@ -45,6 +45,8 @@ export interface Carry { res: ResourceId; amount: number }
 
 export interface Colonist {
   id: number; name: string; traits: string[]; likes: JobKind; dislikes: JobKind;
+  /** complex goods they love or dislike: a small bonus or penalty on top of the usual boost */
+  tastes: { loves: ResourceId[]; dislikes: ResourceId[] };
   shirt: number; skin: number;
   x: number; y: number; px: number; py: number; jitter: number;
   path: { x: number; y: number }[]; goalKey: string; goalReached: boolean;
@@ -495,6 +497,34 @@ function findPath(w: World, grid: Uint8Array, fx: number, fy: number, tx: number
 }
 
 // ---------- Creation ----------
+/** A stable random number from the seed and a colonist id. Tastes use this instead of the world RNG so adding them shifts no other draw. */
+function idRoll(seed: number, id: number, salt: number) {
+  let h = (seed ^ Math.imul(id + 1, 0x9e3779b1) ^ Math.imul(salt + 7, 0x85ebca6b)) >>> 0;
+  h = Math.imul(h ^ (h >>> 16), 0x7feb352d); h = Math.imul(h ^ (h >>> 15), 0x846ca68b);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+/** one loved and one disliked good from a category, when it has at least two kinds */
+function tastesFor(w: World, id: number): Colonist['tastes'] {
+  const t: Colonist['tastes'] = { loves: [], dislikes: [] };
+  [CATEGORIES.meal.members, CATEGORIES.drink.members].forEach((goods, k) => {
+    if (goods.length < 2) return;
+    const love = goods[Math.floor(idRoll(w.seed, id, k * 2) * goods.length)];
+    const rest = goods.filter(g => g !== love);
+    t.loves.push(love); t.dislikes.push(rest[Math.floor(idRoll(w.seed, id, k * 2 + 1) * rest.length)]);
+  });
+  return t;
+}
+const TASTE_BONUS = 3;
+/** meals in the order a colonist reaches for them: loved, then the rest, disliked last */
+function mealOrder(c: Colonist) { return [...MEALS].sort((a, b) => taste(c, b) - taste(c, a)); }
+const taste = (c: Colonist, r: ResourceId) => (c.tastes.loves.includes(r) ? 1 : c.tastes.dislikes.includes(r) ? -1 : 0);
+function tasteMemory(w: World, c: Colonist, r: ResourceId) {
+  c.memories = c.memories.filter(m => m.key !== 'taste');
+  const name = RESOURCES.find(x => x.id === r)!.name.toLowerCase();
+  if (taste(c, r) > 0) addMemory(w, c, 'taste', `Favourite: ${name}`, TASTE_BONUS, 14);
+  else if (taste(c, r) < 0) addMemory(w, c, 'taste', `Doesn’t care for ${name}`, -TASTE_BONUS, 14);
+}
+
 function makeColonist(w: World, usedNames: Set<string>): Colonist {
   let name = '';
   for (let i = 0; i < 50; i++) { name = `${pick(w, FIRST_NAMES)} ${pick(w, SURNAMES)}`; if (!usedNames.has(name.split(' ')[0])) break; }
@@ -514,7 +544,7 @@ function makeColonist(w: World, usedNames: Set<string>): Colonist {
   skills[dislikes] = Math.max(1, skills[dislikes] - 1);
   const talent = pick(w, jobs); skills[talent] = Math.min(10, skills[talent] + 4);
   return {
-    id: w.nextColonistId++, name, traits, likes, dislikes,
+    id: w.nextColonistId, tastes: tastesFor(w, w.nextColonistId++), name, traits, likes, dislikes,
     shirt: pick(w, SHIRTS), skin: pick(w, SKINS),
     x: CENTER + nextRand(w) * 2 - 1, y: CENTER + 2.5 + nextRand(w), px: 0, py: 0, jitter: nextRand(w),
     path: [], goalKey: '', goalReached: false,
@@ -1380,13 +1410,13 @@ function mealSource(w: World, c: Colonist): Building | undefined {
 /** pick up the best allowed food at a storage; false if there was none */
 function grabMeal(w: World, c: Colonist, b: Building | undefined) {
   if (b && !bdef(b).storage) {
-    const r = MEALS.find(x => !w.forbidden.includes(x) && (b.outbox[x] ?? 0) >= 1) ?? RAW_FOODS.find(x => !w.forbidden.includes(x) && (b.outbox[x] ?? 0) >= 1);
+    const r = mealOrder(c).find(x => !w.forbidden.includes(x) && (b.outbox[x] ?? 0) >= 1) ?? RAW_FOODS.find(x => !w.forbidden.includes(x) && (b.outbox[x] ?? 0) >= 1);
     if (!r) return false;
     b.outbox[r] = (b.outbox[r] ?? 0) - 1; c.meal!.got = r; flow(w, `${r}:-eaten`, 1);
     return true;
   }
   const has = (r: ResourceId) => !w.forbidden.includes(r) && (b ? (b.stock[r] ?? 0) >= 1 : w.res[r] >= 1);
-  const r = MEALS.find(has) ?? [...RAW_FOODS].sort((p, q) => (b ? (b.stock[q] ?? 0) - (b.stock[p] ?? 0) : w.res[q] - w.res[p])).find(has);
+  const r = mealOrder(c).find(has) ?? [...RAW_FOODS].sort((p, q) => (b ? (b.stock[q] ?? 0) - (b.stock[p] ?? 0) : w.res[q] - w.res[p])).find(has);
   if (!r) return false;
   takeOut(w, b, r, 1); c.meal!.got = r; flow(w, `${r}:-eaten`, 1);
   return true;
@@ -1403,6 +1433,7 @@ function finishMeal(w: World, c: Colonist) {
     const v = { pie: 8, smokedFish: 6, stew: 5 }[meal as 'pie' | 'smokedFish' | 'stew'] + bonus;
     const label = { pie: 'Ate pie', smokedFish: 'Ate smoked fish', stew: 'Ate a hot stew' }[meal as 'pie'];
     addMemory(w, c, 'meal', label, v, 14);
+    tasteMemory(w, c, meal);
   } else {
     const raw = got;
     c.hunger = 85;
