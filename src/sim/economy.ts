@@ -1,13 +1,13 @@
 // The colony's books for the last day: what came in, what went out, and what everyone spent their time on.
 // Shared by the Ledger tab, the foreman's notes and the balance tools, so they all read the same numbers.
-import { BUILDING_BY_ID, JobKind, MEALS, RAW_FOODS, ResourceId, SKILL_NAMES } from './content';
-import { World, Colonist, alive, built, bdef, workersAt, lastDay, lastDayHours, foodTotal, bedridden } from './world';
+import { BUILDING_BY_ID, JobKind, MEALS, RAW_FOODS, ResourceId, SKILL_NAMES, CATEGORIES, RESOURCES } from './content';
+import { World, Colonist, alive, built, bdef, workersAt, lastDay, lastDayHours, foodTotal, bedridden, drinkTotal } from './world';
 
 export interface Line { label: string; perDay: number }
 export interface Account { name: string; stock: number; lines: Line[]; net: number; daysLeft: number | null }
 export interface JobRow { def: string; name: string; job: JobKind; workers: number; slots: number; best: { c: Colonist; skill: number } | null }
 export interface Economy {
-  food: Account; wood: Account; planks: Account; ale: Account;
+  food: Account; wood: Account; planks: Account; drinks: Account;
   jobs: JobRow[];
   laborers: Colonist[];
   /** share of laborers' working-day hours by activity, 0..1 */
@@ -32,13 +32,14 @@ export function economy(w: World): Economy {
   // food, counted in items (a stew and a berry both feed one meal)
   const gathered = per(sumKeys(f, k => raw.includes(res(k) as ResourceId) && src(k).startsWith('+')));
   const mealsMade = per(sumKeys(f, k => meals.includes(res(k) as ResourceId) && src(k).startsWith('+')));
-  const intoCooking = -per(sumKeys(f, k => raw.includes(res(k) as ResourceId) && src(k).startsWith('-') && !['-eaten', '-spoiled'].includes(src(k)) && src(k) !== '-brewery'));
-  const intoAle = -per(sumKeys(f, k => isFood(res(k)) && src(k) === '-brewery'));
+  const drinkMakers = ['-brewery', '-ciderpress'];
+  const intoCooking = -per(sumKeys(f, k => raw.includes(res(k) as ResourceId) && src(k).startsWith('-') && !['-eaten', '-spoiled'].includes(src(k)) && !drinkMakers.includes(src(k))));
+  const intoAle = -per(sumKeys(f, k => isFood(res(k)) && drinkMakers.includes(src(k))));
   const eaten = -per(sumKeys(f, k => isFood(res(k)) && src(k) === '-eaten'));
   const spoiled = -per(sumKeys(f, k => isFood(res(k)) && src(k) === '-spoiled'));
   const food = account('Food', foodTotal(w), [
     { label: 'Gathered', perDay: gathered }, { label: 'Meals cooked', perDay: mealsMade }, { label: 'Raw food into cooking', perDay: intoCooking },
-    { label: 'Berries into ale', perDay: intoAle }, { label: 'Eaten', perDay: eaten }, { label: 'Spoiled', perDay: spoiled },
+    { label: 'Food into drinks', perDay: intoAle }, { label: 'Eaten', perDay: eaten }, { label: 'Spoiled', perDay: spoiled },
   ]);
 
   // flow totals are amounts moved; uses count against the account
@@ -52,7 +53,13 @@ export function economy(w: World): Economy {
   const planks = account('Planks', w.res.planks, [
     { label: 'Sawn', perDay: per(f['planks:+sawmill'] ?? 0) }, { label: 'Construction', perDay: -per(sumKeys(f, k => res(k) === 'planks' && src(k).startsWith('-build'))) },
   ]);
-  const ale = account('Ale', w.res.ale, [{ label: 'Brewed', perDay: per(f['ale:+brewery'] ?? 0) }, { label: 'Drunk', perDay: -per(f['ale:-drunk'] ?? 0) }]);
+  const drinkIds = CATEGORIES.drink.members;
+  const isDrink = (k: string) => drinkIds.includes(res(k) as ResourceId);
+  const drinks = account('Drinks', drinkTotal(w), [
+    ...drinkIds.map(d => ({ label: `${RESOURCES.find(r => r.id === d)!.name} made`, perDay: per(sumKeys(f, k => res(k) === d && src(k).startsWith('+'))) })),
+    { label: 'Drunk at the tavern', perDay: -per(sumKeys(f, k => isDrink(k) && src(k) === '-drunk')) },
+    { label: 'Bards and weddings', perDay: -per(sumKeys(f, k => isDrink(k) && (src(k) === '-bard' || src(k) === '-wedding'))) },
+  ]);
 
   // jobs: every kind of workplace, with the best-skilled laborer who could fill an empty slot
   const laborers = alive(w).filter(c => c.job == null && !bedridden(c));
@@ -74,7 +81,7 @@ export function economy(w: World): Economy {
   const laborBusy = per((lt.hauling ?? 0) + (lt.building ?? 0) + (lt.cleaning ?? 0));
   const usable = 1 - (laborTime.eating ?? 0) - (laborTime.sick ?? 0);
   const busyShare = usable > 0 ? ((laborTime.hauling ?? 0) + (laborTime.building ?? 0) + (laborTime.cleaning ?? 0)) / usable : 0;
-  return { food, wood, planks, ale, jobs, laborers, laborTime, laborBusy, busyShare };
+  return { food, wood, planks, drinks, jobs, laborers, laborTime, laborBusy, busyShare };
 }
 
 function account(name: string, stock: number, lines: Line[]): Account {

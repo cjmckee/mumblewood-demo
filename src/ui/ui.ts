@@ -1,10 +1,10 @@
 // DOM overlay: HUD, bottom sheet, decision modals. Talks to the sim only through commands.
-import { BUILDING_BY_ID, CHARTERS, EVENTS, JOB_NAMES, PERK_BY_ID, RESOURCES, TRAIT_BY_ID, ResourceId, SKILL_NAMES, JOB_KINDS, JobKind, Recipe, InputKey, inputName, recipeRate, Stars } from '../sim/content';
+import { BUILDINGS, membersOf, BUILDING_BY_ID, CHARTERS, EVENTS, JOB_NAMES, PERK_BY_ID, RESOURCES, TRAIT_BY_ID, ResourceId, SKILL_NAMES, JOB_KINDS, JobKind, Recipe, InputKey, inputName, recipeRate, Stars } from '../sim/content';
 import {
   World, Command, Colonist, alive, avgMood, beds, buildingByUid, charterProgress, colonistById,
   day, hourOfDay, opinion, workersAt, MAX_DEPARTURES, sites, siteWork, remainingCost, storageCap, stored,
   keepsFresh, findSpot, canPlace, laborers, centerOf, built, Building, efficiencyAt, pathAt, MAP_SIZE, blockedReason, Errand, Difficulty, patientsAt, lost, bedridden, spoilingFood, accepts, roomIn, FOODS, GOODS,
-  recipesOf, recipeOn, currentRecipe,
+  recipesOf, recipeOn, currentRecipe, siteOk,
 } from '../sim/world';
 import { assess } from '../sim/advisor';
 import { economy, Account } from '../sim/economy';
@@ -17,6 +17,7 @@ const hex = (n: number) => `#${n.toString(16).padStart(6, '0')}`;
 const RES_COLOR: Record<ResourceId, string> = {
   wood: '#a07a4c', planks: '#d2a96a', berries: '#c04a6a', fish: '#5b9cc2', mushrooms: '#b39ad0',
   stew: '#d98a3c', pie: '#e6c25a', smokedFish: '#9c8c7a', ale: '#d6a33c',
+  apples: '#d2452f', grain: '#d8c060', honey: '#e8a21c', cider: '#b8c25a', mead: '#b06a2a',
 };
 const costText = (cost: Partial<Record<ResourceId, number>>) =>
   Object.entries(cost).map(([r, n]) => `${n} ${RESOURCES.find(x => x.id === r)!.name.toLowerCase()}`).join(', ') || 'free';
@@ -388,11 +389,21 @@ export class UI {
     const workers = workersAt(w, b.uid);
     const recs = recipesOf(b), cur = currentRecipe(w, b);
     const recipeText = (r: Recipe) => `${Object.keys(r.inputs).length ? `${Object.entries(r.inputs).map(([k, n]) => `${n} ${inputName(k as InputKey)}`).join(' + ')} → ` : ''}${RESOURCES.find(x => x.id === r.output)!.name.toLowerCase()}`;
+    // whether a recipe's ingredients can come from anywhere: a building owned now, one that could be drafted, or nowhere on this map
+    const madeBy = (m: ResourceId, ids: string[]) => BUILDINGS.some(d => (d.basic || ids.includes(d.id)) && siteOk(w, d) && (d.recipes ?? []).some(x => x.output === m));
+    const reach = (r: Recipe) => {
+      for (const k of Object.keys(r.inputs) as InputKey[]) {
+        const ms = membersOf(k);
+        if (ms.some(m => madeBy(m, w.owned))) continue;
+        return ms.some(m => madeBy(m, BUILDINGS.map(d => d.id))) ? `nothing here makes ${inputName(k)} yet` : `no ${inputName(k)} on this map`;
+      }
+      return '';
+    };
     const recipe = !recs.length ? '' : recs.length === 1 && recipeOn(b, 0)
       ? `<p class="prefs">${starHtml(recs[0].stars)} ${Object.keys(recs[0].inputs).length ? 'Makes' : 'Gathers'} ${esc(recipeText(recs[0]))} · ${+recipeRate(recs[0]).toFixed(2)} per worker-hour</p>`
       : `<h3>Recipes</h3><p class="muted">Workers make the best switched-on recipe they can get ingredients for. Tap to switch one on or off.</p><div class="recipes">${recs.map((r, i) => {
           const on = recipeOn(b, i), now = on && r === cur;
-          return `<button type="button" class="recipe${on ? ' on' : ''}" data-act="recipe-toggle" data-arg="${b.uid}:${i}" aria-pressed="${on}">${starHtml(r.stars)}<span>${esc(recipeText(r))}<small>${+recipeRate(r).toFixed(2)} per worker-hour${now ? ' · making now' : on ? '' : ' · switched off'}</small></span></button>`;
+          return `<button type="button" class="recipe${on ? ' on' : ''}" data-act="recipe-toggle" data-arg="${b.uid}:${i}" aria-pressed="${on}">${starHtml(r.stars)}<span>${esc(recipeText(r))}<small>${+recipeRate(r).toFixed(2)} per worker-hour${now ? ' · making now' : on ? '' : ' · switched off'}${reach(r) ? ` · ${reach(r)}` : ''}</small></span></button>`;
         }).join('')}</div>`;
     const effLine = def.needs ? `<p class="prefs">${esc(efficiencyAt(w, b.def, b.x, b.y).label)} · works at <b>${Math.round(b.eff * 100)}%</b></p>` : '';
     const inboxLine = recs.some(r => Object.keys(r.inputs).length) ? `<p class="prefs">Ingredients on hand: ${Object.entries(b.inbox).filter(([, n]) => (n ?? 0) >= 0.5).map(([r, n]) => `${Math.floor(n ?? 0)} ${RESOURCES.find(x => x.id === r)!.name.toLowerCase()}`).join(', ') || '<b>none</b>. Laborers carry them in from storage.'}</p>` : '';
@@ -533,7 +544,7 @@ function accountCard(a: Account) {
 }
 function ledger(w: World) {
   const e = economy(w);
-  const accounts = [e.food, e.wood, ...(e.planks.lines.length || e.planks.stock >= 1 ? [e.planks] : []), ...(e.ale.lines.length || e.ale.stock >= 1 ? [e.ale] : [])];
+  const accounts = [e.food, e.wood, ...(e.planks.lines.length || e.planks.stock >= 1 ? [e.planks] : []), ...(e.drinks.lines.length || e.drinks.stock >= 1 ? [e.drinks] : [])];
   const jobs = e.jobs.sort((a, z) => (z.slots - z.workers) - (a.slots - a.workers)).map(j => {
     const open = j.slots - j.workers;
     return `<div class="job-row"><span><b>${esc(j.name)}</b><small>${j.workers}/${j.slots} working${open && j.best ? ` · best free hand: ${esc(first(j.best.c))} (${esc(SKILL_NAMES[j.job].toLowerCase())} ${j.best.skill}${j.best.c.likes === j.job ? ', loves it' : ''})` : ''}</small></span>${open ? `<em class="open">${open} open</em>` : '<em>full</em>'}</div>`;

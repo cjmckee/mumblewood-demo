@@ -2,7 +2,7 @@
 import {
   BUILDING_BY_ID, BuildingDef, CHARTERS, CharterDef, EVENTS, FIRST_NAMES, JOB_NAMES, JobKind,
   MEALS, PERKS, RAW_FOODS, ResourceId, SHIRTS, SKINS, SURNAMES, TRAITS, TRAIT_BY_ID, BUILDINGS, buildWork,
-  JOB_KINDS, JOB_EVENTS, JobEventDef, ILLNESSES, RESOURCES, Recipe, InputKey, CATEGORIES, isCategory, membersOf, inputName, recipeRate,
+  JOB_KINDS, JOB_EVENTS, JobEventDef, ILLNESSES, RESOURCES, Recipe, InputKey, CATEGORIES, isCategory, membersOf, inputName, recipeRate, SITES, SiteId,
 } from './content';
 
 // ---------- RNG ----------
@@ -125,6 +125,8 @@ export interface World {
   /** foods colonists are not allowed to eat (kept for charters, feasts and trade) */
   forbidden: ResourceId[];
   difficulty: Difficulty;
+  /** the resource sites this map has (an apple grove, a meadow, good soil) */
+  sites: SiteId[];
   nextUid: number; nextColonistId: number;
   autoAssignNew: boolean;
   /** diagnostics: running totals of where goods came from and went, e.g. 'wood:hearth' */
@@ -151,7 +153,7 @@ export const OUTBOX_CAP = 15;
 const WALK_SPEED = 7; // tiles per hour
 export const PATH_SPEED = 1.25;
 export const INBOX_TARGET = 12;
-export const T_GRASS = 0, T_TREE = 1, T_BUSH = 2, T_WATER = 3;
+export const T_GRASS = 0, T_TREE = 1, T_BUSH = 2, T_WATER = 3, T_APPLE = 4, T_FLOWERS = 5, T_SOIL = 6;
 
 // ---------- Helpers ----------
 export const day = (w: World) => Math.floor(w.hour / 24) + 1;
@@ -213,15 +215,19 @@ export function currentRecipe(w: World, b: Building): Recipe | undefined {
 /** total drinks in storage (ale, and later cider, mead…) */
 export function drinkTotal(w: World) { return CATEGORIES.drink.members.reduce((n, r) => n + w.res[r], 0); }
 /** take drinks out of storage, the most plentiful first; returns what was taken */
-function takeDrink(w: World, n: number, why: string) {
-  let left = n;
-  for (const r of [...CATEGORIES.drink.members].sort((p, q) => w.res[q] - w.res[p])) {
+function takeDrink(w: World, n: number, why: string, c?: Colonist): ResourceId | null {
+  let left = n, main: ResourceId | null = null;
+  // a drinker reaches for the one they love and leaves the one they dislike; otherwise the most plentiful goes first
+  const order = [...CATEGORIES.drink.members].sort((p, q) => (c ? taste(c, q) - taste(c, p) : 0) || w.res[q] - w.res[p]);
+  for (const r of order) {
     const t = Math.min(w.res[r], left); if (t <= 0) continue;
-    w.res[r] -= t; flow(w, `${r}:-${why}`, t); left -= t;
+    w.res[r] -= t; flow(w, `${r}:-${why}`, t); left -= t; main ??= r;
     if (left <= 0) break;
   }
-  return n - left;
+  return main;
 }
+/** mood from the first drink of the evening, by kind */
+const DRINK_MOOD: Partial<Record<ResourceId, number>> = { ale: 6, cider: 6, mead: 8 };
 export function flow(w: World, key: string, n: number) { if (w.flows) w.flows[key] = (w.flows[key] ?? 0) + n; }
 export function storageCap(w: World) { return built(w).reduce((n, b) => n + (bdef(b).storage ?? 0), 0); }
 export function stored(w: World) { return sum(w.res); }
@@ -322,6 +328,21 @@ function genTerrain(w: World) {
   // every colony starts on wood and berries, so one grove and one thick berry patch are always close by
   for (let i = 0; i < 3; i++) { const g = i === 0 ? around(7, 8.5) : around(7, 11); blob(g.x, g.y, 2.6 + nextRand(w), T_TREE, 0.75); }
   for (let i = 0; i < 3; i++) { const g = i === 0 ? around(5.5, 6.5) : around(5.5, 10); blob(g.x, g.y, i === 0 ? 2.1 : 1.7, T_BUSH, i === 0 ? 1 : 0.8); }
+  // two of the three resource sites, each on open grass, so every map leaves out one route to drinks
+  const order = SITES.map(s => ({ s, k: nextRand(w) })).sort((a, b) => a.k - b.k).map(x => x.s.id).slice(0, 2);
+  const onGrass = (cx: number, cy: number, r: number, v: number, density: number) => {
+    for (let x = Math.floor(cx - r - 1); x <= cx + r + 1; x++) for (let y = Math.floor(cy - r - 1); y <= cy + r + 1; y++) {
+      const d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy) / r;
+      if (d < 1 && x >= BUILD_MIN && y >= BUILD_MIN && x <= BUILD_MAX && y <= BUILD_MAX && t[y * MAP_SIZE + x] === T_GRASS && nextRand(w) < density * (1.15 - d * 0.6)) set(x, y, v);
+    }
+  };
+  for (const id of order) {
+    const g = around(7.5, 10.5);
+    if (id === 'grove') onGrass(g.x, g.y, 2.2, T_APPLE, 0.75);
+    if (id === 'meadow') onGrass(g.x, g.y, 2.6, T_FLOWERS, 0.9);
+    if (id === 'soil') onGrass(g.x, g.y, 2.8, T_SOIL, 1);
+  }
+  w.sites = SITES.filter(s => order.includes(s.id)).map(s => s.id);
   w.terrain = t;
   w.paths = new Array(MAP_SIZE * MAP_SIZE).fill(0);
 }
@@ -345,6 +366,18 @@ export function efficiencyAt(w: World, defId: string, x: number, y: number): { e
   };
   if (d.needs === 'trees') { const n = count(T_TREE, 4); return { eff: Math.max(0.15, Math.min(1, n / 14)), count: n, label: `${n} trees nearby` }; }
   if (d.needs === 'bushes') { const n = count(T_BUSH, 2.6); return { eff: Math.max(0.15, Math.min(1, n / 6)), count: n, label: `${n} berry bushes nearby` }; }
+  if (d.needs === 'apples') { const n = count(T_APPLE, 2.6); return { eff: Math.max(0.15, Math.min(1, n / 6)), count: n, label: `${n} apple trees nearby` }; }
+  if (d.needs === 'flowers') {
+    // flower beds count as two tiles of meadow each, so a player can plant a meadow where there isn't one
+    const beds = w.buildings.filter(b => b.built && b.def === 'flowerbed' && Math.hypot(b.x + 0.5 - cx, b.y + 0.5 - cy) <= 3).length;
+    const n = count(T_FLOWERS, 3) + beds * 2;
+    return { eff: Math.max(0.15, Math.min(1, n / 10)), count: n, label: `${count(T_FLOWERS, 3)} meadow tiles${beds ? ` and ${beds} flower bed${beds > 1 ? 's' : ''}` : ''} nearby` };
+  }
+  if (d.needs === 'soil') {
+    let n = 0;
+    for (let tx = x; tx < x + d.w; tx++) for (let ty = y; ty < y + d.h; ty++) if (terrainAt(w, tx, ty) === T_SOIL) n++;
+    return { eff: n ? Math.max(0.15, n / (d.w * d.h)) : 0, count: n, label: `${n} of ${d.w * d.h} tiles on good soil` };
+  }
   if (d.needs === 'water') return { eff: touchesWater(w, defId, x, y) ? 1 : 0, count: 0, label: touchesWater(w, defId, x, y) ? 'On the water' : 'Must touch water' };
   return { eff: 1, count: 0, label: '' };
 }
@@ -407,12 +440,15 @@ export function canPlace(w: World, defId: string, x: number, y: number): PlaceCh
     if (t === T_WATER) return { ok: false, reason: 'You can\u2019t build on water.' };
     if (t === T_TREE) return { ok: false, reason: 'There are trees in the way.' };
     if (t === T_BUSH) return { ok: false, reason: 'There are berry bushes in the way.' };
+    if (t === T_APPLE) return { ok: false, reason: 'There are apple trees in the way.' };
+    if (t === T_FLOWERS) return { ok: false, reason: 'The wildflower meadow is in the way.' };
   }
   if (!d.walkable && !d.decor) {
     const sx = x + Math.floor(d.w / 2), sy = y + d.h;
     if (sy > BUILD_MAX + 1 || g[sy * MAP_SIZE + sx] === 1) return { ok: false, reason: 'The doorway is blocked.' };
   }
   if (d.needs === 'water' && !touchesWater(w, defId, x, y)) return { ok: false, reason: 'A dock has to touch the water.' };
+  if (d.needs === 'soil' && efficiencyAt(w, defId, x, y).count < 2) return { ok: false, reason: 'A field has to sit on good soil.' };
   for (const b of w.buildings) {
     if (bdef(b).walkable || bdef(b).decor) continue;
     const s = spotOf(b), sx = Math.floor(s.x), sy = Math.floor(s.y);
@@ -518,11 +554,11 @@ const TASTE_BONUS = 3;
 /** meals in the order a colonist reaches for them: loved, then the rest, disliked last */
 function mealOrder(c: Colonist) { return [...MEALS].sort((a, b) => taste(c, b) - taste(c, a)); }
 const taste = (c: Colonist, r: ResourceId) => (c.tastes.loves.includes(r) ? 1 : c.tastes.dislikes.includes(r) ? -1 : 0);
-function tasteMemory(w: World, c: Colonist, r: ResourceId) {
-  c.memories = c.memories.filter(m => m.key !== 'taste');
-  const name = RESOURCES.find(x => x.id === r)!.name.toLowerCase();
-  if (taste(c, r) > 0) addMemory(w, c, 'taste', `Favourite: ${name}`, TASTE_BONUS, 14);
-  else if (taste(c, r) < 0) addMemory(w, c, 'taste', `Doesn’t care for ${name}`, -TASTE_BONUS, 14);
+const goodName = (r: ResourceId) => RESOURCES.find(x => x.id === r)!.name.toLowerCase();
+function tasteMemory(w: World, c: Colonist, r: ResourceId, key = 'taste') {
+  c.memories = c.memories.filter(m => m.key !== key);
+  if (taste(c, r) > 0) addMemory(w, c, key, `Favourite: ${goodName(r)}`, TASTE_BONUS, 14);
+  else if (taste(c, r) < 0) addMemory(w, c, key, `Doesn’t care for ${goodName(r)}`, -TASTE_BONUS, 14);
 }
 
 function makeColonist(w: World, usedNames: Set<string>): Colonist {
@@ -567,10 +603,10 @@ export function createWorld(seed: number, difficulty: Difficulty = 'normal'): Wo
   const w: World = {
     seed, rngState: seed >>> 0, hour: 6,
     colonists: [], buildings: [], terrain: [], paths: [],
-    res: { wood: 60, berries: 50, fish: 0, mushrooms: 0, stew: 10, pie: 0, smokedFish: 0, planks: 0, ale: 0 },
+    res: { wood: 60, berries: 50, fish: 0, mushrooms: 0, stew: 10, pie: 0, smokedFish: 0, planks: 0, ale: 0, apples: 0, grain: 0, honey: 0, cider: 0, mead: 0 },
     owned: BUILDINGS.filter(b => b.basic).map(b => b.id), perks: [],
     charterTier: 1, charter: null, charterHours: 0, chartersDone: [],
-    decisions: [], log: [], opinions: {}, status: 'playing', strain: 0, nextEventHour: 24 * 1.6,
+    decisions: [], log: [], opinions: {}, status: 'playing', strain: 0, nextEventHour: 24 * 1.6, sites: [],
     errands: [], nextErrandId: 1, difficulty, charterBase: { cured: 0, errands: 0 }, moodLog: [], ateOffTable: false, forbidden: [],
     nextUid: 1, nextColonistId: 1, autoAssignNew: false,
     flows: {}, flowLog: [],
@@ -579,6 +615,7 @@ export function createWorld(seed: number, difficulty: Difficulty = 'normal'): Wo
   };
   for (let i = 0; i < 20; i++) nextRand(w);
   genTerrain(w);
+  addLog(w, `Scouts report ${w.sites.map(id => SITES.find(x => x.id === id)!.name).join(' and ')} nearby.`, 'good');
   newBuilding(w, 'hearth', CENTER - 1, CENTER - 1, true);
   for (const id of ['stockpile', 'leanto', 'leanto', 'woodcutter', 'forager']) {
     const s = findSpot(w, id, CENTER, CENTER, true);
@@ -624,17 +661,32 @@ function assignBeds(w: World) {
 
 /** Buildings that help each charter. A draft always offers one of these if none is owned yet. */
 export const CHARTER_HELPERS: Record<string, string[]> = {
-  pantry: ['pieoven', 'smokehouse', 'dock'], feast: ['brewery', 'pieoven', 'smokehouse'],
+  pantry: ['pieoven', 'smokehouse', 'dock'], feast: ['brewery', 'ciderpress', 'pieoven', 'smokehouse'],
   lumber: ['sawmill'], township: ['sawmill', 'dock'], growing: ['cottage', 'cellar'], boomtown: ['cottage', 'cellar'],
   cheer: ['tavern', 'stage', 'cottage', 'bathhouse', 'pieoven'], harmony: ['tavern', 'stage', 'cottage', 'bathhouse'],
   lovebirds: ['tavern', 'stage'],
   woodpile: ['sawmill'], paved: ['sawmill'], tables: ['cottage'], healthy: ['bathhouse'], handy: ['cottage'],
   pretty: ['stage', 'sawmill'], masters: ['tavern'], pieday: ['pieoven', 'sawmill'], garden: ['sawmill', 'stage'], calm: ['tavern', 'bathhouse', 'stage'],
 };
+/** the site a gatherer needs on the map, if any */
+const SITE_FOR: Partial<Record<NonNullable<BuildingDef['needs']>, SiteId>> = { apples: 'grove', flowers: 'meadow', soil: 'soil' };
+/** this map has what the building gathers from (every map has trees, bushes and water) */
+export function siteOk(w: World, d: BuildingDef) { const s = d.needs && SITE_FOR[d.needs]; return !s || w.sites.includes(s); }
+/** a building the colony owns, or could own, gathers this good on this map */
+export function canSupply(w: World, r: ResourceId, owned = w.owned) {
+  return BUILDINGS.some(d => (d.basic || owned.includes(d.id)) && siteOk(w, d) && (d.recipes ?? []).some(rec => rec.output === r && !Object.keys(rec.inputs).length));
+}
+/** at least one recipe in the building can be fed from what the colony owns */
+export function usableHere(w: World, id: string) {
+  const recs = BUILDING_BY_ID[id].recipes;
+  if (!recs) return true;
+  return recs.some(rec => Object.keys(rec.inputs).every(k => membersOf(k as InputKey).some(r => canSupply(w, r) || (r === 'planks' && w.owned.includes('sawmill')))));
+}
 function blueprintDecision(w: World): Decision {
-  const pool = BUILDINGS.filter(b => b.draftable && !w.owned.includes(b.id)).map(b => b.id);
+  // gatherers for a site this map doesn't have are never offered
+  const pool = BUILDINGS.filter(b => b.draftable && !w.owned.includes(b.id) && siteOk(w, b)).map(b => b.id);
   const options = shuffle(w, pool).slice(0, 3);
-  const usable = (id: string) => { const recs = BUILDING_BY_ID[id].recipes; if (!recs) return true; return recs.some(rec => Object.keys(rec.inputs).every(k => k === 'rawFood' || k === 'wood' || k === 'berries' || (k === 'fish' && w.owned.includes('dock')) || (k === 'planks' && w.owned.includes('sawmill')))); };
+  const usable = (id: string) => usableHere(w, id);
   const helpers = (CHARTER_HELPERS[w.charter ?? ''] ?? []).filter(id => pool.includes(id) && usable(id));
   const ownsHelper = (CHARTER_HELPERS[w.charter ?? ''] ?? []).some(id => w.owned.includes(id) && usable(id));
   if (helpers.length && !ownsHelper && !options.some(o => helpers.includes(o))) options[options.length - 1] = pick(w, helpers);
@@ -947,15 +999,15 @@ function applyEventEffect(w: World, effect: string) {
     case 'payFood20': takeFood(w, 20); addLog(w, 'The goblin stamps something and leaves. Nobody can read the stamp.'); break;
     case 'graffiti': everyone(w, 'graffiti', 'Goblin graffiti everywhere', -6, 48); addLog(w, 'By morning, every wall says something rude in Goblin.', 'bad'); break;
     case 'bardPlay':
-      if (w.res.ale >= 6) { w.res.ale -= 6; everyone(w, 'bard', 'Heard a wonderful ballad', 6, 24); addLog(w, 'The ballad is long, but it rhymes. Everyone cries a little.', 'good'); }
-      else addLog(w, 'There wasn’t enough ale. The bard plays one note and leaves.', 'bad');
+      if (drinkTotal(w) >= 6) { takeDrink(w, 6, 'bard'); everyone(w, 'bard', 'Heard a wonderful ballad', 6, 24); addLog(w, 'The ballad is long, but it rhymes. Everyone cries a little.', 'good'); }
+      else addLog(w, 'There wasn’t enough to drink. The bard plays one note and leaves.', 'bad');
       break;
     case 'pigeonBribe': w.res.berries = Math.max(0, w.res.berries - 15); addLog(w, 'The pigeons accept the berries and sign a peace treaty.'); break;
     case 'pigeonRiot': w.res.berries = Math.floor(w.res.berries * 0.6); addLog(w, 'The pigeons riot. The berry stores are a crime scene.', 'bad'); break;
     case 'wedding': {
-      if (mealTotal(w) >= 8 && w.res.ale >= 5) {
+      if (mealTotal(w) >= 8 && drinkTotal(w) >= 5) {
         let n = 8; for (const r of MEALS) { const t = Math.min(w.res[r], n); w.res[r] -= t; n -= t; }
-        w.res.ale -= 5; everyone(w, 'wedding', 'What a lovely wedding', 7, 48);
+        takeDrink(w, 5, 'wedding'); everyone(w, 'wedding', 'What a lovely wedding', 7, 48);
         addLog(w, 'A wedding! Someone cried, someone danced on a table, someone fell off it.', 'love');
       } else { addLog(w, 'There wasn’t enough for a party, so the couple elopes.', 'bad'); applyEventEffect(w, 'elope'); }
       break;
@@ -996,11 +1048,12 @@ function buildingPriority(w: World, b: Building): number {
   const def = bdef(b); const pop = alive(w).length;
   const raw = RAW_FOODS.reduce((n, r) => n + w.res[r], 0);
   switch (def.id) {
-    case 'forager': case 'dock': case 'cellar': return raw < pop * 6 ? 10 : 6;
+    case 'forager': case 'dock': case 'cellar': case 'orchard': return raw < pop * 6 ? 10 : 6;
+    case 'apiary': case 'field': return 5;
     case 'kitchen': case 'pieoven': case 'smokehouse': return mealTotal(w) < pop * 3 ? 9 : 7;
     case 'woodcutter': return w.res.wood < 40 ? 8.5 : 5;
     case 'sawmill': return w.res.planks < 30 ? 6.5 : 3;
-    case 'brewery': return w.res.ale < 20 ? 6 : 3;
+    case 'brewery': case 'ciderpress': return drinkTotal(w) < 20 ? 6 : 3;
     case 'tavern': return 6.8;
     default: return 4;
   }
@@ -1013,7 +1066,8 @@ export function blockedReason(w: World, b: Building): string | null {
   for (const key of Object.keys(rec.inputs) as InputKey[]) {
     if (obtainable(w, b, key) < 1) {
       const name = inputName(key);
-      const hint = key === 'fish' ? ' Build a fishing dock.' : key === 'planks' ? ' Build a sawmill.' : key === 'wood' ? ' Keep more than 20 wood.' : '';
+      const HINTS: Partial<Record<string, string>> = { fish: ' Build a fishing dock.', planks: ' Build a sawmill.', wood: ' Keep more than 20 wood.', apples: ' Pick apples at an orchard hut.', grain: ' Grow it on a grain field.', honey: ' Keep bees at an apiary.' };
+      const hint = HINTS[key] ?? '';
       return `No ${name} to work with.${hint}`;
     }
   }
@@ -1378,6 +1432,8 @@ function completeBuilding(w: World, b: Building) {
   const def = bdef(b);
   addLog(w, pick(w, [`The ${def.name.toLowerCase()} is finished. Only one thumb was hammered.`, `The ${def.name.toLowerCase()} is done, and it is mostly level.`, `Work on the ${def.name.toLowerCase()} is complete. Everyone admires it briefly.`]), 'good');
   if (def.beds) assignBeds(w);
+  // a new flower bed can make a nearby apiary busier
+  if (def.id === 'flowerbed') for (const a of w.buildings) if (bdef(a).needs === 'flowers') a.eff = efficiencyAt(w, a.def, a.x, a.y).eff;
   if (def.slots && w.autoAssignNew) fillSlots(w);
   // a finished building replaces any planned path under it
   for (let x = b.x; x < b.x + def.w; x++) for (let y = b.y; y < b.y + def.h; y++) if (!def.walkable) w.paths[y * MAP_SIZE + x] = 0;
@@ -1562,7 +1618,7 @@ function computeThoughts(w: World, c: Colonist): Thought[] {
   if (has(c, 'butterfly') && !c.hadCompanyLastNight) add('Lonely evening', -6);
   if (has(c, 'sunny')) add('Sunny disposition', 5);
   if (has(c, 'lazy')) add('Doesn’t work too hard', 3);
-  if (has(c, 'tippler') && drinkTotal(w) < 1) add('No ale in the stores', -4);
+  if (has(c, 'tippler') && drinkTotal(w) < 1) add('Nothing to drink in the stores', -4);
   if (hasBuilt(w, 'bathhouse') && w.res.wood > 0) add('Feeling fresh from the bathhouse', has(c, 'grumbler') ? 5 : 3);
   if (hasPerk(w, 'saintsDay')) add("Saint Pomfrey's blessing", 4);
   if (c.beauty >= 5) add('Beautiful surroundings', 5);
@@ -1626,8 +1682,12 @@ function hourly(w: World) {
     if (c.activity === 'leisure' || c.activity === 'sulking' || c.activity === 'idle') {
       const atTavern = tavern && c.place === tavern.uid;
       if (atTavern && drinkTotal(w) >= 0.3) {
-        takeDrink(w, 0.3, 'drunk'); c.fun += 18;
-        if (!c.drankTonight) { c.drankTonight = true; addMemory(w, c, 'ale', 'Drank ale at the tavern', 6 + (has(c, 'tippler') ? 4 : 0), 14); }
+        const r = takeDrink(w, 0.3, 'drunk', c); c.fun += 18;
+        if (!c.drankTonight && r) {
+          c.drankTonight = true;
+          addMemory(w, c, 'ale', `Drank ${goodName(r)} at the tavern`, (DRINK_MOOD[r] ?? 6) + (has(c, 'tippler') ? 4 : 0), 14);
+          tasteMemory(w, c, r, 'tasteDrink');
+        }
       } else c.fun += (c.activity === 'idle' ? 3 : 9) + (stage && h >= 18 ? 5 : 0) + (hasPerk(w, 'warmHearth') ? 1 : 0);
       if (c.activity === 'leisure' && hasPerk(w, 'warmHearth')) addMemory(w, c, 'hearthWarm', 'Warm evening by the hearth', 2, 6);
     }
@@ -1735,7 +1795,7 @@ function charterValue(w: World, c: CharterDef): { value: number; target: number;
     }
     case 'feast': {
       const meals = mealTotal(w), ale = drinkTotal(w);
-      return { value: Math.min(meals / m.meals, ale / m.ale), target: 1, label: `${Math.floor(meals)}/${m.meals} meals · ${Math.floor(ale)}/${m.ale} ale` };
+      return { value: Math.min(meals / m.meals, ale / m.ale), target: 1, label: `${Math.floor(meals)}/${m.meals} meals · ${Math.floor(ale)}/${m.ale} drinks` };
     }
     case 'paths': { const v = w.paths.filter(p => p === 2).length; return { value: v, target: m.amount, label: `${v} / ${m.amount} path tiles laid` }; }
     case 'decorPaths': {

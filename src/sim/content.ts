@@ -1,18 +1,24 @@
 // All game content lives here as plain data. The sim reads it; nothing here knows about rendering.
 
-export type ResourceId = 'wood' | 'berries' | 'fish' | 'mushrooms' | 'stew' | 'pie' | 'smokedFish' | 'planks' | 'ale';
-export const RESOURCES: { id: ResourceId; name: string; kind: 'raw' | 'meal' | 'material' | 'luxury' }[] = [
+export type ResourceId = 'wood' | 'berries' | 'fish' | 'mushrooms' | 'apples' | 'grain' | 'honey' | 'stew' | 'pie' | 'smokedFish' | 'planks' | 'ale' | 'cider' | 'mead';
+/** raw: edible as is; ingredient: needs processing (grain, honey); luxury: drinks */
+export const RESOURCES: { id: ResourceId; name: string; kind: 'raw' | 'ingredient' | 'meal' | 'material' | 'luxury' }[] = [
   { id: 'wood', name: 'Wood', kind: 'material' },
   { id: 'planks', name: 'Planks', kind: 'material' },
   { id: 'berries', name: 'Berries', kind: 'raw' },
   { id: 'fish', name: 'Fish', kind: 'raw' },
   { id: 'mushrooms', name: 'Mushrooms', kind: 'raw' },
+  { id: 'apples', name: 'Apples', kind: 'raw' },
+  { id: 'grain', name: 'Grain', kind: 'ingredient' },
+  { id: 'honey', name: 'Honey', kind: 'ingredient' },
   { id: 'stew', name: 'Stew', kind: 'meal' },
   { id: 'pie', name: 'Pie', kind: 'meal' },
   { id: 'smokedFish', name: 'Smoked fish', kind: 'meal' },
   { id: 'ale', name: 'Ale', kind: 'luxury' },
+  { id: 'cider', name: 'Cider', kind: 'luxury' },
+  { id: 'mead', name: 'Mead', kind: 'luxury' },
 ];
-export const RAW_FOODS: ResourceId[] = ['berries', 'fish', 'mushrooms'];
+export const RAW_FOODS: ResourceId[] = ['berries', 'fish', 'mushrooms', 'apples'];
 export const MEALS: ResourceId[] = ['pie', 'smokedFish', 'stew'];
 
 export type JobKind = 'chopping' | 'foraging' | 'fishing' | 'cooking' | 'crafting' | 'brewing' | 'serving' | 'medicine';
@@ -32,7 +38,7 @@ export type Category = 'rawFood' | 'meal' | 'drink' | 'fine';
 export const CATEGORIES: Record<Category, { name: string; members: ResourceId[] }> = {
   rawFood: { name: 'raw food', members: RAW_FOODS },
   meal: { name: 'meals', members: MEALS },
-  drink: { name: 'drinks', members: ['ale'] },
+  drink: { name: 'drinks', members: ['ale', 'cider', 'mead'] },
   fine: { name: 'fine materials', members: ['planks'] },
 };
 /** what a recipe input names: one good, or any good in a category */
@@ -43,11 +49,15 @@ export const inputName = (k: InputKey) => (isCategory(k) ? CATEGORIES[k].name : 
 
 /** output units per worker-hour at work speed 1, for a ★★★ recipe */
 export const BASE_RATE: Record<ResourceId, number> = {
-  wood: 1.6, berries: 1.3, fish: 1.5, mushrooms: 1.5, stew: 1.2, pie: 0.9, smokedFish: 1.2, planks: 1.0, ale: 0.8,
+  wood: 1.6, berries: 1.3, fish: 1.5, mushrooms: 1.5, apples: 1.4, grain: 1.6, honey: 1.0,
+  stew: 1.2, pie: 0.9, smokedFish: 1.2, planks: 1.0, ale: 0.8, cider: 0.9, mead: 0.7,
 };
-/** how good a building is at a recipe: ★★★ is full speed */
+/**
+ * How good a building is at a recipe. Stars set speed (★★★ full, ★★ 0.8×, ★ 0.6×); each recipe also states its own
+ * inputs, and lower-star recipes are written to need more of them (about 1.25× for ★★ and 1.5× for ★ against the ★★★ way).
+ */
 export type Stars = 1 | 2 | 3;
-export const STAR_MULT: Record<Stars, number> = { 1: 0.5, 2: 0.75, 3: 1 };
+export const STAR_MULT: Record<Stars, number> = { 1: 0.6, 2: 0.8, 3: 1 };
 
 export interface Recipe {
   /** inputs consumed per unit of output; a category means any good in it */
@@ -81,7 +91,7 @@ export interface BuildingDef {
   /** colonists can walk across it (open stockpile) */
   walkable?: boolean;
   /** what has to be nearby for full output */
-  needs?: 'trees' | 'bushes' | 'water';
+  needs?: 'trees' | 'bushes' | 'water' | 'apples' | 'flowers' | 'soil';
   /** patient beds, for a clinic */
   patients?: number;
   /** a small decoration with no door */
@@ -118,8 +128,12 @@ export const BUILDINGS: BuildingDef[] = [
   { id: 'pieoven', name: 'Pie oven', blurb: 'Berries plus wood make pie. Pie is the best thing that has ever happened.', cost: { wood: 12, planks: 8 }, w: 1, h: 1, slots: 2, job: 'cooking', recipes: [{ inputs: { berries: 2, wood: 0.5 }, output: 'pie', stars: 3 }], wall: 0x9b7452, roof: 0xd6a33c, height: 0.8, draftable: true },
   { id: 'smokehouse', name: 'Smokehouse', blurb: 'Fish goes in, better fish comes out.', cost: { wood: 15 }, w: 1, h: 1, slots: 2, job: 'cooking', recipes: [{ inputs: { fish: 1.2 }, output: 'smokedFish', stars: 3 }], wall: 0x5f4d3f, roof: 0x8a8a8a, height: 0.9, draftable: true },
   { id: 'sawmill', name: 'Sawmill', blurb: 'Wood becomes planks. Planks become nicer buildings.', cost: { wood: 20 }, w: 2, h: 1, slots: 2, job: 'crafting', recipes: [{ inputs: { wood: 2 }, output: 'planks', stars: 3 }], wall: 0x7c6148, roof: 0xb08a5a, height: 0.8, draftable: true },
-  { id: 'brewery', name: 'Brewery', blurb: 'Berries become ale. Ale becomes poor decisions.', cost: { wood: 15, planks: 8 }, w: 2, h: 1, slots: 2, job: 'brewing', recipes: [{ inputs: { berries: 2 }, output: 'ale', stars: 3 }], wall: 0x7a5640, roof: 0x9c5b2f, height: 0.9, draftable: true },
-  { id: 'tavern', name: 'Tavern', blurb: 'Evenings here use ale and give big fun. Gossip travels twice as fast.', cost: { wood: 20, planks: 12 }, w: 2, h: 2, slots: 1, job: 'serving', wall: 0x8e5f3c, roof: 0x7a2f2f, height: 1.1, draftable: true },
+  { id: 'brewery', name: 'Brewery', blurb: 'Best with grain. Can make mead, and berry ale if it must. Ale becomes poor decisions.', cost: { wood: 15, planks: 8 }, w: 2, h: 1, slots: 2, job: 'brewing', recipes: [{ inputs: { grain: 1.5 }, output: 'ale', stars: 3 }, { inputs: { honey: 2.5 }, output: 'mead', stars: 2 }, { inputs: { berries: 3 }, output: 'ale', stars: 1 }], wall: 0x7a5640, roof: 0x9c5b2f, height: 0.9, draftable: true },
+  { id: 'ciderpress', name: 'Cider press', blurb: 'Squashes apples into cider. Also does a decent berry ale, and mead in a pinch.', cost: { wood: 18 }, w: 1, h: 1, slots: 2, job: 'brewing', recipes: [{ inputs: { apples: 2 }, output: 'cider', stars: 3 }, { inputs: { berries: 2.5 }, output: 'ale', stars: 2 }, { inputs: { honey: 3 }, output: 'mead', stars: 1 }], wall: 0x8a6a3c, roof: 0x8aa040, height: 0.8, draftable: true },
+  { id: 'orchard', name: 'Orchard hut', blurb: 'Picks apples. Needs an apple grove close by. Apples are food, or cider.', cost: { wood: 10 }, w: 1, h: 1, slots: 2, job: 'foraging', needs: 'apples', recipes: [{ inputs: {}, output: 'apples', stars: 3 }], wall: 0x8c6b4a, roof: 0xb8452f, height: 0.7, draftable: true },
+  { id: 'apiary', name: 'Apiary', blurb: 'Bees make honey from wildflowers. Flower beds nearby count as extra meadow.', cost: { wood: 12 }, w: 1, h: 1, slots: 2, job: 'foraging', needs: 'flowers', recipes: [{ inputs: {}, output: 'honey', stars: 3 }], wall: 0xc8a050, roof: 0x7a5a2a, height: 0.6, draftable: true },
+  { id: 'field', name: 'Grain field', blurb: 'Rows of barley. Has to sit on good soil, and the better the soil the better the harvest.', cost: { wood: 10 }, w: 2, h: 2, slots: 2, job: 'foraging', needs: 'soil', recipes: [{ inputs: {}, output: 'grain', stars: 3 }], wall: 0x8a7a40, roof: 0xd8c060, height: 0.15, draftable: true },
+  { id: 'tavern', name: 'Tavern', blurb: 'Evenings here use drinks (ale, cider or mead) and give big fun. Gossip travels twice as fast.', cost: { wood: 20, planks: 12 }, w: 2, h: 2, slots: 1, job: 'serving', wall: 0x8e5f3c, roof: 0x7a2f2f, height: 1.1, draftable: true },
   { id: 'cottage', name: 'Cottage', blurb: 'Sleeps 2, cozily. Waking up here is a +5 mood.', cost: { wood: 6, planks: 10 }, w: 1, h: 1, slots: 0, beds: 2, bedQuality: 'cozy', wall: 0xc7a983, roof: 0x4f6f9a, height: 0.9, draftable: true },
   { id: 'bathhouse', name: 'Bathhouse', blurb: 'Uses wood. Everyone feels fresher, and grumblers grumble less.', cost: { wood: 15, planks: 8 }, w: 2, h: 1, slots: 0, wall: 0xb8b0a0, roof: 0x4f8f8a, height: 0.7, draftable: true },
   { id: 'stage', name: "Bard's stage", blurb: 'Evening music at the hearth. Fun builds faster for everyone. Beauty 3.', cost: { wood: 12, planks: 5 }, w: 1, h: 1, slots: 0, beauty: 3, wall: 0x8a5f7a, roof: 0xc25c8a, height: 0.4, draftable: true },
@@ -127,6 +141,14 @@ export const BUILDINGS: BuildingDef[] = [
 /** builder-hours of work to finish a building */
 export const buildWork = (d: BuildingDef) => (d.decor ? 1.5 : Math.max(3, d.w * d.h * 2.5));
 export const BUILDING_BY_ID: Record<string, BuildingDef> = Object.fromEntries(BUILDINGS.map(b => [b.id, b]));
+
+/** Resource sites a map can have. Every map has trees, berries and water; each also rolls two of these. */
+export type SiteId = 'grove' | 'meadow' | 'soil';
+export const SITES: { id: SiteId; name: string; blurb: string; feeds: string }[] = [
+  { id: 'grove', name: 'an apple grove', blurb: 'Apple trees. Can\u2019t be built on.', feeds: 'orchard' },
+  { id: 'meadow', name: 'a wildflower meadow', blurb: 'Bees love it. Can\u2019t be built on.', feeds: 'apiary' },
+  { id: 'soil', name: 'good soil', blurb: 'Dark, crumbly earth. You can build on it, but it\u2019s wasted under anything but a field.', feeds: 'field' },
+];
 
 export interface TraitDef {
   id: string;
@@ -149,7 +171,7 @@ export const TRAITS: TraitDef[] = [
   { id: 'hummer', name: 'Hums loudly', desc: 'Everyone nearby slowly likes them less.' },
   { id: 'stoic', name: 'Stoic', desc: 'Frontier strain affects them half as much.' },
   { id: 'vain', name: 'Vain', desc: '−5 unless sleeping in a cottage.' },
-  { id: 'tippler', name: 'Tippler', desc: 'Ale gives +4 extra. −4 when there is no ale.' },
+  { id: 'tippler', name: 'Tippler', desc: 'A drink gives +4 extra. −4 when there\u2019s nothing to drink.' },
 ];
 export const TRAIT_BY_ID: Record<string, TraitDef> = Object.fromEntries(TRAITS.map(t => [t.id, t]));
 
@@ -192,7 +214,7 @@ export const CHARTERS: CharterDef[] = [
   { id: 'cheer', tier: 2, name: 'Measurable cheer', desc: 'Average mood of 58+ over a full day.', metric: { kind: 'avgMood', amount: 58, hours: 24 } },
   { id: 'lovebirds', tier: 2, name: 'Lovebirds', desc: 'Have 2 couples at the same time.', metric: { kind: 'couples', amount: 2 } },
   { id: 'lumber', tier: 2, name: 'Lumber baron', desc: 'Have 40 planks stored at once.', metric: { kind: 'stock', resources: ['planks'], amount: 40 } },
-  { id: 'feast', tier: 3, name: 'The Great Feast', desc: 'Have 60 meals and 30 ale stored at once.', metric: { kind: 'feast', meals: 60, ale: 30 } },
+  { id: 'feast', tier: 3, name: 'The Great Feast', desc: 'Have 60 meals and 30 drinks stored at once.', metric: { kind: 'feast', meals: 60, ale: 30 } },
   { id: 'harmony', tier: 3, name: 'Frontier harmony', desc: '12+ colonists, averaging 55+ mood over a full day.', metric: { kind: 'contentPop', pop: 12, mood: 55, hours: 24 } },
   { id: 'boomtown', tier: 3, name: 'Boomtown', desc: 'Reach 16 colonists.', metric: { kind: 'population', amount: 16 } },
   { id: 'woodpile', tier: 1, name: 'A proper woodpile', desc: 'Have 120 wood stored at once.', metric: { kind: 'stock', resources: ['wood'], amount: 120 } },
@@ -212,12 +234,12 @@ export interface EventDef { id: string; title: string; text: string; options: Ev
 export const EVENTS: EventDef[] = [
   { id: 'bard', title: 'A travelling bard', text: 'A bard offers to play "The Ballad of Your Colony" for a modest fee. He has not yet written it.',
     options: [
-      { label: 'Pay 6 ale', detail: 'Everyone +6 mood for a day.', effect: 'bardPlay' },
+      { label: 'Pay 6 drinks', detail: 'Everyone +6 mood for a day.', effect: 'bardPlay' },
       { label: 'Shoo him away', detail: 'Nothing happens. He writes a mean song anyway.', effect: 'none' },
     ] },
   { id: 'wedding', title: 'A wedding is proposed', text: 'A couple wants to make it official. Everyone is invited, whether they like it or not.', requires: 'couple',
     options: [
-      { label: 'Host it (8 meals, 5 ale)', detail: 'Everyone +7 mood for 2 days.', effect: 'wedding' },
+      { label: 'Host it (8 meals, 5 drinks)', detail: 'Everyone +7 mood for 2 days.', effect: 'wedding' },
       { label: 'Elope quietly', detail: 'The couple is −8 mood for 2 days.', effect: 'elope' },
     ] },
   { id: 'frogs', title: 'It is raining frogs', text: 'Small, confused frogs. Some colonists find it delightful. Others are holding umbrellas very tightly.',

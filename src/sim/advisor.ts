@@ -5,7 +5,7 @@
 import { BUILDING_BY_ID, MEALS, RAW_FOODS } from './content';
 import {
   World, Colonist, alive, built, bdef, beds, workersAt, blockedReason, storageCap, stored, spoilingFood, mealTotal,
-  storageFree, currentRecipe,
+  storageFree, currentRecipe, drinkTotal, usableHere,
 } from './world';
 import { economy } from './economy';
 
@@ -31,7 +31,7 @@ export interface Concern {
 }
 
 /** a kind of job ("kitchen", "rawFood") and the buildings that do it */
-export const KIND_DEFS: Record<string, string[]> = { rawFood: ['forager', 'dock', 'cellar'] };
+export const KIND_DEFS: Record<string, string[]> = { rawFood: ['forager', 'dock', 'cellar', 'orchard'], drinks: ['brewery', 'ciderpress'] };
 export const defsOf = (kind: string) => KIND_DEFS[kind] ?? [kind];
 
 const has = (w: World, id: string) => w.buildings.some(b => b.def === id);
@@ -47,7 +47,7 @@ function gripeKey(label: string): string | null {
   if (label === 'Ate without a table') return 'table';
   if (label === 'Ate in a filthy dining hall') return 'filthy';
   if (label === 'Bored' || label === 'Lonely evening') return 'bored';
-  if (label === 'No ale in the stores') return 'ale';
+  if (label === 'Nothing to drink in the stores') return 'ale';
   if (label === 'Vain: deserves a cottage') return 'vain';
   if (label === 'Sleeping on the ground') return 'beds';
   if (label === 'Hungry' || label === 'Starving') return 'hungry';
@@ -73,7 +73,10 @@ export function gripes(w: World): Map<string, { weight: number; people: Colonist
 }
 
 /** the next step that unblocks a building we want: build it, or the blueprint we're missing, or what it needs first */
+/** the drink maker to point at: one already built, else one owned, else the drafts on offer */
+function drinkMaker(w: World): string { return defsOf('drinks').find(id => has(w, id)) ?? defsOf('drinks').find(id => owns(w, id) && usableHere(w, id)) ?? 'brewery'; }
 function buildOrDraft(w: World, id: string, fixes: Fix[]): string {
+  if (id === 'brewery' && !defsOf('drinks').some(d => owns(w, d))) { for (const d of defsOf('drinks')) fixes.push({ draft: d }); return 'draft a brewery or a cider press'; }
   if (!owns(w, id)) { fixes.push({ draft: id }); return `draft a ${name(id)} blueprint`; }
   if (!has(w, id)) {
     if (BUILDING_BY_ID[id].cost.planks && w.res.planks < (BUILDING_BY_ID[id].cost.planks ?? 0)) {
@@ -129,15 +132,16 @@ export function assess(w: World): Concern[] {
     const tavern = hasBuilt(w, 'tavern'), stage = hasBuilt(w, 'stage');
     let idea = '';
     if (tavern && workersOf(w, 'tavern') === 0) { fixes.push({ staff: 'tavern', n: 1 }); idea = 'staff the tavern'; }
-    else if (tavern && w.res.ale < 3) { fixes.push({ staff: 'brewery', n: 2 }); idea = buildOrDraft(w, 'brewery', fixes) || 'brew ale for the tavern'; }
+    else if (tavern && drinkTotal(w) < 3) { fixes.push({ staff: 'drinks', n: 2 }); idea = buildOrDraft(w, drinkMaker(w), fixes) || 'make drinks for the tavern'; }
     if (!tavern) idea = idea || buildOrDraft(w, 'tavern', fixes);
     if (!stage) { const s = buildOrDraft(w, 'stage', fixes); idea = idea || s; }
-    add('bored', `${who('bored')} bored or lonely`, `Evenings: ${tavern ? `tavern ${workersOf(w, 'tavern') ? 'open' : 'unstaffed'}, ale ${w.res.ale | 0}` : 'no tavern'} · ${stage ? 'stage built' : 'no stage'}`, idea || 'more evening entertainment', wt('bored'), who('bored'), fixes);
+    add('bored', `${who('bored')} bored or lonely`, `Evenings: ${tavern ? `tavern ${workersOf(w, 'tavern') ? 'open' : 'unstaffed'}, drinks ${drinkTotal(w) | 0}` : 'no tavern'} · ${stage ? 'stage built' : 'no stage'}`, idea || 'more evening entertainment', wt('bored'), who('bored'), fixes);
   }
   if (who('ale')) {
-    const fixes: Fix[] = [{ staff: 'brewery', n: 2 }];
-    const idea = buildOrDraft(w, 'brewery', fixes) || (workersOf(w, 'brewery') ? 'the brewery needs berries carried in' : 'staff the brewery');
-    add('ale', `${who('ale')} want ale`, `Ale in storage: ${w.res.ale | 0} · brewers ${workersOf(w, 'brewery')}/${slotsOf(w, 'brewery')}`, idea, wt('ale'), who('ale'), fixes);
+    const fixes: Fix[] = [{ staff: 'drinks', n: 2 }];
+    const maker = drinkMaker(w);
+    const idea = buildOrDraft(w, maker, fixes) || (workersOf(w, 'drinks') ? `the ${name(maker)} needs ingredients carried in` : `staff the ${name(maker)}`);
+    add('ale', `${who('ale')} want a drink`, `Drinks in storage: ${drinkTotal(w) | 0} · brewers ${workersOf(w, 'drinks')}/${slotsOf(w, 'drinks')}`, idea, wt('ale'), who('ale'), fixes);
   }
   // ---- homes ----
   if (who('beds')) add('beds', `${who('beds')} sleeping on the ground`, `${beds(w)} beds for ${pop} people`, 'build a lean-to', wt('beds') * 1.5, who('beds'), [{ build: 'leanto' }]);
@@ -167,8 +171,14 @@ export function assess(w: World): Concern[] {
     if (!r || !workersAt(w, b.uid).length) continue;
     const def = bdef(b);
     const inputs = Object.keys(currentRecipe(w, b)?.inputs ?? {});
-    const upstream = inputs.includes('rawFood') || inputs.includes('berries') ? 'rawFood' : inputs.includes('fish') ? 'dock' : inputs.includes('wood') ? 'woodcutter' : null;
-    if (upstream) add(`idle-${b.def}`, `${def.name} idle`, `Its card says: ${r}`, `more ${upstream === 'rawFood' ? 'foragers' : upstream === 'woodcutter' ? 'woodcutters' : 'fishers'} to feed it`, 6, 0, [{ staff: upstream, n: workersOf(w, upstream) + 1 }]);
+    // which kind of worker feeds this workshop's current recipe
+    const FEEDS: [string, string, string][] = [['rawFood', 'rawFood', 'foragers'], ['berries', 'rawFood', 'foragers'], ['apples', 'orchard', 'apple pickers'], ['fish', 'dock', 'fishers'], ['wood', 'woodcutter', 'woodcutters'], ['grain', 'field', 'farmers'], ['honey', 'apiary', 'beekeepers']];
+    const feed = FEEDS.find(([input]) => inputs.includes(input));
+    if (feed) {
+      const [, upstream, who2] = feed;
+      const fix: Fix[] = has(w, upstream) || upstream === 'rawFood' ? [{ staff: upstream, n: workersOf(w, upstream) + 1 }] : [{ build: upstream }];
+      add(`idle-${b.def}`, `${def.name} idle`, `Its card says: ${r}`, has(w, upstream) || upstream === 'rawFood' ? `more ${who2} to feed it` : `build a ${name(upstream)} to feed it`, 6, 0, fix);
+    }
   }
   if (storageCap(w) && stored(w) / storageCap(w) > 0.85) add('storage', 'Storage nearly full', `${stored(w) | 0}/${storageCap(w)} stored`, 'build another stockpile', 8, 0, [{ build: 'stockpile' }]);
   if (spoilingFood(w) >= 20) add('spoiling', 'Food spoiling', `${spoilingFood(w) | 0} food sitting outside a storehouse`, has(w, 'storehouse') ? 'set a storehouse to food, or build another' : 'build a storehouse', 5, 0, has(w, 'storehouse') ? [{ build: storageFree(w, 'berries') < 20 ? 'storehouse' : '' }].filter(f => f.build) : [{ build: 'storehouse' }]);

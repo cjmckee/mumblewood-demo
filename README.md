@@ -24,6 +24,8 @@ npx tsx tools/notes.ts 60       # notes bot vs rules bot on the same seeds: unre
 BOT_ADVISOR=1 npx tsx tools/losses.ts 150   # let the bot play from the on-screen complaints instead of its own rules
 npx tsx tools/variety.ts 80     # how different runs are: blueprint coverage, draft-to-built lag, events seen
 npx tsx tools/recipes-check.ts  # multi-recipe engine: star preference, fallback, per-recipe toggles
+npx tsx tools/routes-check.ts   # forces each drink route on a map with its site and checks the drinks come out
+npx tsx tools/routes.ts 60      # which drink routes bot colonies use, by map sites; what gets built
 npx tsc -p .                   # type-check
 ```
 

@@ -1,7 +1,7 @@
 // Isometric vector renderer. Reads the world, never changes it.
 import { Application, Container, Graphics, Text } from 'pixi.js';
 import { BUILDING_BY_ID, ResourceId } from '../sim/content';
-import { World, Building, MAP_SIZE, BUILD_MIN, BUILD_MAX, CENTER, alive, hourOfDay, workersAt, bdef, siteWork, canPlace, spotOf, built, terrainAt, T_TREE, T_BUSH, T_WATER } from '../sim/world';
+import { World, Building, MAP_SIZE, BUILD_MIN, BUILD_MAX, CENTER, alive, hourOfDay, workersAt, bdef, siteWork, canPlace, spotOf, built, terrainAt, T_TREE, T_BUSH, T_WATER, T_APPLE, T_FLOWERS, T_SOIL } from '../sim/world';
 
 const TW = 64, TH = 32; // tile width/height in px
 /** world (tile) coordinates to screen; tile (i, j) spans [i, i+1] x [j, j+1] */
@@ -11,6 +11,7 @@ const unIso = (sx: number, sy: number) => { const a = sx / (TW / 2), b = sy / (T
 export const RES_COLOR: Record<ResourceId, number> = {
   wood: 0xa07a4c, planks: 0xd2a96a, berries: 0xc04a6a, fish: 0x5b9cc2, mushrooms: 0xb39ad0,
   stew: 0xd98a3c, pie: 0xe6c25a, smokedFish: 0x9c8c7a, ale: 0xd6a33c,
+  apples: 0xd2452f, grain: 0xd8c060, honey: 0xe8a21c, cider: 0xb8c25a, mead: 0xb06a2a,
 };
 
 function shade(c: number, f: number) {
@@ -91,6 +92,8 @@ export class IsoView {
       let col = n < 0.5 ? 0x5d7f3f : n < 0.85 ? 0x577a3a : 0x648946;
       if (Math.hypot(x + 0.5 - CENTER, y + 0.5 - CENTER) < 3.3) col = n < 0.5 ? 0x8a7a5a : 0x84744f;
       if (t === T_TREE) col = shade(col, 0.86);
+      if (t === T_SOIL) col = n < 0.5 ? 0x5e4630 : 0x664c33;
+      if (t === T_FLOWERS) col = shade(col, 1.06);
       if (!inside) col = shade(col, 0.8);
       if (t === T_WATER) {
         this.tile(g, x, y, n < 0.5 ? 0x3d6f8a : 0x3a6a85);
@@ -99,6 +102,13 @@ export class IsoView {
         continue;
       }
       this.tile(g, x, y, col);
+      if (t === T_SOIL) {
+        // furrows
+        for (const f of [0.3, 0.6]) { const p0 = iso(x + 0.1, y + f), p1 = iso(x + 0.9, y + f); g.moveTo(p0.sx, p0.sy).lineTo(p1.sx, p1.sy).stroke({ width: 1.2, color: 0x4a3626, alpha: 0.7 }); }
+      } else if (t === T_FLOWERS) {
+        const cols = [0xf2d24a, 0xe8e0f0, 0xd66a9a, 0xb48ae0];
+        for (let i = 0; i < 6; i++) { const p0 = iso(x + 0.15 + hash(x * 7 + i, y) * 0.7, y + 0.15 + hash(x, y * 7 + i) * 0.7); g.circle(p0.sx, p0.sy, 1.8).fill(cols[(i + Math.floor(n * 4)) % 4]); }
+      }
     }
     // a sandy rim where water meets grass
     for (let x = 0; x < MAP_SIZE; x++) for (let y = 0; y < MAP_SIZE; y++) if (terrainAt(w, x, y) === T_WATER) {
@@ -116,7 +126,21 @@ export class IsoView {
         if (edge && n > 0.72) continue;
         this.addTree(x + 0.5 + (n - 0.5) * 0.4, y + 0.5 + (hash(y, x) - 0.5) * 0.4, n);
       } else if (t === T_BUSH) this.addBush(x + 0.5, y + 0.5, n);
+      else if (t === T_APPLE) this.addAppleTree(x + 0.5 + (n - 0.5) * 0.25, y + 0.5, n);
     }
+  }
+
+  private addAppleTree(x: number, y: number, n: number) {
+    const t = new Graphics();
+    const { sx, sy } = iso(x, y);
+    const r = 12 + n * 3;
+    t.ellipse(sx, sy + 2, 16, 6).fill({ color: 0x000000, alpha: 0.18 });
+    t.rect(sx - 2, sy - 14, 4, 16).fill(0x5a4030);
+    t.circle(sx, sy - 22, r).fill(0x4f7f3a);
+    t.circle(sx - 5, sy - 25, r * 0.6).fill(0x5e8f42);
+    for (let i = 0; i < 6; i++) t.circle(sx - r * 0.7 + ((i * 41 + n * 60) % (r * 1.4)), sy - 30 + ((i * 29) % 16), 2.3).fill(0xd2452f);
+    t.zIndex = sy;
+    this.objects.addChild(t); this.terrainObjs.push(t);
   }
 
   private addBush(x: number, y: number, n: number) {
