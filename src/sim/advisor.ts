@@ -161,7 +161,7 @@ export function assess(w: World): Concern[] {
     const clinic = hasBuilt(w, 'clinic');
     if (!has(w, 'clinic')) fixes.push({ build: 'clinic' });
     fixes.push({ staff: 'clinic', n: 1 });
-    add('sick', `${who('sick')} sick or hurt`, clinic ? `Clinic doctor: ${workersOf(w, 'clinic') ? 'on duty' : 'none assigned'}` : 'No clinic', clinic ? (workersOf(w, 'clinic') ? 'a better doctor heals faster' : 'assign a doctor (best medicine skill)') : 'build a clinic and assign a doctor', wt('sick'), who('sick'), fixes);
+    add('sick', `${who('sick')} sick or hurt`, clinic ? `Clinic doctor: ${workersOf(w, 'clinic') ? 'on duty' : 'none assigned'}` : 'No clinic', clinic ? (workersOf(w, 'clinic') ? (stockOf(w, 'remedy') < 1 ? (owns(w, 'apothecary') ? 'an apothecary’s poultices would help the doctor' : 'a better doctor heals faster; remedies from an apothecary help too') : 'a better doctor heals faster') : 'assign a doctor (best medicine skill)') : 'build a clinic and assign a doctor', wt('sick'), who('sick'), fixes);
   }
   if (who('cold')) add('cold', 'The hearth went cold', `Wood in storage: ${w.res.wood | 0} · choppers ${workersOf(w, 'woodcutter')}/${slotsOf(w, 'woodcutter')}`, 'more woodcutters: the hearth burns wood every night', wt('cold') * 1.5, who('cold'), [{ staff: 'woodcutter', n: workersOf(w, 'woodcutter') + 2 }, { build: 'woodcutter' }]);
   // ---- work ----
@@ -175,7 +175,7 @@ export function assess(w: World): Concern[] {
     const def = bdef(b);
     const inputs = Object.keys(currentRecipe(w, b)?.inputs ?? {});
     // which kind of worker feeds this workshop's current recipe
-    const FEEDS: [string, string, string][] = [['rawFood', 'rawFood', 'foragers'], ['berries', 'rawFood', 'foragers'], ['apples', 'orchard', 'apple pickers'], ['fish', 'dock', 'fishers'], ['wood', 'woodcutter', 'woodcutters'], ['grain', 'field', 'farmers'], ['honey', 'apiary', 'beekeepers'], ['clay', 'claypit', 'clay diggers'], ['reeds', 'dock', 'reed cutters']];
+    const FEEDS: [string, string, string][] = [['rawFood', 'rawFood', 'foragers'], ['berries', 'rawFood', 'foragers'], ['apples', 'orchard', 'apple pickers'], ['fish', 'dock', 'fishers'], ['wood', 'woodcutter', 'woodcutters'], ['grain', 'field', 'farmers'], ['honey', 'apiary', 'beekeepers'], ['clay', 'claypit', 'clay diggers'], ['reeds', 'dock', 'reed cutters'], ['herbs', 'herbgarden', 'herb gardeners'], ['flour', 'mill', 'millers']];
     const feed = FEEDS.find(([input]) => inputs.includes(input));
     if (feed) {
       const [, upstream, who2] = feed;

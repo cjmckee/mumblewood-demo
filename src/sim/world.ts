@@ -2,7 +2,7 @@
 import {
   BUILDING_BY_ID, BuildingDef, CHARTERS, CharterDef, EVENTS, FIRST_NAMES, JOB_NAMES, JobKind,
   MEALS, PERKS, RAW_FOODS, ResourceId, SHIRTS, SKINS, SURNAMES, TRAITS, TRAIT_BY_ID, BUILDINGS, buildWork,
-  JOB_KINDS, JOB_EVENTS, JobEventDef, ILLNESSES, RESOURCES, Recipe, InputKey, CATEGORIES, isCategory, membersOf, inputName, recipeRate, SITES, SiteId,
+  JOB_KINDS, JOB_EVENTS, JobEventDef, ILLNESSES, RESOURCES, Recipe, InputKey, CATEGORIES, isCategory, membersOf, inputName, recipeRate, SITES, SiteId, MEAL_MOOD,
 } from './content';
 
 // ---------- RNG ----------
@@ -231,7 +231,7 @@ function takeDrink(w: World, n: number, why: string, c?: Colonist): ResourceId |
   return main;
 }
 /** mood from the first drink of the evening, by kind */
-const DRINK_MOOD: Partial<Record<ResourceId, number>> = { ale: 6, cider: 6, mead: 8 };
+const DRINK_MOOD: Partial<Record<ResourceId, number>> = { ale: 6, cider: 6, mead: 8, tea: 5 };
 export function flow(w: World, key: string, n: number) { if (w.flows) w.flows[key] = (w.flows[key] ?? 0) + n; }
 export function storageCap(w: World) { return built(w).reduce((n, b) => n + (bdef(b).storage ?? 0), 0); }
 export function stored(w: World) { return sum(w.res); }
@@ -622,7 +622,7 @@ export function createWorld(seed: number, difficulty: Difficulty = 'normal'): Wo
   const w: World = {
     seed, rngState: seed >>> 0, hour: 6,
     colonists: [], buildings: [], terrain: [], paths: [],
-    res: { wood: 60, berries: 50, fish: 0, mushrooms: 0, stew: 10, pie: 0, smokedFish: 0, planks: 0, ale: 0, apples: 0, grain: 0, honey: 0, cider: 0, mead: 0, clay: 0, reeds: 0, bricks: 0, wicker: 0 },
+    res: { wood: 60, berries: 50, fish: 0, mushrooms: 0, stew: 10, pie: 0, smokedFish: 0, planks: 0, ale: 0, apples: 0, grain: 0, honey: 0, cider: 0, mead: 0, clay: 0, reeds: 0, bricks: 0, wicker: 0, herbs: 0, flour: 0, bread: 0, skewers: 0, poultice: 0, tonic: 0, tea: 0 },
     owned: BUILDINGS.filter(b => b.basic).map(b => b.id), perks: [],
     charterTier: 1, charter: null, charterHours: 0, chartersDone: [],
     decisions: [], log: [], opinions: {}, status: 'playing', strain: 0, nextEventHour: 24 * 1.6, sites: [], rerolls: 0,
@@ -684,7 +684,7 @@ export const CHARTER_HELPERS: Record<string, string[]> = {
   lumber: ['sawmill'], township: ['sawmill', 'dock'], growing: ['cottage', 'cellar'], boomtown: ['cottage', 'cellar'],
   cheer: ['tavern', 'stage', 'cottage', 'bathhouse', 'pieoven'], harmony: ['tavern', 'stage', 'cottage', 'bathhouse'],
   lovebirds: ['tavern', 'stage'],
-  woodpile: ['sawmill'], paved: ['sawmill'], tables: ['cottage'], healthy: ['bathhouse'], handy: ['cottage'],
+  woodpile: ['sawmill'], paved: ['sawmill'], tables: ['cottage'], healthy: ['apothecary', 'bathhouse'], menu: ['smokehouse', 'pieoven', 'bakery'], tasting: ['ciderpress', 'apothecary', 'brewery'], handy: ['cottage'],
   pretty: ['stage', 'sawmill'], masters: ['tavern'], pieday: ['pieoven', 'sawmill'], garden: ['sawmill', 'stage'], calm: ['tavern', 'bathhouse', 'stage'],
 };
 /** the site a gatherer needs on the map, if any */
@@ -972,6 +972,8 @@ function errandHourly(w: World) {
 /** too sick to work: anyone with the flu, or an injury that hasn't mended past the worst */
 export function bedridden(c: Colonist) { return !!c.illness && (c.illness.contagious || c.illness.severity > WALKING_WOUNDED); }
 export const WALKING_WOUNDED = 8;
+/** remedy a doctor uses per patient-hour of treatment */
+export const REMEDY_DOSE = 0.15;
 function fallIll(w: World, c: Colonist, id: string) {
   if (c.illness) return;
   const def = ILLNESSES.find(i => i.id === id)!;
@@ -1003,7 +1005,11 @@ function illnessHourly(w: World) {
     if (doctor) {
       const skill = doctor.skills.medicine;
       change -= 0.25 + skill * 0.15;
-      if (skill < 5 && nextRand(w) < (5 - skill) * 0.015) {
+      // remedies from storage: a tonic speeds recovery most and rules out a botch; a poultice helps and halves the risk
+      const remedy = (['tonic', 'poultice'] as ResourceId[]).find(r => w.res[r] >= REMEDY_DOSE);
+      if (remedy) { w.res[remedy] -= REMEDY_DOSE; flow(w, `${remedy}:-clinic`, REMEDY_DOSE); change -= remedy === 'tonic' ? 0.8 : 0.5; }
+      const botchRisk = remedy === 'tonic' ? 0 : remedy === 'poultice' ? 0.5 : 1;
+      if (skill < 5 && nextRand(w) < (5 - skill) * 0.015 * botchRisk) {
         change += 4;
         if (!ill.botched) { ill.botched = true; addLog(w, `${first(doctor)} bandaged the wrong bit of ${first(c)}. It didn\u2019t help.`, 'bad'); }
       }
@@ -1095,7 +1101,8 @@ function buildingPriority(w: World, b: Building): number {
   switch (def.id) {
     case 'forager': case 'dock': case 'cellar': case 'orchard': return raw < pop * 6 ? 10 : 6;
     case 'apiary': case 'field': return 5;
-    case 'kitchen': case 'pieoven': case 'smokehouse': return mealTotal(w) < pop * 3 ? 9 : 7;
+    case 'kitchen': case 'pieoven': case 'smokehouse': case 'bakery': return mealTotal(w) < pop * 3 ? 9 : 7;
+    case 'mill': case 'herbgarden': case 'apothecary': return 5;
     case 'woodcutter': return w.res.wood < 40 ? 8.5 : 5;
     case 'sawmill': case 'kiln': case 'carpenter': return stockOf(w, 'fine') < 30 ? 6.5 : 3;
     case 'claypit': return 5;
@@ -1535,8 +1542,8 @@ function finishMeal(w: World, c: Colonist) {
   const bonus = (has(c, 'glutton') ? 4 : 0) + (hasPerk(w, 'communalPot') ? 3 : 0);
   if (meal) {
     c.hunger = 100; w.stats.mealsEaten++;
-    const v = { pie: 8, smokedFish: 6, stew: 5 }[meal as 'pie' | 'smokedFish' | 'stew'] + bonus;
-    const label = { pie: 'Ate pie', smokedFish: 'Ate smoked fish', stew: 'Ate a hot stew' }[meal as 'pie'];
+    const v = (MEAL_MOOD[meal] ?? 5) + bonus;
+    const label = ({ pie: 'Ate pie', smokedFish: 'Ate smoked fish', stew: 'Ate a hot stew', bread: 'Ate fresh bread', skewers: 'Ate skewers' } as Partial<Record<ResourceId, string>>)[meal] ?? `Ate ${goodName(meal)}`;
     addMemory(w, c, 'meal', label, v, 14);
     tasteMemory(w, c, meal);
   } else {
@@ -1857,6 +1864,12 @@ function charterValue(w: World, c: CharterDef): { value: number; target: number;
     case 'avgBeauty': return { value: w.charterHours, target: m.hours, label: `beauty ${avgBeauty(w).toFixed(1)} · ${w.charterHours}h / ${m.hours}h` };
     case 'skilled': { const v = alive(w).filter(c => Object.values(c.skills).some(x => x >= m.level)).length; return { value: v, target: m.count, label: `${v} / ${m.count} colonists at skill ${m.level}+` }; }
     case 'calm': return { value: w.charterHours, target: m.hours, label: `${alive(w).length}/${m.pop} colonists · ${w.charterHours}h / ${m.hours}h without sulking` };
+    case 'variety': {
+      // the best `kinds` goods of the category, each counted up to `each`
+      const best = CATEGORIES[m.category].members.map(r => Math.min(m.each, Math.floor(w.res[r]))).sort((a, b) => b - a).slice(0, m.kinds);
+      const full = best.filter(n => n >= m.each).length;
+      return { value: best.reduce((a, b) => a + b, 0), target: m.kinds * m.each, label: `${full} / ${m.kinds} kinds with ${m.each}+ stored` };
+    }
   }
 }
 export function avgBeauty(w: World) { const a = alive(w); return a.length ? a.reduce((s, c) => s + c.beauty, 0) / a.length : 0; }

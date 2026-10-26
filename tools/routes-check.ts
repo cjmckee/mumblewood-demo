@@ -1,7 +1,7 @@
 // Forces each drink route on a map that has its site, staffs it, and checks the drinks come out of the right recipe.
 // Also checks: flower beds raise an apiary's output; maps never offer a gatherer for a site they lack.
 // Usage: npx tsx tools/routes-check.ts
-import { createWorld, apply, runHours, findSpot, built, workersAt, alive, World, efficiencyAt, currentRecipe, canPlace } from '../src/sim/world';
+import { createWorld, apply, runHours, findSpot, built, workersAt, alive, World, efficiencyAt, currentRecipe, canPlace, reconcileStock, WALKING_WOUNDED } from '../src/sim/world';
 
 let failed = 0;
 const check = (ok: boolean, what: string) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}`); if (!ok) failed++; };
@@ -142,6 +142,79 @@ for (const r of routes) {
     }
   }
   check(offered === 0, `kiln or clay pit offered ${offered} times on maps without clay`);
+}
+// bread: grain from a field, ground at the mill, baked at the bakery
+{
+  const w = worldWith('soil');
+  const f = put(w, 'field'), m = put(w, 'mill'), b = put(w, 'bakery');
+  for (const c of alive(w)) apply(w, { type: 'assign', colonist: c.id, building: null });
+  staff(w, f, 2); staff(w, m, 1); staff(w, b, 1);
+  w.res.wood += 40;
+  run(w, 96);
+  const flour = made(w, 'flour:+mill'), bread = made(w, 'bread:+bakery');
+  check(flour > 5 && bread > 3, `field → mill → bakery: ${flour.toFixed(0)} flour, ${bread.toFixed(0)} bread in 4 days`);
+}
+
+// skewers: herbs from a herb garden and mushrooms at the smokehouse, fish switched off
+{
+  const w = worldWith('grove');
+  const g = put(w, 'herbgarden'), sm = put(w, 'smokehouse');
+  for (const c of alive(w)) apply(w, { type: 'assign', colonist: c.id, building: null });
+  apply(w, { type: 'toggleRecipe', building: sm.uid, recipe: 0, on: false });
+  w.res.mushrooms += 30; reconcileStock(w);
+  staff(w, g, 1); staff(w, sm, 2);
+  run(w, 72);
+  check(made(w, 'skewers:+smokehouse') > 3 && made(w, 'herbs:-smokehouse') > 1, `herb garden + smokehouse: ${made(w, 'skewers:+smokehouse').toFixed(0)} skewers`);
+}
+
+// remedies: poultices from the apothecary, and a doctor with poultices heals faster than one without
+{
+  const heal = (withPoultice: boolean) => {
+    const w = worldWith('grove');
+    const clinic = put(w, 'clinic');
+    for (const c of alive(w)) apply(w, { type: 'assign', colonist: c.id, building: null });
+    const [doc, pat] = alive(w);
+    doc.skills.medicine = 5;
+    apply(w, { type: 'assign', colonist: doc.id, building: clinic.uid });
+    pat.illness = { id: 'ankle', name: 'Sprained ankle', severity: 40, worsen: 0.2, contagious: false };
+    w.res.poultice = withPoultice ? 20 : 0; w.res.tonic = 0; reconcileStock(w);
+    // remedies act while the doctor treats a bedridden patient, so time how long until they're back on their feet
+    let h = 0; while (pat.illness && pat.illness.severity > WALKING_WOUNDED && h < 200) { run(w, 1); h++; }
+    return { h, used: made(w, 'poultice:-clinic') };
+  };
+  const a = heal(false), b = heal(true);
+  check(b.h < a.h && b.used > 0, `sprained ankle (40): ${a.h}h in bed without remedies, ${b.h}h with poultices (${b.used.toFixed(1)} used)`);
+  const w = worldWith('grove');
+  const ap = put(w, 'apothecary'), hg = put(w, 'herbgarden');
+  for (const c of alive(w)) apply(w, { type: 'assign', colonist: c.id, building: null });
+  staff(w, hg, 2); staff(w, ap, 1);
+  run(w, 72);
+  check(made(w, 'poultice:+apothecary') > 3, `herb garden + apothecary: ${made(w, 'poultice:+apothecary').toFixed(0)} poultices in 3 days`);
+}
+
+// tastes steer what people eat: someone who loves bread takes bread over stew
+{
+  const w = worldWith('grove');
+  const lover = alive(w).find(c => c.tastes.loves.includes('bread'));
+  const hater = alive(w).find(c => c.tastes.dislikes.includes('bread') && !c.tastes.loves.includes('stew'));
+  w.res.bread = 30; w.res.stew = 30; reconcileStock(w);
+  const ate: Record<string, string[]> = {};
+  for (let h = 0; h < 48; h++) { run(w, 1); for (const c of [lover, hater]) if (c) { const m = c.memories.find(x => x.key === 'meal'); if (m) (ate[c.id] ??= []).push(m.label); } }
+  if (lover) check((ate[lover.id] ?? []).some(l => l === 'Ate fresh bread'), `${lover.name} loves bread and ate it (${[...new Set(ate[lover.id])].join(', ')})`);
+  if (hater) check(!(ate[hater.id] ?? []).includes('Ate fresh bread'), `${hater.name} dislikes bread and left it (${[...new Set(ate[hater.id])].join(', ')})`);
+  check(!!lover || !!hater, 'found colonists with a taste for or against bread');
+}
+
+// the variety charter: 3 kinds of meal, 10 of each
+{
+  const w = worldWith('grove');
+  w.charter = 'menu'; w.chartersDone = [];
+  w.res.stew = 12; w.res.bread = 11; w.res.skewers = 4; reconcileStock(w);
+  run(w, 1);
+  const pending = w.charter === 'menu';
+  w.res.skewers = 12; reconcileStock(w);
+  run(w, 1);
+  check(pending && w.chartersDone.includes('menu'), 'A varied table waits for a third kind, then completes');
 }
 void built;
 console.log(failed ? `${failed} failed` : 'all passed');

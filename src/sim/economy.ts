@@ -7,7 +7,7 @@ export interface Line { label: string; perDay: number }
 export interface Account { name: string; stock: number; lines: Line[]; net: number; daysLeft: number | null }
 export interface JobRow { def: string; name: string; job: JobKind; workers: number; slots: number; best: { c: Colonist; skill: number } | null }
 export interface Economy {
-  food: Account; wood: Account; planks: Account; drinks: Account;
+  food: Account; wood: Account; planks: Account; drinks: Account; remedies: Account;
   jobs: JobRow[];
   laborers: Colonist[];
   /** share of laborers' working-day hours by activity, 0..1 */
@@ -85,7 +85,12 @@ export function economy(w: World): Economy {
   const laborBusy = per((lt.hauling ?? 0) + (lt.building ?? 0) + (lt.cleaning ?? 0));
   const usable = 1 - (laborTime.eating ?? 0) - (laborTime.sick ?? 0);
   const busyShare = usable > 0 ? ((laborTime.hauling ?? 0) + (laborTime.building ?? 0) + (laborTime.cleaning ?? 0)) / usable : 0;
-  return { food, wood, planks, drinks, jobs, laborers, laborTime, laborBusy, busyShare };
+  const remedyIds = CATEGORIES.remedy.members;
+  const remedies = account('Remedies', remedyIds.reduce((n, r) => n + w.res[r], 0), [
+    ...remedyIds.map(r => ({ label: `${RESOURCES.find(x => x.id === r)!.name} made`, perDay: per(sumKeys(f, k => res(k) === r && src(k).startsWith('+'))) })),
+    { label: 'Used at the clinic', perDay: -per(sumKeys(f, k => remedyIds.includes(res(k) as ResourceId) && src(k) === '-clinic')) },
+  ]);
+  return { food, wood, planks, drinks, remedies, jobs, laborers, laborTime, laborBusy, busyShare };
 }
 
 function account(name: string, stock: number, lines: Line[]): Account {

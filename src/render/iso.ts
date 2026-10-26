@@ -13,6 +13,7 @@ export const RES_COLOR: Record<ResourceId, number> = {
   stew: 0xd98a3c, pie: 0xe6c25a, smokedFish: 0x9c8c7a, ale: 0xd6a33c,
   apples: 0xd2452f, grain: 0xd8c060, honey: 0xe8a21c, cider: 0xb8c25a, mead: 0xb06a2a,
   clay: 0xb0603a, reeds: 0x9aa860, bricks: 0xa8442e, wicker: 0xc8a868,
+  herbs: 0x5a9a4a, flour: 0xe8e0c8, bread: 0xc89048, skewers: 0x9a6a4a, poultice: 0x8ab89a, tonic: 0x6a5aa8, tea: 0x8aa84a,
 };
 
 function shade(c: number, f: number) {
