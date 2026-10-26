@@ -125,6 +125,8 @@ export interface World {
   autoAssignNew: boolean;
   /** diagnostics: running totals of where goods came from and went, e.g. 'wood:hearth' */
   flows: Record<string, number>;
+  /** hourly snapshots of flows, the last 24 */
+  flowLog: Record<string, number>[];
   stats: { peakPop: number; couples: number; breakups: number; departures: number; mealsEaten: number; built: number; cured: number; errands: number; deaths: number };
   version: number; // bumps when buildings change shape or state, for the renderer
 }
@@ -507,7 +509,7 @@ export function createWorld(seed: number, difficulty: Difficulty = 'normal'): Wo
     decisions: [], log: [], opinions: {}, status: 'playing', strain: 0, nextEventHour: 24 * 1.6,
     errands: [], nextErrandId: 1, difficulty, charterBase: { cured: 0, errands: 0 }, moodLog: [], ateOffTable: false, forbidden: [],
     nextUid: 1, nextColonistId: 1, autoAssignNew: false,
-    flows: {},
+    flows: {}, flowLog: [],
     stats: { peakPop: 6, couples: 0, breakups: 0, departures: 0, mealsEaten: 0, built: 0, cured: 0, errands: 0, deaths: 0 },
     version: 0,
   };
@@ -1245,7 +1247,7 @@ function produce(w: World, dt: number) {
       for (const [r, per] of Object.entries(def.recipe.inputs)) {
         let need = amount * (per as number);
         if (r === 'rawFood') {
-          for (const x of [...RAW_FOODS].sort((p, q) => (b.inbox[q] ?? 0) - (b.inbox[p] ?? 0))) { const t = Math.min(b.inbox[x] ?? 0, need); b.inbox[x] = (b.inbox[x] ?? 0) - t; need -= t; }
+          for (const x of [...RAW_FOODS].sort((p, q) => (b.inbox[q] ?? 0) - (b.inbox[p] ?? 0))) { const t = Math.min(b.inbox[x] ?? 0, need); b.inbox[x] = (b.inbox[x] ?? 0) - t; need -= t; flow(w, `${x}:-${b.def}`, t); }
         } else { b.inbox[r as ResourceId] = (b.inbox[r as ResourceId] ?? 0) - need; flow(w, `${r}:-${b.def}`, need); }
       }
       b.outbox[def.recipe.output] = (b.outbox[def.recipe.output] ?? 0) + amount;
@@ -1338,13 +1340,13 @@ function grabMeal(w: World, c: Colonist, b: Building | undefined) {
   if (b && !bdef(b).storage) {
     const r = MEALS.find(x => !w.forbidden.includes(x) && (b.outbox[x] ?? 0) >= 1) ?? RAW_FOODS.find(x => !w.forbidden.includes(x) && (b.outbox[x] ?? 0) >= 1);
     if (!r) return false;
-    b.outbox[r] = (b.outbox[r] ?? 0) - 1; c.meal!.got = r;
+    b.outbox[r] = (b.outbox[r] ?? 0) - 1; c.meal!.got = r; flow(w, `${r}:-eaten`, 1);
     return true;
   }
   const has = (r: ResourceId) => !w.forbidden.includes(r) && (b ? (b.stock[r] ?? 0) >= 1 : w.res[r] >= 1);
   const r = MEALS.find(has) ?? [...RAW_FOODS].sort((p, q) => (b ? (b.stock[q] ?? 0) - (b.stock[p] ?? 0) : w.res[q] - w.res[p])).find(has);
   if (!r) return false;
-  takeOut(w, b, r, 1); c.meal!.got = r;
+  takeOut(w, b, r, 1); c.meal!.got = r; flow(w, `${r}:-eaten`, 1);
   return true;
 }
 function finishMeal(w: World, c: Colonist) {
@@ -1499,7 +1501,18 @@ function computeThoughts(w: World, c: Colonist): Thought[] {
   return t.sort((a, b) => a.value - b.value);
 }
 
+/** what happened in the last 24 hours, from the running flow totals */
+export function lastDay(w: World): Record<string, number> {
+  const log = w.flowLog ?? [];
+  const then = log.length ? log[0] : {};
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(w.flows)) { const d = v - (then[k] ?? 0); if (Math.abs(d) > 1e-6) out[k] = d; }
+  return out;
+}
+/** hours the last-day figures cover (less than 24 early in a run) */
+export const lastDayHours = (w: World) => Math.max(1, Math.min(24, (w.flowLog ?? []).length));
 function hourly(w: World) {
+  (w.flowLog ??= []).push({ ...w.flows }); if (w.flowLog.length > 24) w.flowLog.shift();
   const h = Math.round(hourOfDay(w)) % 24;
   const pop = alive(w).length;
   const d = day(w) - 1 + (hourOfDay(w) - 6) / 24;
@@ -1517,7 +1530,7 @@ function hourly(w: World) {
     let fresh = 0;
     for (const b of storages(w)) if (bdef(b).keepsFresh) fresh += b.stock[r] ?? 0;
     const loss = Math.max(0, w.res[r] - fresh) * rot;
-    if (loss > 0) { w.res[r] -= loss; for (const b of storages(w)) if (!bdef(b).keepsFresh && b.stock[r]) b.stock[r]! *= 1 - rot; }
+    if (loss > 0) { w.res[r] -= loss; flow(w, `${r}:-spoiled`, loss); for (const b of storages(w)) if (!bdef(b).keepsFresh && b.stock[r]) b.stock[r]! *= 1 - rot; }
   }
   const tavern = built(w).find(b => b.def === 'tavern');
   const stage = hasBuilt(w, 'stage');
@@ -1540,7 +1553,7 @@ function hourly(w: World) {
     if (c.activity === 'leisure' || c.activity === 'sulking' || c.activity === 'idle') {
       const atTavern = tavern && c.place === tavern.uid;
       if (atTavern && w.res.ale >= 0.3) {
-        w.res.ale -= 0.3; c.fun += 18;
+        w.res.ale -= 0.3; flow(w, 'ale:-drunk', 0.3); c.fun += 18;
         if (!c.drankTonight) { c.drankTonight = true; addMemory(w, c, 'ale', 'Drank ale at the tavern', 6 + (has(c, 'tippler') ? 4 : 0), 14); }
       } else c.fun += (c.activity === 'idle' ? 3 : 9) + (stage && h >= 18 ? 5 : 0) + (hasPerk(w, 'warmHearth') ? 1 : 0);
       if (c.activity === 'leisure' && hasPerk(w, 'warmHearth')) addMemory(w, c, 'hearthWarm', 'Warm evening by the hearth', 2, 6);
@@ -1728,6 +1741,8 @@ export function tick(w: World): void {
     c.activity = activityFor(w, c);
     if (prev !== c.activity) c.goalKey = '';
     move(w, c, grid, dt);
+    const hod = hourOfDay(w);
+    if (hod >= 6 && hod < 18) flow(w, `time:${c.job == null ? 'laborer' : 'worker'}:${c.activity === 'working' && !c.goalReached ? 'walking' : c.activity}`, dt);
   }
   produce(w, dt);
   reconcileStock(w);

@@ -13,7 +13,7 @@ const MOOD_CHARTERS = ['cheer', 'harmony', 'calm'];
  * Experiment switches for the balance tools. `advisor` makes the bot play from what's on screen (the complaint
  * panel) instead of its own rules; it's off by default because, so far, it plays worse (see the project doc).
  */
-export const BOT = { foodDepot: 'food' as false | 'food' | 'meals', laborersPer: 3.5, advisor: false, gate: true, off: [] as string[] };
+export const BOT = { foodDepot: 'food' as false | 'food' | 'meals', laborersPer: 3.5, advisor: false, gate: true, off: [] as string[], skip: [] as string[] };
 const depots = new WeakMap<World, number>();
 /** what the bot read off the screen this hour; it plays from this rather than from hidden state */
 const advice = new WeakMap<World, { hour: number; concerns: Concern[] }>();
@@ -25,9 +25,10 @@ export function concernsOf(w: World): Concern[] {
   return concerns;
 }
 /** survival problems get fixed at once; comfort fixes wait until food and wood are comfortable, like a player who keeps the lights on first */
-const SURVIVAL = ['hungry', 'cold', 'wood', 'sick', 'beds', 'storage', 'idle-'];
-const comfortable = (w: World) => foodTotal(w) >= alive(w).length * 4 && w.res.wood >= 25;
+const SURVIVAL = ['hungry', 'cold', 'wood', 'sick', 'beds', 'storage', 'idle-', 'foodflow', 'woodflow', 'slack'];
+const comfortable = (w: World) => foodTotal(w) >= alive(w).length * 4 && w.res.wood >= 25 && !concernsOf(w).some(c => c.id === 'stretched');
 const fixesOf = (w: World, top = 4) => concernsOf(w)
+  .filter(c => !BOT.skip.some(k => c.id.startsWith(k)))
   .filter(c => !BOT.gate || SURVIVAL.some(k => c.id.startsWith(k)) || comfortable(w))
   .slice(0, top).flatMap(c => c.fixes).filter(f => !BOT.off.includes(Object.keys(f)[0]));
 
@@ -241,7 +242,8 @@ export function staffPlan(w: World): Map<number, number> {
   const want = staffWants(w);
   // a skeleton crew keeps its jobs going and builds with whoever is left
   const extraHands = fixesOf(w).reduce((n, f) => n + ('laborers' in f ? f.laborers : 0), 0);
-  const keepFree = (pop <= 5 ? 1 : Math.max(2, Math.ceil(pop / BOT.laborersPer)) + (sites(w).length > 1 ? 1 : 0)) + Math.min(1, extraHands);
+  const slack = BOT.advisor && concernsOf(w).some(c => c.id === 'slack') ? 1 : 0;
+  const keepFree = Math.max(1, (pop <= 5 ? 1 : Math.max(2, Math.ceil(pop / BOT.laborersPer)) + (sites(w).length > 1 ? 1 : 0)) + Math.min(1, extraHands) - slack);
   let budget = Math.max(0, pop - keepFree);
   const given: Record<string, number> = {};
   const plan = new Map<number, number>();

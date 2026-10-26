@@ -6,6 +6,7 @@ import {
   keepsFresh, findSpot, canPlace, laborers, centerOf, built, Building, efficiencyAt, pathAt, MAP_SIZE, blockedReason, Errand, Difficulty, patientsAt, lost, bedridden, spoilingFood, accepts, roomIn, FOODS, GOODS,
 } from '../sim/world';
 import { assess } from '../sim/advisor';
+import { economy, Account } from '../sim/economy';
 import type { IsoView, Picked } from '../render/iso';
 
 const esc = (s: string) => s.replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]!));
@@ -50,7 +51,7 @@ function activityText(w: World, c: Colonist) {
 function topSkills(c: Colonist) { return [...JOB_KINDS].sort((a, b) => c.skills[b] - c.skills[a]).slice(0, 2).map(k => `${SKILL_NAMES[k].toLowerCase()} ${Math.floor(c.skills[k])}`).join(', '); }
 function moodClass(m: number, sulking: boolean) { return sulking ? 'sulk' : m >= 60 ? 'good' : m >= 35 ? 'warn' : 'bad'; }
 
-type Tab = 'colonists' | 'build' | 'log';
+type Tab = 'colonists' | 'build' | 'ledger' | 'log';
 type Detail = { kind: 'colonist' | 'building'; id: number } | null;
 
 export class UI {
@@ -215,7 +216,7 @@ export class UI {
   private renderSheet(w: World, force: boolean) {
     const pop = alive(w);
     const tabs = `<nav class="tabs">
-      ${(['colonists', 'build', 'log'] as Tab[]).map(t => `<button type="button" data-act="tab" data-arg="${t}" class="${this.tab === t && this.open ? 'on' : ''}">${t === 'colonists' ? `Colonists <em>${pop.length}</em>` : t === 'build' ? 'Build' : 'Log'}</button>`).join('')}
+      ${(['colonists', 'build', 'ledger', 'log'] as Tab[]).map(t => `<button type="button" data-act="tab" data-arg="${t}" class="${this.tab === t && this.open ? 'on' : ''}">${t === 'colonists' ? `Colonists <em>${pop.length}</em>` : t === 'build' ? 'Build' : t === 'ledger' ? 'Ledger' : 'Log'}</button>`).join('')}
       ${this.open ? `<button type="button" class="x" data-act="close" aria-label="Close panel">Close</button>` : ''}
     </nav>`;
     let body = '';
@@ -224,6 +225,7 @@ export class UI {
       else if (this.detail?.kind === 'building') body = this.buildingDetail(w, this.detail.id);
       else if (this.tab === 'colonists') body = this.colonistList(w);
       else if (this.tab === 'build') body = this.buildList(w);
+      else if (this.tab === 'ledger') body = ledger(w);
       else body = this.logList(w);
     }
     const html = tabs + (this.open ? `<div class="sheet-body">${body}</div>` : '');
@@ -500,5 +502,38 @@ function moodLedger(c: Colonist) {
 function concernCards(w: World) {
   const top = assess(w).slice(0, 3);
   if (!top.length) return '<p class="muted hint">Nobody has anything to complain about. Enjoy it while it lasts.</p>';
-  return `<h3>What’s bothering people</h3><div class="concerns">${top.map(c => `<div class="concern"><b>${esc(c.title)}</b><small>${esc(c.evidence)}</small><span>→ ${esc(c.idea)}</span></div>`).join('')}</div><h3>Everyone</h3>`;
+  return `<h3>Foreman’s notes</h3><div class="concerns">${top.map(c => `<div class="concern"><b>${esc(c.title)}</b><small>${esc(c.evidence)}</small><span>→ ${esc(c.idea)}</span></div>`).join('')}</div><h3>Everyone</h3>`;
+}
+
+// ---------- Ledger ----------
+const num = (n: number) => `${n > 0.05 ? '+' : n < -0.05 ? '−' : ''}${Math.abs(n) >= 10 ? Math.round(Math.abs(n)) : Math.abs(n).toFixed(1).replace(/\.0$/, '')}`;
+function accountCard(a: Account) {
+  const max = Math.max(1, ...a.lines.map(l => Math.abs(l.perDay)));
+  const rows = a.lines.map(l => `<div class="lg-row ${l.perDay >= 0 ? 'lg-good' : 'lg-bad'}"><span>${esc(l.label)}</span><i><b style="width:${Math.abs(l.perDay) / max * 100}%"></b></i><em>${num(l.perDay)}</em></div>`).join('');
+  const verdict = a.daysLeft != null ? `<b class="neg">${num(a.net)} a day</b> · ${Math.floor(a.stock)} on hand lasts about ${a.daysLeft < 1 ? 'less than a day' : `${Math.floor(a.daysLeft)} day${Math.floor(a.daysLeft) === 1 ? '' : 's'}`}` : `<b class="${a.net >= 0 ? 'pos' : ''}">${num(a.net)} a day</b> · ${Math.floor(a.stock)} on hand`;
+  return `<div class="acct"><div class="acct-head"><h4>${a.name}</h4><span>${verdict}</span></div>${rows || '<p class="muted">Nothing moved in the last day.</p>'}</div>`;
+}
+function ledger(w: World) {
+  const e = economy(w);
+  const accounts = [e.food, e.wood, ...(e.planks.lines.length || e.planks.stock >= 1 ? [e.planks] : []), ...(e.ale.lines.length || e.ale.stock >= 1 ? [e.ale] : [])];
+  const jobs = e.jobs.sort((a, z) => (z.slots - z.workers) - (a.slots - a.workers)).map(j => {
+    const open = j.slots - j.workers;
+    return `<div class="job-row"><span><b>${esc(j.name)}</b><small>${j.workers}/${j.slots} working${open && j.best ? ` · best free hand: ${esc(first(j.best.c))} (${esc(SKILL_NAMES[j.job].toLowerCase())} ${j.best.skill}${j.best.c.likes === j.job ? ', loves it' : ''})` : ''}</small></span>${open ? `<em class="open">${open} open</em>` : '<em>full</em>'}</div>`;
+  }).join('');
+  const lt = e.laborTime;
+  const pct = (k: string) => Math.round((lt[k] ?? 0) * 100);
+  // share of their non-meal hours spent hauling, building or cleaning
+  const busy = Math.round((pct('hauling') + pct('building') + pct('cleaning')) / Math.max(1, 100 - pct('eating') - pct('sick')) * 100);
+  const laborNote = !e.laborers.length ? 'Everyone has a job, so nobody is hauling, building or cleaning.'
+    : busy >= 75 ? 'Laborers are busy most of the day. Taking one for a job will slow hauling and building.'
+    : pct('idle') >= 20 ? 'Laborers have spare time. An empty job slot would put it to use.'
+    : 'Laborers have a little slack.';
+  const segs = ['hauling', 'building', 'cleaning', 'eating', 'idle'].map(k => `<b class="lt-${k}" style="width:${pct(k)}%"></b>`).join('');
+  return `<p class="muted hint">The last 24 hours, scaled to a full day.</p>
+    ${accounts.map(accountCard).join('')}
+    <h3>Jobs</h3><div class="joblist">${jobs || '<p class="muted">No workplaces yet.</p>'}</div>
+    <h3>Laborers <span class="muted">· ${e.laborers.length}</span></h3>
+    <div class="lt-bar">${segs}</div>
+    <p class="lt-key">${['hauling', 'building', 'cleaning', 'eating', 'idle'].map(k => `<span class="lt-${k}"><i></i>${k} ${pct(k)}%</span>`).join('')}</p>
+    <p class="prefs">${laborNote}</p>`;
 }

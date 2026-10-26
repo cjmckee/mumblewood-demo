@@ -7,6 +7,7 @@ import {
   World, Colonist, alive, built, bdef, beds, workersAt, blockedReason, storageCap, stored, spoilingFood, mealTotal,
   storageFree,
 } from './world';
+import { economy } from './economy';
 
 export type Fix =
   | { build: string }
@@ -180,8 +181,27 @@ export function assess(w: World): Concern[] {
   }
   if (w.res.wood < 15) add('wood', 'Wood running low', `Wood ${w.res.wood | 0} · choppers ${workersOf(w, 'woodcutter')}/${slotsOf(w, 'woodcutter')}`, slotsOf(w, 'woodcutter') > workersOf(w, 'woodcutter') ? 'fill the empty woodcutter slots' : 'build another woodcutter near trees', 10, 0,
     [{ staff: 'woodcutter', n: workersOf(w, 'woodcutter') + 1 }, ...(slotsOf(w, 'woodcutter') <= workersOf(w, 'woodcutter') ? [{ build: 'woodcutter' }] : [])]);
+  // ---- the ledger: income against use, and where the people are ----
+  const e = economy(w);
+  if (e.food.daysLeft != null && e.food.daysLeft < 5 && !who('hungry'))
+    add('foodflow', 'Eating more than we gather', `Ledger: food ${e.food.net.toFixed(1)} a day · ${Math.floor(e.food.stock)} on hand lasts ~${e.food.daysLeft.toFixed(1)} days`, 'more foragers or fishers, or fewer cooks turning raw food into meals', 30 / Math.max(1, e.food.daysLeft), 0,
+      [{ staff: 'rawFood', n: workersOf(w, 'rawFood') + 1 }, ...(workersOf(w, 'rawFood') >= slotsOf(w, 'rawFood') ? [{ build: 'forager' }] : [])]);
+  if (e.wood.daysLeft != null && e.wood.daysLeft < 3 && !who('cold'))
+    add('woodflow', 'Burning more wood than we chop', `Ledger: wood ${e.wood.net.toFixed(1)} a day · ${Math.floor(e.wood.stock)} on hand lasts ~${e.wood.daysLeft.toFixed(1)} days`, 'another woodcutter, or pause construction', 24 / Math.max(1, e.wood.daysLeft), 0,
+      [{ staff: 'woodcutter', n: workersOf(w, 'woodcutter') + 1 }, ...(workersOf(w, 'woodcutter') >= slotsOf(w, 'woodcutter') ? [{ build: 'woodcutter' }] : [])]);
+  // When laborers are already busy all day, the cost of any new job is hauling that stops getting done.
+  // Tested on the bot: holding extra people back as laborers hurt, but waiting on comfort jobs until laborers have
+  // slack helped. So this note carries no fix of its own; it tells you what a new job would cost.
+  if (e.laborers.length >= 2 && e.busyShare >= 0.85)
+    add('stretched', 'Laborers are busy all day', `Ledger: laborers spend ${Math.round(e.busyShare * 100)}% of their day hauling, building and cleaning`, 'filling another job slot will slow hauling; fix food and wood first', 6, 0, []);
+  const open = e.jobs.filter(j => j.workers < j.slots && j.best && j.best.skill >= 6);
+  if (open.length && e.busyShare < 0.6 && e.laborers.length >= 2)
+    add('slack', 'Laborers with time to spare', `Ledger: laborers busy ${Math.round(e.busyShare * 100)}% of the day · open slots: ${open.map(j => `${j.name} (${first(j.best!.c)}, ${j.best!.skill})`).join(', ')}`, 'put a skilled laborer in an open slot', 5, 0,
+      open.slice(0, 1).map(j => ({ staff: kindOf(j.def), n: j.workers + 1 })));
   return out.sort((a, b) => b.weight - a.weight);
 }
+const first = (c: Colonist) => c.name.split(' ')[0];
+const kindOf = (def: string) => Object.entries(KIND_DEFS).find(([, ds]) => ds.includes(def))?.[0] ?? def;
 
 /** the gripe list a player sees, grouped and counted */
 export function gripeSummary(w: World) {

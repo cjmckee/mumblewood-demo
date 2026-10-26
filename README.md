@@ -19,6 +19,7 @@ npx tsx tools/moods.ts cheer 20   # where mood comes from on a forced charter, p
 npx tsx tools/review.ts 8 777 food   # read bot runs closely: choices, mood spread, why people leave, quality vs mood
 npx tsx tools/wood.ts 20       # where wood and planks come from and go, and how much choppers actually chop
 npx tsx tools/advise.ts 2       # what a player could conclude from the screen at a few moments in a bot game
+npx tsx tools/economy.ts 60     # food, wood, laborers and mood over a run, winners vs losers
 BOT_ADVISOR=1 npx tsx tools/losses.ts 150   # let the bot play from the on-screen complaints instead of its own rules
 npx tsc -p .                   # type-check
 ```
@@ -31,6 +32,7 @@ Open `dist/mumblewood.html` in a browser. It works on phones too.
 | --- | --- |
 | `src/sim/content.ts` | All game data: buildings, traits, charters, events, boons |
 | `src/sim/world.ts` | The deterministic simulation. No DOM, so it runs in Node too |
+| `src/sim/economy.ts` | The ledger: last-24-hour income and use for food, wood, planks and ale, jobs and open slots, laborer time |
 | `src/sim/advisor.ts` | Reads only what the player can see (thoughts, HUD, building cards) and ranks concerns with evidence and next steps |
 | `src/sim/autoplayer.ts` | A heuristic bot used by the balance harness |
 | `src/render/iso.ts` | PixiJS isometric vector renderer, which reads the world and never changes it |

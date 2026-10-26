@@ -7,6 +7,7 @@ if (process.env.BOT_DEPOT) BOT.foodDepot = process.env.BOT_DEPOT === 'none' ? fa
 if (process.env.BOT_ADVISOR) BOT.advisor = process.env.BOT_ADVISOR === '1';
 if (process.env.BOT_OFF) BOT.off = process.env.BOT_OFF.split(',');
 if (process.env.BOT_GATE === '0') BOT.gate = false;
+if (process.env.BOT_SKIP) BOT.skip = process.env.BOT_SKIP.split(',');
 if (process.env.BOT_LABORERS) BOT.laborersPer = Number(process.env.BOT_LABORERS);
 
 const runs = Number(process.argv[2] ?? 200);
