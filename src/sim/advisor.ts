@@ -2,10 +2,10 @@
 // It turns those into ranked concerns, each with the evidence a player would see and the fixes that follow.
 // The bot plays from this, which doubles as a readability test: if visible information is enough to play well,
 // the game is readable. Nothing here peeks at hidden state (fun, opinions, paths, travel times).
-import { BUILDING_BY_ID, MEALS, RAW_FOODS } from './content';
+import { BUILDING_BY_ID, BUILDINGS, MEALS, RAW_FOODS, RESOURCES, CATEGORIES, ResourceId } from './content';
 import {
   World, Colonist, alive, built, bdef, beds, workersAt, blockedReason, storageCap, stored, spoilingFood, mealTotal,
-  storageFree,
+  storageFree, currentRecipe, drinkTotal, usableHere, stockOf, recipeReach, enabledRecipes, siteOk,
 } from './world';
 import { economy } from './economy';
 
@@ -31,7 +31,7 @@ export interface Concern {
 }
 
 /** a kind of job ("kitchen", "rawFood") and the buildings that do it */
-export const KIND_DEFS: Record<string, string[]> = { rawFood: ['forager', 'dock', 'cellar'] };
+export const KIND_DEFS: Record<string, string[]> = { rawFood: ['forager', 'dock', 'cellar', 'orchard'], drinks: ['brewery', 'ciderpress'], sawmill: ['sawmill', 'carpenter'] };
 export const defsOf = (kind: string) => KIND_DEFS[kind] ?? [kind];
 
 const has = (w: World, id: string) => w.buildings.some(b => b.def === id);
@@ -40,6 +40,7 @@ const owns = (w: World, id: string) => w.owned.includes(id);
 const slotsOf = (w: World, kind: string) => built(w).filter(b => defsOf(kind).includes(b.def)).reduce((n, b) => n + bdef(b).slots, 0);
 const workersOf = (w: World, kind: string) => built(w).filter(b => defsOf(kind).includes(b.def)).reduce((n, b) => n + workersAt(w, b.uid).length, 0);
 const name = (id: string) => BUILDING_BY_ID[id].name.toLowerCase();
+const goodName = (r: ResourceId) => RESOURCES.find(x => x.id === r)!.name.toLowerCase();
 
 /** gripe labels → a shared key, the way a player would group them on the colonist list */
 function gripeKey(label: string): string | null {
@@ -47,7 +48,7 @@ function gripeKey(label: string): string | null {
   if (label === 'Ate without a table') return 'table';
   if (label === 'Ate in a filthy dining hall') return 'filthy';
   if (label === 'Bored' || label === 'Lonely evening') return 'bored';
-  if (label === 'No ale in the stores') return 'ale';
+  if (label === 'Nothing to drink in the stores') return 'ale';
   if (label === 'Vain: deserves a cottage') return 'vain';
   if (label === 'Sleeping on the ground') return 'beds';
   if (label === 'Hungry' || label === 'Starving') return 'hungry';
@@ -58,6 +59,7 @@ function gripeKey(label: string): string | null {
   if (label.endsWith('won’t stop complaining')) return 'grumbler';
   if (label === 'Loner: crowded workplace') return 'loner';
   if (label === 'Ugly surroundings') return 'ugly';
+  if (label.startsWith('Doesn’t care for ')) return 'taste';
   if (label.startsWith('The frontier')) return 'strain';
   return null;
 }
@@ -73,13 +75,19 @@ export function gripes(w: World): Map<string, { weight: number; people: Colonist
 }
 
 /** the next step that unblocks a building we want: build it, or the blueprint we're missing, or what it needs first */
+/** the drink maker to point at: one already built, else one owned, else the drafts on offer */
+function drinkMaker(w: World): string { return defsOf('drinks').find(id => has(w, id)) ?? defsOf('drinks').find(id => owns(w, id) && usableHere(w, id)) ?? 'brewery'; }
 function buildOrDraft(w: World, id: string, fixes: Fix[]): string {
+  if (id === 'brewery' && !defsOf('drinks').some(d => owns(w, d))) { for (const d of defsOf('drinks')) fixes.push({ draft: d }); return 'draft a brewery or a cider press'; }
   if (!owns(w, id)) { fixes.push({ draft: id }); return `draft a ${name(id)} blueprint`; }
   if (!has(w, id)) {
-    if (BUILDING_BY_ID[id].cost.planks && w.res.planks < (BUILDING_BY_ID[id].cost.planks ?? 0)) {
-      if (!owns(w, 'sawmill')) { fixes.push({ draft: 'sawmill' }); return `a ${name(id)} needs planks: draft a sawmill`; }
-      if (!has(w, 'sawmill')) { fixes.push({ build: 'sawmill' }); return `a ${name(id)} needs planks: build a sawmill`; }
-      fixes.push({ staff: 'sawmill', n: 2 }, { build: id }); return `staff the sawmill for planks, then build a ${name(id)}`;
+    if (BUILDING_BY_ID[id].cost.fine && stockOf(w, 'fine') < (BUILDING_BY_ID[id].cost.fine ?? 0)) {
+      // planks or bricks: point at whichever maker the colony has, sawmill first
+      const maker = ['sawmill', 'kiln', 'carpenter'].find(m => has(w, m)) ?? ['sawmill', 'kiln', 'carpenter'].find(m => owns(w, m) && usableHere(w, m));
+      if (!maker) { fixes.push({ draft: 'sawmill' }, { draft: 'kiln' }); return `a ${name(id)} needs planks or bricks: draft a sawmill or a brick kiln`; }
+      if (!has(w, maker)) { fixes.push({ build: maker }); return `a ${name(id)} needs planks or bricks: build a ${name(maker)}`; }
+      const kind = maker === 'kiln' ? 'kiln' : 'sawmill';
+      fixes.push({ staff: kind, n: 2 }, { build: id }); return `staff the ${name(maker)}, then build a ${name(id)}`;
     }
     fixes.push({ build: id }); return `build a ${name(id)}`;
   }
@@ -115,6 +123,39 @@ export function assess(w: World): Concern[] {
     if (owns(w, 'pieoven') && !has(w, 'pieoven')) fixes.push({ build: 'pieoven' });
     add('raw', `${who('raw')} ate raw food`, `Meals in storage: ${mealTotal(w) | 0} · cooks ${cooks}/${kslots}${idle.length ? ' · a kitchen says "no ingredients"' : ''}${locked.length ? ` · food rules lock ${locked.join(', ')}` : ''}`, idea, wt('raw'), who('raw'), fixes);
   }
+  // ---- tastes: people stuck with a meal or drink they don't care for ----
+  if (who('taste')) {
+    const ppl = g.get('taste')!.people;
+    // which goods they're getting and don't care for, read off their thoughts
+    const byName = (n: string) => RESOURCES.find(r => r.name.toLowerCase() === n)?.id;
+    const disliked = new Map<ResourceId, Colonist[]>();
+    for (const c of ppl) for (const t of c.thoughts) if (t.label.startsWith('Doesn’t care for ')) {
+      const r = byName(t.label.slice('Doesn’t care for '.length)); if (r) disliked.set(r, [...(disliked.get(r) ?? []), c]);
+    }
+    const [bad, who2] = [...disliked].sort((a, b) => b[1].length - a[1].length)[0] ?? [];
+    if (bad) {
+      const cat = CATEGORIES.meal.members.includes(bad) ? 'meal' : 'drink';
+      // the other kinds, the ones these people don't also dislike first
+      const alts = CATEGORIES[cat].members.filter(r => r !== bad).sort((a, b) => who2.filter(c => c.tastes.dislikes.includes(a)).length - who2.filter(c => c.tastes.dislikes.includes(b)).length);
+      const fixes: Fix[] = [];
+      let idea = '';
+      // nearest route to another kind: a built workshop whose best recipe makes it, then an owned one to build, then a draft
+      const best = (d: string, r: ResourceId) => { const recs = (BUILDING_BY_ID[d].recipes ?? []).filter(x => x.output === r); return recs.length && Math.max(...recs.map(x => x.stars)) === Math.max(...(BUILDING_BY_ID[d].recipes ?? []).map(x => x.stars)); };
+      const kindOf = (d: string) => defsOf('drinks').includes(d) ? 'drinks' : d;
+      for (const r of alts) {
+        const site = built(w).find(b => enabledRecipes(b)[0]?.output === r && recipeReach(w, enabledRecipes(b)[0]).state === 'ready');
+        if (site) { fixes.push({ staff: kindOf(site.def), n: workersOf(w, kindOf(site.def)) + 1 }); idea = `staff the ${name(site.def)} for ${goodName(r)}`; break; }
+        const own = w.owned.find(d => !has(w, d) && best(d, r) && (BUILDING_BY_ID[d].recipes ?? []).some(x => x.output === r && recipeReach(w, x).state === 'ready'));
+        if (own) { idea = buildOrDraft(w, own, fixes) || `build a ${name(own)} for ${goodName(r)}`; break; }
+      }
+      if (!idea) for (const r of alts) {
+        const d = BUILDINGS.find(x => x.draftable && !owns(w, x.id) && siteOk(w, x) && best(x.id, r) && (x.recipes ?? []).some(y => y.output === r && recipeReach(w, y).state !== 'never'));
+        if (d) { fixes.push({ draft: d.id }); idea = `draft a ${name(d.id)} for ${goodName(r)}`; break; }
+      }
+      add('taste', `${who2.length} don’t care for ${goodName(bad)}`, `They keep getting ${goodName(bad)} · each colonist’s page shows their favourite and least favourite`,
+        idea || `another kind of ${cat}`, wt('taste'), who2.length, fixes);
+    }
+  }
   if (who('table')) {
     const seats = built(w).reduce((n, b) => n + (bdef(b).seats ?? 0), 0);
     add('table', `${who('table')} ate without a table`, `${seats} seats for ${pop} people (meals overlap, so about half need a seat at once)`, 'build another dining hall', wt('table'), who('table'), [{ build: 'dining' }]);
@@ -129,15 +170,16 @@ export function assess(w: World): Concern[] {
     const tavern = hasBuilt(w, 'tavern'), stage = hasBuilt(w, 'stage');
     let idea = '';
     if (tavern && workersOf(w, 'tavern') === 0) { fixes.push({ staff: 'tavern', n: 1 }); idea = 'staff the tavern'; }
-    else if (tavern && w.res.ale < 3) { fixes.push({ staff: 'brewery', n: 2 }); idea = buildOrDraft(w, 'brewery', fixes) || 'brew ale for the tavern'; }
+    else if (tavern && drinkTotal(w) < 3) { fixes.push({ staff: 'drinks', n: 2 }); idea = buildOrDraft(w, drinkMaker(w), fixes) || 'make drinks for the tavern'; }
     if (!tavern) idea = idea || buildOrDraft(w, 'tavern', fixes);
     if (!stage) { const s = buildOrDraft(w, 'stage', fixes); idea = idea || s; }
-    add('bored', `${who('bored')} bored or lonely`, `Evenings: ${tavern ? `tavern ${workersOf(w, 'tavern') ? 'open' : 'unstaffed'}, ale ${w.res.ale | 0}` : 'no tavern'} · ${stage ? 'stage built' : 'no stage'}`, idea || 'more evening entertainment', wt('bored'), who('bored'), fixes);
+    add('bored', `${who('bored')} bored or lonely`, `Evenings: ${tavern ? `tavern ${workersOf(w, 'tavern') ? 'open' : 'unstaffed'}, drinks ${drinkTotal(w) | 0}` : 'no tavern'} · ${stage ? 'stage built' : 'no stage'}`, idea || 'more evening entertainment', wt('bored'), who('bored'), fixes);
   }
   if (who('ale')) {
-    const fixes: Fix[] = [{ staff: 'brewery', n: 2 }];
-    const idea = buildOrDraft(w, 'brewery', fixes) || (workersOf(w, 'brewery') ? 'the brewery needs berries carried in' : 'staff the brewery');
-    add('ale', `${who('ale')} want ale`, `Ale in storage: ${w.res.ale | 0} · brewers ${workersOf(w, 'brewery')}/${slotsOf(w, 'brewery')}`, idea, wt('ale'), who('ale'), fixes);
+    const fixes: Fix[] = [{ staff: 'drinks', n: 2 }];
+    const maker = drinkMaker(w);
+    const idea = buildOrDraft(w, maker, fixes) || (workersOf(w, 'drinks') ? `the ${name(maker)} needs ingredients carried in` : `staff the ${name(maker)}`);
+    add('ale', `${who('ale')} want a drink`, `Drinks in storage: ${drinkTotal(w) | 0} · brewers ${workersOf(w, 'drinks')}/${slotsOf(w, 'drinks')}`, idea, wt('ale'), who('ale'), fixes);
   }
   // ---- homes ----
   if (who('beds')) add('beds', `${who('beds')} sleeping on the ground`, `${beds(w)} beds for ${pop} people`, 'build a lean-to', wt('beds') * 1.5, who('beds'), [{ build: 'leanto' }]);
@@ -145,7 +187,7 @@ export function assess(w: World): Concern[] {
     const fixes: Fix[] = [];
     const idea = buildOrDraft(w, 'cottage', fixes) || 'build cottages for the vain';
     if (has(w, 'cottage')) fixes.push({ build: 'cottage' });
-    add('vain', `${who('vain')} want a cottage`, `Cottages: ${built(w).filter(b => b.def === 'cottage').length} · planks ${w.res.planks | 0}`, idea, wt('vain'), who('vain'), fixes);
+    add('vain', `${who('vain')} want a cottage`, `Cottages: ${built(w).filter(b => b.def === 'cottage').length} · planks and bricks ${stockOf(w, 'fine') | 0}`, idea, wt('vain'), who('vain'), fixes);
   }
   if (who('ugly')) add('ugly', `${who('ugly')} find it ugly`, 'Their surroundings score low on beauty', 'decorate where people spend time (hearth, dining hall)', wt('ugly'), who('ugly'), [{ build: 'flowerbed' }, { build: 'lantern' }]);
   // ---- health and warmth ----
@@ -154,7 +196,7 @@ export function assess(w: World): Concern[] {
     const clinic = hasBuilt(w, 'clinic');
     if (!has(w, 'clinic')) fixes.push({ build: 'clinic' });
     fixes.push({ staff: 'clinic', n: 1 });
-    add('sick', `${who('sick')} sick or hurt`, clinic ? `Clinic doctor: ${workersOf(w, 'clinic') ? 'on duty' : 'none assigned'}` : 'No clinic', clinic ? (workersOf(w, 'clinic') ? 'a better doctor heals faster' : 'assign a doctor (best medicine skill)') : 'build a clinic and assign a doctor', wt('sick'), who('sick'), fixes);
+    add('sick', `${who('sick')} sick or hurt`, clinic ? `Clinic doctor: ${workersOf(w, 'clinic') ? 'on duty' : 'none assigned'}` : 'No clinic', clinic ? (workersOf(w, 'clinic') ? (stockOf(w, 'remedy') < 1 ? (owns(w, 'apothecary') ? 'an apothecary’s poultices would help the doctor' : 'a better doctor heals faster; remedies from an apothecary help too') : 'a better doctor heals faster') : 'assign a doctor (best medicine skill)') : 'build a clinic and assign a doctor', wt('sick'), who('sick'), fixes);
   }
   if (who('cold')) add('cold', 'The hearth went cold', `Wood in storage: ${w.res.wood | 0} · choppers ${workersOf(w, 'woodcutter')}/${slotsOf(w, 'woodcutter')}`, 'more woodcutters: the hearth burns wood every night', wt('cold') * 1.5, who('cold'), [{ staff: 'woodcutter', n: workersOf(w, 'woodcutter') + 2 }, { build: 'woodcutter' }]);
   // ---- work ----
@@ -166,18 +208,24 @@ export function assess(w: World): Concern[] {
     const r = blockedReason(w, b);
     if (!r || !workersAt(w, b.uid).length) continue;
     const def = bdef(b);
-    const inputs = Object.keys(def.recipe?.inputs ?? {});
-    const upstream = inputs.includes('rawFood') || inputs.includes('berries') ? 'rawFood' : inputs.includes('fish') ? 'dock' : inputs.includes('wood') ? 'woodcutter' : null;
-    if (upstream) add(`idle-${b.def}`, `${def.name} idle`, `Its card says: ${r}`, `more ${upstream === 'rawFood' ? 'foragers' : upstream === 'woodcutter' ? 'woodcutters' : 'fishers'} to feed it`, 6, 0, [{ staff: upstream, n: workersOf(w, upstream) + 1 }]);
+    const inputs = Object.keys(currentRecipe(w, b)?.inputs ?? {});
+    // which kind of worker feeds this workshop's current recipe
+    const FEEDS: [string, string, string][] = [['rawFood', 'rawFood', 'foragers'], ['berries', 'rawFood', 'foragers'], ['apples', 'orchard', 'apple pickers'], ['fish', 'dock', 'fishers'], ['wood', 'woodcutter', 'woodcutters'], ['grain', 'field', 'farmers'], ['honey', 'apiary', 'beekeepers'], ['clay', 'claypit', 'clay diggers'], ['reeds', 'dock', 'reed cutters'], ['herbs', 'herbgarden', 'herb gardeners'], ['flour', 'mill', 'millers']];
+    const feed = FEEDS.find(([input]) => inputs.includes(input));
+    if (feed) {
+      const [, upstream, who2] = feed;
+      const fix: Fix[] = has(w, upstream) || upstream === 'rawFood' ? [{ staff: upstream, n: workersOf(w, upstream) + 1 }] : [{ build: upstream }];
+      add(`idle-${b.def}`, `${def.name} idle`, `Its card says: ${r}`, has(w, upstream) || upstream === 'rawFood' ? `more ${who2} to feed it` : `build a ${name(upstream)} to feed it`, 6, 0, fix);
+    }
   }
   if (storageCap(w) && stored(w) / storageCap(w) > 0.85) add('storage', 'Storage nearly full', `${stored(w) | 0}/${storageCap(w)} stored`, 'build another stockpile', 8, 0, [{ build: 'stockpile' }]);
   if (spoilingFood(w) >= 20) add('spoiling', 'Food spoiling', `${spoilingFood(w) | 0} food sitting outside a storehouse`, has(w, 'storehouse') ? 'set a storehouse to food, or build another' : 'build a storehouse', 5, 0, has(w, 'storehouse') ? [{ build: storageFree(w, 'berries') < 20 ? 'storehouse' : '' }].filter(f => f.build) : [{ build: 'storehouse' }]);
-  const plankNeeds = w.owned.filter(id => !has(w, id) && BUILDING_BY_ID[id].cost.planks && !BUILDING_BY_ID[id].decor);
-  if (plankNeeds.length && w.res.planks < 8) {
+  const plankNeeds = w.owned.filter(id => !has(w, id) && BUILDING_BY_ID[id].cost.fine && !BUILDING_BY_ID[id].decor);
+  if (plankNeeds.length && stockOf(w, 'fine') < 8) {
     const fixes: Fix[] = [];
     const idea = owns(w, 'sawmill') ? (has(w, 'sawmill') ? (workersOf(w, 'sawmill') ? 'the sawmill needs wood carried in' : 'staff the sawmill') : 'build a sawmill') : 'draft a sawmill';
     if (owns(w, 'sawmill')) { if (!has(w, 'sawmill')) fixes.push({ build: 'sawmill' }); fixes.push({ staff: 'sawmill', n: 2 }); } else fixes.push({ draft: 'sawmill' });
-    add('planks', 'Out of planks', `Planks ${w.res.planks | 0} · waiting on them: ${plankNeeds.map(name).join(', ')}`, idea, 4 + plankNeeds.length * 2, 0, fixes);
+    add('planks', 'Out of planks and bricks', `Planks ${w.res.planks | 0}, bricks ${w.res.bricks | 0}, wicker ${w.res.wicker | 0} · waiting on them: ${plankNeeds.map(name).join(', ')}`, idea, 4 + plankNeeds.length * 2, 0, fixes);
   }
   if (w.res.wood < 15) add('wood', 'Wood running low', `Wood ${w.res.wood | 0} · choppers ${workersOf(w, 'woodcutter')}/${slotsOf(w, 'woodcutter')}`, slotsOf(w, 'woodcutter') > workersOf(w, 'woodcutter') ? 'fill the empty woodcutter slots' : 'build another woodcutter near trees', 10, 0,
     [{ staff: 'woodcutter', n: workersOf(w, 'woodcutter') + 1 }, ...(slotsOf(w, 'woodcutter') <= workersOf(w, 'woodcutter') ? [{ build: 'woodcutter' }] : [])]);

@@ -17,7 +17,7 @@ export const ISSUES: Record<string, (w: World) => boolean> = {
   'someone starving': w => alive(w).some(c => c.hunger <= 0),
   'sick with no clinic': w => alive(w).some(c => bedridden(c)) && !built(w).some(b => b.def === 'clinic'),
   'sick, but the clinic has no doctor': w => alive(w).some(c => bedridden(c)) && built(w).some(b => b.def === 'clinic') && !built(w).some(b => b.def === 'clinic' && workersAt(w, b.uid).length > 0),
-  'more workplaces than workers': w => built(w).reduce((n, b) => n + (bdef(b).recipe ? bdef(b).slots : 0), 0) > alive(w).length - 2,
+  'more workplaces than workers': w => built(w).reduce((n, b) => n + (bdef(b).recipes ? bdef(b).slots : 0), 0) > alive(w).length - 2,
   'unassigned urgent job': w => w.errands.some(e => e.assignee == null),
   'low mood (avg < 35)': w => avgMood(w) < 35,
 };

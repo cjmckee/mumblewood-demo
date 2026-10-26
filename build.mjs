@@ -20,7 +20,7 @@ const page = `<!doctype html>
 <meta property="og:title" content="Mumblewood">
 <meta property="og:description" content="A comedic frontier colony sim with roguelite drafting.">
 <link rel="icon" href="data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="#1d241b"/><path d="M32 10 54 30H10z" fill="#e8a33d"/><rect x="16" y="30" width="32" height="22" fill="#8c6b4a"/><rect x="28" y="38" width="8" height="14" fill="#1d241b"/></svg>')}">
-<style>html,body{margin:0}[hidden]{display:none!important}</style>
+<style>html,body{margin:0}</style>
 </head>
 <body>
 ${html}

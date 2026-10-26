@@ -1,7 +1,11 @@
 // Headless balance harness: plays N seeded runs with the auto-player and reports outcomes.
 // Usage: npx tsx tools/harness.ts [runs=200] [maxDays=60] [style=greedy|random]
 import { createWorld, tick, day, alive, avgMood, TICKS_PER_HOUR, World } from '../src/sim/world';
-import { autoDecide, autoBuild } from '../src/sim/autoplayer';
+import { autoDecide, autoBuild, BOT } from '../src/sim/autoplayer';
+if (process.env.BOT_ADVISOR) BOT.advisor = process.env.BOT_ADVISOR === '1';
+if (process.env.BOT_REROLL) BOT.reroll = process.env.BOT_REROLL === '1';
+if (process.env.BOT_VARIETY) BOT.variety = process.env.BOT_VARIETY === '1';
+if (process.env.BOT_ROUTES) BOT.routes = process.env.BOT_ROUTES === '1';
 
 const runs = Number(process.argv[2] ?? 200);
 const maxDays = Number(process.argv[3] ?? 60);

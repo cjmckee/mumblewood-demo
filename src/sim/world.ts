@@ -2,7 +2,7 @@
 import {
   BUILDING_BY_ID, BuildingDef, CHARTERS, CharterDef, EVENTS, FIRST_NAMES, JOB_NAMES, JobKind,
   MEALS, PERKS, RAW_FOODS, ResourceId, SHIRTS, SKINS, SURNAMES, TRAITS, TRAIT_BY_ID, BUILDINGS, buildWork,
-  JOB_KINDS, JOB_EVENTS, JobEventDef, ILLNESSES, RESOURCES,
+  JOB_KINDS, JOB_EVENTS, JobEventDef, ILLNESSES, RESOURCES, Recipe, InputKey, CATEGORIES, isCategory, membersOf, inputName, recipeRate, SITES, SiteId, MEAL_MOOD,
 } from './content';
 
 // ---------- RNG ----------
@@ -45,6 +45,8 @@ export interface Carry { res: ResourceId; amount: number }
 
 export interface Colonist {
   id: number; name: string; traits: string[]; likes: JobKind; dislikes: JobKind;
+  /** complex goods they love or dislike: a small bonus or penalty on top of the usual boost */
+  tastes: { loves: ResourceId[]; dislikes: ResourceId[] };
   shirt: number; skin: number;
   x: number; y: number; px: number; py: number; jitter: number;
   path: { x: number; y: number }[]; goalKey: string; goalReached: boolean;
@@ -84,6 +86,8 @@ export interface Building {
   allow: ResourceId[] | null;
   /** storage buildings: high-priority storage fills first and is topped up from low */
   high: boolean;
+  /** workshops: indices of recipes the player has switched off */
+  off?: number[];
 }
 
 export type Decision =
@@ -121,6 +125,10 @@ export interface World {
   /** foods colonists are not allowed to eat (kept for charters, feasts and trade) */
   forbidden: ResourceId[];
   difficulty: Difficulty;
+  /** the resource sites this map has (an apple grove, a meadow, good soil) */
+  sites: SiteId[];
+  /** blueprint rerolls used this run; each one costs more */
+  rerolls: number;
   nextUid: number; nextColonistId: number;
   autoAssignNew: boolean;
   /** diagnostics: running totals of where goods came from and went, e.g. 'wood:hearth' */
@@ -147,7 +155,7 @@ export const OUTBOX_CAP = 15;
 const WALK_SPEED = 7; // tiles per hour
 export const PATH_SPEED = 1.25;
 export const INBOX_TARGET = 12;
-export const T_GRASS = 0, T_TREE = 1, T_BUSH = 2, T_WATER = 3;
+export const T_GRASS = 0, T_TREE = 1, T_BUSH = 2, T_WATER = 3, T_APPLE = 4, T_FLOWERS = 5, T_SOIL = 6, T_CLAY = 7;
 
 // ---------- Helpers ----------
 export const day = (w: World) => Math.floor(w.hour / 24) + 1;
@@ -186,6 +194,44 @@ export function mealTotal(w: World) { return MEALS.reduce((n, r) => n + w.res[r]
 export function avgMood(w: World) { const a = alive(w); return a.length ? a.reduce((s, c) => s + c.mood, 0) / a.length : 0; }
 export function couples(w: World) { return alive(w).filter(c => c.partner != null && c.id < c.partner).length; }
 function hasBuilt(w: World, def: string) { return w.buildings.some(b => b.def === def && b.built); }
+
+// ---------- Recipes ----------
+export const recipesOf = (b: Building): Recipe[] => bdef(b).recipes ?? [];
+export const recipeOn = (b: Building, i: number) => !b.off?.includes(i);
+/** switched-on recipes, best first (most stars, then the order the building lists them) */
+export function enabledRecipes(b: Building): Recipe[] {
+  return recipesOf(b).map((r, i) => ({ r, i })).filter(x => recipeOn(b, x.i)).sort((p, q) => q.r.stars - p.r.stars || p.i - q.i).map(x => x.r);
+}
+/** how much of an input (one good, or any good in a category) sits in a workshop's inbox */
+export function inInbox(b: Building, key: InputKey) { return isCategory(key) ? membersOf(key).reduce((n, x) => n + (b.inbox[x] ?? 0), 0) : (b.inbox[key] ?? 0); }
+/** how much of an input a workshop could get: its inbox plus storage, keeping the wood reserve */
+function obtainable(w: World, b: Building, key: InputKey) {
+  return membersOf(key).reduce((n, x) => n + w.res[x] + (b.inbox[x] ?? 0), 0) - (membersOf(key).includes('wood') ? WOOD_RESERVE : 0);
+}
+const recipeReady = (w: World, b: Building, r: Recipe) => Object.keys(r.inputs).every(k => obtainable(w, b, k as InputKey) >= 1);
+/** The recipe a workshop is working toward: the best switched-on one whose ingredients can be had, else the best switched-on one. */
+export function currentRecipe(w: World, b: Building): Recipe | undefined {
+  const on = enabledRecipes(b);
+  return on.length > 1 ? (on.find(r => recipeReady(w, b, r)) ?? on[0]) : on[0];
+}
+/** how much of a good, or of any good in a category, sits in storage */
+export function stockOf(w: World, key: InputKey) { return membersOf(key).reduce((n, r) => n + w.res[r], 0); }
+/** total drinks in storage (ale, and later cider, mead…) */
+export function drinkTotal(w: World) { return CATEGORIES.drink.members.reduce((n, r) => n + w.res[r], 0); }
+/** take drinks out of storage, the most plentiful first; returns what was taken */
+function takeDrink(w: World, n: number, why: string, c?: Colonist): ResourceId | null {
+  let left = n, main: ResourceId | null = null;
+  // a drinker reaches for the one they love and leaves the one they dislike; otherwise the most plentiful goes first
+  const order = [...CATEGORIES.drink.members].sort((p, q) => (c ? taste(c, q) - taste(c, p) : 0) || w.res[q] - w.res[p]);
+  for (const r of order) {
+    const t = Math.min(w.res[r], left); if (t <= 0) continue;
+    w.res[r] -= t; flow(w, `${r}:-${why}`, t); left -= t; main ??= r;
+    if (left <= 0) break;
+  }
+  return main;
+}
+/** mood from the first drink of the evening, by kind */
+const DRINK_MOOD: Partial<Record<ResourceId, number>> = { ale: 6, cider: 6, mead: 8, tea: 5 };
 export function flow(w: World, key: string, n: number) { if (w.flows) w.flows[key] = (w.flows[key] ?? 0) + n; }
 export function storageCap(w: World) { return built(w).reduce((n, b) => n + (bdef(b).storage ?? 0), 0); }
 export function stored(w: World) { return sum(w.res); }
@@ -286,6 +332,34 @@ function genTerrain(w: World) {
   // every colony starts on wood and berries, so one grove and one thick berry patch are always close by
   for (let i = 0; i < 3; i++) { const g = i === 0 ? around(7, 8.5) : around(7, 11); blob(g.x, g.y, 2.6 + nextRand(w), T_TREE, 0.75); }
   for (let i = 0; i < 3; i++) { const g = i === 0 ? around(5.5, 6.5) : around(5.5, 10); blob(g.x, g.y, i === 0 ? 2.1 : 1.7, T_BUSH, i === 0 ? 1 : 0.8); }
+  // two of the three resource sites, each on open grass, so every map leaves out one route to drinks
+  const order = SITES.map(s => ({ s, k: nextRand(w) })).sort((a, b) => a.k - b.k).map(x => x.s.id).slice(0, 2);
+  const onGrass = (cx: number, cy: number, r: number, v: number, density: number) => {
+    for (let x = Math.floor(cx - r - 1); x <= cx + r + 1; x++) for (let y = Math.floor(cy - r - 1); y <= cy + r + 1; y++) {
+      const d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy) / r;
+      if (d < 1 && x >= BUILD_MIN && y >= BUILD_MIN && x <= BUILD_MAX && y <= BUILD_MAX && t[y * MAP_SIZE + x] === T_GRASS && nextRand(w) < density * (1.15 - d * 0.6)) set(x, y, v);
+    }
+  };
+  for (const id of order) {
+    const g = around(7.5, 10.5);
+    if (id === 'grove') onGrass(g.x, g.y, 2.2, T_APPLE, 0.75);
+    if (id === 'meadow') onGrass(g.x, g.y, 2.6, T_FLOWERS, 0.9);
+    if (id === 'soil') onGrass(g.x, g.y, 2.8, T_SOIL, 1);
+    if (id === 'clay') {
+      // clay lines a stretch of the pond's shore: grass tiles next to water, around one point on the bank
+      const shore: { x: number; y: number }[] = [];
+      for (let x = BUILD_MIN; x <= BUILD_MAX; x++) for (let y = BUILD_MIN; y <= BUILD_MAX; y++)
+        if (t[y * MAP_SIZE + x] === T_GRASS && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => t[(y + dy) * MAP_SIZE + x + dx] === T_WATER)) shore.push({ x, y });
+      // try a few stretches of shore until one takes a decent bank (a pond hemmed in by trees may not)
+      for (let tries = 0; tries < 4; tries++) {
+        const at = shore.length ? shore[Math.floor(nextRand(w) * shore.length)] : g;
+        for (const p of shore) if (Math.hypot(p.x - at.x, p.y - at.y) <= 3.5 && nextRand(w) < 0.9) set(p.x, p.y, T_CLAY);
+        onGrass(at.x + 0.5, at.y + 0.5, 2.3, T_CLAY, 0.8);
+        if (t.filter(v => v === T_CLAY).length >= 10) break;
+      }
+    }
+  }
+  w.sites = SITES.filter(s => order.includes(s.id)).map(s => s.id);
   w.terrain = t;
   w.paths = new Array(MAP_SIZE * MAP_SIZE).fill(0);
 }
@@ -309,6 +383,19 @@ export function efficiencyAt(w: World, defId: string, x: number, y: number): { e
   };
   if (d.needs === 'trees') { const n = count(T_TREE, 4); return { eff: Math.max(0.15, Math.min(1, n / 14)), count: n, label: `${n} trees nearby` }; }
   if (d.needs === 'bushes') { const n = count(T_BUSH, 2.6); return { eff: Math.max(0.15, Math.min(1, n / 6)), count: n, label: `${n} berry bushes nearby` }; }
+  if (d.needs === 'apples') { const n = count(T_APPLE, 2.6); return { eff: Math.max(0.15, Math.min(1, n / 6)), count: n, label: `${n} apple trees nearby` }; }
+  if (d.needs === 'flowers') {
+    // flower beds count as two tiles of meadow each, so a player can plant a meadow where there isn't one
+    const beds = w.buildings.filter(b => b.built && b.def === 'flowerbed' && Math.hypot(b.x + 0.5 - cx, b.y + 0.5 - cy) <= 3).length;
+    const n = count(T_FLOWERS, 3) + beds * 2;
+    return { eff: Math.max(0.15, Math.min(1, n / 10)), count: n, label: `${count(T_FLOWERS, 3)} meadow tiles${beds ? ` and ${beds} flower bed${beds > 1 ? 's' : ''}` : ''} nearby` };
+  }
+  if (d.needs === 'clay') { const n = count(T_CLAY, 2.2); return { eff: Math.max(0.15, Math.min(1, n / 4)), count: n, label: `${n} tiles of clay bank nearby` }; }
+  if (d.needs === 'soil') {
+    let n = 0;
+    for (let tx = x; tx < x + d.w; tx++) for (let ty = y; ty < y + d.h; ty++) if (terrainAt(w, tx, ty) === T_SOIL) n++;
+    return { eff: n ? Math.max(0.15, n / (d.w * d.h)) : 0, count: n, label: `${n} of ${d.w * d.h} tiles on good soil` };
+  }
   if (d.needs === 'water') return { eff: touchesWater(w, defId, x, y) ? 1 : 0, count: 0, label: touchesWater(w, defId, x, y) ? 'On the water' : 'Must touch water' };
   return { eff: 1, count: 0, label: '' };
 }
@@ -371,12 +458,16 @@ export function canPlace(w: World, defId: string, x: number, y: number): PlaceCh
     if (t === T_WATER) return { ok: false, reason: 'You can\u2019t build on water.' };
     if (t === T_TREE) return { ok: false, reason: 'There are trees in the way.' };
     if (t === T_BUSH) return { ok: false, reason: 'There are berry bushes in the way.' };
+    if (t === T_APPLE) return { ok: false, reason: 'There are apple trees in the way.' };
+    if (t === T_FLOWERS) return { ok: false, reason: 'The wildflower meadow is in the way.' };
+    if (t === T_CLAY) return { ok: false, reason: 'The clay bank is in the way.' };
   }
   if (!d.walkable && !d.decor) {
     const sx = x + Math.floor(d.w / 2), sy = y + d.h;
     if (sy > BUILD_MAX + 1 || g[sy * MAP_SIZE + sx] === 1) return { ok: false, reason: 'The doorway is blocked.' };
   }
   if (d.needs === 'water' && !touchesWater(w, defId, x, y)) return { ok: false, reason: 'A dock has to touch the water.' };
+  if (d.needs === 'soil' && efficiencyAt(w, defId, x, y).count < 2) return { ok: false, reason: 'A field has to sit on good soil.' };
   for (const b of w.buildings) {
     if (bdef(b).walkable || bdef(b).decor) continue;
     const s = spotOf(b), sx = Math.floor(s.x), sy = Math.floor(s.y);
@@ -461,6 +552,34 @@ function findPath(w: World, grid: Uint8Array, fx: number, fy: number, tx: number
 }
 
 // ---------- Creation ----------
+/** A stable random number from the seed and a colonist id. Tastes use this instead of the world RNG so adding them shifts no other draw. */
+function idRoll(seed: number, id: number, salt: number) {
+  let h = (seed ^ Math.imul(id + 1, 0x9e3779b1) ^ Math.imul(salt + 7, 0x85ebca6b)) >>> 0;
+  h = Math.imul(h ^ (h >>> 16), 0x7feb352d); h = Math.imul(h ^ (h >>> 15), 0x846ca68b);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+/** one loved and one disliked good from a category, when it has at least two kinds */
+function tastesFor(w: World, id: number): Colonist['tastes'] {
+  const t: Colonist['tastes'] = { loves: [], dislikes: [] };
+  [CATEGORIES.meal.members, CATEGORIES.drink.members].forEach((goods, k) => {
+    if (goods.length < 2) return;
+    const love = goods[Math.floor(idRoll(w.seed, id, k * 2) * goods.length)];
+    const rest = goods.filter(g => g !== love);
+    t.loves.push(love); t.dislikes.push(rest[Math.floor(idRoll(w.seed, id, k * 2 + 1) * rest.length)]);
+  });
+  return t;
+}
+const TASTE_BONUS = 3;
+/** meals in the order a colonist reaches for them: loved, then the rest, disliked last */
+function mealOrder(c: Colonist) { return [...MEALS].sort((a, b) => taste(c, b) - taste(c, a)); }
+const taste = (c: Colonist, r: ResourceId) => (c.tastes.loves.includes(r) ? 1 : c.tastes.dislikes.includes(r) ? -1 : 0);
+const goodName = (r: ResourceId) => RESOURCES.find(x => x.id === r)!.name.toLowerCase();
+function tasteMemory(w: World, c: Colonist, r: ResourceId, key = 'taste') {
+  c.memories = c.memories.filter(m => m.key !== key);
+  if (taste(c, r) > 0) addMemory(w, c, key, `Favourite: ${goodName(r)}`, TASTE_BONUS, 14);
+  else if (taste(c, r) < 0) addMemory(w, c, key, `Doesn’t care for ${goodName(r)}`, -TASTE_BONUS, 14);
+}
+
 function makeColonist(w: World, usedNames: Set<string>): Colonist {
   let name = '';
   for (let i = 0; i < 50; i++) { name = `${pick(w, FIRST_NAMES)} ${pick(w, SURNAMES)}`; if (!usedNames.has(name.split(' ')[0])) break; }
@@ -480,7 +599,7 @@ function makeColonist(w: World, usedNames: Set<string>): Colonist {
   skills[dislikes] = Math.max(1, skills[dislikes] - 1);
   const talent = pick(w, jobs); skills[talent] = Math.min(10, skills[talent] + 4);
   return {
-    id: w.nextColonistId++, name, traits, likes, dislikes,
+    id: w.nextColonistId, tastes: tastesFor(w, w.nextColonistId++), name, traits, likes, dislikes,
     shirt: pick(w, SHIRTS), skin: pick(w, SKINS),
     x: CENTER + nextRand(w) * 2 - 1, y: CENTER + 2.5 + nextRand(w), px: 0, py: 0, jitter: nextRand(w),
     path: [], goalKey: '', goalReached: false,
@@ -503,10 +622,10 @@ export function createWorld(seed: number, difficulty: Difficulty = 'normal'): Wo
   const w: World = {
     seed, rngState: seed >>> 0, hour: 6,
     colonists: [], buildings: [], terrain: [], paths: [],
-    res: { wood: 60, berries: 50, fish: 0, mushrooms: 0, stew: 10, pie: 0, smokedFish: 0, planks: 0, ale: 0 },
+    res: { wood: 60, berries: 50, fish: 0, mushrooms: 0, stew: 10, pie: 0, smokedFish: 0, planks: 0, ale: 0, apples: 0, grain: 0, honey: 0, cider: 0, mead: 0, clay: 0, reeds: 0, bricks: 0, wicker: 0, herbs: 0, flour: 0, bread: 0, skewers: 0, poultice: 0, tonic: 0, tea: 0 },
     owned: BUILDINGS.filter(b => b.basic).map(b => b.id), perks: [],
     charterTier: 1, charter: null, charterHours: 0, chartersDone: [],
-    decisions: [], log: [], opinions: {}, status: 'playing', strain: 0, nextEventHour: 24 * 1.6,
+    decisions: [], log: [], opinions: {}, status: 'playing', strain: 0, nextEventHour: 24 * 1.6, sites: [], rerolls: 0,
     errands: [], nextErrandId: 1, difficulty, charterBase: { cured: 0, errands: 0 }, moodLog: [], ateOffTable: false, forbidden: [],
     nextUid: 1, nextColonistId: 1, autoAssignNew: false,
     flows: {}, flowLog: [],
@@ -515,6 +634,7 @@ export function createWorld(seed: number, difficulty: Difficulty = 'normal'): Wo
   };
   for (let i = 0; i < 20; i++) nextRand(w);
   genTerrain(w);
+  addLog(w, `Scouts report ${w.sites.map(id => SITES.find(x => x.id === id)!.name).join(' and ')} nearby.`, 'good');
   newBuilding(w, 'hearth', CENTER - 1, CENTER - 1, true);
   for (const id of ['stockpile', 'leanto', 'leanto', 'woodcutter', 'forager']) {
     const s = findSpot(w, id, CENTER, CENTER, true);
@@ -560,17 +680,58 @@ function assignBeds(w: World) {
 
 /** Buildings that help each charter. A draft always offers one of these if none is owned yet. */
 export const CHARTER_HELPERS: Record<string, string[]> = {
-  pantry: ['pieoven', 'smokehouse', 'dock'], feast: ['brewery', 'pieoven', 'smokehouse'],
+  pantry: ['pieoven', 'smokehouse', 'dock'], feast: ['brewery', 'ciderpress', 'pieoven', 'smokehouse'],
   lumber: ['sawmill'], township: ['sawmill', 'dock'], growing: ['cottage', 'cellar'], boomtown: ['cottage', 'cellar'],
   cheer: ['tavern', 'stage', 'cottage', 'bathhouse', 'pieoven'], harmony: ['tavern', 'stage', 'cottage', 'bathhouse'],
   lovebirds: ['tavern', 'stage'],
-  woodpile: ['sawmill'], paved: ['sawmill'], tables: ['cottage'], healthy: ['bathhouse'], handy: ['cottage'],
+  woodpile: ['sawmill'], paved: ['sawmill'], tables: ['cottage'], healthy: ['apothecary', 'bathhouse'], menu: ['smokehouse', 'pieoven', 'bakery'], tasting: ['ciderpress', 'apothecary', 'brewery'], handy: ['cottage'],
   pretty: ['stage', 'sawmill'], masters: ['tavern'], pieday: ['pieoven', 'sawmill'], garden: ['sawmill', 'stage'], calm: ['tavern', 'bathhouse', 'stage'],
 };
-function blueprintDecision(w: World): Decision {
-  const pool = BUILDINGS.filter(b => b.draftable && !w.owned.includes(b.id)).map(b => b.id);
-  const options = shuffle(w, pool).slice(0, 3);
-  const usable = (id: string) => { const rec = BUILDING_BY_ID[id].recipe; if (!rec) return true; return Object.keys(rec.inputs).every(k => k === 'rawFood' || k === 'wood' || k === 'berries' || (k === 'fish' && w.owned.includes('dock')) || (k === 'planks' && w.owned.includes('sawmill'))); };
+/** the site a gatherer needs on the map, if any */
+const SITE_FOR: Partial<Record<NonNullable<BuildingDef['needs']>, SiteId>> = { apples: 'grove', flowers: 'meadow', soil: 'soil', clay: 'clay' };
+/** this map has what the building gathers from (every map has trees, bushes and water) */
+export function siteOk(w: World, d: BuildingDef) { const s = d.needs && SITE_FOR[d.needs]; return !s || w.sites.includes(s); }
+/** a building the colony owns, or could own, gathers this good on this map */
+export function canSupply(w: World, r: ResourceId, owned = w.owned) {
+  return BUILDINGS.some(d => (d.basic || owned.includes(d.id)) && siteOk(w, d) && (d.recipes ?? []).some(rec => rec.output === r && !Object.keys(rec.inputs).length));
+}
+/** at least one recipe in the building can be fed from what the colony owns */
+export function usableHere(w: World, id: string, owned = w.owned) {
+  const recs = BUILDING_BY_ID[id].recipes;
+  if (!recs) return true;
+  const crafted = (r: ResourceId) => BUILDINGS.some(d => (d.basic || owned.includes(d.id)) && (d.recipes ?? []).some(x => x.output === r && Object.keys(x.inputs).length));
+  return recs.some(rec => Object.keys(rec.inputs).every(k => membersOf(k as InputKey).some(r => canSupply(w, r, owned) || crafted(r))));
+}
+/**
+ * Can this recipe be fed? "ready": every input is made by something the colony owns. "draft": an input needs a building
+ * not owned yet (named in `via`, preferring one that gathers it). "never": nothing on this map could ever make an input.
+ */
+export function recipeReach(w: World, r: Recipe): { state: 'ready' | 'draft' | 'never'; input?: InputKey; via?: string } {
+  const makers = (m: ResourceId) => BUILDINGS.filter(d => siteOk(w, d) && (d.recipes ?? []).some(x => x.output === m));
+  for (const k of Object.keys(r.inputs) as InputKey[]) {
+    const ms = membersOf(k);
+    if (ms.some(m => makers(m).some(d => d.basic || w.owned.includes(d.id)))) continue;
+    const options = ms.flatMap(makers).filter(d => d.draftable);
+    if (!options.length) return { state: 'never', input: k };
+    const via = options.find(d => (d.recipes ?? []).some(x => ms.includes(x.output) && !Object.keys(x.inputs).length)) ?? options[0];
+    return { state: 'draft', input: k, via: via.id };
+  }
+  return { state: 'ready' };
+}
+/** some recipe here could be fed on this map once the right blueprints are drafted */
+export const usableEver = (w: World, id: string) => usableHere(w, id, BUILDINGS.map(d => d.id));
+/** wood for the next blueprint reroll: 10, then 20, then 30… across the whole run */
+export const REROLL_STEP = 10;
+export const rerollCost = (w: World) => REROLL_STEP * ((w.rerolls ?? 0) + 1);
+function blueprintDecision(w: World, avoid: string[] = []): Decision {
+  // gatherers for a site this map doesn't have are never offered
+  // nor a workshop nothing on this map could ever feed (a kiln without a clay bank)
+  const all = BUILDINGS.filter(b => b.draftable && !w.owned.includes(b.id) && siteOk(w, b) && usableEver(w, b.id)).map(b => b.id);
+  // a reroll shows three new blueprints when the pool has them, topping up with old ones only if it runs short
+  const fresh = all.filter(id => !avoid.includes(id));
+  const pool = fresh.length >= 3 ? fresh : all;
+  const options = [...shuffle(w, fresh), ...shuffle(w, all.filter(id => avoid.includes(id)))].slice(0, 3);
+  const usable = (id: string) => usableHere(w, id);
   const helpers = (CHARTER_HELPERS[w.charter ?? ''] ?? []).filter(id => pool.includes(id) && usable(id));
   const ownsHelper = (CHARTER_HELPERS[w.charter ?? ''] ?? []).some(id => w.owned.includes(id) && usable(id));
   if (helpers.length && !ownsHelper && !options.some(o => helpers.includes(o))) options[options.length - 1] = pick(w, helpers);
@@ -589,11 +750,17 @@ export type Command =
   | { type: 'autoAssign' }
   | { type: 'setAutoAssignNew'; value: boolean }
   | { type: 'storageFilter'; building: number; allow: ResourceId[] | null }
-  | { type: 'storagePriority'; building: number; high: boolean };
+  | { type: 'storagePriority'; building: number; high: boolean }
+  | { type: 'toggleRecipe'; building: number; recipe: number; on: boolean }
+  | { type: 'reroll' };
 
-export function remainingCost(b: Building): Partial<Record<ResourceId, number>> {
-  const out: Partial<Record<ResourceId, number>> = {};
-  for (const [r, n] of Object.entries(bdef(b).cost)) { const left = (n ?? 0) - (b.delivered[r as ResourceId] ?? 0); if (left > 0.001) out[r as ResourceId] = left; }
+/** what a site still needs, by cost key; a category key counts every good of that kind already delivered */
+export function remainingCost(b: Building): Partial<Record<InputKey, number>> {
+  const out: Partial<Record<InputKey, number>> = {};
+  for (const [k, n] of Object.entries(bdef(b).cost) as [InputKey, number][]) {
+    const left = (n ?? 0) - membersOf(k).reduce((m, r) => m + (b.delivered[r] ?? 0), 0);
+    if (left > 0.001) out[k] = left;
+  }
   return out;
 }
 export function siteWork(b: Building) { return bdef(b).walkable ? 3 : buildWork(bdef(b)); }
@@ -632,6 +799,26 @@ export function apply(w: World, cmd: Command): string | null {
       const b = buildingByUid(w, cmd.building);
       if (!b || !bdef(b).storage) return 'Only storage has a priority.';
       b.high = cmd.high; w.version++;
+      return null;
+    }
+    case 'reroll': {
+      const d = w.decisions[0];
+      if (d?.kind !== 'blueprint') return 'Only a blueprint draft can be rerolled.';
+      const cost = rerollCost(w);
+      if (w.res.wood < cost) return `A reroll costs ${cost} wood.`;
+      w.res.wood -= cost; flow(w, 'wood:-reroll', cost); reconcileStock(w);
+      w.rerolls = (w.rerolls ?? 0) + 1;
+      w.decisions[0] = blueprintDecision(w, d.options);
+      addLog(w, `New blueprints sent for, at a cost of ${cost} wood.`);
+      return null;
+    }
+    case 'toggleRecipe': {
+      const b = buildingByUid(w, cmd.building);
+      if (!b || !recipesOf(b)[cmd.recipe]) return 'No such recipe.';
+      const off = (b.off ?? []).filter(i => i !== cmd.recipe);
+      if (!cmd.on) off.push(cmd.recipe);
+      b.off = off.sort((x, y) => x - y); w.version++;
+      // anyone fetching ingredients for a recipe that's now off will notice when they arrive
       return null;
     }
     case 'cancel': {
@@ -801,6 +988,8 @@ function errandHourly(w: World) {
 /** too sick to work: anyone with the flu, or an injury that hasn't mended past the worst */
 export function bedridden(c: Colonist) { return !!c.illness && (c.illness.contagious || c.illness.severity > WALKING_WOUNDED); }
 export const WALKING_WOUNDED = 8;
+/** remedy a doctor uses per patient-hour of treatment */
+export const REMEDY_DOSE = 0.15;
 function fallIll(w: World, c: Colonist, id: string) {
   if (c.illness) return;
   const def = ILLNESSES.find(i => i.id === id)!;
@@ -832,7 +1021,11 @@ function illnessHourly(w: World) {
     if (doctor) {
       const skill = doctor.skills.medicine;
       change -= 0.25 + skill * 0.15;
-      if (skill < 5 && nextRand(w) < (5 - skill) * 0.015) {
+      // remedies from storage: a tonic speeds recovery most and rules out a botch; a poultice helps and halves the risk
+      const remedy = (['tonic', 'poultice'] as ResourceId[]).find(r => w.res[r] >= REMEDY_DOSE);
+      if (remedy) { w.res[remedy] -= REMEDY_DOSE; flow(w, `${remedy}:-clinic`, REMEDY_DOSE); change -= remedy === 'tonic' ? 0.8 : 0.5; }
+      const botchRisk = remedy === 'tonic' ? 0 : remedy === 'poultice' ? 0.5 : 1;
+      if (skill < 5 && nextRand(w) < (5 - skill) * 0.015 * botchRisk) {
         change += 4;
         if (!ill.botched) { ill.botched = true; addLog(w, `${first(doctor)} bandaged the wrong bit of ${first(c)}. It didn\u2019t help.`, 'bad'); }
       }
@@ -873,15 +1066,15 @@ function applyEventEffect(w: World, effect: string) {
     case 'payFood20': takeFood(w, 20); addLog(w, 'The goblin stamps something and leaves. Nobody can read the stamp.'); break;
     case 'graffiti': everyone(w, 'graffiti', 'Goblin graffiti everywhere', -6, 48); addLog(w, 'By morning, every wall says something rude in Goblin.', 'bad'); break;
     case 'bardPlay':
-      if (w.res.ale >= 6) { w.res.ale -= 6; everyone(w, 'bard', 'Heard a wonderful ballad', 6, 24); addLog(w, 'The ballad is long, but it rhymes. Everyone cries a little.', 'good'); }
-      else addLog(w, 'There wasn’t enough ale. The bard plays one note and leaves.', 'bad');
+      if (drinkTotal(w) >= 6) { takeDrink(w, 6, 'bard'); everyone(w, 'bard', 'Heard a wonderful ballad', 6, 24); addLog(w, 'The ballad is long, but it rhymes. Everyone cries a little.', 'good'); }
+      else addLog(w, 'There wasn’t enough to drink. The bard plays one note and leaves.', 'bad');
       break;
     case 'pigeonBribe': w.res.berries = Math.max(0, w.res.berries - 15); addLog(w, 'The pigeons accept the berries and sign a peace treaty.'); break;
     case 'pigeonRiot': w.res.berries = Math.floor(w.res.berries * 0.6); addLog(w, 'The pigeons riot. The berry stores are a crime scene.', 'bad'); break;
     case 'wedding': {
-      if (mealTotal(w) >= 8 && w.res.ale >= 5) {
+      if (mealTotal(w) >= 8 && drinkTotal(w) >= 5) {
         let n = 8; for (const r of MEALS) { const t = Math.min(w.res[r], n); w.res[r] -= t; n -= t; }
-        w.res.ale -= 5; everyone(w, 'wedding', 'What a lovely wedding', 7, 48);
+        takeDrink(w, 5, 'wedding'); everyone(w, 'wedding', 'What a lovely wedding', 7, 48);
         addLog(w, 'A wedding! Someone cried, someone danced on a table, someone fell off it.', 'love');
       } else { addLog(w, 'There wasn’t enough for a party, so the couple elopes.', 'bad'); applyEventEffect(w, 'elope'); }
       break;
@@ -922,24 +1115,28 @@ function buildingPriority(w: World, b: Building): number {
   const def = bdef(b); const pop = alive(w).length;
   const raw = RAW_FOODS.reduce((n, r) => n + w.res[r], 0);
   switch (def.id) {
-    case 'forager': case 'dock': case 'cellar': return raw < pop * 6 ? 10 : 6;
-    case 'kitchen': case 'pieoven': case 'smokehouse': return mealTotal(w) < pop * 3 ? 9 : 7;
+    case 'forager': case 'dock': case 'cellar': case 'orchard': return raw < pop * 6 ? 10 : 6;
+    case 'apiary': case 'field': return 5;
+    case 'kitchen': case 'pieoven': case 'smokehouse': case 'bakery': return mealTotal(w) < pop * 3 ? 9 : 7;
+    case 'mill': case 'herbgarden': case 'apothecary': return 5;
     case 'woodcutter': return w.res.wood < 40 ? 8.5 : 5;
-    case 'sawmill': return w.res.planks < 30 ? 6.5 : 3;
-    case 'brewery': return w.res.ale < 20 ? 6 : 3;
+    case 'sawmill': case 'kiln': case 'carpenter': return stockOf(w, 'fine') < 30 ? 6.5 : 3;
+    case 'claypit': return 5;
+    case 'brewery': case 'ciderpress': return drinkTotal(w) < 20 ? 6 : 3;
     case 'tavern': return 6.8;
     default: return 4;
   }
 }
 /** Why a workshop can't run right now, or null if it can. */
 export function blockedReason(w: World, b: Building): string | null {
-  const rec = bdef(b).recipe;
-  if (!rec || !b.built) return null;
-  for (const key of Object.keys(rec.inputs)) {
-    const inStore = key === 'rawFood' ? RAW_FOODS.reduce((n, x) => n + w.res[x] + (b.inbox[x] ?? 0), 0) : w.res[key as ResourceId] + (b.inbox[key as ResourceId] ?? 0) - (key === 'wood' ? WOOD_RESERVE : 0);
-    if (inStore < 1) {
-      const name = key === 'rawFood' ? 'raw food' : key === 'smokedFish' ? 'smoked fish' : key;
-      const hint = key === 'fish' ? ' Build a fishing dock.' : key === 'planks' ? ' Build a sawmill.' : key === 'wood' ? ' Keep more than 20 wood.' : '';
+  if (!recipesOf(b).length || !b.built) return null;
+  const rec = currentRecipe(w, b);
+  if (!rec) return 'Every recipe here is switched off.';
+  for (const key of Object.keys(rec.inputs) as InputKey[]) {
+    if (obtainable(w, b, key) < 1) {
+      const name = inputName(key);
+      const HINTS: Partial<Record<string, string>> = { fish: ' Build a fishing dock.', planks: ' Build a sawmill.', clay: ' Dig it at a clay pit by the clay bank.', reeds: ' Switch a fishing dock to cutting reeds.', wood: ' Keep more than 20 wood.', apples: ' Pick apples at an orchard hut.', grain: ' Grow it on a grain field.', honey: ' Keep bees at an apiary.' };
+      const hint = HINTS[key] ?? '';
       return `No ${name} to work with.${hint}`;
     }
   }
@@ -977,8 +1174,9 @@ function nearestStorage(w: World, x: number, y: number): Building | undefined {
   for (const b of built(w)) if (bdef(b).storage) { const s = spotOf(b); const d = Math.hypot(s.x - x, s.y - y); if (d < bd) { bd = d; best = b; } }
   return best;
 }
-function enroute(w: World, site: number, res: ResourceId) {
-  return alive(w).reduce((n, c) => n + (c.task?.kind === 'deliver' && c.task.site === site && c.task.res === res ? c.task.amount : 0), 0);
+function enroute(w: World, site: number, key: InputKey) {
+  const ms = membersOf(key);
+  return alive(w).reduce((n, c) => n + (c.task?.kind === 'deliver' && c.task.site === site && ms.includes(c.task.res) ? c.task.amount : 0), 0);
 }
 function taskCount(w: World, pred: (t: Task) => boolean) { return alive(w).filter(c => c.task && pred(c.task)).length; }
 
@@ -989,10 +1187,12 @@ function chooseTask(w: World, c: Colonist): Task | null {
     const left = remainingCost(b);
     const s = spotOf(b);
     let missing = false;
-    for (const [r, n] of Object.entries(left) as [ResourceId, number][]) {
-      const need = n - enroute(w, b.uid, r);
+    for (const [k, n] of Object.entries(left) as [InputKey, number][]) {
+      const need = n - enroute(w, b.uid, k);
       if (need <= 0.001) continue;
       missing = true;
+      // "fine materials": bring whichever kind storage has most of
+      const r = [...membersOf(k)].sort((p, q) => w.res[q] - w.res[p])[0];
       const amount = Math.min(CARRY, need, w.res[r]);
       if (amount >= 1 || (amount > 0 && amount >= need - 0.001)) opts.push({ t: { kind: 'deliver', site: b.uid, res: r, amount }, pri: 3, x: s.x, y: s.y });
     }
@@ -1018,9 +1218,9 @@ function chooseTask(w: World, c: Colonist): Task | null {
   }
   // carrying ingredients to staffed workshops
   for (const b of built(w)) {
-    const rec = bdef(b).recipe;
+    const rec = currentRecipe(w, b);
     if (!rec || !Object.keys(rec.inputs).length || workersAt(w, b.uid).length === 0) continue;
-    for (const need of supplyNeeds(w, b)) opts.push({ t: need, pri: (b.inbox[need.res] ?? 0) < 2 ? 3.1 : 2.4, x: spotOf(b).x, y: spotOf(b).y });
+    for (const need of supplyNeeds(w, b, rec)) opts.push({ t: need, pri: (b.inbox[need.res] ?? 0) < 2 ? 3.1 : 2.4, x: spotOf(b).x, y: spotOf(b).y });
   }
   // laying planned paths
   if (w.res.wood >= 1) {
@@ -1041,17 +1241,15 @@ function chooseTask(w: World, c: Colonist): Task | null {
 
 /** ingredient deliveries a workshop needs right now */
 type SupplyTask = Extract<Task, { kind: 'supply' }>;
-function supplyNeeds(w: World, b: Building): SupplyTask[] {
-  const rec = bdef(b).recipe!;
+function supplyNeeds(w: World, b: Building, rec: Recipe | undefined = currentRecipe(w, b)): SupplyTask[] {
   const out: SupplyTask[] = [];
-  for (const key of Object.keys(rec.inputs)) {
-    let r: ResourceId;
-    if (key === 'rawFood') {
-      const best = [...RAW_FOODS].sort((p, q) => w.res[q] - w.res[p])[0];
-      r = best;
-    } else r = key as ResourceId;
-    const have = key === 'rawFood' ? RAW_FOODS.reduce((n, x) => n + (b.inbox[x] ?? 0), 0) : (b.inbox[r] ?? 0);
-    const coming = alive(w).reduce((n, c) => n + (c.task?.kind === 'supply' && c.task.to === b.uid && (key === 'rawFood' ? RAW_FOODS.includes(c.task.res) : c.task.res === r) ? c.task.amount : 0), 0);
+  if (!rec) return out;
+  for (const key of Object.keys(rec.inputs) as InputKey[]) {
+    const members = membersOf(key);
+    // for "any raw food" and the like, fetch whichever kind storage has most of
+    const r = isCategory(key) ? [...members].sort((p, q) => w.res[q] - w.res[p])[0] : key;
+    const have = inInbox(b, key);
+    const coming = alive(w).reduce((n, c) => n + (c.task?.kind === 'supply' && c.task.to === b.uid && members.includes(c.task.res) ? c.task.amount : 0), 0);
     const avail = r === 'wood' ? Math.max(0, w.res.wood - WOOD_RESERVE) : w.res[r];
     const want = INBOX_TARGET - have - coming;
     if (want >= 3 && avail >= 1) out.push({ kind: 'supply', to: b.uid, res: r, amount: Math.min(CARRY, want, avail) });
@@ -1112,7 +1310,7 @@ function goalFor(w: World, c: Colonist): Goal {
     }
     case 'leisure': {
       const tavern = built(w).find(b => b.def === 'tavern' && workersAt(w, b.uid).length > 0);
-      if (tavern && w.res.ale > 0) return at(tavern, 1.1, false, 'tav');
+      if (tavern && drinkTotal(w) > 0) return at(tavern, 1.1, false, 'tav');
       return hearthSpot(1.9);
     }
     case 'sulking': return hearthSpot(2.9);
@@ -1144,14 +1342,14 @@ function activityFor(w: World, c: Colonist): Activity {
   const job = idleDoctor ? undefined : job0;
   if (job) {
     const full = sum(job.outbox) >= OUTBOX_CAP;
-    if (full && bdef(job).recipe && !c.task) {
+    if (full && recipesOf(job).length && !c.task) {
       const [r] = Object.entries(job.outbox).sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0))[0] as [ResourceId, number];
       if (storageFree(w, r) > 0 && taskCount(w, t => t.kind === 'haul' && t.from === job.uid) === 0) c.task = { kind: 'haul', from: job.uid, res: r, amount: Math.min(CARRY, job.outbox[r] ?? 0) };
     }
     // nobody brought ingredients: fetch them yourself
-    const rec = bdef(job).recipe;
-    if (!c.task && rec && Object.keys(rec.inputs).length && !canCook(w, job)) {
-      const need = supplyNeeds(w, job)[0];
+    const rec = currentRecipe(w, job);
+    if (!c.task && rec && Object.keys(rec.inputs).length && !canCook(w, job, rec)) {
+      const need = supplyNeeds(w, job, rec)[0];
       if (need) c.task = need;
     }
     if (c.task) return 'hauling';
@@ -1234,24 +1432,25 @@ function workSpeed(w: World, c: Colonist, skill?: JobKind) {
 
 function produce(w: World, dt: number) {
   for (const b of built(w)) {
-    const def = bdef(b); if (!def.recipe) continue;
+    const def = bdef(b); if (!def.recipes) continue;
+    // work on the current recipe; if its ingredients aren't here yet, use up whatever another switched-on recipe can
+    const cur = currentRecipe(w, b);
+    const rec = cur && canCook(w, b, cur, 0) ? cur : (enabledRecipes(b).find(r => canCook(w, b, r, 0)) ?? cur);
+    if (!rec) continue;
     for (const c of workersAt(w, b.uid)) {
       if (c.activity !== 'working' || !c.goalReached) continue;
       if (sum(b.outbox) >= OUTBOX_CAP) continue;
-      let amount = def.recipe.rate * workSpeed(w, c, def.job) * dt * b.eff;
-      for (const [r, per] of Object.entries(def.recipe.inputs)) {
-        const avail = r === 'rawFood' ? RAW_FOODS.reduce((n, x) => n + (b.inbox[x] ?? 0), 0) : (b.inbox[r as ResourceId] ?? 0);
-        amount = Math.min(amount, avail / (per as number));
-      }
+      let amount = recipeRate(rec) * workSpeed(w, c, def.job) * dt * b.eff;
+      for (const [r, per] of Object.entries(rec.inputs)) amount = Math.min(amount, inInbox(b, r as InputKey) / (per as number));
       if (amount <= 0) continue;
-      for (const [r, per] of Object.entries(def.recipe.inputs)) {
+      for (const [r, per] of Object.entries(rec.inputs)) {
         let need = amount * (per as number);
-        if (r === 'rawFood') {
-          for (const x of [...RAW_FOODS].sort((p, q) => (b.inbox[q] ?? 0) - (b.inbox[p] ?? 0))) { const t = Math.min(b.inbox[x] ?? 0, need); b.inbox[x] = (b.inbox[x] ?? 0) - t; need -= t; flow(w, `${x}:-${b.def}`, t); }
+        if (isCategory(r)) {
+          for (const x of [...membersOf(r)].sort((p, q) => (b.inbox[q] ?? 0) - (b.inbox[p] ?? 0))) { const t = Math.min(b.inbox[x] ?? 0, need); b.inbox[x] = (b.inbox[x] ?? 0) - t; need -= t; flow(w, `${x}:-${b.def}`, t); }
         } else { b.inbox[r as ResourceId] = (b.inbox[r as ResourceId] ?? 0) - need; flow(w, `${r}:-${b.def}`, need); }
       }
-      b.outbox[def.recipe.output] = (b.outbox[def.recipe.output] ?? 0) + amount;
-      flow(w, `${def.recipe.output}:+${b.def}`, amount);
+      b.outbox[rec.output] = (b.outbox[rec.output] ?? 0) + amount;
+      flow(w, `${rec.output}:+${b.def}`, amount);
       if (def.job) c.skills[def.job] = Math.min(10, c.skills[def.job] + 0.004 * dt * 6);
       // the occasional workplace mishap, likelier for the unskilled
       if (def.job && nextRand(w) < dt * 0.0025 * (def.job === 'chopping' ? 2 : 1) * (11 - c.skills[def.job]) / 6) {
@@ -1295,9 +1494,8 @@ function produce(w: World, dt: number) {
 }
 
 /** does the workshop have enough ingredients for a little more work? */
-function canCook(w: World, b: Building) {
-  const rec = bdef(b).recipe!;
-  return Object.entries(rec.inputs).every(([r, per]) => (r === 'rawFood' ? RAW_FOODS.reduce((n, x) => n + (b.inbox[x] ?? 0), 0) : (b.inbox[r as ResourceId] ?? 0)) >= (per as number) * 0.2);
+function canCook(w: World, b: Building, rec: Recipe, share = 0.2) {
+  return Object.entries(rec.inputs).every(([r, per]) => (share ? inInbox(b, r as InputKey) >= (per as number) * share : inInbox(b, r as InputKey) > 0));
 }
 
 function completeBuilding(w: World, b: Building) {
@@ -1306,6 +1504,8 @@ function completeBuilding(w: World, b: Building) {
   const def = bdef(b);
   addLog(w, pick(w, [`The ${def.name.toLowerCase()} is finished. Only one thumb was hammered.`, `The ${def.name.toLowerCase()} is done, and it is mostly level.`, `Work on the ${def.name.toLowerCase()} is complete. Everyone admires it briefly.`]), 'good');
   if (def.beds) assignBeds(w);
+  // a new flower bed can make a nearby apiary busier
+  if (def.id === 'flowerbed') for (const a of w.buildings) if (bdef(a).needs === 'flowers') a.eff = efficiencyAt(w, a.def, a.x, a.y).eff;
   if (def.slots && w.autoAssignNew) fillSlots(w);
   // a finished building replaces any planned path under it
   for (let x = b.x; x < b.x + def.w; x++) for (let y = b.y; y < b.y + def.h; y++) if (!def.walkable) w.paths[y * MAP_SIZE + x] = 0;
@@ -1338,13 +1538,13 @@ function mealSource(w: World, c: Colonist): Building | undefined {
 /** pick up the best allowed food at a storage; false if there was none */
 function grabMeal(w: World, c: Colonist, b: Building | undefined) {
   if (b && !bdef(b).storage) {
-    const r = MEALS.find(x => !w.forbidden.includes(x) && (b.outbox[x] ?? 0) >= 1) ?? RAW_FOODS.find(x => !w.forbidden.includes(x) && (b.outbox[x] ?? 0) >= 1);
+    const r = mealOrder(c).find(x => !w.forbidden.includes(x) && (b.outbox[x] ?? 0) >= 1) ?? RAW_FOODS.find(x => !w.forbidden.includes(x) && (b.outbox[x] ?? 0) >= 1);
     if (!r) return false;
     b.outbox[r] = (b.outbox[r] ?? 0) - 1; c.meal!.got = r; flow(w, `${r}:-eaten`, 1);
     return true;
   }
   const has = (r: ResourceId) => !w.forbidden.includes(r) && (b ? (b.stock[r] ?? 0) >= 1 : w.res[r] >= 1);
-  const r = MEALS.find(has) ?? [...RAW_FOODS].sort((p, q) => (b ? (b.stock[q] ?? 0) - (b.stock[p] ?? 0) : w.res[q] - w.res[p])).find(has);
+  const r = mealOrder(c).find(has) ?? [...RAW_FOODS].sort((p, q) => (b ? (b.stock[q] ?? 0) - (b.stock[p] ?? 0) : w.res[q] - w.res[p])).find(has);
   if (!r) return false;
   takeOut(w, b, r, 1); c.meal!.got = r; flow(w, `${r}:-eaten`, 1);
   return true;
@@ -1358,9 +1558,10 @@ function finishMeal(w: World, c: Colonist) {
   const bonus = (has(c, 'glutton') ? 4 : 0) + (hasPerk(w, 'communalPot') ? 3 : 0);
   if (meal) {
     c.hunger = 100; w.stats.mealsEaten++;
-    const v = { pie: 8, smokedFish: 6, stew: 5 }[meal as 'pie' | 'smokedFish' | 'stew'] + bonus;
-    const label = { pie: 'Ate pie', smokedFish: 'Ate smoked fish', stew: 'Ate a hot stew' }[meal as 'pie'];
+    const v = (MEAL_MOOD[meal] ?? 5) + bonus;
+    const label = ({ pie: 'Ate pie', smokedFish: 'Ate smoked fish', stew: 'Ate a hot stew', bread: 'Ate fresh bread', skewers: 'Ate skewers' } as Partial<Record<ResourceId, string>>)[meal] ?? `Ate ${goodName(meal)}`;
     addMemory(w, c, 'meal', label, v, 14);
+    tasteMemory(w, c, meal);
   } else {
     const raw = got;
     c.hunger = 85;
@@ -1489,7 +1690,7 @@ function computeThoughts(w: World, c: Colonist): Thought[] {
   if (has(c, 'butterfly') && !c.hadCompanyLastNight) add('Lonely evening', -6);
   if (has(c, 'sunny')) add('Sunny disposition', 5);
   if (has(c, 'lazy')) add('Doesn’t work too hard', 3);
-  if (has(c, 'tippler') && w.res.ale < 1) add('No ale in the stores', -4);
+  if (has(c, 'tippler') && drinkTotal(w) < 1) add('Nothing to drink in the stores', -4);
   if (hasBuilt(w, 'bathhouse') && w.res.wood > 0) add('Feeling fresh from the bathhouse', has(c, 'grumbler') ? 5 : 3);
   if (hasPerk(w, 'saintsDay')) add("Saint Pomfrey's blessing", 4);
   if (c.beauty >= 5) add('Beautiful surroundings', 5);
@@ -1552,9 +1753,13 @@ function hourly(w: World) {
     if (c.hunger < 45 && !c.meal && !c.carrying && c.activity !== 'sleeping') startMeal(w, c);
     if (c.activity === 'leisure' || c.activity === 'sulking' || c.activity === 'idle') {
       const atTavern = tavern && c.place === tavern.uid;
-      if (atTavern && w.res.ale >= 0.3) {
-        w.res.ale -= 0.3; flow(w, 'ale:-drunk', 0.3); c.fun += 18;
-        if (!c.drankTonight) { c.drankTonight = true; addMemory(w, c, 'ale', 'Drank ale at the tavern', 6 + (has(c, 'tippler') ? 4 : 0), 14); }
+      if (atTavern && drinkTotal(w) >= 0.3) {
+        const r = takeDrink(w, 0.3, 'drunk', c); c.fun += 18;
+        if (!c.drankTonight && r) {
+          c.drankTonight = true;
+          addMemory(w, c, 'ale', `Drank ${goodName(r)} at the tavern`, (DRINK_MOOD[r] ?? 6) + (has(c, 'tippler') ? 4 : 0), 14);
+          tasteMemory(w, c, r, 'tasteDrink');
+        }
       } else c.fun += (c.activity === 'idle' ? 3 : 9) + (stage && h >= 18 ? 5 : 0) + (hasPerk(w, 'warmHearth') ? 1 : 0);
       if (c.activity === 'leisure' && hasPerk(w, 'warmHearth')) addMemory(w, c, 'hearthWarm', 'Warm evening by the hearth', 2, 6);
     }
@@ -1661,8 +1866,8 @@ function charterValue(w: World, c: CharterDef): { value: number; target: number;
       return { value, target: 1, label: `${pop}24h average ${Math.round(avg)} / ${target}${full ? '' : ` · ${m.hours - log.length}h to go`}` };
     }
     case 'feast': {
-      const meals = mealTotal(w), ale = w.res.ale;
-      return { value: Math.min(meals / m.meals, ale / m.ale), target: 1, label: `${Math.floor(meals)}/${m.meals} meals · ${Math.floor(ale)}/${m.ale} ale` };
+      const meals = mealTotal(w), ale = drinkTotal(w);
+      return { value: Math.min(meals / m.meals, ale / m.ale), target: 1, label: `${Math.floor(meals)}/${m.meals} meals · ${Math.floor(ale)}/${m.ale} drinks` };
     }
     case 'paths': { const v = w.paths.filter(p => p === 2).length; return { value: v, target: m.amount, label: `${v} / ${m.amount} path tiles laid` }; }
     case 'decorPaths': {
@@ -1675,6 +1880,12 @@ function charterValue(w: World, c: CharterDef): { value: number; target: number;
     case 'avgBeauty': return { value: w.charterHours, target: m.hours, label: `beauty ${avgBeauty(w).toFixed(1)} · ${w.charterHours}h / ${m.hours}h` };
     case 'skilled': { const v = alive(w).filter(c => Object.values(c.skills).some(x => x >= m.level)).length; return { value: v, target: m.count, label: `${v} / ${m.count} colonists at skill ${m.level}+` }; }
     case 'calm': return { value: w.charterHours, target: m.hours, label: `${alive(w).length}/${m.pop} colonists · ${w.charterHours}h / ${m.hours}h without sulking` };
+    case 'variety': {
+      // the best `kinds` goods of the category, each counted up to `each`
+      const best = CATEGORIES[m.category].members.map(r => Math.min(m.each, Math.floor(w.res[r]))).sort((a, b) => b - a).slice(0, m.kinds);
+      const full = best.filter(n => n >= m.each).length;
+      return { value: best.reduce((a, b) => a + b, 0), target: m.kinds * m.each, label: `${full} / ${m.kinds} kinds with ${m.each}+ stored` };
+    }
   }
 }
 export function avgBeauty(w: World) { const a = alive(w); return a.length ? a.reduce((s, c) => s + c.beauty, 0) / a.length : 0; }

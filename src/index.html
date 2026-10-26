@@ -28,6 +28,8 @@
 html, body { height: 100%; }
 body { background: var(--ground); color: var(--text); font-family: var(--font-body); overflow: hidden; -webkit-tap-highlight-color: transparent; }
 #game { position: relative; height: 100%; overflow: hidden; }
+/* elements with their own display rule (the modal is a grid) must still disappear when hidden */
+[hidden] { display: none !important; }
 #stage { position: absolute; inset: 0; }
 #stage canvas { display: block; }
 button { font: inherit; color: inherit; cursor: pointer; }
@@ -190,6 +192,7 @@ h3.first { margin-top: 4px; }
 .opt span { font-size: 13px; color: var(--muted); line-height: 1.4; }
 .opt small { font-size: 12px; color: var(--accent); }
 .skip { justify-self: start; }
+.reroll-note { margin: 2px 0 0; font-size: 12px; }
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin: 6px 0 8px; }
 .stats div { background: #232a24; border-radius: 10px; padding: 10px 12px; }
 .stats dt { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
@@ -239,6 +242,12 @@ h3.first { margin-top: 4px; }
 .rule i { width: 9px; height: 9px; border-radius: 2px; transform: rotate(45deg); grid-row: span 2; }
 .rule small { font-weight: 400; color: var(--muted); font-size: 11.5px; grid-column: 2; font-variant-numeric: tabular-nums; }
 .rule.on { opacity: 1; border-color: transparent; }
+.stars { color: var(--accent); letter-spacing: 1px; font-size: 12px; white-space: nowrap; }
+.stars s { text-decoration: none; color: #3d463c; }
+.recipes { display: grid; gap: 6px; margin-top: 8px; }
+.recipe { text-align: left; background: #222823; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; display: grid; grid-template-columns: auto 1fr; column-gap: 10px; align-items: baseline; font-size: 13px; font-weight: 600; opacity: .6; }
+.recipe small { display: block; font-weight: 400; color: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.recipe.on { opacity: 1; border-color: transparent; }
 #toast { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom, 0px) + 74px); background: #2c342b; border: 1px solid var(--line); color: var(--text); padding: 8px 14px; border-radius: 999px; font-size: 13px; z-index: 6; max-width: calc(100% - 32px); }
 @media (min-width: 900px) {
   #hud { grid-template-columns: auto 1fr; align-items: start; }
