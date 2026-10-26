@@ -13,7 +13,7 @@ const MOOD_CHARTERS = ['cheer', 'harmony', 'calm'];
  * Experiment switches for the balance tools. `advisor` makes the bot play from what's on screen (the complaint
  * panel) instead of its own rules; it's off by default because, so far, it plays worse (see the project doc).
  */
-export const BOT = { foodDepot: 'food' as false | 'food' | 'meals', laborersPer: 3.5, advisor: false, gate: true, off: [] as string[], skip: [] as string[] };
+export const BOT = { foodDepot: 'food' as false | 'food' | 'meals', laborersPer: 3.5, advisor: false, gate: true, ranked: true, comfort: 'strict' as 'strict' | 'econ' | 'none', rescue: false, rescueAt: 40, moodBlock: false, off: [] as string[], skip: [] as string[] };
 const depots = new WeakMap<World, number>();
 /** what the bot read off the screen this hour; it plays from this rather than from hidden state */
 const advice = new WeakMap<World, { hour: number; concerns: Concern[] }>();
@@ -26,11 +26,15 @@ export function concernsOf(w: World): Concern[] {
 }
 /** survival problems get fixed at once; comfort fixes wait until food and wood are comfortable, like a player who keeps the lights on first */
 const SURVIVAL = ['hungry', 'cold', 'wood', 'sick', 'beds', 'storage', 'idle-', 'foodflow', 'woodflow', 'slack'];
-const comfortable = (w: World) => foodTotal(w) >= alive(w).length * 4 && w.res.wood >= 25 && !concernsOf(w).some(c => c.id === 'stretched');
-const fixesOf = (w: World, top = 4) => concernsOf(w)
+const comfortable = (w: World) => BOT.comfort === 'none' || (foodTotal(w) >= alive(w).length * 4 && w.res.wood >= 25 && (BOT.comfort === 'econ' || !concernsOf(w).some(c => c.id === 'stretched')))
+  // when people are about to walk out, their complaints come first, whatever it costs
+  || (BOT.rescue && (avgMood(w) < BOT.rescueAt || alive(w).some(c => c.sulking)));
+/** the concerns the bot is acting on this hour: the top few, with comfort ones waiting for a healthy economy */
+export const actedConcerns = (w: World, top = 4) => concernsOf(w)
   .filter(c => !BOT.skip.some(k => c.id.startsWith(k)))
   .filter(c => !BOT.gate || SURVIVAL.some(k => c.id.startsWith(k)) || comfortable(w))
-  .slice(0, top).flatMap(c => c.fixes).filter(f => !BOT.off.includes(Object.keys(f)[0]));
+  .slice(0, top);
+const fixesOf = (w: World, top = 4) => actedConcerns(w, top).flatMap(c => c.fixes).filter(f => !BOT.off.includes(Object.keys(f)[0]));
 
 /** how far along a charter would already be if picked now, 0..1 */
 function progressIf(w: World, id: string) {
@@ -136,7 +140,7 @@ export function autoBuild(w: World) {
     if (count('storehouse') === 0 && day(w) >= 3) want.push('storehouse');
     const garden = w.charter === 'garden' || w.charter === 'pretty';
     if (garden) { if (count('flowerbed') < 10) want.unshift('flowerbed'); if (count('lantern') < 4) want.push('lantern'); }
-    if (kind === 'avgMood' || kind === 'contentPop' || kind === 'couples' || kind === 'calm' || (!BOT.advisor && avgMood(w) < 45)) {
+    if (kind === 'avgMood' || kind === 'contentPop' || kind === 'couples' || kind === 'calm' || ((!BOT.advisor || BOT.moodBlock) && avgMood(w) < 45)) {
       for (const id of MOOD_BUILDINGS) if (w.owned.includes(id) && count(id) === 0) want.push(id);
       const spare = w.res.wood > 45;
       if (count('flowerbed') < 6 && spare) want.push('flowerbed');
@@ -251,6 +255,9 @@ export function staffPlan(w: World): Map<number, number> {
   const give = (kind: string, upTo: number) => {
     while (budget > 0 && (given[kind] ?? 0) < Math.min(upTo, want[kind] ?? 0, capacity(kind))) { given[kind] = (given[kind] ?? 0) + 1; budget--; }
   };
+  if (BOT.advisor && BOT.ranked) {
+    rankedStaffing(w, want, budget, given, capacity, ch, pop);
+  } else {
   // 1. essentials, one each
   // food and wood first: everything else is built from them
   give('rawFood', 1); give('woodcutter', 1); give('kitchen', 1);
@@ -271,6 +278,7 @@ export function staffPlan(w: World): Map<number, number> {
   for (const k of focus[ch] ?? []) give(k, 99);
   // 3. everything else, round-robin so no one kind eats the budget
   for (let round = 2; round <= 6; round++) for (const k of ['woodcutter', 'rawFood', 'kitchen', 'sawmill', 'tavern', 'brewery', 'pieoven', 'smokehouse']) give(k, round);
+  }
   // spread each kind's workers over its buildings, best placed first
   for (const kind of Object.keys(want)) {
     let n = given[kind] ?? 0;
@@ -280,6 +288,43 @@ export function staffPlan(w: World): Map<number, number> {
   }
   for (const b of built(w)) if (bdef(b).slots && !plan.has(b.uid)) plan.set(b.uid, 0);
   return plan;
+}
+
+const FOCUS: Record<string, string[]> = {
+  lumber: ['sawmill'], pieday: ['pieoven', 'sawmill'], feast: ['brewery', 'kitchen'], pantry: ['kitchen', 'rawFood'],
+  woodpile: ['woodcutter'], paved: ['woodcutter'], garden: ['sawmill', 'woodcutter'], cheer: ['sawmill', 'woodcutter', 'tavern', 'brewery', 'pieoven'], calm: ['sawmill', 'tavern', 'brewery', 'pieoven'], harmony: ['sawmill', 'woodcutter', 'tavern', 'brewery', 'pieoven'],
+};
+/**
+ * One ranked list of job slots instead of a fixed order: every possible worker in every kind of job gets a priority,
+ * and the people available fill the highest ones. The notes raise the slots they ask for by how much they matter, so a
+ * clinic full of patients can outrank a third woodcutter, but a couple of bored colonists can't take the only forager.
+ */
+function rankedStaffing(w: World, want: Record<string, number>, budget: number, given: Record<string, number>, capacity: (k: string) => number, ch: string, pop: number) {
+  const slots: { kind: string; k: number; p: number }[] = [];
+  const firstP: Record<string, number> = { rawFood: 200, woodcutter: 190, kitchen: 120, clinic: 150, sawmill: 80 };
+  const rawStock = w.res.berries + w.res.fish + w.res.mushrooms;
+  const short: Record<string, boolean> = { rawFood: rawStock < pop * 4, woodcutter: w.res.wood < 30 };
+  const asked = new Map<string, { n: number; p: number }>();
+  for (const c of actedConcerns(w)) for (const f of c.fixes) if ('staff' in f) {
+    const p = c.weight * 2 + (SURVIVAL.some(k => c.id.startsWith(k)) ? 40 : 0);
+    const prev = asked.get(f.staff);
+    asked.set(f.staff, { n: Math.max(prev?.n ?? 0, f.n), p: Math.max(prev?.p ?? 0, p) });
+  }
+  const kinds = new Set([...Object.keys(want), ...asked.keys()]);
+  for (const kind of kinds) {
+    const cap = capacity(kind);
+    const wantN = Math.max(want[kind] ?? 0, asked.get(kind)?.n ?? 0);
+    for (let k = 0; k < Math.min(cap, wantN); k++) {
+      let p = k === 0 && (want[kind] ?? 0) > 0 ? (firstP[kind] ?? 55) : 60 - 8 * k;
+      if (short[kind] && k < (want[kind] ?? 0)) p += 60;
+      if ((FOCUS[ch] ?? []).includes(kind)) p += 25;
+      const a = asked.get(kind);
+      if (a && k < a.n) p = Math.max(p, a.p);
+      slots.push({ kind, k, p });
+    }
+  }
+  slots.sort((a, b) => b.p - a.p);
+  for (const s of slots) { if (budget <= 0) break; given[s.kind] = (given[s.kind] ?? 0) + 1; budget--; }
 }
 
 /** Kinds of building where the colony wants more workers than it has slots, so another is worth building. */

@@ -8,6 +8,10 @@ if (process.env.BOT_ADVISOR) BOT.advisor = process.env.BOT_ADVISOR === '1';
 if (process.env.BOT_OFF) BOT.off = process.env.BOT_OFF.split(',');
 if (process.env.BOT_GATE === '0') BOT.gate = false;
 if (process.env.BOT_SKIP) BOT.skip = process.env.BOT_SKIP.split(',');
+if (process.env.BOT_RANKED === '0') BOT.ranked = false;
+if (process.env.BOT_MOODBLOCK) BOT.moodBlock = process.env.BOT_MOODBLOCK !== '0';
+if (process.env.BOT_RESCUE) { BOT.rescue = process.env.BOT_RESCUE !== '0'; if (Number(process.env.BOT_RESCUE) > 1) BOT.rescueAt = Number(process.env.BOT_RESCUE); }
+if (process.env.BOT_COMFORT) BOT.comfort = process.env.BOT_COMFORT as 'strict' | 'econ' | 'none';
 if (process.env.BOT_LABORERS) BOT.laborersPer = Number(process.env.BOT_LABORERS);
 
 const runs = Number(process.argv[2] ?? 200);

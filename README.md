@@ -20,6 +20,7 @@ npx tsx tools/review.ts 8 777 food   # read bot runs closely: choices, mood spre
 npx tsx tools/wood.ts 20       # where wood and planks come from and go, and how much choppers actually chop
 npx tsx tools/advise.ts 2       # what a player could conclude from the screen at a few moments in a bot game
 npx tsx tools/economy.ts 60     # food, wood, laborers and mood over a run, winners vs losers
+npx tsx tools/notes.ts 60       # notes bot vs rules bot on the same seeds: unresolved notes and why fixes fail
 BOT_ADVISOR=1 npx tsx tools/losses.ts 150   # let the bot play from the on-screen complaints instead of its own rules
 npx tsc -p .                   # type-check
 ```
