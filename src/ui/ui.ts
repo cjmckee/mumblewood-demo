@@ -4,7 +4,7 @@ import {
   World, Command, Colonist, alive, avgMood, beds, buildingByUid, charterProgress, colonistById,
   day, hourOfDay, opinion, workersAt, MAX_DEPARTURES, sites, siteWork, remainingCost, storageCap, stored,
   keepsFresh, findSpot, canPlace, laborers, centerOf, built, Building, efficiencyAt, pathAt, MAP_SIZE, blockedReason, Errand, Difficulty, patientsAt, lost, bedridden, spoilingFood, accepts, roomIn, FOODS, GOODS,
-  recipesOf, recipeOn, currentRecipe, siteOk, rerollCost, REROLL_STEP,
+  recipesOf, recipeOn, currentRecipe, siteOk, rerollCost, REROLL_STEP, stockOf,
 } from '../sim/world';
 import { assess } from '../sim/advisor';
 import { economy, Account } from '../sim/economy';
@@ -18,9 +18,10 @@ const RES_COLOR: Record<ResourceId, string> = {
   wood: '#a07a4c', planks: '#d2a96a', berries: '#c04a6a', fish: '#5b9cc2', mushrooms: '#b39ad0',
   stew: '#d98a3c', pie: '#e6c25a', smokedFish: '#9c8c7a', ale: '#d6a33c',
   apples: '#d2452f', grain: '#d8c060', honey: '#e8a21c', cider: '#b8c25a', mead: '#b06a2a',
+  clay: '#b0603a', reeds: '#9aa860', bricks: '#a8442e', wicker: '#c8a868',
 };
-const costText = (cost: Partial<Record<ResourceId, number>>) =>
-  Object.entries(cost).map(([r, n]) => `${n} ${RESOURCES.find(x => x.id === r)!.name.toLowerCase()}`).join(', ') || 'free';
+const costText = (cost: Partial<Record<InputKey, number>>) =>
+  Object.entries(cost).map(([r, n]) => `${n} ${r === 'fine' ? 'planks or bricks' : inputName(r as InputKey)}`).join(', ') || 'free';
 
 function timeOfDay(h: number) {
   if (h < 6) return 'Night'; if (h < 12) return 'Morning'; if (h < 18) return 'Afternoon'; if (h < 22) return 'Evening'; return 'Night';
@@ -309,7 +310,7 @@ export class UI {
   }
 
   private buildList(w: World) {
-    const short = (cost: Partial<Record<ResourceId, number>>) => Object.entries(cost).filter(([r, n]) => w.res[r as ResourceId] < (n ?? 0)).map(([r]) => RESOURCES.find(x => x.id === r)!.name.toLowerCase());
+    const short = (cost: Partial<Record<InputKey, number>>) => Object.entries(cost).filter(([r, n]) => stockOf(w, r as InputKey) < (n ?? 0)).map(([r]) => inputName(r as InputKey));
     const card = (def: typeof BUILDING_BY_ID[string]) => {
       const miss = short(def.cost);
       return `<div class="bp"><div><b>${esc(def.name)}</b><small>${esc(def.blurb)}</small><small class="cost">${Object.keys(def.cost).length ? `Needs ${esc(costText(def.cost))}` : 'Free'} · ${def.w}×${def.h}${miss.length ? ` · short on ${esc(miss.join(', '))}` : ''}</small></div>
@@ -337,7 +338,7 @@ export class UI {
     const left = remainingCost(b);
     const need = Object.keys(left).length;
     const pct = Math.round((b.progress / siteWork(b)) * 100);
-    const status = need ? `Waiting on ${Object.entries(left).map(([r, n]) => `${Math.ceil(n ?? 0)} ${RESOURCES.find(x => x.id === r)!.name.toLowerCase()}`).join(', ')}` : `Building · ${pct}%`;
+    const status = need ? `Waiting on ${Object.entries(left).map(([r, n]) => `${Math.ceil(n ?? 0)} ${r === 'fine' ? 'planks or bricks' : inputName(r as InputKey)}`).join(', ')}` : `Building · ${pct}%`;
     const ratio = need ? 1 - sum(left) / Math.max(1, sum(def.cost)) : b.progress / siteWork(b);
     return `<button type="button" class="row compact site" data-act="building" data-arg="${b.uid}"><span class="who"><b>${esc(def.name)}</b><small>${esc(status)}</small></span><span class="mini ${need ? 'haul' : ''}"><i style="width:${Math.round(ratio * 100)}%"></i></span></button>`;
   }
@@ -380,7 +381,12 @@ export class UI {
     const def = BUILDING_BY_ID[b.def];
     if (!b.built) {
       const builders = alive(w).filter(c => c.task && 'site' in c.task && c.task.site === b.uid);
-      const mats = Object.entries(def.cost).map(([r, n]) => `<li><span>${RESOURCES.find(x => x.id === r)!.name}</span><b>${Math.floor(b.delivered[r as ResourceId] ?? 0)} / ${n}</b></li>`).join('');
+      const mats = Object.entries(def.cost).map(([r, n]) => {
+        const ms = membersOf(r as InputKey), got = ms.reduce((m, x) => m + (b.delivered[x] ?? 0), 0);
+        const mix = ms.length > 1 ? ms.filter(x => (b.delivered[x] ?? 0) >= 0.5).map(x => `${Math.floor(b.delivered[x] ?? 0)} ${goodName(x)}`).join(', ') : '';
+        const label = inputName(r as InputKey);
+        return `<li><span>${label.charAt(0).toUpperCase() + label.slice(1)}${mix ? ` (${mix})` : ''}</span><b>${Math.floor(got)} / ${n}</b></li>`;
+      }).join('');
       return `<div class="detail"><div class="d-head"><button type="button" class="ghost back" data-act="back">All buildings</button></div>
         <h2>${esc(def.name)}</h2><p class="blurb">Under construction.</p>
         <h3>Materials delivered</h3><ul class="thoughts">${mats || '<li><span>No materials needed</span></li>'}</ul>

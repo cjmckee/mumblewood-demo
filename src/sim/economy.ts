@@ -47,11 +47,15 @@ export function economy(w: World): Economy {
   const wl = (pred: (k: string) => boolean) => per(Object.entries(f).filter(([k]) => res(k) === 'wood' && pred(src(k))).reduce((n, [k, v]) => n + signed(k, v), 0));
   const wood = account('Wood', w.res.wood, [
     { label: 'Chopped', perDay: wl(s => s === '+woodcutter') }, { label: 'Hearth', perDay: wl(s => s === '-hearth') },
-    { label: 'Construction', perDay: wl(s => s.startsWith('-build')) }, { label: 'Sawmill', perDay: wl(s => s === '-sawmill') },
+    { label: 'Construction', perDay: wl(s => s.startsWith('-build')) }, { label: 'Sawmill', perDay: wl(s => s === '-sawmill') }, { label: 'Brick kiln', perDay: wl(s => s === '-kiln') }, { label: 'Carpenter', perDay: wl(s => s === '-carpenter') },
     { label: 'Pie oven', perDay: wl(s => s === '-pieoven') }, { label: 'Bathhouse', perDay: wl(s => s === '-bathhouse') }, { label: 'Paths', perDay: wl(s => s === '-paths') }, { label: 'Blueprint rerolls', perDay: wl(s => s === '-reroll') },
   ]);
-  const planks = account('Planks', w.res.planks, [
-    { label: 'Sawn', perDay: per(f['planks:+sawmill'] ?? 0) }, { label: 'Construction', perDay: -per(sumKeys(f, k => res(k) === 'planks' && src(k).startsWith('-build'))) },
+  // planks, bricks and wicker: one book, since any of them builds the nice buildings
+  const fineIds = CATEGORIES.fine.members;
+  const planks = account('Planks and bricks', fineIds.reduce((n, r) => n + w.res[r], 0), [
+    ...fineIds.map(r => ({ label: `${RESOURCES.find(x => x.id === r)!.name} made`, perDay: per(sumKeys(f, k => res(k) === r && src(k).startsWith('+'))) })),
+    { label: 'Construction', perDay: -per(sumKeys(f, k => fineIds.includes(res(k) as ResourceId) && src(k).startsWith('-build'))) },
+    { label: 'Events', perDay: -per(sumKeys(f, k => fineIds.includes(res(k) as ResourceId) && src(k) === '-event')) },
   ]);
   const drinkIds = CATEGORIES.drink.members;
   const isDrink = (k: string) => drinkIds.includes(res(k) as ResourceId);

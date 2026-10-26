@@ -155,7 +155,7 @@ export const OUTBOX_CAP = 15;
 const WALK_SPEED = 7; // tiles per hour
 export const PATH_SPEED = 1.25;
 export const INBOX_TARGET = 12;
-export const T_GRASS = 0, T_TREE = 1, T_BUSH = 2, T_WATER = 3, T_APPLE = 4, T_FLOWERS = 5, T_SOIL = 6;
+export const T_GRASS = 0, T_TREE = 1, T_BUSH = 2, T_WATER = 3, T_APPLE = 4, T_FLOWERS = 5, T_SOIL = 6, T_CLAY = 7;
 
 // ---------- Helpers ----------
 export const day = (w: World) => Math.floor(w.hour / 24) + 1;
@@ -214,6 +214,8 @@ export function currentRecipe(w: World, b: Building): Recipe | undefined {
   const on = enabledRecipes(b);
   return on.length > 1 ? (on.find(r => recipeReady(w, b, r)) ?? on[0]) : on[0];
 }
+/** how much of a good, or of any good in a category, sits in storage */
+export function stockOf(w: World, key: InputKey) { return membersOf(key).reduce((n, r) => n + w.res[r], 0); }
 /** total drinks in storage (ale, and later cider, mead…) */
 export function drinkTotal(w: World) { return CATEGORIES.drink.members.reduce((n, r) => n + w.res[r], 0); }
 /** take drinks out of storage, the most plentiful first; returns what was taken */
@@ -343,6 +345,19 @@ function genTerrain(w: World) {
     if (id === 'grove') onGrass(g.x, g.y, 2.2, T_APPLE, 0.75);
     if (id === 'meadow') onGrass(g.x, g.y, 2.6, T_FLOWERS, 0.9);
     if (id === 'soil') onGrass(g.x, g.y, 2.8, T_SOIL, 1);
+    if (id === 'clay') {
+      // clay lines a stretch of the pond's shore: grass tiles next to water, around one point on the bank
+      const shore: { x: number; y: number }[] = [];
+      for (let x = BUILD_MIN; x <= BUILD_MAX; x++) for (let y = BUILD_MIN; y <= BUILD_MAX; y++)
+        if (t[y * MAP_SIZE + x] === T_GRASS && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => t[(y + dy) * MAP_SIZE + x + dx] === T_WATER)) shore.push({ x, y });
+      // try a few stretches of shore until one takes a decent bank (a pond hemmed in by trees may not)
+      for (let tries = 0; tries < 4; tries++) {
+        const at = shore.length ? shore[Math.floor(nextRand(w) * shore.length)] : g;
+        for (const p of shore) if (Math.hypot(p.x - at.x, p.y - at.y) <= 3.5 && nextRand(w) < 0.9) set(p.x, p.y, T_CLAY);
+        onGrass(at.x + 0.5, at.y + 0.5, 2.3, T_CLAY, 0.8);
+        if (t.filter(v => v === T_CLAY).length >= 10) break;
+      }
+    }
   }
   w.sites = SITES.filter(s => order.includes(s.id)).map(s => s.id);
   w.terrain = t;
@@ -375,6 +390,7 @@ export function efficiencyAt(w: World, defId: string, x: number, y: number): { e
     const n = count(T_FLOWERS, 3) + beds * 2;
     return { eff: Math.max(0.15, Math.min(1, n / 10)), count: n, label: `${count(T_FLOWERS, 3)} meadow tiles${beds ? ` and ${beds} flower bed${beds > 1 ? 's' : ''}` : ''} nearby` };
   }
+  if (d.needs === 'clay') { const n = count(T_CLAY, 2.2); return { eff: Math.max(0.15, Math.min(1, n / 4)), count: n, label: `${n} tiles of clay bank nearby` }; }
   if (d.needs === 'soil') {
     let n = 0;
     for (let tx = x; tx < x + d.w; tx++) for (let ty = y; ty < y + d.h; ty++) if (terrainAt(w, tx, ty) === T_SOIL) n++;
@@ -444,6 +460,7 @@ export function canPlace(w: World, defId: string, x: number, y: number): PlaceCh
     if (t === T_BUSH) return { ok: false, reason: 'There are berry bushes in the way.' };
     if (t === T_APPLE) return { ok: false, reason: 'There are apple trees in the way.' };
     if (t === T_FLOWERS) return { ok: false, reason: 'The wildflower meadow is in the way.' };
+    if (t === T_CLAY) return { ok: false, reason: 'The clay bank is in the way.' };
   }
   if (!d.walkable && !d.decor) {
     const sx = x + Math.floor(d.w / 2), sy = y + d.h;
@@ -605,7 +622,7 @@ export function createWorld(seed: number, difficulty: Difficulty = 'normal'): Wo
   const w: World = {
     seed, rngState: seed >>> 0, hour: 6,
     colonists: [], buildings: [], terrain: [], paths: [],
-    res: { wood: 60, berries: 50, fish: 0, mushrooms: 0, stew: 10, pie: 0, smokedFish: 0, planks: 0, ale: 0, apples: 0, grain: 0, honey: 0, cider: 0, mead: 0 },
+    res: { wood: 60, berries: 50, fish: 0, mushrooms: 0, stew: 10, pie: 0, smokedFish: 0, planks: 0, ale: 0, apples: 0, grain: 0, honey: 0, cider: 0, mead: 0, clay: 0, reeds: 0, bricks: 0, wicker: 0 },
     owned: BUILDINGS.filter(b => b.basic).map(b => b.id), perks: [],
     charterTier: 1, charter: null, charterHours: 0, chartersDone: [],
     decisions: [], log: [], opinions: {}, status: 'playing', strain: 0, nextEventHour: 24 * 1.6, sites: [], rerolls: 0,
@@ -671,7 +688,7 @@ export const CHARTER_HELPERS: Record<string, string[]> = {
   pretty: ['stage', 'sawmill'], masters: ['tavern'], pieday: ['pieoven', 'sawmill'], garden: ['sawmill', 'stage'], calm: ['tavern', 'bathhouse', 'stage'],
 };
 /** the site a gatherer needs on the map, if any */
-const SITE_FOR: Partial<Record<NonNullable<BuildingDef['needs']>, SiteId>> = { apples: 'grove', flowers: 'meadow', soil: 'soil' };
+const SITE_FOR: Partial<Record<NonNullable<BuildingDef['needs']>, SiteId>> = { apples: 'grove', flowers: 'meadow', soil: 'soil', clay: 'clay' };
 /** this map has what the building gathers from (every map has trees, bushes and water) */
 export function siteOk(w: World, d: BuildingDef) { const s = d.needs && SITE_FOR[d.needs]; return !s || w.sites.includes(s); }
 /** a building the colony owns, or could own, gathers this good on this map */
@@ -679,17 +696,21 @@ export function canSupply(w: World, r: ResourceId, owned = w.owned) {
   return BUILDINGS.some(d => (d.basic || owned.includes(d.id)) && siteOk(w, d) && (d.recipes ?? []).some(rec => rec.output === r && !Object.keys(rec.inputs).length));
 }
 /** at least one recipe in the building can be fed from what the colony owns */
-export function usableHere(w: World, id: string) {
+export function usableHere(w: World, id: string, owned = w.owned) {
   const recs = BUILDING_BY_ID[id].recipes;
   if (!recs) return true;
-  return recs.some(rec => Object.keys(rec.inputs).every(k => membersOf(k as InputKey).some(r => canSupply(w, r) || (r === 'planks' && w.owned.includes('sawmill')))));
+  const crafted = (r: ResourceId) => BUILDINGS.some(d => (d.basic || owned.includes(d.id)) && (d.recipes ?? []).some(x => x.output === r && Object.keys(x.inputs).length));
+  return recs.some(rec => Object.keys(rec.inputs).every(k => membersOf(k as InputKey).some(r => canSupply(w, r, owned) || crafted(r))));
 }
+/** some recipe here could be fed on this map once the right blueprints are drafted */
+export const usableEver = (w: World, id: string) => usableHere(w, id, BUILDINGS.map(d => d.id));
 /** wood for the next blueprint reroll: 10, then 20, then 30… across the whole run */
 export const REROLL_STEP = 10;
 export const rerollCost = (w: World) => REROLL_STEP * ((w.rerolls ?? 0) + 1);
 function blueprintDecision(w: World, avoid: string[] = []): Decision {
   // gatherers for a site this map doesn't have are never offered
-  const all = BUILDINGS.filter(b => b.draftable && !w.owned.includes(b.id) && siteOk(w, b)).map(b => b.id);
+  // nor a workshop nothing on this map could ever feed (a kiln without a clay bank)
+  const all = BUILDINGS.filter(b => b.draftable && !w.owned.includes(b.id) && siteOk(w, b) && usableEver(w, b.id)).map(b => b.id);
   // a reroll shows three new blueprints when the pool has them, topping up with old ones only if it runs short
   const fresh = all.filter(id => !avoid.includes(id));
   const pool = fresh.length >= 3 ? fresh : all;
@@ -717,9 +738,13 @@ export type Command =
   | { type: 'toggleRecipe'; building: number; recipe: number; on: boolean }
   | { type: 'reroll' };
 
-export function remainingCost(b: Building): Partial<Record<ResourceId, number>> {
-  const out: Partial<Record<ResourceId, number>> = {};
-  for (const [r, n] of Object.entries(bdef(b).cost)) { const left = (n ?? 0) - (b.delivered[r as ResourceId] ?? 0); if (left > 0.001) out[r as ResourceId] = left; }
+/** what a site still needs, by cost key; a category key counts every good of that kind already delivered */
+export function remainingCost(b: Building): Partial<Record<InputKey, number>> {
+  const out: Partial<Record<InputKey, number>> = {};
+  for (const [k, n] of Object.entries(bdef(b).cost) as [InputKey, number][]) {
+    const left = (n ?? 0) - membersOf(k).reduce((m, r) => m + (b.delivered[r] ?? 0), 0);
+    if (left > 0.001) out[k] = left;
+  }
   return out;
 }
 export function siteWork(b: Building) { return bdef(b).walkable ? 3 : buildWork(bdef(b)); }
@@ -1072,7 +1097,8 @@ function buildingPriority(w: World, b: Building): number {
     case 'apiary': case 'field': return 5;
     case 'kitchen': case 'pieoven': case 'smokehouse': return mealTotal(w) < pop * 3 ? 9 : 7;
     case 'woodcutter': return w.res.wood < 40 ? 8.5 : 5;
-    case 'sawmill': return w.res.planks < 30 ? 6.5 : 3;
+    case 'sawmill': case 'kiln': case 'carpenter': return stockOf(w, 'fine') < 30 ? 6.5 : 3;
+    case 'claypit': return 5;
     case 'brewery': case 'ciderpress': return drinkTotal(w) < 20 ? 6 : 3;
     case 'tavern': return 6.8;
     default: return 4;
@@ -1086,7 +1112,7 @@ export function blockedReason(w: World, b: Building): string | null {
   for (const key of Object.keys(rec.inputs) as InputKey[]) {
     if (obtainable(w, b, key) < 1) {
       const name = inputName(key);
-      const HINTS: Partial<Record<string, string>> = { fish: ' Build a fishing dock.', planks: ' Build a sawmill.', wood: ' Keep more than 20 wood.', apples: ' Pick apples at an orchard hut.', grain: ' Grow it on a grain field.', honey: ' Keep bees at an apiary.' };
+      const HINTS: Partial<Record<string, string>> = { fish: ' Build a fishing dock.', planks: ' Build a sawmill.', clay: ' Dig it at a clay pit by the clay bank.', reeds: ' Switch a fishing dock to cutting reeds.', wood: ' Keep more than 20 wood.', apples: ' Pick apples at an orchard hut.', grain: ' Grow it on a grain field.', honey: ' Keep bees at an apiary.' };
       const hint = HINTS[key] ?? '';
       return `No ${name} to work with.${hint}`;
     }
@@ -1125,8 +1151,9 @@ function nearestStorage(w: World, x: number, y: number): Building | undefined {
   for (const b of built(w)) if (bdef(b).storage) { const s = spotOf(b); const d = Math.hypot(s.x - x, s.y - y); if (d < bd) { bd = d; best = b; } }
   return best;
 }
-function enroute(w: World, site: number, res: ResourceId) {
-  return alive(w).reduce((n, c) => n + (c.task?.kind === 'deliver' && c.task.site === site && c.task.res === res ? c.task.amount : 0), 0);
+function enroute(w: World, site: number, key: InputKey) {
+  const ms = membersOf(key);
+  return alive(w).reduce((n, c) => n + (c.task?.kind === 'deliver' && c.task.site === site && ms.includes(c.task.res) ? c.task.amount : 0), 0);
 }
 function taskCount(w: World, pred: (t: Task) => boolean) { return alive(w).filter(c => c.task && pred(c.task)).length; }
 
@@ -1137,10 +1164,12 @@ function chooseTask(w: World, c: Colonist): Task | null {
     const left = remainingCost(b);
     const s = spotOf(b);
     let missing = false;
-    for (const [r, n] of Object.entries(left) as [ResourceId, number][]) {
-      const need = n - enroute(w, b.uid, r);
+    for (const [k, n] of Object.entries(left) as [InputKey, number][]) {
+      const need = n - enroute(w, b.uid, k);
       if (need <= 0.001) continue;
       missing = true;
+      // "fine materials": bring whichever kind storage has most of
+      const r = [...membersOf(k)].sort((p, q) => w.res[q] - w.res[p])[0];
       const amount = Math.min(CARRY, need, w.res[r]);
       if (amount >= 1 || (amount > 0 && amount >= need - 0.001)) opts.push({ t: { kind: 'deliver', site: b.uid, res: r, amount }, pri: 3, x: s.x, y: s.y });
     }

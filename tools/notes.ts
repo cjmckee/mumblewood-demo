@@ -1,8 +1,8 @@
 // Where the notes-driven bot is weakest: which notes stay unresolved, and why their fixes don't happen.
 // Runs each seed twice (own rules, then notes) and compares.
 // Usage: npx tsx tools/notes.ts [runs=60] [seedBase=70000]
-import { createWorld, tick, day, TICKS_PER_HOUR, alive, built, workersAt, bdef, World, sites, avgMood } from '../src/sim/world';
-import { BUILDING_BY_ID, CHARTERS } from '../src/sim/content';
+import { createWorld, tick, day, TICKS_PER_HOUR, alive, built, workersAt, bdef, World, sites, avgMood, stockOf } from '../src/sim/world';
+import { BUILDING_BY_ID, CHARTERS, InputKey } from '../src/sim/content';
 import { autoDecide, autoBuild, BOT, concernsOf, actedConcerns } from '../src/sim/autoplayer';
 import { defsOf } from '../src/sim/advisor';
 
@@ -46,7 +46,7 @@ for (let i = 0; i < runs; i++) {
         if (sites(w).some(b => b.def === f.build)) { note(c.id, `build ${f.build}: under construction`); continue; }
         const def = BUILDING_BY_ID[f.build];
         if (!w.owned.includes(f.build) && !def.basic) { note(c.id, `build ${f.build}: blueprint not owned`); continue; }
-        const short = Object.entries(def.cost).filter(([res, amt]) => w.res[res as keyof typeof w.res] < (amt ?? 0) + (res === 'wood' ? 10 : 0)).map(([res]) => res);
+        const short = Object.entries(def.cost).filter(([res, amt]) => stockOf(w, res as InputKey) < (amt ?? 0) + (res === 'wood' ? 10 : 0)).map(([res]) => res);
         if (short.length) note(c.id, `build ${f.build}: can't afford (${short.join(', ')})`);
         else if (sites(w).length >= 2) note(c.id, `build ${f.build}: build queue full`);
       } else if ('draft' in f) note(c.id, `draft ${f.draft}: waiting for a draft`);

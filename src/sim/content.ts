@@ -1,16 +1,20 @@
 // All game content lives here as plain data. The sim reads it; nothing here knows about rendering.
 
-export type ResourceId = 'wood' | 'berries' | 'fish' | 'mushrooms' | 'apples' | 'grain' | 'honey' | 'stew' | 'pie' | 'smokedFish' | 'planks' | 'ale' | 'cider' | 'mead';
+export type ResourceId = 'wood' | 'berries' | 'fish' | 'mushrooms' | 'apples' | 'grain' | 'honey' | 'clay' | 'reeds' | 'stew' | 'pie' | 'smokedFish' | 'planks' | 'bricks' | 'wicker' | 'ale' | 'cider' | 'mead';
 /** raw: edible as is; ingredient: needs processing (grain, honey); luxury: drinks */
 export const RESOURCES: { id: ResourceId; name: string; kind: 'raw' | 'ingredient' | 'meal' | 'material' | 'luxury' }[] = [
   { id: 'wood', name: 'Wood', kind: 'material' },
   { id: 'planks', name: 'Planks', kind: 'material' },
+  { id: 'bricks', name: 'Bricks', kind: 'material' },
+  { id: 'wicker', name: 'Wicker', kind: 'material' },
   { id: 'berries', name: 'Berries', kind: 'raw' },
   { id: 'fish', name: 'Fish', kind: 'raw' },
   { id: 'mushrooms', name: 'Mushrooms', kind: 'raw' },
   { id: 'apples', name: 'Apples', kind: 'raw' },
   { id: 'grain', name: 'Grain', kind: 'ingredient' },
   { id: 'honey', name: 'Honey', kind: 'ingredient' },
+  { id: 'clay', name: 'Clay', kind: 'ingredient' },
+  { id: 'reeds', name: 'Reeds', kind: 'ingredient' },
   { id: 'stew', name: 'Stew', kind: 'meal' },
   { id: 'pie', name: 'Pie', kind: 'meal' },
   { id: 'smokedFish', name: 'Smoked fish', kind: 'meal' },
@@ -39,7 +43,7 @@ export const CATEGORIES: Record<Category, { name: string; members: ResourceId[] 
   rawFood: { name: 'raw food', members: RAW_FOODS },
   meal: { name: 'meals', members: MEALS },
   drink: { name: 'drinks', members: ['ale', 'cider', 'mead'] },
-  fine: { name: 'fine materials', members: ['planks'] },
+  fine: { name: 'fine materials', members: ['planks', 'bricks', 'wicker'] },
 };
 /** what a recipe input names: one good, or any good in a category */
 export type InputKey = ResourceId | Category;
@@ -49,8 +53,8 @@ export const inputName = (k: InputKey) => (isCategory(k) ? CATEGORIES[k].name : 
 
 /** output units per worker-hour at work speed 1, for a ★★★ recipe */
 export const BASE_RATE: Record<ResourceId, number> = {
-  wood: 1.6, berries: 1.3, fish: 1.5, mushrooms: 1.5, apples: 1.4, grain: 1.6, honey: 1.0,
-  stew: 1.2, pie: 0.9, smokedFish: 1.2, planks: 1.0, ale: 0.8, cider: 0.9, mead: 0.7,
+  wood: 1.6, berries: 1.3, fish: 1.5, mushrooms: 1.5, apples: 1.4, grain: 1.6, honey: 1.0, clay: 1.5, reeds: 1.4,
+  stew: 1.2, pie: 0.9, smokedFish: 1.2, planks: 1.0, bricks: 0.9, wicker: 1.0, ale: 0.8, cider: 0.9, mead: 0.7,
 };
 /**
  * How good a building is at a recipe. Stars set speed (★★★ full, ★★ 0.8×, ★ 0.6×); each recipe also states its own
@@ -73,7 +77,8 @@ export interface BuildingDef {
   id: string;
   name: string;
   blurb: string;
-  cost: Partial<Record<ResourceId, number>>;
+  /** materials to build it; a category ("fine") takes any mix of its goods */
+  cost: Partial<Record<InputKey, number>>;
   /** footprint in tiles */
   w: number; h: number;
   slots: number;
@@ -91,7 +96,7 @@ export interface BuildingDef {
   /** colonists can walk across it (open stockpile) */
   walkable?: boolean;
   /** what has to be nearby for full output */
-  needs?: 'trees' | 'bushes' | 'water' | 'apples' | 'flowers' | 'soil';
+  needs?: 'trees' | 'bushes' | 'water' | 'apples' | 'flowers' | 'soil' | 'clay';
   /** patient beds, for a clinic */
   patients?: number;
   /** a small decoration with no door */
@@ -119,35 +124,39 @@ export const BUILDINGS: BuildingDef[] = [
 
   { id: 'flowerbed', name: 'Flower bed', blurb: 'Beauty 3. Somebody planted petunias in a wheelbarrow.', cost: { wood: 2 }, w: 1, h: 1, slots: 0, decor: true, beauty: 3, wall: 0x6b4f33, roof: 0xd66a9a, height: 0, basic: true },
   { id: 'lantern', name: 'Lantern post', blurb: 'Beauty 2. Glows at night, which moths appreciate.', cost: { wood: 4 }, w: 1, h: 1, slots: 0, decor: true, beauty: 2, wall: 0x4a3a2a, roof: 0xf2c46a, height: 0, basic: true },
-  { id: 'bench', name: 'Bench', blurb: 'Beauty 2. A good place to sit and judge passers-by.', cost: { planks: 3 }, w: 1, h: 1, slots: 0, decor: true, beauty: 2, wall: 0x8a6038, roof: 0x8a6038, height: 0, basic: true },
-  { id: 'statue', name: 'Statue of Saint Pomfrey', blurb: 'Beauty 7. He looks mildly disappointed, as in life.', cost: { planks: 12 }, w: 1, h: 1, slots: 0, decor: true, beauty: 7, wall: 0x9a9a92, roof: 0xb8b8b0, height: 0, basic: true },
+  { id: 'bench', name: 'Bench', blurb: 'Beauty 2. A good place to sit and judge passers-by.', cost: { fine: 3 }, w: 1, h: 1, slots: 0, decor: true, beauty: 2, wall: 0x8a6038, roof: 0x8a6038, height: 0, basic: true },
+  { id: 'statue', name: 'Statue of Saint Pomfrey', blurb: 'Beauty 7. He looks mildly disappointed, as in life.', cost: { fine: 12 }, w: 1, h: 1, slots: 0, decor: true, beauty: 7, wall: 0x9a9a92, roof: 0xb8b8b0, height: 0, basic: true },
 
-  { id: 'dock', name: 'Fishing dock', blurb: 'Fish, plentiful and mildly judgmental. Must touch water.', cost: { wood: 15 }, w: 1, h: 2, slots: 2, job: 'fishing', needs: 'water', recipes: [{ inputs: {}, output: 'fish', stars: 3 }], wall: 0x6d5844, roof: 0x3d7b9a, height: 0.6, draftable: true },
-  { id: 'cellar', name: 'Mushroom cellar', blurb: 'Dark, damp, productive. Like a bard.', cost: { wood: 12, planks: 5 }, w: 1, h: 1, slots: 2, job: 'foraging', recipes: [{ inputs: {}, output: 'mushrooms', stars: 3 }], wall: 0x5d5448, roof: 0x8d7aa8, height: 0.5, draftable: true },
+  { id: 'dock', name: 'Fishing dock', blurb: 'Fish, plentiful and mildly judgmental. Can cut reeds instead, slowly. Must touch water.', cost: { wood: 15 }, w: 1, h: 2, slots: 2, job: 'fishing', needs: 'water', recipes: [{ inputs: {}, output: 'fish', stars: 3 }, { inputs: {}, output: 'reeds', stars: 1 }], wall: 0x6d5844, roof: 0x3d7b9a, height: 0.6, draftable: true },
+  { id: 'cellar', name: 'Mushroom cellar', blurb: 'Dark, damp, productive. Like a bard.', cost: { wood: 12, fine: 5 }, w: 1, h: 1, slots: 2, job: 'foraging', recipes: [{ inputs: {}, output: 'mushrooms', stars: 3 }], wall: 0x5d5448, roof: 0x8d7aa8, height: 0.5, draftable: true },
   { id: 'kitchen', name: 'Stew kitchen', blurb: 'Turns any raw food into stew. Someone has to carry the ingredients in.', cost: { wood: 18 }, w: 2, h: 1, slots: 2, job: 'cooking', recipes: [{ inputs: { rawFood: 1.5 }, output: 'stew', stars: 3 }], wall: 0x8a6448, roof: 0xc4703a, height: 0.8, basic: true },
-  { id: 'pieoven', name: 'Pie oven', blurb: 'Berries plus wood make pie. Pie is the best thing that has ever happened.', cost: { wood: 12, planks: 8 }, w: 1, h: 1, slots: 2, job: 'cooking', recipes: [{ inputs: { berries: 2, wood: 0.5 }, output: 'pie', stars: 3 }], wall: 0x9b7452, roof: 0xd6a33c, height: 0.8, draftable: true },
+  { id: 'pieoven', name: 'Pie oven', blurb: 'Berries plus wood make pie. Pie is the best thing that has ever happened.', cost: { wood: 12, fine: 8 }, w: 1, h: 1, slots: 2, job: 'cooking', recipes: [{ inputs: { berries: 2, wood: 0.5 }, output: 'pie', stars: 3 }], wall: 0x9b7452, roof: 0xd6a33c, height: 0.8, draftable: true },
   { id: 'smokehouse', name: 'Smokehouse', blurb: 'Fish goes in, better fish comes out.', cost: { wood: 15 }, w: 1, h: 1, slots: 2, job: 'cooking', recipes: [{ inputs: { fish: 1.2 }, output: 'smokedFish', stars: 3 }], wall: 0x5f4d3f, roof: 0x8a8a8a, height: 0.9, draftable: true },
   { id: 'sawmill', name: 'Sawmill', blurb: 'Wood becomes planks. Planks become nicer buildings.', cost: { wood: 20 }, w: 2, h: 1, slots: 2, job: 'crafting', recipes: [{ inputs: { wood: 2 }, output: 'planks', stars: 3 }], wall: 0x7c6148, roof: 0xb08a5a, height: 0.8, draftable: true },
-  { id: 'brewery', name: 'Brewery', blurb: 'Best with grain. Can make mead, and berry ale if it must. Ale becomes poor decisions.', cost: { wood: 15, planks: 8 }, w: 2, h: 1, slots: 2, job: 'brewing', recipes: [{ inputs: { grain: 1.5 }, output: 'ale', stars: 3 }, { inputs: { honey: 2.5 }, output: 'mead', stars: 2 }, { inputs: { berries: 3 }, output: 'ale', stars: 1 }], wall: 0x7a5640, roof: 0x9c5b2f, height: 0.9, draftable: true },
+  { id: 'kiln', name: 'Brick kiln', blurb: 'Fires clay into bricks, burning a little wood. Bricks build anything planks do.', cost: { wood: 15 }, w: 1, h: 1, slots: 2, job: 'crafting', recipes: [{ inputs: { clay: 2, wood: 0.5 }, output: 'bricks', stars: 3 }], wall: 0x9a5a40, roof: 0x5a4a44, height: 0.9, draftable: true },
+  { id: 'carpenter', name: 'Carpenter\u2019s shed', blurb: 'Weaves reeds into wicker, or saws planks the slow way.', cost: { wood: 14 }, w: 1, h: 1, slots: 2, job: 'crafting', recipes: [{ inputs: { reeds: 2 }, output: 'wicker', stars: 3 }, { inputs: { wood: 2.5 }, output: 'planks', stars: 2 }], wall: 0x8a6c48, roof: 0xa08a50, height: 0.8, draftable: true },
+  { id: 'claypit', name: 'Clay pit', blurb: 'Digs clay out of the bank by the water. Has to sit by a clay bank.', cost: { wood: 8 }, w: 1, h: 1, slots: 2, job: 'foraging', needs: 'clay', recipes: [{ inputs: {}, output: 'clay', stars: 3 }], wall: 0x8a6040, roof: 0x6a5040, height: 0.5, draftable: true },
+  { id: 'brewery', name: 'Brewery', blurb: 'Best with grain. Can make mead, and berry ale if it must. Ale becomes poor decisions.', cost: { wood: 15, fine: 8 }, w: 2, h: 1, slots: 2, job: 'brewing', recipes: [{ inputs: { grain: 1.5 }, output: 'ale', stars: 3 }, { inputs: { honey: 2.5 }, output: 'mead', stars: 2 }, { inputs: { berries: 3 }, output: 'ale', stars: 1 }], wall: 0x7a5640, roof: 0x9c5b2f, height: 0.9, draftable: true },
   { id: 'ciderpress', name: 'Cider press', blurb: 'Squashes apples into cider. Also does a decent berry ale, and mead in a pinch.', cost: { wood: 18 }, w: 1, h: 1, slots: 2, job: 'brewing', recipes: [{ inputs: { apples: 2 }, output: 'cider', stars: 3 }, { inputs: { berries: 2.5 }, output: 'ale', stars: 2 }, { inputs: { honey: 3 }, output: 'mead', stars: 1 }], wall: 0x8a6a3c, roof: 0x8aa040, height: 0.8, draftable: true },
   { id: 'orchard', name: 'Orchard hut', blurb: 'Picks apples. Needs an apple grove close by. Apples are food, or cider.', cost: { wood: 10 }, w: 1, h: 1, slots: 2, job: 'foraging', needs: 'apples', recipes: [{ inputs: {}, output: 'apples', stars: 3 }], wall: 0x8c6b4a, roof: 0xb8452f, height: 0.7, draftable: true },
   { id: 'apiary', name: 'Apiary', blurb: 'Bees make honey from wildflowers. Flower beds nearby count as extra meadow.', cost: { wood: 12 }, w: 1, h: 1, slots: 2, job: 'foraging', needs: 'flowers', recipes: [{ inputs: {}, output: 'honey', stars: 3 }], wall: 0xc8a050, roof: 0x7a5a2a, height: 0.6, draftable: true },
   { id: 'field', name: 'Grain field', blurb: 'Rows of barley. Has to sit on good soil, and the better the soil the better the harvest.', cost: { wood: 10 }, w: 2, h: 2, slots: 2, job: 'foraging', needs: 'soil', recipes: [{ inputs: {}, output: 'grain', stars: 3 }], wall: 0x8a7a40, roof: 0xd8c060, height: 0.15, draftable: true },
-  { id: 'tavern', name: 'Tavern', blurb: 'Evenings here use drinks (ale, cider or mead) and give big fun. Gossip travels twice as fast.', cost: { wood: 20, planks: 12 }, w: 2, h: 2, slots: 1, job: 'serving', wall: 0x8e5f3c, roof: 0x7a2f2f, height: 1.1, draftable: true },
-  { id: 'cottage', name: 'Cottage', blurb: 'Sleeps 2, cozily. Waking up here is a +5 mood.', cost: { wood: 6, planks: 10 }, w: 1, h: 1, slots: 0, beds: 2, bedQuality: 'cozy', wall: 0xc7a983, roof: 0x4f6f9a, height: 0.9, draftable: true },
-  { id: 'bathhouse', name: 'Bathhouse', blurb: 'Uses wood. Everyone feels fresher, and grumblers grumble less.', cost: { wood: 15, planks: 8 }, w: 2, h: 1, slots: 0, wall: 0xb8b0a0, roof: 0x4f8f8a, height: 0.7, draftable: true },
-  { id: 'stage', name: "Bard's stage", blurb: 'Evening music at the hearth. Fun builds faster for everyone. Beauty 3.', cost: { wood: 12, planks: 5 }, w: 1, h: 1, slots: 0, beauty: 3, wall: 0x8a5f7a, roof: 0xc25c8a, height: 0.4, draftable: true },
+  { id: 'tavern', name: 'Tavern', blurb: 'Evenings here use drinks (ale, cider or mead) and give big fun. Gossip travels twice as fast.', cost: { wood: 20, fine: 12 }, w: 2, h: 2, slots: 1, job: 'serving', wall: 0x8e5f3c, roof: 0x7a2f2f, height: 1.1, draftable: true },
+  { id: 'cottage', name: 'Cottage', blurb: 'Sleeps 2, cozily. Waking up here is a +5 mood.', cost: { wood: 6, fine: 10 }, w: 1, h: 1, slots: 0, beds: 2, bedQuality: 'cozy', wall: 0xc7a983, roof: 0x4f6f9a, height: 0.9, draftable: true },
+  { id: 'bathhouse', name: 'Bathhouse', blurb: 'Uses wood. Everyone feels fresher, and grumblers grumble less.', cost: { wood: 15, fine: 8 }, w: 2, h: 1, slots: 0, wall: 0xb8b0a0, roof: 0x4f8f8a, height: 0.7, draftable: true },
+  { id: 'stage', name: "Bard's stage", blurb: 'Evening music at the hearth. Fun builds faster for everyone. Beauty 3.', cost: { wood: 12, fine: 5 }, w: 1, h: 1, slots: 0, beauty: 3, wall: 0x8a5f7a, roof: 0xc25c8a, height: 0.4, draftable: true },
 ];
 /** builder-hours of work to finish a building */
 export const buildWork = (d: BuildingDef) => (d.decor ? 1.5 : Math.max(3, d.w * d.h * 2.5));
 export const BUILDING_BY_ID: Record<string, BuildingDef> = Object.fromEntries(BUILDINGS.map(b => [b.id, b]));
 
-/** Resource sites a map can have. Every map has trees, berries and water; each also rolls two of these. */
-export type SiteId = 'grove' | 'meadow' | 'soil';
+/** Resource sites a map can have. Every map has trees, berries and water; each also rolls two of these four. */
+export type SiteId = 'grove' | 'meadow' | 'soil' | 'clay';
 export const SITES: { id: SiteId; name: string; blurb: string; feeds: string }[] = [
   { id: 'grove', name: 'an apple grove', blurb: 'Apple trees. Can\u2019t be built on.', feeds: 'orchard' },
   { id: 'meadow', name: 'a wildflower meadow', blurb: 'Bees love it. Can\u2019t be built on.', feeds: 'apiary' },
   { id: 'soil', name: 'good soil', blurb: 'Dark, crumbly earth. You can build on it, but it\u2019s wasted under anything but a field.', feeds: 'field' },
+  { id: 'clay', name: 'a clay bank', blurb: 'Red clay along the water\u2019s edge. Can\u2019t be built on.', feeds: 'claypit' },
 ];
 
 export interface TraitDef {

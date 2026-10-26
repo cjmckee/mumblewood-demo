@@ -1,7 +1,7 @@
 // Isometric vector renderer. Reads the world, never changes it.
 import { Application, Container, Graphics, Text } from 'pixi.js';
 import { BUILDING_BY_ID, ResourceId } from '../sim/content';
-import { World, Building, MAP_SIZE, BUILD_MIN, BUILD_MAX, CENTER, alive, hourOfDay, workersAt, bdef, siteWork, canPlace, spotOf, built, terrainAt, T_TREE, T_BUSH, T_WATER, T_APPLE, T_FLOWERS, T_SOIL } from '../sim/world';
+import { World, Building, MAP_SIZE, BUILD_MIN, BUILD_MAX, CENTER, alive, hourOfDay, workersAt, bdef, siteWork, canPlace, spotOf, built, terrainAt, T_TREE, T_BUSH, T_WATER, T_APPLE, T_FLOWERS, T_SOIL, T_CLAY } from '../sim/world';
 
 const TW = 64, TH = 32; // tile width/height in px
 /** world (tile) coordinates to screen; tile (i, j) spans [i, i+1] x [j, j+1] */
@@ -12,6 +12,7 @@ export const RES_COLOR: Record<ResourceId, number> = {
   wood: 0xa07a4c, planks: 0xd2a96a, berries: 0xc04a6a, fish: 0x5b9cc2, mushrooms: 0xb39ad0,
   stew: 0xd98a3c, pie: 0xe6c25a, smokedFish: 0x9c8c7a, ale: 0xd6a33c,
   apples: 0xd2452f, grain: 0xd8c060, honey: 0xe8a21c, cider: 0xb8c25a, mead: 0xb06a2a,
+  clay: 0xb0603a, reeds: 0x9aa860, bricks: 0xa8442e, wicker: 0xc8a868,
 };
 
 function shade(c: number, f: number) {
@@ -94,6 +95,7 @@ export class IsoView {
       if (t === T_TREE) col = shade(col, 0.86);
       if (t === T_SOIL) col = n < 0.5 ? 0x5e4630 : 0x664c33;
       if (t === T_FLOWERS) col = shade(col, 1.06);
+      if (t === T_CLAY) col = n < 0.5 ? 0x9a5a3a : 0xa4623e;
       if (!inside) col = shade(col, 0.8);
       if (t === T_WATER) {
         this.tile(g, x, y, n < 0.5 ? 0x3d6f8a : 0x3a6a85);
@@ -105,6 +107,9 @@ export class IsoView {
       if (t === T_SOIL) {
         // furrows
         for (const f of [0.3, 0.6]) { const p0 = iso(x + 0.1, y + f), p1 = iso(x + 0.9, y + f); g.moveTo(p0.sx, p0.sy).lineTo(p1.sx, p1.sy).stroke({ width: 1.2, color: 0x4a3626, alpha: 0.7 }); }
+      } else if (t === T_CLAY) {
+        // wet lumps of clay
+        for (let i = 0; i < 3; i++) { const p0 = iso(x + 0.2 + hash(x * 5 + i, y) * 0.6, y + 0.2 + hash(x, y * 5 + i) * 0.6); g.ellipse(p0.sx, p0.sy, 4, 2).fill(0x7a4228); }
       } else if (t === T_FLOWERS) {
         const cols = [0xf2d24a, 0xe8e0f0, 0xd66a9a, 0xb48ae0];
         for (let i = 0; i < 6; i++) { const p0 = iso(x + 0.15 + hash(x * 7 + i, y) * 0.7, y + 0.15 + hash(x, y * 7 + i) * 0.7); g.circle(p0.sx, p0.sy, 1.8).fill(cols[(i + Math.floor(n * 4)) % 4]); }

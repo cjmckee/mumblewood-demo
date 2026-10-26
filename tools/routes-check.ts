@@ -95,6 +95,54 @@ for (const r of routes) {
   }
   check(offered === 0, `over ${maps} maps × 20 days, a gatherer for a missing site was offered ${offered} times`);
 }
+// fine materials: clay → bricks, and a tavern built from bricks alone
+{
+  const w = worldWith('clay');
+  const pit = put(w, 'claypit'), kiln = put(w, 'kiln');
+  for (const c of alive(w)) apply(w, { type: 'assign', colonist: c.id, building: null });
+  check(pit.eff > 0.3, `clay pit by the clay bank: works at ${Math.round(pit.eff * 100)}% (${efficiencyAt(w, pit.def, pit.x, pit.y).label})`);
+  staff(w, pit, 2); staff(w, kiln, 2);
+  w.res.wood += 60;
+  run(w, 72);
+  const bricks = made(w, 'bricks:+kiln'), clay = made(w, 'clay:-kiln');
+  check(bricks > 5 && Math.abs(clay / bricks - 2) < 0.05, `kiln fired ${bricks.toFixed(0)} bricks from ${clay.toFixed(0)} clay (2 each)`);
+  // a tavern whose 12 fine materials are all bricks
+  if (!w.owned.includes('tavern')) w.owned.push('tavern');
+  w.res.planks = 0; w.res.wicker = 0; w.res.bricks = Math.max(w.res.bricks, 14); w.res.wood += 40;
+  for (const c of alive(w)) apply(w, { type: 'assign', colonist: c.id, building: null });
+  const spot = findSpot(w, 'tavern')!;
+  apply(w, { type: 'place', def: 'tavern', x: spot.x, y: spot.y });
+  const t = w.buildings[w.buildings.length - 1];
+  run(w, 48);
+  check(t.built && (t.delivered.bricks ?? 0) >= 12 && !(t.delivered.planks ?? 0), `tavern built from ${Math.floor(t.delivered.bricks ?? 0)} bricks and no planks`);
+}
+
+// wicker: switch a dock from fish to reeds, and a carpenter's shed weaves it
+{
+  const w = worldWith('grove');
+  const dock = put(w, 'dock'), shed = put(w, 'carpenter');
+  for (const c of alive(w)) apply(w, { type: 'assign', colonist: c.id, building: null });
+  staff(w, dock, 2); staff(w, shed, 2);
+  apply(w, { type: 'toggleRecipe', building: dock.uid, recipe: 0, on: false });
+  run(w, 72);
+  const reeds = made(w, 'reeds:+dock'), wicker = made(w, 'wicker:+carpenter');
+  check(reeds > 5 && wicker > 2 && !made(w, 'fish:+dock'), `dock on reeds cut ${reeds.toFixed(0)} (no fish); shed wove ${wicker.toFixed(0)} wicker`);
+}
+
+// no kiln or clay pit on a map without a clay bank
+{
+  let offered = 0;
+  for (let s = 1; s < 60; s++) {
+    const w = createWorld(s * 53, 'normal');
+    if (w.sites.includes('clay')) continue;
+    for (let h = 0; h < 24 * 20 && w.status === 'playing'; h++) {
+      for (const d of w.decisions) if (d.kind === 'blueprint' && d.options.some(o => o === 'kiln' || o === 'claypit')) offered++;
+      while (w.decisions.length) apply(w, { type: 'resolve', option: 0 });
+      runHours(w, 1);
+    }
+  }
+  check(offered === 0, `kiln or clay pit offered ${offered} times on maps without clay`);
+}
 void built;
 console.log(failed ? `${failed} failed` : 'all passed');
 process.exit(failed ? 1 : 0);
