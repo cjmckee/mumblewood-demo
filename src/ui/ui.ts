@@ -4,7 +4,7 @@ import {
   World, Command, Colonist, alive, avgMood, beds, buildingByUid, charterProgress, colonistById,
   day, hourOfDay, opinion, workersAt, MAX_DEPARTURES, sites, siteWork, remainingCost, storageCap, stored,
   keepsFresh, findSpot, canPlace, laborers, centerOf, built, Building, efficiencyAt, pathAt, MAP_SIZE, blockedReason, Errand, Difficulty, patientsAt, lost, bedridden, spoilingFood, accepts, roomIn, FOODS, GOODS,
-  recipesOf, recipeOn, currentRecipe, siteOk,
+  recipesOf, recipeOn, currentRecipe, siteOk, rerollCost, REROLL_STEP,
 } from '../sim/world';
 import { assess } from '../sim/advisor';
 import { economy, Account } from '../sim/economy';
@@ -148,6 +148,7 @@ export class UI {
       case 'food': { const f = arg as ResourceId; this.send({ type: 'foodRule', food: f, allowed: w.forbidden.includes(f) }); break; }
       case 'auto': this.send({ type: 'autoAssign' }); this.toast('The foreman has reassigned everyone.'); break;
       case 'resolve': this.send({ type: 'resolve', option: Number(arg) }); this.lastModal = ''; break;
+      case 'reroll': { const err = this.send({ type: 'reroll' }); if (err) this.toast(err); this.lastModal = ''; break; }
       case 'restart': this.onRestart((arg || 'normal') as Difficulty); break;
       case 'errand-open': this.picking = Number(arg); break;
       case 'errand-close': this.picking = null; break;
@@ -452,8 +453,17 @@ export class UI {
         case 'charter': html = this.cards(d.tier === 1 ? 'Your first charter' : `Charter ${d.tier} of 3`,
           d.tier === 1 ? 'The Crown wants proof this colony is worth the paperwork. Complete three charters before the frontier wears everyone down.' : 'The Crown has another demand. Choose one.',
           d.options.map(id => { const c = CHARTERS.find(x => x.id === id)!; return { title: c.name, body: c.desc, tag: `Tier ${c.tier}` }; })); break;
-        case 'blueprint': html = this.cards('A new blueprint', 'Pick one building to add to what you can build this run.',
-          d.options.map(id => { const b = BUILDING_BY_ID[id]; return { title: b.name, body: b.blurb, tag: `Costs ${costText(b.cost)}${b.slots ? ` · ${b.slots} worker${b.slots > 1 ? 's' : ''}` : ''}` }; })); break;
+        case 'blueprint': {
+          const cost = rerollCost(w), can = w.res.wood >= cost;
+          // each card lists what the building makes, best recipe first, so a reroll is a judgement about routes
+          const recipeLines = (id: string) => [...(BUILDING_BY_ID[id].recipes ?? [])].sort((a, z) => z.stars - a.stars)
+            .map(r => `${'★'.repeat(r.stars)}${'☆'.repeat(3 - r.stars)} ${Object.keys(r.inputs).length ? `${Object.entries(r.inputs).map(([k, n]) => `${n} ${inputName(k as InputKey)}`).join(' + ')} → ` : ''}${goodName(r.output)}`).join('\n');
+          html = this.cards('A new blueprint', 'Pick one building to add to what you can build this run.',
+            d.options.map(id => { const b = BUILDING_BY_ID[id]; const rl = recipeLines(id); return { title: b.name, body: rl ? `${b.blurb}\n${rl}` : b.blurb, tag: `Costs ${costText(b.cost)}${b.slots ? ` · ${b.slots} worker${b.slots > 1 ? 's' : ''}` : ''}` }; }),
+            undefined,
+            `<button type="button" class="ghost skip" data-act="reroll" ${can ? '' : 'disabled'}>Reroll for ${cost} wood${can ? '' : ` (you have ${Math.floor(w.res.wood)})`}</button><p class="muted reroll-note">Each reroll this run costs ${REROLL_STEP} more than the last.</p>`);
+          break;
+        }
         case 'perk': html = this.cards('The Crown grants a boon', 'Choose one. It lasts the rest of the run.',
           d.options.map(id => ({ title: PERK_BY_ID[id].name, body: PERK_BY_ID[id].desc, tag: 'Boon' }))); break;
         case 'recruit': html = this.cards('Settlers at the edge of camp', `They’d like to join. You have ${beds(w)} beds for ${alive(w).length} colonists.`,
@@ -473,12 +483,12 @@ export class UI {
     el.hidden = !html;
   }
 
-  private cards(title: string, lede: string, opts: { title: string; body: string; tag: string; color?: string }[], skip?: string) {
+  private cards(title: string, lede: string, opts: { title: string; body: string; tag: string; color?: string }[], skip?: string, extra = '') {
     return `<div class="card-wrap"><p class="eyebrow">Choose one</p><h2>${esc(title)}</h2><p class="lede">${esc(lede)}</p>
       <div class="opts">${opts.map((o, i) => `<button type="button" class="opt" data-act="resolve" data-arg="${i}">
         <b>${o.color ? `<span class="dot" style="background:${o.color}"></span>` : ''}${esc(o.title)}</b>
         ${o.body.split('\n').map(line => `<span>${esc(line)}</span>`).join('')}<small>${esc(o.tag)}</small></button>`).join('')}</div>
-      ${skip ? `<button type="button" class="ghost skip" data-act="resolve" data-arg="99">${esc(skip)}</button>` : ''}</div>`;
+      ${skip ? `<button type="button" class="ghost skip" data-act="resolve" data-arg="99">${esc(skip)}</button>` : ''}${extra}</div>`;
   }
 
   private endScreen(w: World) {

@@ -48,7 +48,7 @@ export function economy(w: World): Economy {
   const wood = account('Wood', w.res.wood, [
     { label: 'Chopped', perDay: wl(s => s === '+woodcutter') }, { label: 'Hearth', perDay: wl(s => s === '-hearth') },
     { label: 'Construction', perDay: wl(s => s.startsWith('-build')) }, { label: 'Sawmill', perDay: wl(s => s === '-sawmill') },
-    { label: 'Pie oven', perDay: wl(s => s === '-pieoven') }, { label: 'Bathhouse', perDay: wl(s => s === '-bathhouse') }, { label: 'Paths', perDay: wl(s => s === '-paths') },
+    { label: 'Pie oven', perDay: wl(s => s === '-pieoven') }, { label: 'Bathhouse', perDay: wl(s => s === '-bathhouse') }, { label: 'Paths', perDay: wl(s => s === '-paths') }, { label: 'Blueprint rerolls', perDay: wl(s => s === '-reroll') },
   ]);
   const planks = account('Planks', w.res.planks, [
     { label: 'Sawn', perDay: per(f['planks:+sawmill'] ?? 0) }, { label: 'Construction', perDay: -per(sumKeys(f, k => res(k) === 'planks' && src(k).startsWith('-build'))) },

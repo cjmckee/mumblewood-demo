@@ -21,11 +21,12 @@ npx tsx tools/wood.ts 20       # where wood and planks come from and go, and how
 npx tsx tools/advise.ts 2       # what a player could conclude from the screen at a few moments in a bot game
 npx tsx tools/economy.ts 60     # food, wood, laborers and mood over a run, winners vs losers
 npx tsx tools/notes.ts 60       # notes bot vs rules bot on the same seeds: unresolved notes and why fixes fail
-BOT_ADVISOR=1 npx tsx tools/losses.ts 150   # let the bot play from the on-screen complaints instead of its own rules
+BOT_ADVISOR=1 npx tsx tools/losses.ts 150   # let the bot play from the on-screen complaints instead of its own rules (harness.ts honours it too)
 npx tsx tools/variety.ts 80     # how different runs are: blueprint coverage, draft-to-built lag, events seen
 npx tsx tools/recipes-check.ts  # multi-recipe engine: star preference, fallback, per-recipe toggles
 npx tsx tools/routes-check.ts   # forces each drink route on a map with its site and checks the drinks come out
 npx tsx tools/routes.ts 60      # which drink routes bot colonies use, by map sites; what gets built
+npx tsx tools/reroll-check.ts   # blueprint reroll: 10, 20, 30 wood across the run; new options; refusals
 npx tsc -p .                   # type-check
 ```
 

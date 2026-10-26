@@ -2,7 +2,7 @@
 // It reads the active charter and plays towards it, the way a person would.
 import { BUILDING_BY_ID, BUILDINGS, CHARTERS, EVENTS, ResourceId, MEALS, RAW_FOODS, Recipe, InputKey, membersOf, recipeRate } from './content';
 import { assess, Concern, defsOf } from './advisor';
-import { World, apply, alive, beds, mealTotal, sites, findSpot, CENTER, CHARTER_HELPERS, avgMood, built, MAP_SIZE, pathAt, terrainAt, T_WATER, bdef, workersAt, blockedReason, opinion, Building, Colonist, hourOfDay, charterProgress, buildingByUid, storageFree, storages, FOODS, GOODS, bedridden, foodTotal, currentRecipe, drinkTotal, siteOk, enabledRecipes, recipesOf } from './world';
+import { World, apply, alive, beds, mealTotal, sites, findSpot, CENTER, CHARTER_HELPERS, avgMood, built, MAP_SIZE, pathAt, terrainAt, T_WATER, bdef, workersAt, blockedReason, opinion, Building, Colonist, hourOfDay, charterProgress, buildingByUid, storageFree, storages, FOODS, GOODS, bedridden, foodTotal, currentRecipe, drinkTotal, siteOk, enabledRecipes, recipesOf, rerollCost } from './world';
 
 const BLUEPRINT_PRIORITY = ['sawmill', 'pieoven', 'dock', 'cottage', 'brewery', 'ciderpress', 'tavern', 'orchard', 'field', 'apiary', 'smokehouse', 'cellar', 'stage', 'bathhouse'];
 const DRINK_MAKERS = ['brewery', 'ciderpress'];
@@ -32,7 +32,7 @@ const MOOD_CHARTERS = ['cheer', 'harmony', 'calm'];
  * Experiment switches for the balance tools. `advisor` makes the bot play from what's on screen (the complaint
  * panel) instead of its own rules; it's off by default because, so far, it plays worse (see the project doc).
  */
-export const BOT = { foodDepot: 'food' as false | 'food' | 'meals', laborersPer: 3.5, advisor: false, gate: true, ranked: true, comfort: 'strict' as 'strict' | 'econ' | 'none', rescue: false, rescueAt: 40, moodBlock: false, off: [] as string[], skip: [] as string[] };
+export const BOT = { foodDepot: 'food' as false | 'food' | 'meals', laborersPer: 3.5, advisor: false, gate: true, ranked: true, comfort: 'strict' as 'strict' | 'econ' | 'none', rescue: false, rescueAt: 40, moodBlock: false, reroll: true, off: [] as string[], skip: [] as string[] };
 const depots = new WeakMap<World, number>();
 /** what the bot read off the screen this hour; it plays from this rather than from hidden state */
 const advice = new WeakMap<World, { hour: number; concerns: Concern[] }>();
@@ -100,6 +100,10 @@ export function autoDecide(w: World, style: 'greedy' | 'random' = 'greedy', rand
         - (DRINK_MAKERS.includes(id) && (BUILDING_BY_ID[id].recipes ?? []).filter(r => r.stars >= 2).some(r => Object.keys(r.inputs).every(k => gatherersOf(w, k).length || BUILDINGS.some(d => d.draftable && siteOk(w, d) && (d.recipes ?? []).some(x => x.output === k)))) ? 2 : 0);
       const asked = fixesOf(w, 3).filter((f): f is { draft: string } => 'draft' in f).map(f => f.draft);
       const rank = (id: string) => (helpers.includes(id) && feedable(id) ? -100 + helpers.indexOf(id) : 0) + (asked.includes(id) ? -50 + asked.indexOf(id) : 0) + BLUEPRINT_PRIORITY.indexOf(id) + usable(id);
+      // nothing on offer the colony is missing and wants: pay for a reroll while wood stays comfortable
+      const core = ['sawmill', 'tavern', 'cottage', 'pieoven', 'stage', 'bathhouse', 'dock', ...(DRINK_MAKERS.some(x => w.owned.includes(x)) ? [] : DRINK_MAKERS)];
+      const wanted = (id: string) => (helpers.includes(id) && feedable(id)) || asked.includes(id) || (core.includes(id) && usable(id) < 6);
+      if (BOT.reroll && !d.options.some(wanted) && w.res.wood >= rerollCost(w) + 40 && !apply(w, { type: 'reroll' })) continue;
       option = d.options.map(rank).reduce((best, p, i, arr) => (p < arr[best] ? i : best), 0);
     } else if (d.kind === 'perk') {
       option = d.options.map(o => PERK_PRIORITY.indexOf(o)).reduce((best, p, i, arr) => (p < arr[best] ? i : best), 0);

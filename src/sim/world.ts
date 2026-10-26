@@ -127,6 +127,8 @@ export interface World {
   difficulty: Difficulty;
   /** the resource sites this map has (an apple grove, a meadow, good soil) */
   sites: SiteId[];
+  /** blueprint rerolls used this run; each one costs more */
+  rerolls: number;
   nextUid: number; nextColonistId: number;
   autoAssignNew: boolean;
   /** diagnostics: running totals of where goods came from and went, e.g. 'wood:hearth' */
@@ -606,7 +608,7 @@ export function createWorld(seed: number, difficulty: Difficulty = 'normal'): Wo
     res: { wood: 60, berries: 50, fish: 0, mushrooms: 0, stew: 10, pie: 0, smokedFish: 0, planks: 0, ale: 0, apples: 0, grain: 0, honey: 0, cider: 0, mead: 0 },
     owned: BUILDINGS.filter(b => b.basic).map(b => b.id), perks: [],
     charterTier: 1, charter: null, charterHours: 0, chartersDone: [],
-    decisions: [], log: [], opinions: {}, status: 'playing', strain: 0, nextEventHour: 24 * 1.6, sites: [],
+    decisions: [], log: [], opinions: {}, status: 'playing', strain: 0, nextEventHour: 24 * 1.6, sites: [], rerolls: 0,
     errands: [], nextErrandId: 1, difficulty, charterBase: { cured: 0, errands: 0 }, moodLog: [], ateOffTable: false, forbidden: [],
     nextUid: 1, nextColonistId: 1, autoAssignNew: false,
     flows: {}, flowLog: [],
@@ -682,10 +684,16 @@ export function usableHere(w: World, id: string) {
   if (!recs) return true;
   return recs.some(rec => Object.keys(rec.inputs).every(k => membersOf(k as InputKey).some(r => canSupply(w, r) || (r === 'planks' && w.owned.includes('sawmill')))));
 }
-function blueprintDecision(w: World): Decision {
+/** wood for the next blueprint reroll: 10, then 20, then 30… across the whole run */
+export const REROLL_STEP = 10;
+export const rerollCost = (w: World) => REROLL_STEP * ((w.rerolls ?? 0) + 1);
+function blueprintDecision(w: World, avoid: string[] = []): Decision {
   // gatherers for a site this map doesn't have are never offered
-  const pool = BUILDINGS.filter(b => b.draftable && !w.owned.includes(b.id) && siteOk(w, b)).map(b => b.id);
-  const options = shuffle(w, pool).slice(0, 3);
+  const all = BUILDINGS.filter(b => b.draftable && !w.owned.includes(b.id) && siteOk(w, b)).map(b => b.id);
+  // a reroll shows three new blueprints when the pool has them, topping up with old ones only if it runs short
+  const fresh = all.filter(id => !avoid.includes(id));
+  const pool = fresh.length >= 3 ? fresh : all;
+  const options = [...shuffle(w, fresh), ...shuffle(w, all.filter(id => avoid.includes(id)))].slice(0, 3);
   const usable = (id: string) => usableHere(w, id);
   const helpers = (CHARTER_HELPERS[w.charter ?? ''] ?? []).filter(id => pool.includes(id) && usable(id));
   const ownsHelper = (CHARTER_HELPERS[w.charter ?? ''] ?? []).some(id => w.owned.includes(id) && usable(id));
@@ -706,7 +714,8 @@ export type Command =
   | { type: 'setAutoAssignNew'; value: boolean }
   | { type: 'storageFilter'; building: number; allow: ResourceId[] | null }
   | { type: 'storagePriority'; building: number; high: boolean }
-  | { type: 'toggleRecipe'; building: number; recipe: number; on: boolean };
+  | { type: 'toggleRecipe'; building: number; recipe: number; on: boolean }
+  | { type: 'reroll' };
 
 export function remainingCost(b: Building): Partial<Record<ResourceId, number>> {
   const out: Partial<Record<ResourceId, number>> = {};
@@ -749,6 +758,17 @@ export function apply(w: World, cmd: Command): string | null {
       const b = buildingByUid(w, cmd.building);
       if (!b || !bdef(b).storage) return 'Only storage has a priority.';
       b.high = cmd.high; w.version++;
+      return null;
+    }
+    case 'reroll': {
+      const d = w.decisions[0];
+      if (d?.kind !== 'blueprint') return 'Only a blueprint draft can be rerolled.';
+      const cost = rerollCost(w);
+      if (w.res.wood < cost) return `A reroll costs ${cost} wood.`;
+      w.res.wood -= cost; flow(w, 'wood:-reroll', cost); reconcileStock(w);
+      w.rerolls = (w.rerolls ?? 0) + 1;
+      w.decisions[0] = blueprintDecision(w, d.options);
+      addLog(w, `New blueprints sent for, at a cost of ${cost} wood.`);
       return null;
     }
     case 'toggleRecipe': {
