@@ -33,6 +33,12 @@ function neededGatherers(w: World): string[] {
 }
 /** how many of these goods some built workshop could make with what the colony can get */
 const kindsMakeable = (w: World, goods: ResourceId[]) => goods.filter(r => built(w).some(b => enabledRecipes(b).some(x => x.output === r && Object.keys(x.inputs).every(k => membersOf(k as InputKey).some(m => suppliable(w, m, 2)))))).length;
+/** kinds of meal, drink or fine material that owning this blueprint would let the colony make, that it can't make now */
+function newKinds(w: World, id: string) {
+  const goods = [...CATEGORIES.meal.members, ...CATEGORIES.drink.members, ...CATEGORIES.fine.members];
+  const can = (r: ResourceId, owned: string[]) => BUILDINGS.some(d => (d.basic || owned.includes(d.id)) && siteOk(w, d) && (d.recipes ?? []).some(x => x.output === r && Object.keys(x.inputs).every(k => membersOf(k as InputKey).some(m => BUILDINGS.some(g => (g.basic || owned.includes(g.id)) && siteOk(w, g) && (g.recipes ?? []).some(y => y.output === m))))));
+  return goods.filter(r => !can(r, w.owned) && can(r, [...w.owned, id])).length;
+}
 const plannedUses = (w: World, input: ResourceId) => built(w).some(b => { const r = plannedRecipe(w, b); return !!r && Object.keys(r.inputs).some(k => membersOf(k as InputKey).includes(input)); });
 const PERK_PRIORITY = ['saintsDay', 'ironWill', 'communalPot', 'overtime', 'rations', 'earplugs', 'warmHearth', 'gossipBan', 'matchmaker'];
 const MOOD_BUILDINGS = ['tavern', 'brewery', 'ciderpress', 'pieoven', 'bathhouse', 'cottage', 'stage'];
@@ -42,7 +48,7 @@ const MOOD_CHARTERS = ['cheer', 'harmony', 'calm'];
  * Experiment switches for the balance tools. `advisor` makes the bot play from what's on screen (the complaint
  * panel) instead of its own rules; it's off by default because, so far, it plays worse (see the project doc).
  */
-export const BOT = { foodDepot: 'food' as false | 'food' | 'meals', laborersPer: 3.5, advisor: false, gate: true, ranked: true, comfort: 'strict' as 'strict' | 'econ' | 'none', rescue: false, rescueAt: 40, moodBlock: false, reroll: true, off: [] as string[], skip: [] as string[] };
+export const BOT = { foodDepot: 'food' as false | 'food' | 'meals', laborersPer: 3.5, advisor: false, gate: true, ranked: true, comfort: 'strict' as 'strict' | 'econ' | 'none', rescue: false, rescueAt: 40, moodBlock: false, reroll: true, variety: false, routes: false, off: [] as string[], skip: [] as string[] };
 const depots = new WeakMap<World, number>();
 /** what the bot read off the screen this hour; it plays from this rather than from hidden state */
 const advice = new WeakMap<World, { hour: number; concerns: Concern[] }>();
@@ -119,7 +125,9 @@ export function autoDecide(w: World, style: 'greedy' | 'random' = 'greedy', rand
       const core = ['sawmill', 'tavern', 'cottage', 'pieoven', 'stage', 'bathhouse', 'dock', ...(DRINK_MAKERS.some(x => w.owned.includes(x)) ? [] : DRINK_MAKERS)];
       const wanted = (id: string) => (helpers.includes(id) && feedable(id)) || asked.includes(id) || (core.includes(id) && usable(id) < 6);
       if (BOT.reroll && !d.options.some(wanted) && w.res.wood >= rerollCost(w) + 40 && !apply(w, { type: 'reroll' })) continue;
-      option = d.options.map(rank).reduce((best, p, i, arr) => (p < arr[best] ? i : best), 0);
+      // routes: credit for each new kind of meal, drink or fine material the blueprint makes feedable right away
+      const rank2 = (id: string) => rank(id) - (BOT.routes ? newKinds(w, id) * 3 : 0);
+      option = d.options.map(rank2).reduce((best, p, i, arr) => (p < arr[best] ? i : best), 0);
     } else if (d.kind === 'perk') {
       option = d.options.map(o => PERK_PRIORITY.indexOf(o)).reduce((best, p, i, arr) => (p < arr[best] ? i : best), 0);
     } else if (d.kind === 'recruit') {
@@ -261,26 +269,29 @@ export function staffWants(w: World): Record<string, number> {
   const pop = alive(w).filter(c => !bedridden(c)).length;
   const ch = w.charter ?? '';
   const raw = rawStock(w);
+  // a second meal route once food and wood are comfortable: one cook on the first pie oven, smokehouse or bakery that can be fed
+  const comfy = foodTotal(w) >= pop * 4 && w.res.wood >= 25;
+  const second = BOT.variety && comfy ? ['pieoven', 'smokehouse', 'bakery'].find(id => built(w).some(b => b.def === id && plannedRecipe(w, b) && MEALS.includes(plannedRecipe(w, b)!.output))) : undefined;
   const drinksWanted = ch === 'feast' ? 2 : drinkTotal(w) < 15 && built(w).some(b => b.def === 'tavern') ? 1 : 0;
   return {
     woodcutter: 1 + Math.floor(pop / 5) + (ch === 'woodpile' ? 2 : ['paved', 'garden', 'lumber', 'township', ...MOOD_CHARTERS].includes(ch) ? 1 : 0) + (w.res.wood < 25 ? 1 : 0),
     rawFood: rawFoodWorkers(w, pop) + (raw < pop * 4 ? 1 : 0) + (['pantry', 'feast', 'pieday'].includes(ch) ? 1 : 0),
     kitchen: Math.max(1, Math.ceil(pop / 9)) + (['pantry', 'feast'].includes(ch) ? 1 : 0),
     sawmill: (stockOf(w, 'fine') < planksWanted(w) ? 2 : stockOf(w, 'fine') < 25 ? 1 : 0) + (['lumber', 'pieday', 'garden', 'pretty', ...MOOD_CHARTERS].includes(ch) ? 1 : 0),
-    pieoven: ch === 'pieday' ? 2 : ['cheer', 'feast', 'harmony', 'calm'].includes(ch) ? 1 : 0,
+    pieoven: ch === 'pieday' ? 2 : ['cheer', 'feast', 'harmony', 'calm'].includes(ch) || second === 'pieoven' ? 1 : 0,
     drinks: drinksWanted,
     // bricks: a kiln works while the colony is short of fine materials and can get clay
     kiln: stockOf(w, 'fine') < planksWanted(w) && plannedUses(w, 'clay') ? 2 : 0,
     claypit: stockOf(w, 'fine') < planksWanted(w) && plannedUses(w, 'clay') ? 2 : 0,
     // a varied table: bread from flour, skewers from herbs, remedies for the clinic
-    bakery: built(w).some(b => b.def === 'bakery') && (mealTotal(w) < pop * 3 || ch === 'menu') ? 1 + (ch === 'menu' ? 1 : 0) : 0,
+    bakery: built(w).some(b => b.def === 'bakery') && (mealTotal(w) < pop * 3 || ch === 'menu' || second === 'bakery') ? 1 + (ch === 'menu' ? 1 : 0) : 0,
     mill: built(w).some(b => b.def === 'bakery') && plannedUses(w, 'flour') ? 1 : 0,
     apothecary: built(w).some(b => b.def === 'apothecary') && (alive(w).some(c => c.illness) || stockOf(w, 'remedy') < 6 || ch === 'tasting') ? 1 : 0,
     herbgarden: built(w).some(b => b.def === 'apothecary') || ch === 'menu' ? 1 : 0,
     // gatherers for a drink maker's best recipe work as long as the drink makers do
     field: (drinksWanted || built(w).some(b => b.def === 'mill' || b.def === 'bakery')) && plannedUses(w, 'grain') ? 2 : 0,
     apiary: drinksWanted && plannedUses(w, 'honey') ? 1 : 0,
-    smokehouse: w.res.fish > 20 || ch === 'menu' ? 1 : 0,
+    smokehouse: w.res.fish > 20 || ch === 'menu' || second === 'smokehouse' ? 1 : 0,
     tavern: built(w).some(b => b.def === 'tavern') ? 1 : 0,
     clinic: alive(w).some(c => bedridden(c)) ? 1 : 0,
   };
@@ -329,6 +340,8 @@ export function staffPlan(w: World): Map<number, number> {
   serveFixes();
   // planks unlock every mood building, so the sawmill counts as an essential once there's something to spend them on
   give('sawmill', 1);
+  // a second meal route, when comfortable: one cook ahead of the extras, or it never gets a person
+  if (BOT.variety) for (const k of ['pieoven', 'smokehouse', 'bakery']) if ((want[k] ?? 0) > 0) { give(k, 1); break; }
   // 2. whatever the charter leans on
   const focus: Record<string, string[]> = {
     lumber: ['sawmill'], pieday: ['pieoven', 'sawmill'], feast: ['drinks', 'field', 'apiary', 'kitchen'], pantry: ['kitchen', 'rawFood'], menu: ['kitchen', 'smokehouse', 'pieoven', 'bakery', 'rawFood'], tasting: ['drinks', 'apothecary', 'herbgarden', 'field', 'apiary'], healthy: ['clinic', 'apothecary', 'herbgarden'],

@@ -4,7 +4,7 @@ import {
   World, Command, Colonist, alive, avgMood, beds, buildingByUid, charterProgress, colonistById,
   day, hourOfDay, opinion, workersAt, MAX_DEPARTURES, sites, siteWork, remainingCost, storageCap, stored,
   keepsFresh, findSpot, canPlace, laborers, centerOf, built, Building, efficiencyAt, pathAt, MAP_SIZE, blockedReason, Errand, Difficulty, patientsAt, lost, bedridden, spoilingFood, accepts, roomIn, FOODS, GOODS,
-  recipesOf, recipeOn, currentRecipe, siteOk, rerollCost, REROLL_STEP, stockOf,
+  recipesOf, recipeOn, currentRecipe, siteOk, rerollCost, REROLL_STEP, stockOf, recipeReach, CHARTER_HELPERS,
 } from '../sim/world';
 import { assess } from '../sim/advisor';
 import { economy, Account } from '../sim/economy';
@@ -64,6 +64,14 @@ const tasteLine = (c: Colonist, bold = true) => {
   const b = (t: string) => (bold ? `<b>${esc(t)}</b>` : t);
   return c.tastes.loves.map((r, i) => ` · favourite ${b(goodName(r))}, not ${b(goodName(c.tastes.dislikes[i]))}`).join('');
 };
+/** "", "needs an orchard hut (not drafted yet)" or "no honey on this map", for a recipe line */
+function reachText(w: World, r: Recipe, forDraft: boolean) {
+  const x = recipeReach(w, r);
+  if (x.state === 'ready') return forDraft ? 'ready' : '';
+  if (x.state === 'never') return `no ${inputName(x.input!)} on this map`;
+  const b = BUILDING_BY_ID[x.via!].name.toLowerCase();
+  return forDraft ? `needs ${/^[aeiou]/.test(b) ? 'an' : 'a'} ${b}` : `nothing here makes ${inputName(x.input!)} yet: needs ${/^[aeiou]/.test(b) ? 'an' : 'a'} ${b}`;
+}
 /** filled stars in the accent colour, missing ones dimmed, so ★★ reads as two of three */
 const starHtml = (n: Stars) => `<span class="stars" aria-label="${n} of 3 stars">${'★'.repeat(n)}<s>${'★'.repeat(3 - n)}</s></span>`;
 
@@ -398,15 +406,7 @@ export class UI {
     const recs = recipesOf(b), cur = currentRecipe(w, b);
     const recipeText = (r: Recipe) => `${Object.keys(r.inputs).length ? `${Object.entries(r.inputs).map(([k, n]) => `${n} ${inputName(k as InputKey)}`).join(' + ')} → ` : ''}${RESOURCES.find(x => x.id === r.output)!.name.toLowerCase()}`;
     // whether a recipe's ingredients can come from anywhere: a building owned now, one that could be drafted, or nowhere on this map
-    const madeBy = (m: ResourceId, ids: string[]) => BUILDINGS.some(d => (d.basic || ids.includes(d.id)) && siteOk(w, d) && (d.recipes ?? []).some(x => x.output === m));
-    const reach = (r: Recipe) => {
-      for (const k of Object.keys(r.inputs) as InputKey[]) {
-        const ms = membersOf(k);
-        if (ms.some(m => madeBy(m, w.owned))) continue;
-        return ms.some(m => madeBy(m, BUILDINGS.map(d => d.id))) ? `nothing here makes ${inputName(k)} yet` : `no ${inputName(k)} on this map`;
-      }
-      return '';
-    };
+    const reach = (r: Recipe) => reachText(w, r, false);
     const recipe = !recs.length ? '' : recs.length === 1 && recipeOn(b, 0)
       ? `<p class="prefs">${starHtml(recs[0].stars)} ${Object.keys(recs[0].inputs).length ? 'Makes' : 'Gathers'} ${esc(recipeText(recs[0]))} · ${+recipeRate(recs[0]).toFixed(2)} per worker-hour</p>`
       : `<h3>Recipes</h3><p class="muted">Workers make the best switched-on recipe they can get ingredients for. Tap to switch one on or off.</p><div class="recipes">${recs.map((r, i) => {
@@ -465,9 +465,16 @@ export class UI {
           const cost = rerollCost(w), can = w.res.wood >= cost;
           // each card lists what the building makes, best recipe first, so a reroll is a judgement about routes
           const recipeLines = (id: string) => [...(BUILDING_BY_ID[id].recipes ?? [])].sort((a, z) => z.stars - a.stars)
-            .map(r => `${'★'.repeat(r.stars)}${'☆'.repeat(3 - r.stars)} ${Object.keys(r.inputs).length ? `${Object.entries(r.inputs).map(([k, n]) => `${n} ${inputName(k as InputKey)}`).join(' + ')} → ` : ''}${goodName(r.output)}`).join('\n');
+            .map(r => `${'★'.repeat(r.stars)}${'☆'.repeat(3 - r.stars)} ${Object.keys(r.inputs).length ? `${Object.entries(r.inputs).map(([k, n]) => `${n} ${inputName(k as InputKey)}`).join(' + ')} → ` : ''}${goodName(r.output)}${Object.keys(r.inputs).length ? ` · ${reachText(w, r, true)}` : ''}`).join('\n');
+          const charter = CHARTERS.find(c => c.id === w.charter);
+          const notes = (id: string) => {
+            const def = BUILDING_BY_ID[id], out: string[] = [];
+            if (charter && (CHARTER_HELPERS[charter.id] ?? []).includes(id)) out.push(`Helps your charter: ${charter.name}`);
+            if (def.cost.fine && stockOf(w, 'fine') < def.cost.fine && !['sawmill', 'kiln', 'carpenter'].some(m => w.owned.includes(m))) out.push('Needs planks or bricks, and nothing here makes them yet');
+            return out.length ? `\n${out.join('\n')}` : '';
+          };
           html = this.cards('A new blueprint', 'Pick one building to add to what you can build this run.',
-            d.options.map(id => { const b = BUILDING_BY_ID[id]; const rl = recipeLines(id); return { title: b.name, body: rl ? `${b.blurb}\n${rl}` : b.blurb, tag: `Costs ${costText(b.cost)}${b.slots ? ` · ${b.slots} worker${b.slots > 1 ? 's' : ''}` : ''}` }; }),
+            d.options.map(id => { const b = BUILDING_BY_ID[id]; const rl = recipeLines(id); return { title: b.name, body: `${rl ? `${b.blurb}\n${rl}` : b.blurb}${notes(id)}`, tag: `Costs ${costText(b.cost)}${b.slots ? ` · ${b.slots} worker${b.slots > 1 ? 's' : ''}` : ''}` }; }),
             undefined,
             `<button type="button" class="ghost skip" data-act="reroll" ${can ? '' : 'disabled'}>Reroll for ${cost} wood${can ? '' : ` (you have ${Math.floor(w.res.wood)})`}</button><p class="muted reroll-note">Each reroll this run costs ${REROLL_STEP} more than the last.</p>`);
           break;

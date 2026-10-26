@@ -702,6 +702,22 @@ export function usableHere(w: World, id: string, owned = w.owned) {
   const crafted = (r: ResourceId) => BUILDINGS.some(d => (d.basic || owned.includes(d.id)) && (d.recipes ?? []).some(x => x.output === r && Object.keys(x.inputs).length));
   return recs.some(rec => Object.keys(rec.inputs).every(k => membersOf(k as InputKey).some(r => canSupply(w, r, owned) || crafted(r))));
 }
+/**
+ * Can this recipe be fed? "ready": every input is made by something the colony owns. "draft": an input needs a building
+ * not owned yet (named in `via`, preferring one that gathers it). "never": nothing on this map could ever make an input.
+ */
+export function recipeReach(w: World, r: Recipe): { state: 'ready' | 'draft' | 'never'; input?: InputKey; via?: string } {
+  const makers = (m: ResourceId) => BUILDINGS.filter(d => siteOk(w, d) && (d.recipes ?? []).some(x => x.output === m));
+  for (const k of Object.keys(r.inputs) as InputKey[]) {
+    const ms = membersOf(k);
+    if (ms.some(m => makers(m).some(d => d.basic || w.owned.includes(d.id)))) continue;
+    const options = ms.flatMap(makers).filter(d => d.draftable);
+    if (!options.length) return { state: 'never', input: k };
+    const via = options.find(d => (d.recipes ?? []).some(x => ms.includes(x.output) && !Object.keys(x.inputs).length)) ?? options[0];
+    return { state: 'draft', input: k, via: via.id };
+  }
+  return { state: 'ready' };
+}
 /** some recipe here could be fed on this map once the right blueprints are drafted */
 export const usableEver = (w: World, id: string) => usableHere(w, id, BUILDINGS.map(d => d.id));
 /** wood for the next blueprint reroll: 10, then 20, then 30… across the whole run */

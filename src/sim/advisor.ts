@@ -2,10 +2,10 @@
 // It turns those into ranked concerns, each with the evidence a player would see and the fixes that follow.
 // The bot plays from this, which doubles as a readability test: if visible information is enough to play well,
 // the game is readable. Nothing here peeks at hidden state (fun, opinions, paths, travel times).
-import { BUILDING_BY_ID, MEALS, RAW_FOODS } from './content';
+import { BUILDING_BY_ID, BUILDINGS, MEALS, RAW_FOODS, RESOURCES, CATEGORIES, ResourceId } from './content';
 import {
   World, Colonist, alive, built, bdef, beds, workersAt, blockedReason, storageCap, stored, spoilingFood, mealTotal,
-  storageFree, currentRecipe, drinkTotal, usableHere, stockOf,
+  storageFree, currentRecipe, drinkTotal, usableHere, stockOf, recipeReach, enabledRecipes, siteOk,
 } from './world';
 import { economy } from './economy';
 
@@ -40,6 +40,7 @@ const owns = (w: World, id: string) => w.owned.includes(id);
 const slotsOf = (w: World, kind: string) => built(w).filter(b => defsOf(kind).includes(b.def)).reduce((n, b) => n + bdef(b).slots, 0);
 const workersOf = (w: World, kind: string) => built(w).filter(b => defsOf(kind).includes(b.def)).reduce((n, b) => n + workersAt(w, b.uid).length, 0);
 const name = (id: string) => BUILDING_BY_ID[id].name.toLowerCase();
+const goodName = (r: ResourceId) => RESOURCES.find(x => x.id === r)!.name.toLowerCase();
 
 /** gripe labels → a shared key, the way a player would group them on the colonist list */
 function gripeKey(label: string): string | null {
@@ -58,6 +59,7 @@ function gripeKey(label: string): string | null {
   if (label.endsWith('won’t stop complaining')) return 'grumbler';
   if (label === 'Loner: crowded workplace') return 'loner';
   if (label === 'Ugly surroundings') return 'ugly';
+  if (label.startsWith('Doesn’t care for ')) return 'taste';
   if (label.startsWith('The frontier')) return 'strain';
   return null;
 }
@@ -120,6 +122,39 @@ export function assess(w: World): Concern[] {
     else { fixes.push({ build: 'kitchen' }, { staff: 'kitchen', n: kslots + 2 }); idea = 'every kitchen slot is busy: build another kitchen'; }
     if (owns(w, 'pieoven') && !has(w, 'pieoven')) fixes.push({ build: 'pieoven' });
     add('raw', `${who('raw')} ate raw food`, `Meals in storage: ${mealTotal(w) | 0} · cooks ${cooks}/${kslots}${idle.length ? ' · a kitchen says "no ingredients"' : ''}${locked.length ? ` · food rules lock ${locked.join(', ')}` : ''}`, idea, wt('raw'), who('raw'), fixes);
+  }
+  // ---- tastes: people stuck with a meal or drink they don't care for ----
+  if (who('taste')) {
+    const ppl = g.get('taste')!.people;
+    // which goods they're getting and don't care for, read off their thoughts
+    const byName = (n: string) => RESOURCES.find(r => r.name.toLowerCase() === n)?.id;
+    const disliked = new Map<ResourceId, Colonist[]>();
+    for (const c of ppl) for (const t of c.thoughts) if (t.label.startsWith('Doesn’t care for ')) {
+      const r = byName(t.label.slice('Doesn’t care for '.length)); if (r) disliked.set(r, [...(disliked.get(r) ?? []), c]);
+    }
+    const [bad, who2] = [...disliked].sort((a, b) => b[1].length - a[1].length)[0] ?? [];
+    if (bad) {
+      const cat = CATEGORIES.meal.members.includes(bad) ? 'meal' : 'drink';
+      // the other kinds, the ones these people don't also dislike first
+      const alts = CATEGORIES[cat].members.filter(r => r !== bad).sort((a, b) => who2.filter(c => c.tastes.dislikes.includes(a)).length - who2.filter(c => c.tastes.dislikes.includes(b)).length);
+      const fixes: Fix[] = [];
+      let idea = '';
+      // nearest route to another kind: a built workshop whose best recipe makes it, then an owned one to build, then a draft
+      const best = (d: string, r: ResourceId) => { const recs = (BUILDING_BY_ID[d].recipes ?? []).filter(x => x.output === r); return recs.length && Math.max(...recs.map(x => x.stars)) === Math.max(...(BUILDING_BY_ID[d].recipes ?? []).map(x => x.stars)); };
+      const kindOf = (d: string) => defsOf('drinks').includes(d) ? 'drinks' : d;
+      for (const r of alts) {
+        const site = built(w).find(b => enabledRecipes(b)[0]?.output === r && recipeReach(w, enabledRecipes(b)[0]).state === 'ready');
+        if (site) { fixes.push({ staff: kindOf(site.def), n: workersOf(w, kindOf(site.def)) + 1 }); idea = `staff the ${name(site.def)} for ${goodName(r)}`; break; }
+        const own = w.owned.find(d => !has(w, d) && best(d, r) && (BUILDING_BY_ID[d].recipes ?? []).some(x => x.output === r && recipeReach(w, x).state === 'ready'));
+        if (own) { idea = buildOrDraft(w, own, fixes) || `build a ${name(own)} for ${goodName(r)}`; break; }
+      }
+      if (!idea) for (const r of alts) {
+        const d = BUILDINGS.find(x => x.draftable && !owns(w, x.id) && siteOk(w, x) && best(x.id, r) && (x.recipes ?? []).some(y => y.output === r && recipeReach(w, y).state !== 'never'));
+        if (d) { fixes.push({ draft: d.id }); idea = `draft a ${name(d.id)} for ${goodName(r)}`; break; }
+      }
+      add('taste', `${who2.length} don’t care for ${goodName(bad)}`, `They keep getting ${goodName(bad)} · each colonist’s page shows their favourite and least favourite`,
+        idea || `another kind of ${cat}`, wt('taste'), who2.length, fixes);
+    }
   }
   if (who('table')) {
     const seats = built(w).reduce((n, b) => n + (bdef(b).seats ?? 0), 0);
