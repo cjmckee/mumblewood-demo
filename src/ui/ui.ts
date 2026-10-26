@@ -5,6 +5,7 @@ import {
   day, hourOfDay, opinion, workersAt, MAX_DEPARTURES, sites, siteWork, remainingCost, storageCap, stored,
   keepsFresh, findSpot, canPlace, laborers, centerOf, built, Building, efficiencyAt, pathAt, MAP_SIZE, blockedReason, Errand, Difficulty, patientsAt, lost, bedridden, spoilingFood, accepts, roomIn, FOODS, GOODS,
 } from '../sim/world';
+import { assess } from '../sim/advisor';
 import type { IsoView, Picked } from '../render/iso';
 
 const esc = (s: string) => s.replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]!));
@@ -247,7 +248,7 @@ export class UI {
     }).join('');
     return `<div class="list-head"><span>${alive(w).length} colonists · ${beds(w)} beds · average mood ${Math.round(avgMood(w))}</span>
       <button type="button" class="ghost" data-act="auto">Auto-assign jobs</button></div>
-      <p class="muted hint">${laborers(w).length} laborers. Anyone without a job builds, hauls and cleans.</p><div class="rows">${rows}</div>
+      <p class="muted hint">${laborers(w).length} laborers. Anyone without a job builds, hauls and cleans.</p>${concernCards(w)}<div class="rows">${rows}</div>
       <h3>Food rules</h3><p class="muted hint">Turn a food off to keep it in storage for a charter or a feast. Nobody will touch it.</p>
       <div class="foodrules">${(['stew', 'pie', 'smokedFish', 'berries', 'fish', 'mushrooms'] as ResourceId[]).map(f => {
         const on = !w.forbidden.includes(f);
@@ -493,4 +494,11 @@ function moodLedger(c: Colonist) {
   const row = (label: string, v: number, cls: string) => `<div class="lg-row ${cls}"><span>${label}</span><i><b style="width:${Math.min(100, Math.abs(v) / scale * 100)}%"></b></i><em>${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(Math.round(v))}</em></div>`;
   return `<div class="ledger">${row('Good things', good, 'lg-good')}${row('Gripes', bad, 'lg-bad')}${row('Frontier wear', wear, 'lg-wear')}
     <p class="lg-sum">50 ${good >= 0 ? '+' : '−'} ${Math.abs(Math.round(good))} − ${Math.abs(Math.round(bad))} − ${Math.abs(Math.round(wear))} → heading to <b>${Math.round(c.moodTarget)}</b></p></div>`;
+}
+
+/** the colony's biggest complaints and warnings, read off the same things the player can see */
+function concernCards(w: World) {
+  const top = assess(w).slice(0, 3);
+  if (!top.length) return '<p class="muted hint">Nobody has anything to complain about. Enjoy it while it lasts.</p>';
+  return `<h3>What’s bothering people</h3><div class="concerns">${top.map(c => `<div class="concern"><b>${esc(c.title)}</b><small>${esc(c.evidence)}</small><span>→ ${esc(c.idea)}</span></div>`).join('')}</div><h3>Everyone</h3>`;
 }

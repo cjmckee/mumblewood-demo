@@ -12,6 +12,7 @@ const base = Number(process.argv[3] ?? 777);
 const depot = (process.argv[4] ?? 'food') as 'none' | 'food' | 'meals';
 const quiet = process.argv.includes('quiet');
 BOT.foodDepot = depot === 'none' ? false : depot;
+if (process.env.BOT_ADVISOR) BOT.advisor = process.env.BOT_ADVISOR === '1';
 if (process.env.BOT_LABORERS) BOT.laborersPer = Number(process.env.BOT_LABORERS);
 
 const pct = (xs: number[], p: number) => { const s = xs.slice().sort((a, b) => a - b); return s.length ? s[Math.min(s.length - 1, Math.floor(p * s.length))] : NaN; };

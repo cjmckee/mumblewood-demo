@@ -1,6 +1,7 @@
 // A heuristic player, used by the balance harness to play thousands of runs headlessly.
 // It reads the active charter and plays towards it, the way a person would.
 import { BUILDING_BY_ID, CHARTERS, EVENTS, ResourceId, MEALS } from './content';
+import { assess, Concern, defsOf } from './advisor';
 import { World, apply, alive, beds, mealTotal, sites, findSpot, CENTER, CHARTER_HELPERS, avgMood, built, MAP_SIZE, pathAt, terrainAt, T_WATER, bdef, workersAt, blockedReason, opinion, Building, Colonist, hourOfDay, charterProgress, buildingByUid, storageFree, storages, FOODS, GOODS, bedridden, foodTotal } from './world';
 
 const BLUEPRINT_PRIORITY = ['sawmill', 'pieoven', 'dock', 'cottage', 'brewery', 'tavern', 'smokehouse', 'cellar', 'stage', 'bathhouse'];
@@ -8,8 +9,27 @@ const PERK_PRIORITY = ['saintsDay', 'ironWill', 'communalPot', 'overtime', 'rati
 const MOOD_BUILDINGS = ['tavern', 'brewery', 'pieoven', 'bathhouse', 'cottage', 'stage'];
 const MOOD_CHARTERS = ['cheer', 'harmony', 'calm'];
 /** experiment switches for the balance tools */
-export const BOT: { foodDepot: false | 'food' | 'meals'; laborersPer: number } = { foodDepot: 'food', laborersPer: 3.5 };
+/**
+ * Experiment switches for the balance tools. `advisor` makes the bot play from what's on screen (the complaint
+ * panel) instead of its own rules; it's off by default because, so far, it plays worse (see the project doc).
+ */
+export const BOT = { foodDepot: 'food' as false | 'food' | 'meals', laborersPer: 3.5, advisor: false, gate: true, off: [] as string[] };
 const depots = new WeakMap<World, number>();
+/** what the bot read off the screen this hour; it plays from this rather than from hidden state */
+const advice = new WeakMap<World, { hour: number; concerns: Concern[] }>();
+export function concernsOf(w: World): Concern[] {
+  const a = advice.get(w);
+  if (a && a.hour === Math.floor(w.hour)) return a.concerns;
+  const concerns = BOT.advisor ? assess(w) : [];
+  advice.set(w, { hour: Math.floor(w.hour), concerns });
+  return concerns;
+}
+/** survival problems get fixed at once; comfort fixes wait until food and wood are comfortable, like a player who keeps the lights on first */
+const SURVIVAL = ['hungry', 'cold', 'wood', 'sick', 'beds', 'storage', 'idle-'];
+const comfortable = (w: World) => foodTotal(w) >= alive(w).length * 4 && w.res.wood >= 25;
+const fixesOf = (w: World, top = 4) => concernsOf(w)
+  .filter(c => !BOT.gate || SURVIVAL.some(k => c.id.startsWith(k)) || comfortable(w))
+  .slice(0, top).flatMap(c => c.fixes).filter(f => !BOT.off.includes(Object.keys(f)[0]));
 
 /** how far along a charter would already be if picked now, 0..1 */
 function progressIf(w: World, id: string) {
@@ -51,7 +71,8 @@ export function autoDecide(w: World, style: 'greedy' | 'random' = 'greedy', rand
       const feedable = (id: string) => id !== 'smokehouse' || w.owned.includes('dock');
       // a blueprint that needs planks is dead weight until there's a sawmill; a tavern without a brewery serves nothing
       const usable = (id: string) => (BUILDING_BY_ID[id].cost.planks && !w.owned.includes('sawmill') && id !== 'sawmill' ? 6 : 0) + (id === 'tavern' && !w.owned.includes('brewery') ? 3 : 0);
-      const rank = (id: string) => (helpers.includes(id) && feedable(id) ? -100 + helpers.indexOf(id) : 0) + BLUEPRINT_PRIORITY.indexOf(id) + usable(id);
+      const asked = fixesOf(w, 3).filter((f): f is { draft: string } => 'draft' in f).map(f => f.draft);
+      const rank = (id: string) => (helpers.includes(id) && feedable(id) ? -100 + helpers.indexOf(id) : 0) + (asked.includes(id) ? -50 + asked.indexOf(id) : 0) + BLUEPRINT_PRIORITY.indexOf(id) + usable(id);
       option = d.options.map(rank).reduce((best, p, i, arr) => (p < arr[best] ? i : best), 0);
     } else if (d.kind === 'perk') {
       option = d.options.map(o => PERK_PRIORITY.indexOf(o)).reduce((best, p, i, arr) => (p < arr[best] ? i : best), 0);
@@ -104,6 +125,8 @@ export function autoBuild(w: World) {
 
     const pendingBeds = sites(w).reduce((n, b) => n + (BUILDING_BY_ID[b.def].beds ?? 0), 0);
     if (beds(w) + pendingBeds < pop + 1) want.push(w.owned.includes('cottage') && w.res.planks >= 10 && !saving.includes('planks') ? 'cottage' : 'leanto');
+    // what people are complaining about comes next, biggest complaint first
+    for (const f of fixesOf(w)) if ('build' in f && f.build && (w.owned.includes(f.build) || BUILDING_BY_ID[f.build].basic) && !want.includes(f.build)) want.push(f.build);
     if (count('dining') < Math.ceil(pop / 6)) want.push('dining');
     if (count('kitchen') === 0) want.push('kitchen');
     if (count('clinic') === 0 && (day(w) >= 4 || alive(w).some(c => c.illness))) want.push('clinic');
@@ -112,7 +135,7 @@ export function autoBuild(w: World) {
     if (count('storehouse') === 0 && day(w) >= 3) want.push('storehouse');
     const garden = w.charter === 'garden' || w.charter === 'pretty';
     if (garden) { if (count('flowerbed') < 10) want.unshift('flowerbed'); if (count('lantern') < 4) want.push('lantern'); }
-    if (kind === 'avgMood' || kind === 'contentPop' || kind === 'couples' || kind === 'calm' || avgMood(w) < 45) {
+    if (kind === 'avgMood' || kind === 'contentPop' || kind === 'couples' || kind === 'calm' || (!BOT.advisor && avgMood(w) < 45)) {
       for (const id of MOOD_BUILDINGS) if (w.owned.includes(id) && count(id) === 0) want.push(id);
       const spare = w.res.wood > 45;
       if (count('flowerbed') < 6 && spare) want.push('flowerbed');
@@ -210,8 +233,6 @@ function rawFoodWorkers(w: World, pop: number) {
   const perWorker = 12 * (huts.length ? huts.reduce((n, b) => n + (bdef(b).recipe!.rate * b.eff), 0) / huts.length : 1.0);
   return Math.max(1, Math.ceil((pop * 2.6) / perWorker));
 }
-const KIND_DEFS: Record<string, string[]> = { rawFood: ['forager', 'dock', 'cellar'] };
-const defsOf = (kind: string) => KIND_DEFS[kind] ?? [kind];
 
 /** How many workers the bot wants in each building right now: essentials first, then the charter, then extras. */
 export function staffPlan(w: World): Map<number, number> {
@@ -219,7 +240,8 @@ export function staffPlan(w: World): Map<number, number> {
   const ch = w.charter ?? '';
   const want = staffWants(w);
   // a skeleton crew keeps its jobs going and builds with whoever is left
-  const keepFree = pop <= 5 ? 1 : Math.max(2, Math.ceil(pop / BOT.laborersPer)) + (sites(w).length > 1 ? 1 : 0);
+  const extraHands = fixesOf(w).reduce((n, f) => n + ('laborers' in f ? f.laborers : 0), 0);
+  const keepFree = (pop <= 5 ? 1 : Math.max(2, Math.ceil(pop / BOT.laborersPer)) + (sites(w).length > 1 ? 1 : 0)) + Math.min(1, extraHands);
   let budget = Math.max(0, pop - keepFree);
   const given: Record<string, number> = {};
   const plan = new Map<number, number>();
@@ -230,10 +252,13 @@ export function staffPlan(w: World): Map<number, number> {
   // 1. essentials, one each
   // food and wood first: everything else is built from them
   give('rawFood', 1); give('woodcutter', 1); give('kitchen', 1);
+  // then what the complaints call for, biggest first
+  const serveFixes = () => { for (const f of fixesOf(w)) if ('staff' in f) { want[f.staff] = Math.max(want[f.staff] ?? 0, f.n); give(f.staff, f.n); } };
   const rawStock = w.res.berries + w.res.fish + w.res.mushrooms;
   if (rawStock < pop * 4) give('rawFood', 99);
   if (w.res.wood < 30) give('woodcutter', 99);
   give('clinic', 1);
+  serveFixes();
   // planks unlock every mood building, so the sawmill counts as an essential once there's something to spend them on
   give('sawmill', 1);
   // 2. whatever the charter leans on
@@ -290,6 +315,13 @@ export function autoStaff(w: World) {
     const swap = alive(w).find(o => o.job == null && o.errand == null && !bedridden(o) && o.dislikes !== bdef(b).job);
     if (swap) { apply(w, { type: 'assign', colonist: c.id, building: null }); apply(w, { type: 'assign', colonist: swap.id, building: b.uid }); }
   }
+  // split up people who can't stand a coworker
+  if (fixesOf(w).some(f => 'reassign' in f && f.reassign !== 'hated')) for (const c of alive(w)) {
+    if (c.job == null || !c.thoughts.some(t => t.value < 0 && (t.label.startsWith('Has to work with') || t.label.endsWith('won’t stop complaining')))) continue;
+    const b = buildingByUid(w, c.job)!;
+    const swap = alive(w).find(o => o.job == null && o.errand == null && !bedridden(o) && o.dislikes !== bdef(b).job && !workersAt(w, b.uid).some(x => opinion(w, o.id, x.id) < -20));
+    if (swap) { apply(w, { type: 'assign', colonist: c.id, building: null }); apply(w, { type: 'assign', colonist: swap.id, building: b.uid }); }
+  }
   // then fill gaps from laborers, best fit first
   for (const [uid, n] of [...plan].sort((a, b) => b[1] - a[1])) {
     const b = w.buildings.find(x => x.uid === uid)!;
@@ -308,7 +340,9 @@ export function autoFoodRules(w: World) {
   const raw = w.res.berries + w.res.fish + w.res.mushrooms;
   const keep: ResourceId[] = [];
   if (w.charter === 'pieday') keep.push('pie');
-  if ((w.charter === 'pantry' || w.charter === 'feast') && raw > pop * 3) keep.push('stew', 'pie', 'smokedFish');
+  const rawEaters = concernsOf(w).find(c => c.id === 'raw')?.people ?? 0;
+  const close = (charterProgress(w)?.ratio ?? 0) >= 0.6;
+  if ((w.charter === 'pantry' || w.charter === 'feast') && raw > pop * 3 && (close || rawEaters < pop / 3 || !BOT.advisor || BOT.off.includes('relaxFoodRules'))) keep.push('stew', 'pie', 'smokedFish');
   if (raw < pop * 1.5) keep.length = 0; // never let anyone starve for a charter
   for (const f of ['stew', 'pie', 'smokedFish', 'berries', 'fish', 'mushrooms'] as ResourceId[]) {
     const allowed = !keep.includes(f);
