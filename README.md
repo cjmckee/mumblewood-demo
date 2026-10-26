@@ -27,6 +27,11 @@ npx tsc -p .                   # type-check
 
 Open `dist/mumblewood.html` in a browser. It works on phones too.
 
+## Deploy
+
+Every push to `main` builds the game and publishes `dist/site/index.html` to GitHub Pages
+(`.github/workflows/pages.yml`). In the repo's Settings → Pages, set Source to "GitHub Actions".
+
 ## Layout
 
 | Path | What it is |
