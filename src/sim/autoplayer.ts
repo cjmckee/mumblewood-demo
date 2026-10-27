@@ -213,7 +213,7 @@ export function charterChain(w: World): string[] {
  * Experiment switches for the balance tools. `advisor` makes the bot play from what's on screen (the complaint
  * panel) instead of its own rules; it's off by default because, so far, it plays worse (see the project doc).
  */
-export const BOT = { rateStaffing: true, unlockChain: true, ruleGap: true, hallMood: true, varietyRules: true, bankDrinks: true, bankHall: false, chainBeforeWinter: true, effortPick: true, moodFestival: true, festival: true, festivalAt: 8, comfortsFirst: false, recruitCap: 0, recruitExtra: 4, comforts: true, foodDepot: 'food' as false | 'food' | 'meals', laborersPer: 3.5, advisor: false, gate: true, ranked: true, comfort: 'strict' as 'strict' | 'econ' | 'none', rescue: false, rescueAt: 40, moodBlock: false, reroll: true, variety: false, routes: false, off: [] as string[], skip: [] as string[] };
+export const BOT = { rateStaffing: false, unlockChain: true, ruleGap: true, hallMood: true, varietyRules: true, bankDrinks: true, bankHall: false, chainBeforeWinter: true, effortPick: true, moodFestival: true, festival: true, festivalAt: 8, comfortsFirst: false, recruitCap: 0, recruitExtra: 4, comforts: true, foodDepot: 'food' as false | 'food' | 'meals', laborersPer: 3.5, advisor: false, gate: true, ranked: true, comfort: 'strict' as 'strict' | 'econ' | 'none', rescue: false, rescueAt: 40, moodBlock: false, reroll: true, variety: false, routes: false, off: [] as string[], skip: [] as string[] };
 
 // ---------- Explaining the bot ----------
 /** one thing the bot decided and why: each option with its score broken into parts, or a staffing or build step */
@@ -376,6 +376,9 @@ function canPay(w: World, effect: string) {
 // ---------- Staffing by need ----------
 // Food and wood are staffed from what the colony actually uses and what a worker actually brings in, read off the
 // ledger, not from thresholds: (daily use + a refill toward a target stock over a couple of days) / output per worker.
+// Off by default (BOT.rateStaffing): over 100 runs it kept colonies safer (18% collapse against 28%) but held so many
+// hands on food and wood that charters crawled (21% wins at day 81 against 33% at day 59). The thresholds it replaces
+// let stocks run thin, which frees people for the charter. Worth another look once layouts cut gatherers' walking.
 const RAW_MAKERS = ['forager', 'dock', 'cellar', 'orchard'];
 interface EconMemory { day: number; woodUse: number[]; rawUse: number[]; staff: { wood: number; raw: number }[] }
 const econMemory = new WeakMap<World, EconMemory>();
