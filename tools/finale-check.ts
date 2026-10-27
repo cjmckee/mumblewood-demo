@@ -127,11 +127,11 @@ const untilHour = (w: World, h: number, each: () => void = () => {}) => { for (l
   const w = createWorld(92); clear(w); debugGrow(w, 6);
   const c = alive(w)[0];
   c.lastMeal = { cooked: false, table: false, loved: false }; c.hunger = 80; c.fun = 10; c.beauty = -1; c.bed = null; c.illness = null;
-  ok(comfortParts(w, c).meals === 0 && comfortParts(w, c).shelter === 0, 'raw food and no bed: meals and shelter at 0');
+  ok(comfortParts(w, c, 1).meals === 0 && comfortParts(w, c, 1).shelter === 0, 'raw food and no bed: meals and shelter at 0');
   c.lastMeal = { cooked: true, table: true, loved: true };
-  ok(Math.abs(comfortParts(w, c).meals - 1) < 1e-9, 'a favourite meal at a table: meals at 100%');
+  ok(Math.abs((comfortParts(w, c, 1).meals ?? 0) - 1) < 1e-9, 'a favourite meal at a table: meals at 100%');
   c.hunger = 10;
-  ok(comfortParts(w, c).meals === 0, 'going hungry counts as no meal');
+  ok(comfortParts(w, c, 1).meals === 0, 'going hungry counts as no meal');
   for (const x of alive(w)) { x.lastMeal = { cooked: false, table: false, loved: false }; x.fun = 0; x.beauty = -1; x.bed = null; x.illness = null; }
   w.comfort = undefined;
   const low = strainPerDay(w), lowC = alive(w).reduce((n, x) => n + comfortOf(w, x), 0) / alive(w).length;

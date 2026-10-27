@@ -2,7 +2,8 @@
 // It reads the active charter and plays towards it, the way a person would.
 import { BUILDING_BY_ID, BUILDINGS, CATEGORIES, CharterMetric, RESEARCH_BY_ID, EVENTS, ResourceId, MEALS, RAW_FOODS, Recipe, InputKey, membersOf, recipeRate } from './content';
 import { assess, Concern, defsOf } from './advisor';
-import { World, apply, alive, beds, mealTotal, sites, findSpot, CENTER, avgMood, built, MAP_SIZE, pathAt, terrainAt, T_WATER, bdef, workersAt, blockedReason, opinion, Building, Colonist, hourOfDay, charterProgress, buildingByUid, storageFree, storages, FOODS, GOODS, bedridden, foodTotal, currentRecipe, drinkTotal, siteOk, enabledRecipes, recipesOf, rerollCost, stockOf, usableHere, charterDef, charterHelpers, feastCheck, desks, researchLeft, festivalPreview, edibleTotal, doorTile, centerOf } from './world';
+import { World, apply, alive, beds, mealTotal, sites, findSpot, CENTER, avgMood, built, MAP_SIZE, pathAt, terrainAt, T_WATER, bdef, workersAt, blockedReason, opinion, Building, Colonist, hourOfDay, charterProgress, buildingByUid, storageFree, storages, FOODS, GOODS, bedridden, foodTotal, currentRecipe, drinkTotal, siteOk, enabledRecipes, recipesOf, rerollCost, stockOf, usableHere, charterDef, charterHelpers, feastCheck, desks, researchLeft, festivalPreview, edibleTotal, doorTile, centerOf, winterStores, storageCap, stored } from './world';
+import { seasonOf } from './seasons';
 
 const BLUEPRINT_PRIORITY = ['sawmill', 'pieoven', 'dock', 'cottage', 'brewery', 'ciderpress', 'tavern', 'kiln', 'claypit', 'carpenter', 'orchard', 'field', 'apiary', 'smokehouse', 'cellar', 'stage', 'bathhouse', 'bakery', 'apothecary', 'herbgarden', 'mill'];
 const DRINK_MAKERS = ['brewery', 'ciderpress'];
@@ -234,7 +235,7 @@ export function concernsOf(w: World): Concern[] {
   return concerns;
 }
 /** survival problems get fixed at once; comfort fixes wait until food and wood are comfortable, like a player who keeps the lights on first */
-const SURVIVAL = ['hungry', 'cold', 'wood', 'sick', 'beds', 'storage', 'idle-', 'foodflow', 'woodflow', 'slack'];
+const SURVIVAL = ['hungry', 'cold', 'winter', 'coldhomes', 'wood', 'sick', 'beds', 'storage', 'idle-', 'foodflow', 'woodflow', 'slack'];
 const comfortable = (w: World) => BOT.comfort === 'none' || (foodTotal(w) >= alive(w).length * 4 && w.res.wood >= 25 && (BOT.comfort === 'econ' || !concernsOf(w).some(c => c.id === 'stretched')))
   // when people are about to walk out, their complaints come first, whatever it costs
   || (BOT.rescue && (avgMood(w) < BOT.rescueAt || alive(w).some(c => c.sulking)));
@@ -330,7 +331,8 @@ export function autoDecide(w: World, style: 'greedy' | 'random' = 'greedy', rand
       const cap = BOT.recruitCap || (popPart ? Math.max(popPart + BOT.recruitExtra, 8) : 12);
       // only take on mouths the larder can feed
       const raw = rawStock(w) + mealTotal(w);
-      const fed = raw > alive(w).length * 3;
+      const ws = winterStores(w);
+      const fed = raw > alive(w).length * 3 && (ws.food === 0 || raw >= ws.food * 0.9);
       const ok = alive(w).length < cap && alive(w).length < beds(w) + 2 && (wantsPeople || avgMood(w) > 40) && fed;
       option = ok ? bestI : 99;
       if (TRACE.on) {
@@ -423,6 +425,10 @@ export function autoBuild(w: World) {
     const sw = staffWants(w);
     if (['drinks', 'kiln', 'sawmill', 'bakery', 'mill', 'apothecary'].some(k => (sw[k] ?? 0) > 0)) for (const g of neededGatherers(w)) if (w.owned.includes(g) && count(g) === 0) want.push(g);
     if (count('storehouse') === 0) want.push('storehouse');
+    // winter stores need somewhere to go
+    const ws = winterStores(w);
+    const room = storageCap(w) - stored(w) - sites(w).reduce((n, b) => n + (bdef(b).storage ?? 0), 0);
+    if (ws.food + ws.wood > 0 && room < Math.max(0, ws.food - foodTotal(w)) + Math.max(0, ws.wood - w.res.wood) + 20) want.unshift(w.owned.includes('storehouse') ? 'storehouse' : 'stockpile');
     // more room when one kind of good runs out of space
     if (storageFree(w, 'wood') < 30 && storages(w).length > 0) want.unshift('stockpile');
     if (count('storehouse') > 0 && storageFree(w, 'berries') < 30) want.unshift(count('storehouse') < 2 ? 'storehouse' : 'stockpile');
@@ -485,7 +491,12 @@ export function autoBuild(w: World) {
     const avg24 = log.length ? log.reduce((a, b) => a + b, 0) / log.length : avgMood(w);
     const label = charterProgress(w)?.label ?? '';
     const onlyMood = !!moodPart && avg24 < moodPart.amount && avg24 >= moodPart.amount - 8 && label.split(' · ').filter(x => !x.startsWith('✓')).length === 1;
-    if (!p.wait && p.fed === p.guests && ((w.strain >= BOT.festivalAt && (spare || w.strain >= BOT.festivalAt * 2)) || (BOT.moodFestival && onlyMood && mealTotal(w) >= alive(w).length * 1.2))) {
+    // the harvest home: one festival every autumn, late enough that the stores are mostly in
+    const s = seasonOf(w);
+    const harvest = s.season === 'autumn' && s.dayOf >= 5 && (w.festival?.at ?? -1e9) < w.hour - s.dayOf * 24;
+    if (harvest && !p.wait && p.fed >= p.guests * 0.8) {
+      if (!apply(w, { type: 'callFestival' })) note(w, { kind: 'decision', title: 'Harvest festival called', lines: [`autumn day ${s.dayOf}, none held yet this autumn; ${Math.floor(mealTotal(w))} meals for ${alive(w).length}`] });
+    } else if (!p.wait && p.fed === p.guests && ((w.strain >= BOT.festivalAt && (spare || w.strain >= BOT.festivalAt * 2)) || (BOT.moodFestival && onlyMood && mealTotal(w) >= alive(w).length * 1.2))) {
       if (!apply(w, { type: 'callFestival' })) note(w, { kind: 'decision', title: 'Festival called', lines: [`strain ${Math.round(w.strain)} ≥ ${BOT.festivalAt}; ${Math.floor(mealTotal(w))} meals for ${alive(w).length}${countingMeals ? ' (the charter counts meals, so it keeps 3 each)' : ''}; eases about ${Math.round(p.relief)}`] });
     }
   }
@@ -504,6 +515,8 @@ export function staffWants(w: World): Record<string, number> {
   const pop = alive(w).filter(c => !bedridden(c)).length;
   const ch = w.charter ?? '';
   const raw = rawStock(w);
+  // stores for the coming winter
+  const ws = winterStores(w);
   // a second meal route once food and wood are comfortable: one cook on the first pie oven, smokehouse or bakery that can be fed
   const comfy = foodTotal(w) >= pop * 4 && w.res.wood >= 25;
   const second = BOT.variety && comfy ? ['pieoven', 'smokehouse', 'bakery'].find(id => built(w).some(b => b.def === id && plannedRecipe(w, b) && MEALS.includes(plannedRecipe(w, b)!.output))) : undefined;
@@ -511,8 +524,8 @@ export function staffWants(w: World): Record<string, number> {
   const charterDrinks = (ch === 'roof' && drinkTotal(w) < 18) || ch === 'tasting' || (hall && (hall.stage ?? 0) >= 1) || (ch === 'longtable' && drinkTotal(w) < pop * 1.5);
   const drinksWanted = charterDrinks ? 2 : drinkTotal(w) < 15 && built(w).some(b => b.def === 'tavern') ? 1 : 0;
   return {
-    woodcutter: 1 + Math.floor(pop / 5) + (moodCharter(w) || ch === 'firstplanks' ? 1 : 0) + (w.res.wood < 25 ? 1 : 0),
-    rawFood: rawFoodWorkers(w, pop) + (raw < pop * 4 ? 1 : 0) + (['settled', 'piesky', 'longtable'].includes(ch) ? 1 : 0),
+    woodcutter: 1 + Math.floor(pop / 5) + (moodCharter(w) || ch === 'firstplanks' ? 1 : 0) + (w.res.wood < 25 ? 1 : 0) + (w.res.wood < ws.wood ? 1 + Math.floor(pop / 6) : 0),
+    rawFood: rawFoodWorkers(w, pop) + (raw < pop * 4 ? 1 : 0) + (['settled', 'piesky', 'longtable'].includes(ch) ? 1 : 0) + (foodTotal(w) < ws.food ? 1 + Math.floor(pop / 6) : 0),
     kitchen: Math.max(1, Math.ceil(pop / 9)) + (['settled', 'longtable'].includes(ch) || (hall?.stage ?? 0) === 1 ? 1 : 0),
     desk: w.research?.current && desks(w).length ? 1 : 0,
     sawmill: (stockOf(w, 'fine') < planksWanted(w) ? 2 : stockOf(w, 'fine') < 25 ? 1 : 0) + (['firstplanks', 'roof', 'hall'].includes(ch) ? 1 : 0),
@@ -594,8 +607,9 @@ export function staffPlan(w: World, explain = false): Map<number, number> {
     }
   };
   if (BOT.comfortsFirst) { stage = 'comforts'; comforts(); stage = 'food and wood top-ups'; }
-  if (rawStock(w) < pop * 4) give('rawFood', 99);
-  if (w.res.wood < 30) give('woodcutter', Math.max(2, Math.ceil(pop / 4)));
+  const ws = winterStores(w);
+  if (rawStock(w) < pop * 4 || foodTotal(w) < ws.food) give('rawFood', 99);
+  if (w.res.wood < Math.max(30, ws.wood)) give('woodcutter', Math.max(2, Math.ceil(pop / 4)) + (w.res.wood < ws.wood ? 1 : 0));
   give('clinic', 1);
   serveFixes();
   // planks unlock every mood building, so the sawmill counts as an essential once there's something to spend them on

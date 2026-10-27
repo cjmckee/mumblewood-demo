@@ -5,9 +5,10 @@
 import { BUILDING_BY_ID, BUILDINGS, MEALS, RAW_FOODS, RESOURCES, CATEGORIES, ResourceId, RESEARCH } from './content';
 import {
   World, Colonist, alive, built, bdef, beds, workersAt, blockedReason, storageCap, stored, spoilingFood, mealTotal,
-  storageFree, currentRecipe, drinkTotal, usableHere, stockOf, recipeReach, enabledRecipes, siteOk, festivalPreview, charterProgress,
+  storageFree, currentRecipe, drinkTotal, usableHere, stockOf, recipeReach, enabledRecipes, siteOk, festivalPreview, charterProgress, foodTotal, winterStores, winterFuelPerDay,
 } from './world';
 import { economy } from './economy';
+import { seasonOf } from './seasons';
 
 export type Fix =
   | { build: string }
@@ -193,6 +194,22 @@ export function assess(w: World): Concern[] {
     const maker = drinkMaker(w);
     const idea = buildOrDraft(w, maker, fixes) || (workersOf(w, 'drinks') ? `the ${name(maker)} needs ingredients carried in` : `staff the ${name(maker)}`);
     add('ale', `${who('ale')} want a drink`, `Drinks in storage: ${drinkTotal(w) | 0} · brewers ${workersOf(w, 'drinks')}/${slotsOf(w, 'drinks')}`, idea, wt('ale'), who('ale'), fixes);
+  }
+  // ---- winter ----
+  {
+    const ws = winterStores(w), sea = seasonOf(w);
+    const food = foodTotal(w), wood = w.res.wood;
+    if ((ws.food > 0 && food < ws.food) || (ws.wood > 0 && wood < ws.wood)) {
+      const fixes: Fix[] = [];
+      const lines: string[] = [];
+      if (food < ws.food) { fixes.push({ staff: 'rawFood', n: 3 }); lines.push(`food ${Math.floor(food)} of about ${ws.food}`); }
+      if (wood < ws.wood) { fixes.push({ staff: 'woodcutter', n: 3 }); lines.push(`wood ${Math.floor(wood)} of about ${ws.wood}`); }
+      const when = sea.season === 'winter' ? 'Winter is here' : `Winter in ${sea.toWinter} day${sea.toWinter === 1 ? '' : 's'}`;
+      const short = (food < ws.food ? 1 - food / ws.food : 0) + (wood < ws.wood ? 1 - wood / ws.wood : 0);
+      add('winter', sea.season === 'winter' ? 'Stores are running down' : 'Winter is coming', `${when}: ${lines.join(', ')}`, `${food < ws.food ? 'more foragers and fishers' : ''}${food < ws.food && wood < ws.wood ? ' and ' : ''}${wood < ws.wood ? 'more woodcutters' : ''}; fill the storehouse before the snow`, 12 + short * (sea.season === 'winter' ? 30 : 18), pop, fixes);
+    }
+    const cold = alive(w).filter(c => c.cold).length;
+    if (cold) add('coldhomes', `${cold} cold at night`, alive(w).some(c => c.cold && c.bed == null) ? 'Some have no bed to keep warm in' : `Homes burn about ${Math.round(winterFuelPerDay(w))} wood a day and the woodpile is at ${Math.floor(wood)}`, 'more woodcutters, and a bed for everyone', 10 + cold * 2, cold, [{ staff: 'woodcutter', n: 3 }]);
   }
   // ---- homes ----
   if (who('beds')) add('beds', `${who('beds')} sleeping on the ground`, `${beds(w)} beds for ${pop} people`, 'build a shack', wt('beds') * 1.5, who('beds'), [{ build: 'leanto' }]);

@@ -6,13 +6,14 @@ import {
   keepsFresh, findSpot, canPlace, laborers, centerOf, built, Building, efficiencyAt, pathAt, MAP_SIZE, blockedReason, Errand, patientsAt, lost, bedridden, spoilingFood, accepts, roomIn, FOODS, GOODS,
   recipesOf, recipeOn, currentRecipe, siteOk, rerollCost, REROLL_STEP, stockOf, recipeReach, charterHelpers, charterDef,
   costOf, researchLeft, researchStillNeeds, desks, feastCheck, festivalPreview, mealTotal, drinkTotal,
-  comfortParts, comfortOf, colonyComfort, comfortGaps, strainPerDay, COMFORT_NEEDS, footprint,
+  comfortParts, comfortOf, colonyComfort, comfortGaps, strainPerDay, footprint, activeNeeds, standingOf, STANDINGS, NeedKey, winterFuelPerDay,
 } from '../sim/world';
 import { START } from '../sim/scenario';
 import { assess } from '../sim/advisor';
 import { economy, Account } from '../sim/economy';
 import type { IsoView, Picked } from '../render/iso';
 import { icon } from './icons';
+import { seasonOf, SEASON_NAMES } from '../sim/seasons';
 
 const esc = (s: string) => s.replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]!));
 const first = (c: Colonist) => c.name.split(' ')[0];
@@ -223,6 +224,7 @@ export class UI {
         : `<button type="button" class="chip feast${f.ok ? ' ready' : ''}" data-act="feast">${f.ok ? 'Call the feast' : 'Call the feast anyway'}</button>`;
     })() : '';
     const strain = Math.round(w.strain);
+    const sea = seasonOf(w);
     const cap = storageCap(w), st = stored(w);
     const spoiling = spoilingFood(w) >= 5;
     const storeChip = `<span class="chip store${st >= cap ? ' full' : ''}" title="Goods in storage, of what it can hold">${icon('stockpile')}<b>${Math.floor(st)}/${cap}</b><span class="nm"> stored</span></span>`
@@ -232,7 +234,7 @@ export class UI {
       .map(r => `<span class="chip" title="${r.name}" aria-label="${Math.floor(w.res[r.id])} ${r.name}">${icon(r.id)}<b>${Math.floor(w.res[r.id])}</b><span class="nm"> ${r.name}</span></span>`).join('');
     const html = `
       <div class="bar">
-        <div class="clock"><span class="day">Day ${day(w)}</span><span class="time">${hh}:00<span class="phase"> · ${timeOfDay(h)}</span></span></div>
+        <div class="clock"><span class="day">Day ${day(w)}</span><span class="when"><span class="time">${hh}:00<span class="phase"> · ${timeOfDay(h)}</span></span><span class="season s-${sea.season}" title="${SEASON_NAMES[sea.season]}, day ${sea.dayOf} of ${START.seasons.days}${sea.season !== 'winter' ? `; winter in ${sea.toWinter} days` : ''}">${SEASON_NAMES[sea.season]} ${sea.dayOf}/${START.seasons.days}</span></span></div>
         <div class="speeds" role="group" aria-label="Game speed">
           ${[['0', 'Pause'], ['1', '1×'], ['2', '2×'], ['3', '3×']].map(([s, l]) => `<button type="button" data-act="speed" data-arg="${s}" class="${this.speed === Number(s) ? 'on' : ''}" aria-pressed="${this.speed === Number(s)}">${l}</button>`).join('')}
         </div>
@@ -262,6 +264,13 @@ export class UI {
   private strainCard(w: World) {
     const comfort = colonyComfort(w);
     const gaps = comfortGaps(w);
+    const st = standingOf(w), sea = seasonOf(w);
+    const next = st + 1 < STANDINGS.length ? activeNeeds(w, st + 1).filter(k => !activeNeeds(w).includes(k)) : [];
+    const nextLine = st + 1 < STANDINGS.length ? `<p class="terms">At the next charter the town becomes a <b>${STANDINGS[st + 1].toLowerCase()}</b>, and people expect more${next.length ? `: ${next.map(k => NEED_NAMES[k].toLowerCase()).join(', ')} start to count` : ''}${st + 1 >= 2 ? ', a shack counts half, and meals want a table' : ', and cooked meals replace any old food'}.</p>` : '<p class="terms">A village expects the most it ever will, though from the second year everyone gets a little pickier.</p>';
+    const seasonLine = sea.season === 'winter' ? `Winter: everyone needs a warm home. Homes and the hearth burn about ${Math.round(winterFuelPerDay(w))} wood a day.`
+      : sea.season === 'autumn' ? `Autumn: winter in ${sea.toWinter} day${sea.toWinter === 1 ? '' : 's'}. Homes and the hearth will burn about ${Math.round(winterFuelPerDay(w, true))} wood a day, and people expect a harvest festival first.`
+      : sea.season === 'spring' && st >= 1 ? 'Spring: people want something fresh now and then: berries, apples, fish or skewers.'
+      : sea.season === 'summer' && st >= 1 ? 'Summer: people want a drink each day in the heat.' : '';
     const pct = (x: number) => `${Math.round(x * 100)}%`;
     const factor = Math.max(0.2, START.comfortScale.base - comfort * START.comfortScale.slope);
     const rows = gaps.map(g => `<div class="lg-row ${g.avg >= 0.7 ? 'lg-good' : 'lg-bad'}"><span>${NEED_NAMES[g.need]}</span><i><b style="width:${Math.round(g.avg * 100)}%"></b></i><em>${pct(g.avg)}</em></div>`).join('');
@@ -269,7 +278,9 @@ export class UI {
     return `<div class="card-wrap event"><p class="eyebrow">Frontier strain</p><h2>Strain ${Math.round(w.strain)}, rising ${strainPerDay(w).toFixed(1)} a day</h2>
       <p class="lede">The frontier wears on everyone, more as the colony grows and as the weeks go by. How comfortable people are sets how fast: a comfortable colony strains far slower.</p>
       <p class="prefs">Comfort <b>${pct(comfort)}</b>, so strain rises at <b>${factor.toFixed(2)}×</b>. A fully comfortable colony would rise at ${Math.max(0.2, START.comfortScale.base - START.comfortScale.slope).toFixed(1)}×.</p>
+      <p class="prefs">Your town is a <b>${STANDINGS[st].toLowerCase()}</b>. Its comfort counts:</p>
       <div class="ledger">${rows}</div>
+      ${seasonLine ? `<p class="terms">${esc(seasonLine)}</p>` : ''}${nextLine}
       ${worst.length ? `<p class="terms">Biggest gaps: ${worst.join('; ')}.</p>` : ''}
       <p class="terms">It eases when a charter is finished (by ${pct(START.relief.charter)}) or when you hold a festival.</p>
       <div class="opts">${!w.festival?.called && !festivalPreview(w).wait ? `<button type="button" class="opt" data-act="strain-festival"><b>Plan a festival</b><span>${festivalPreview(w).relief >= 0.5 ? `Eases strain by about ${Math.round(festivalPreview(w).relief)}` : 'Strain is low, so it would ease very little'}</span></button>` : ''}</div>
@@ -673,25 +684,38 @@ function storeLabel(b: Building) {
   return `${b.allow.length} kinds`;
 }
 
-const NEED_NAMES: Record<string, string> = { shelter: 'Shelter', meals: 'Meals', evenings: 'Evenings', health: 'Health', surroundings: 'Surroundings' };
-const NEED_FIX: Record<string, string> = {
+const NEED_NAMES: Record<NeedKey, string> = { shelter: 'Shelter', food: 'Food', fire: 'A fire', meals: 'Meals', variety: 'Variety', health: 'Health', evenings: 'Evenings', surroundings: 'Surroundings', fresh: 'Something fresh', drink: 'A cold drink', warmth: 'Warmth' };
+const NEED_FIX: Record<NeedKey, string> = {
   shelter: 'beds for everyone, cottages better still',
+  food: 'enough food in storage',
+  fire: 'wood for the hearth at night',
   meals: 'cooked meals at a table, favourites best',
+  variety: 'a second kind of meal, so nobody eats the same thing for days',
   evenings: 'something to do in the evening: a tavern, a stage',
   health: 'a clinic with a doctor for the sick',
   surroundings: 'paths and decorations where people spend time',
+  fresh: 'berries, apples, fish or skewers now and then',
+  drink: 'ale, cider, mead or tea at the tavern',
+  warmth: 'beds for everyone and wood for every home’s fire',
 };
 /** one settler's comfort, need by need, with what would raise each */
 function comfortRows(w: World, c: Colonist) {
   const p = comfortParts(w, c);
-  const why: Record<string, string> = {
-    shelter: p.shelter >= 1 ? 'a cozy cottage' : p.shelter > 0 ? 'a bed (a cottage would be better)' : 'sleeping on the ground',
-    meals: p.meals >= 1 ? 'a favourite meal at a table' : p.meals >= 0.85 ? 'a cooked meal at a table' : p.meals > 0 ? 'cooked, but not at a table' : 'raw food or going hungry',
-    evenings: p.evenings >= 0.8 ? 'well entertained' : p.evenings > 0.3 ? 'some fun' : 'bored',
-    health: p.health >= 1 ? 'healthy' : p.health > 0 ? 'ill, being looked after' : 'ill, nobody treating them',
-    surroundings: p.surroundings >= 0.75 ? 'pleasant' : p.surroundings > 0.25 ? 'plain' : 'drab',
+  const v = (k: NeedKey) => p[k] ?? 0;
+  const why: Record<NeedKey, string> = {
+    shelter: v('shelter') >= 1 ? (c.bed != null ? 'a bed of their own' : '') : v('shelter') > 0 ? 'a shack (a cottage would be better)' : 'sleeping on the ground',
+    food: v('food') >= 1 ? 'fed' : 'hungry',
+    fire: v('fire') >= 1 ? 'the hearth is lit' : 'the hearth went cold',
+    meals: v('meals') >= 1 ? 'a favourite meal at a table' : v('meals') >= 0.85 ? 'a cooked meal at a table' : v('meals') > 0 ? 'cooked, but not at a table' : 'raw food or going hungry',
+    variety: v('variety') >= 1 ? 'a varied table' : v('variety') > 0 ? 'the same meal every day' : 'no proper meals lately',
+    evenings: v('evenings') >= 0.8 ? 'well entertained' : v('evenings') > 0.3 ? 'some fun' : 'bored',
+    health: v('health') >= 1 ? 'healthy' : v('health') > 0 ? 'ill, being looked after' : 'ill, nobody treating them',
+    surroundings: v('surroundings') >= 0.75 ? 'pleasant' : v('surroundings') > 0.25 ? 'plain' : 'drab',
+    fresh: v('fresh') >= 1 ? 'had something fresh' : 'nothing fresh in days',
+    drink: v('drink') >= 1 ? 'had a drink today' : 'parched',
+    warmth: v('warmth') >= 1 ? 'warm at home' : c.bed == null ? 'out in the cold' : 'no wood for the fire',
   };
-  return `<div class="ledger">${COMFORT_NEEDS.map(k => `<div class="lg-row need ${p[k] >= 0.7 ? 'lg-good' : 'lg-bad'}"><span>${NEED_NAMES[k]}<small>${esc(why[k])}</small></span><i><b style="width:${Math.round(p[k] * 100)}%"></b></i><em>${Math.round(p[k] * 100)}%</em></div>`).join('')}</div>`;
+  return `<div class="ledger">${activeNeeds(w).map(k => `<div class="lg-row need ${v(k) >= 0.7 ? 'lg-good' : 'lg-bad'}"><span>${NEED_NAMES[k]}<small>${esc(why[k])}</small></span><i><b style="width:${Math.round(v(k) * 100)}%"></b></i><em>${Math.round(v(k) * 100)}%</em></div>`).join('')}</div>`;
 }
 
 /** base 50, plus the good, minus the gripes, minus this colonist's share of frontier wear */

@@ -3,12 +3,22 @@ import { Application, Container, Graphics, Text } from 'pixi.js';
 import { BUILDING_BY_ID, ResourceId } from '../sim/content';
 import { modelFor, MODELS } from './models';
 import { drawModel } from './draw';
+import { seasonOf } from '../sim/seasons';
+import type { Season } from '../sim/scenario';
 import { World, Building, MAP_SIZE, BUILD_MIN, BUILD_MAX, CENTER, alive, hourOfDay, workersAt, bdef, siteWork, canPlace, spotOf, built, footprint, doorTile, dims, turnPoint, terrainAt, T_TREE, T_BUSH, T_WATER, T_APPLE, T_FLOWERS, T_SOIL, T_CLAY } from '../sim/world';
 
 const TW = 64, TH = 32; // tile width/height in px
 /** world (tile) coordinates to screen; tile (i, j) spans [i, i+1] x [j, j+1] */
 export const iso = (x: number, y: number) => ({ sx: (x - y) * (TW / 2), sy: (x + y) * (TH / 2) });
 const unIso = (sx: number, sy: number) => { const a = sx / (TW / 2), b = sy / (TH / 2); return { x: (a + b) / 2, y: (b - a) / 2 }; };
+
+/** grass shades by season: fresh green, summer green, olive, snow */
+const GRASS: Record<Season, [number, number, number]> = {
+  spring: [0x63893f, 0x5c843a, 0x6d9548],
+  summer: [0x5d7f3f, 0x577a3a, 0x648946],
+  autumn: [0x6f7a3c, 0x687236, 0x7a7e42],
+  winter: [0xe2e9ed, 0xdae3e8, 0xeaf0f3],
+};
 
 export const RES_COLOR: Record<ResourceId, number> = {
   wood: 0xa07a4c, planks: 0xd2a96a, berries: 0xc04a6a, fish: 0x5b9cc2, mushrooms: 0xb39ad0,
@@ -40,6 +50,9 @@ export class IsoView {
   /** the blueprint being placed, drawn over the town so neighbours don't hide it */
   ghostModel = new Graphics();
   private terrainRef: number[] | null = null;
+  /** the season the ground was last drawn for */
+  private groundSeason: Season | null = null;
+  private season: Season = 'summer';
   private terrainObjs: Graphics[] = [];
   private pathKey = '';
   pathMode = false;
@@ -52,7 +65,7 @@ export class IsoView {
   private cGfx = new Map<number, { root: Container; body: Graphics; pip: Graphics; carry: Graphics; zz: Text }>();
   private builtKey = '';
   /** forget what was drawn, for when a different world is swapped in (a loaded save, a new colony) */
-  resetWorld() { this.builtKey = ''; this.pathKey = ''; this.terrainRef = null; this.selected = null; this.placing = null; this.pathMode = false; }
+  resetWorld() { this.builtKey = ''; this.pathKey = ''; this.terrainRef = null; this.groundSeason = null; this.selected = null; this.placing = null; this.pathMode = false; }
   selected: Picked | null = null;
   placing: Placing | null = null;
   onPick: (p: Picked | null) => void = () => {};
@@ -97,27 +110,28 @@ export class IsoView {
       const n = hash(x, y);
       const inside = x >= BUILD_MIN && y >= BUILD_MIN && x <= BUILD_MAX && y <= BUILD_MAX;
       const t = terrainAt(w, x, y);
-      let col = n < 0.5 ? 0x5d7f3f : n < 0.85 ? 0x577a3a : 0x648946;
+      const grass = GRASS[this.season];
+      let col = n < 0.5 ? grass[0] : n < 0.85 ? grass[1] : grass[2];
       if (Math.hypot(x + 0.5 - CENTER, y + 0.5 - CENTER) < 3.3) col = n < 0.5 ? 0x8a7a5a : 0x84744f;
-      if (t === T_TREE) col = shade(col, 0.86);
-      if (t === T_SOIL) col = n < 0.5 ? 0x5e4630 : 0x664c33;
+      if (t === T_TREE) col = shade(col, this.season === 'winter' ? 0.94 : 0.86);
+      if (t === T_SOIL) col = this.season === 'winter' ? (n < 0.5 ? 0xd8dee2 : 0xd0d8dc) : n < 0.5 ? 0x5e4630 : 0x664c33;
       if (t === T_FLOWERS) col = shade(col, 1.06);
       if (t === T_CLAY) col = n < 0.5 ? 0x9a5a3a : 0xa4623e;
       if (!inside) col = shade(col, 0.8);
       if (t === T_WATER) {
-        this.tile(g, x, y, n < 0.5 ? 0x3d6f8a : 0x3a6a85);
+        this.tile(g, x, y, this.season === 'winter' ? (n < 0.5 ? 0x9cc0d2 : 0x94b8cc) : n < 0.5 ? 0x3d6f8a : 0x3a6a85);
         const p = iso(x + 0.5, y + 0.5);
         if (n > 0.55) g.moveTo(p.sx - 9, p.sy).lineTo(p.sx + 5, p.sy - 2).stroke({ width: 1.5, color: 0x8cc0d8, alpha: 0.5 });
         continue;
       }
       this.tile(g, x, y, col);
-      if (t === T_SOIL) {
+      if (t === T_SOIL && this.season !== 'winter') {
         // furrows
         for (const f of [0.3, 0.6]) { const p0 = iso(x + 0.1, y + f), p1 = iso(x + 0.9, y + f); g.moveTo(p0.sx, p0.sy).lineTo(p1.sx, p1.sy).stroke({ width: 1.2, color: 0x4a3626, alpha: 0.7 }); }
       } else if (t === T_CLAY) {
         // wet lumps of clay
         for (let i = 0; i < 3; i++) { const p0 = iso(x + 0.2 + hash(x * 5 + i, y) * 0.6, y + 0.2 + hash(x, y * 5 + i) * 0.6); g.ellipse(p0.sx, p0.sy, 4, 2).fill(0x7a4228); }
-      } else if (t === T_FLOWERS) {
+      } else if (t === T_FLOWERS && this.season !== 'winter') {
         const cols = [0xf2d24a, 0xe8e0f0, 0xd66a9a, 0xb48ae0];
         for (let i = 0; i < 6; i++) { const p0 = iso(x + 0.15 + hash(x * 7 + i, y) * 0.7, y + 0.15 + hash(x, y * 7 + i) * 0.7); g.circle(p0.sx, p0.sy, 1.8).fill(cols[(i + Math.floor(n * 4)) % 4]); }
       }
@@ -148,9 +162,17 @@ export class IsoView {
     const r = 12 + n * 3;
     t.ellipse(sx, sy + 2, 16, 6).fill({ color: 0x000000, alpha: 0.18 });
     t.rect(sx - 2, sy - 14, 4, 16).fill(0x5a4030);
-    t.circle(sx, sy - 22, r).fill(0x4f7f3a);
-    t.circle(sx - 5, sy - 25, r * 0.6).fill(0x5e8f42);
-    for (let i = 0; i < 6; i++) t.circle(sx - r * 0.7 + ((i * 41 + n * 60) % (r * 1.4)), sy - 30 + ((i * 29) % 16), 2.3).fill(0xd2452f);
+    const crown = this.season === 'autumn' ? 0xc0782e : this.season === 'winter' ? 0xdfe7ec : 0x4f7f3a;
+    if (this.season === 'winter') {
+      // bare branches with a dusting of snow
+      for (const [dx, dy] of [[-9, -24], [8, -26], [-3, -32], [4, -18]]) t.moveTo(sx, sy - 12).lineTo(sx + dx, sy + dy).stroke({ width: 2, color: 0x5a4030 });
+      t.circle(sx, sy - 27, r * 0.45).fill({ color: crown, alpha: 0.7 });
+    } else {
+      t.circle(sx, sy - 22, r).fill(crown);
+      t.circle(sx - 5, sy - 25, r * 0.6).fill(shade(crown, 1.12));
+      if (this.season !== 'spring') for (let i = 0; i < 6; i++) t.circle(sx - r * 0.7 + ((i * 41 + n * 60) % (r * 1.4)), sy - 30 + ((i * 29) % 16), 2.3).fill(0xd2452f);
+      else for (let i = 0; i < 7; i++) t.circle(sx - r * 0.7 + ((i * 41 + n * 60) % (r * 1.4)), sy - 30 + ((i * 29) % 16), 2).fill(0xf6e4ec);
+    }
     t.zIndex = sy;
     this.objects.addChild(t); this.terrainObjs.push(t);
   }
@@ -161,8 +183,9 @@ export class IsoView {
     t.ellipse(sx, sy + 3, 15, 6).fill({ color: 0x000000, alpha: 0.15 });
     t.ellipse(sx - 6, sy - 4, 9, 7).fill(0x3f6b33);
     t.ellipse(sx + 6, sy - 3, 9, 7).fill(0x36602e);
-    t.ellipse(sx, sy - 9, 10, 8).fill(0x4a7a3a);
-    for (let i = 0; i < 5; i++) t.circle(sx - 9 + ((i * 37 + n * 50) % 18), sy - 12 + ((i * 23) % 11), 2.2).fill(0xc8385a);
+    t.ellipse(sx, sy - 9, 10, 8).fill(this.season === 'autumn' ? 0x6a7a3a : 0x4a7a3a);
+    if (this.season === 'winter') t.ellipse(sx, sy - 13, 9, 4).fill(0xeef3f6);
+    else if (this.season !== 'spring') for (let i = 0; i < 5; i++) t.circle(sx - 9 + ((i * 37 + n * 50) % 18), sy - 12 + ((i * 23) % 11), 2.2).fill(0xc8385a);
     t.zIndex = sy;
     this.objects.addChild(t); this.terrainObjs.push(t);
   }
@@ -194,6 +217,10 @@ export class IsoView {
     t.poly([sx, sy - h, sx + w, sy - 6, sx - w, sy - 6]).fill(leaf);
     t.poly([sx, sy - h, sx + w, sy - 6, sx, sy - 9]).fill(shade(leaf, 0.78));
     t.poly([sx, sy - h - 10, sx + w * 0.7, sy - h * 0.45, sx - w * 0.7, sy - h * 0.45]).fill(shade(leaf, 1.12));
+    if (this.season === 'winter') {
+      t.poly([sx, sy - h - 10, sx + w * 0.42, sy - h * 0.72, sx - w * 0.42, sy - h * 0.72]).fill(0xf1f5f7);
+      t.poly([sx - w * 0.75, sy - 9, sx - w * 0.2, sy - h * 0.3, sx, sy - 12]).fill({ color: 0xe6eef2, alpha: 0.85 });
+    }
     t.zIndex = sy;
     this.objects.addChild(t); this.terrainObjs.push(t);
   }
@@ -275,7 +302,7 @@ export class IsoView {
     g.poly(flat(iso(x0 + 0.2, y0 + 0.3), iso(x1 + 0.45, y0 + 0.3), iso(x1 + 0.45, y1 + 0.35), iso(x0 + 0.2, y1 + 0.35))).fill({ color: 0x000000, alpha: 0.16 });
     const h = hourOfDay(w);
     const water = (u: number, v: number) => { const p = at(u, v); return terrainAt(w, Math.floor(p.x), Math.floor(p.y)) === T_WATER; };
-    drawModel(g, modelFor({ def, W: def.w, H: def.h, night: h >= 19 || h < 6, busy: workersAt(w, b.uid).length > 0, stage: 3, water }), def.id, b.x, b.y, rot);
+    drawModel(g, modelFor({ def, W: def.w, H: def.h, night: h >= 19 || h < 6, busy: workersAt(w, b.uid).length > 0, stage: 3, water }), def.id, b.x, b.y, rot, 1, this.season === 'winter' ? 1 : 0);
     if (def.seats && b.clean < 35) { for (let i = 0; i < 4; i++) { const p = iso(at(0.4 + i * 0.4, def.h + 0.25).x, at(0.4 + i * 0.4, def.h + 0.25).y); g.ellipse(p.sx, p.sy, 5, 2.5).fill({ color: 0x4a3a20, alpha: 0.7 }); } }
     // finished goods waiting by the door
     const out = (Object.entries(b.outbox) as [ResourceId, number][]).filter(([, n]) => n >= 2);
@@ -399,7 +426,8 @@ export class IsoView {
   /** alpha: interpolation between the last two sim ticks, 0..1 */
   update(w: World, alpha: number, time: number) {
     this.lastWorld = w;
-    if (this.terrainRef !== w.terrain) { this.drawGround(w); this.terrainRef = w.terrain; this.pathKey = ''; }
+    this.season = seasonOf(w).season;
+    if (this.terrainRef !== w.terrain || this.groundSeason !== this.season) { this.drawGround(w); this.terrainRef = w.terrain; this.groundSeason = this.season; this.pathKey = ''; }
     const pk = `${w.version}|${w.paths.reduce((n, p, i) => n + p * (i % 7 + 1), 0)}`;
     if (pk !== this.pathKey) { this.drawPaths(w); this.pathKey = pk; }
     const key = `${w.version}|${this.selected?.kind}${this.selected?.id}|${Math.floor(w.hour)}`;
