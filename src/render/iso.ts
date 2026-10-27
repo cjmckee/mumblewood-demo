@@ -340,6 +340,29 @@ export class IsoView {
       this.bGfx.set(b.uid, o);
       this.objects.addChild(o.c);
     }
+    this.declutter(w);
+  }
+
+  /** hide building labels that would sit on top of a more important one: the selected building first, then
+   *  construction sites, then bigger buildings, then ones nearer the front. Labels scale with the camera, so this
+   *  holds at any zoom. */
+  private declutter(w: World) {
+    const cands = w.buildings.flatMap(b => {
+      const label = this.bGfx.get(b.uid)?.label; if (!label) return [];
+      const f = dims(b), sel = this.selected?.kind === 'building' && this.selected.id === b.uid;
+      // homes are easy to tell by their shape and there are lots of them: label one only while it's selected or going up
+      const d = bdef(b);
+      if (d.beds && !d.slots && b.built && !sel) { label.visible = false; return []; }
+      const pri = (sel ? 1e6 : 0) + (b.built ? 0 : 1e5) + f.w * f.h * 1e3 + label.y;
+      return [{ label, pri }];
+    }).sort((a, z) => z.pri - a.pri);
+    const kept: { x0: number; y0: number; x1: number; y1: number }[] = [];
+    for (const { label } of cands) {
+      const r = { x0: label.x - label.width / 2 - 3, y0: label.y - 2, x1: label.x + label.width / 2 + 3, y1: label.y + label.height + 2 };
+      const hit = kept.some(k => r.x0 < k.x1 && r.x1 > k.x0 && r.y0 < k.y1 && r.y1 > k.y0);
+      label.visible = !hit;
+      if (!hit) kept.push(r);
+    }
   }
 
   private colonistSprite(shirt: number, skin: number) {

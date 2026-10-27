@@ -224,9 +224,12 @@ export class UI {
     })() : '';
     const strain = Math.round(w.strain);
     const cap = storageCap(w), st = stored(w);
-    const storeChip = `<span class="chip store${st >= cap ? ' full' : ''}"><b>${Math.floor(st)}/${cap}</b> stored${spoilingFood(w) >= 5 ? ' · food spoiling' : ''}</span>`;
+    const spoiling = spoilingFood(w) >= 5;
+    const storeChip = `<span class="chip store${st >= cap ? ' full' : ''}" title="Goods in storage, of what it can hold">${icon('stockpile')}<b>${Math.floor(st)}/${cap}</b><span class="nm"> stored</span></span>`
+      + (spoiling ? '<span class="chip spoil" title="Food left on stockpiles is spoiling. A storehouse keeps it fresh."><span class="nm">food </span>spoiling</span>' : '');
+    // on a phone the names drop and the icons carry them; they stay for screen readers and on hover
     const res = storeChip + RESOURCES.filter(r => w.res[r.id] >= 0.5 || ['wood', 'berries', 'stew'].includes(r.id))
-      .map(r => `<span class="chip" title="${r.name}">${icon(r.id)}<b>${Math.floor(w.res[r.id])}</b> ${r.name}</span>`).join('');
+      .map(r => `<span class="chip" title="${r.name}" aria-label="${Math.floor(w.res[r.id])} ${r.name}">${icon(r.id)}<b>${Math.floor(w.res[r.id])}</b><span class="nm"> ${r.name}</span></span>`).join('');
     const html = `
       <div class="bar">
         <div class="clock"><span class="day">Day ${day(w)}</span><span class="time">${hh}:00<span class="phase"> · ${timeOfDay(h)}</span></span></div>
@@ -248,7 +251,12 @@ export class UI {
         </div>
       </div>
       ${w.errands.length ? `<div class="errands">${w.errands.map(e => this.errandChip(w, e)).join('')}</div>` : ''}`;
-    if (force || html !== this.lastHud) { (this.root.querySelector('#hud') as HTMLElement).innerHTML = html; this.lastHud = html; }
+    if (force || html !== this.lastHud) {
+      (this.root.querySelector('#hud') as HTMLElement).innerHTML = html; this.lastHud = html;
+      // fade the row's right edge while there are more goods to scroll to
+      const row = this.root.querySelector('#hud .res') as HTMLElement | null;
+      if (row) { const more = () => row.classList.toggle('more', row.scrollLeft + row.clientWidth < row.scrollWidth - 2); more(); row.addEventListener('scroll', more, { passive: true }); }
+    }
   }
 
   private strainCard(w: World) {
