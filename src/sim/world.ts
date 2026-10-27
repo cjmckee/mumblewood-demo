@@ -3,10 +3,10 @@ import {
   BUILDING_BY_ID, BuildingDef, CHARTERS, CharterDef, EVENTS, FIRST_NAMES, JOB_NAMES, JobKind, JOB_KINDS,
   MEALS, PERKS, RAW_FOODS, ResourceId, SHIRTS, SKINS, SURNAMES, TRAITS, TRAIT_BY_ID, BUILDINGS, buildWork,
   JOB_EVENTS, JobEventDef, ILLNESSES, RESOURCES, Recipe, InputKey, CATEGORIES, isCategory, membersOf, inputName, recipeRate, SITES, SiteId, MEAL_MOOD,
-  CharterMetric, RESEARCH, RESEARCH_BY_ID, PRICE,
+  CharterMetric, RESEARCH, RESEARCH_BY_ID, PRICE, TRADERS, TRADER_BY_ID,
 } from './content';
 import { START } from './scenario';
-import { seasonOf, rule, SEASON_NAMES } from './seasons';
+import { seasonOf, seasonOn, rule, SEASON_NAMES } from './seasons';
 
 // ---------- RNG ----------
 export function nextRand(w: { rngState: number }): number {
@@ -106,6 +106,8 @@ export interface Building {
 /** the caravan at the hearth: what it sells (and for how much), the blueprints it carries, and what it has bought this visit */
 export interface Caravan {
   arrived: number; leaves: number;
+  /** who drives it (TRADERS) */
+  trader: string;
   /** where it parks: two free tiles near the hearth, the cart along x */
   x: number; y: number;
   stock: Partial<Record<ResourceId, { n: number; price: number }>>;
@@ -140,6 +142,8 @@ export interface World {
   /** gold: from rent, the Crown's stipend, events and selling to the caravan */
   gold: number;
   caravan: Caravan | null;
+  /** the trader due with the next caravan, announced when the last one leaves */
+  nextTrader?: string;
   charterTier: number; charter: string | null; charterHours: number; chartersDone: string[];
   decisions: Decision[]; log: LogEntry[];
   opinions: Record<string, number>;
@@ -2476,7 +2480,7 @@ export function earn(w: World, n: number, why: string) { if (n <= 0) return; w.g
 export function spend(w: World, n: number, why: string) { if (w.gold < n) return false; w.gold -= n; flow(w, `gold:-${why}`, n); return true; }
 /** what the caravan pays for one, to a tenth of a gold: a share of its price, more at the autumn fair. A sale pays whole gold, rounded down */
 export function sellPrice(w: World, r: ResourceId) {
-  const t = START.trade, share = seasonOf(w).season === 'autumn' ? t.fair : t.sell;
+  const t = START.trade, share = seasonOf(w).season === 'autumn' || (w.caravan && TRADER_BY_ID[w.caravan.trader]?.wants.includes(r)) ? t.fair : t.sell;
   return Math.round(PRICE[r] * share * (hasPerk(w, 'merchantsFavour') ? 1.2 : 1) * 10) / 10;
 }
 const favour = (w: World, price: number) => Math.max(1, Math.round(price * (hasPerk(w, 'merchantsFavour') ? 0.8 : 1)));
@@ -2505,40 +2509,29 @@ export function charterCounted(w: World): ResourceId[] {
   }
   return [...out];
 }
-/** what the caravan brings: the goods the charter is short of (at a premium), what this map can't make, a few staples, and a blueprint or two */
-function caravanWares(w: World): Pick<Caravan, 'stock' | 'blueprints'> {
-  const t = START.trade, stock: Caravan['stock'] = {};
-  const put = (r: ResourceId, n: number, mult = 1) => {
-    if (n < 1) return;
-    const price = favour(w, PRICE[r] * mult), cur = stock[r];
-    stock[r] = { n: Math.max(Math.round(n), cur?.n ?? 0), price: Math.max(price, cur?.price ?? 0) };
-  };
-  const pop = alive(w).length;
-  const first = (k: InputKey) => membersOf(k).slice().sort((a, b) => w.res[b] - w.res[a])[0];
-  for (const p of charterMetrics(w)) {
-    if (p.kind === 'stock') { const short = p.amount - p.resources.reduce((n, r) => n + w.res[r], 0); if (short > 0) put(p.resources.slice().sort((a, b) => PRICE[a] - PRICE[b])[0], Math.ceil(short * 0.6), t.premium); }
-    if (p.kind === 'variety') {
-      const members = CATEGORIES[p.category].members, full = members.filter(r => w.res[r] >= p.each).length;
-      for (const r of members.filter(r => w.res[r] < p.each).sort((a, b) => w.res[b] - w.res[a]).slice(0, Math.max(0, p.kinds - full))) put(r, p.each - Math.floor(w.res[r]), t.premium);
-    }
-    if (p.kind === 'longTable') {
-      for (const r of CATEGORIES.drink.members.filter(r => w.res[r] < 4).slice(0, 2)) put(r, Math.ceil(pop / 3), t.premium);
-      for (const r of MEALS.filter(r => w.res[r] < 4).slice(0, 1)) put(r, Math.ceil(pop / 3), t.premium);
-    }
-    if (p.kind === 'monument') { const b = w.buildings.find(x => x.def === p.def && !x.built); if (b) for (const [k, n] of Object.entries(remainingCost(b))) if ((n ?? 0) > 0) put(first(k as InputKey), Math.ceil((n ?? 0) * 0.5), t.premium); }
-  }
-  // goods nothing on this map can ever make (no apple grove, no meadow, no clay bank)
-  for (const { id: r } of RESOURCES) if (!BUILDINGS.some(d => siteOk(w, d) && (d.recipes ?? []).some(x => x.output === r))) put(r, 12);
-  // a couple of staples
-  for (const r of shuffle(w, ['planks', 'bricks', 'flour', 'tea', 'ale', 'bread', 'poultice'] as ResourceId[]).slice(0, 2)) put(r, 10);
-  // a blueprint that helps the charter if there is one, and one other
-  const can = BUILDINGS.filter(d => d.draftable && !w.owned.includes(d.id) && siteOk(w, d));
-  const helpers = charterHelpers(w.charter);
-  const helper = can.find(d => helpers.includes(d.id));
-  const other = shuffle(w, can.filter(d => d !== helper))[0];
-  const blueprints = [...(helper ? [{ id: helper.id, price: favour(w, t.helper) }] : []), ...(other ? [{ id: other.id, price: favour(w, t.blueprint) }] : [])];
+/** what a trader brings: a few of the goods they deal in, a handful of each, and sometimes a blueprint from their trade */
+function caravanWares(w: World, trader: string): Pick<Caravan, 'stock' | 'blueprints'> {
+  const t = START.trade, def = TRADER_BY_ID[trader], stock: Caravan['stock'] = {};
+  const between = ([a, b]: [number, number]) => a + Math.floor(nextRand(w) * (b - a + 1));
+  // the pedlar carries anything, a little of it
+  const sells = def.sells.length ? def.sells : RESOURCES.map(r => r.id);
+  for (const r of shuffle(w, sells).slice(0, between(t.kinds))) stock[r] = { n: between(t.each), price: favour(w, PRICE[r] * def.markup) };
+  const pool = (def.blueprints.length ? def.blueprints : BUILDINGS.filter(d => d.draftable).map(d => d.id)).filter(id => !w.owned.includes(id) && siteOk(w, BUILDING_BY_ID[id]));
+  const blueprints = pool.length && nextRand(w) < t.blueprintChance ? [{ id: pick(w, pool), price: favour(w, t.blueprint) }] : [];
   return { stock, blueprints };
 }
+/** what a trader deals in, for the log */
+export function traderGoods(id: string) {
+  const d = TRADER_BY_ID[id]; if (!d.sells.length) return 'a bit of everything';
+  const names = d.sells.slice(0, 4).map(r => RESOURCES.find(x => x.id === r)!.name.toLowerCase());
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+/** the next day the caravan comes, from a day on */
+function nextCaravanDay(w: World, from: number) {
+  for (let d = from; d < from + 60; d++) { const s = seasonOn(d); if (START.trade.visits.includes(s.dayOf) && (s.season !== 'winter' || hasPerk(w, 'pilgrimsRoad'))) return d; }
+  return from;
+}
+function pickTrader(w: World, not?: string) { return pick(w, TRADERS.filter(x => x.id !== not)).id; }
 /** the caravan comes on set days of each season (not in winter), parks at the hearth, and leaves at dusk */
 function caravanHour(w: World) {
   const t = START.trade, s = seasonOf(w), h = Math.round(hourOfDay(w)) % 24;
@@ -2546,13 +2539,19 @@ function caravanHour(w: World) {
     for (const e of w.errands.filter(x => x.def === 'caravan')) finishErrand(w, e, false);
     w.decisions = w.decisions.filter(d => d.kind !== 'trade');
     addLog(w, w.caravan.visited ? 'The caravan creaks off down the road.' : 'The caravan leaves. Nobody went to trade.');
+    // word of who's coming next
+    w.nextTrader = pickTrader(w, w.caravan.trader);
+    addLog(w, `Word on the road: ${TRADER_BY_ID[w.nextTrader].name} is due on day ${nextCaravanDay(w, day(w) + 1)}, dealing in ${traderGoods(w.nextTrader)}.`);
     w.caravan = null;
   }
+  // the first word of a trader comes on the first morning
+  if (!w.nextTrader && !w.caravan && h === 7) { w.nextTrader = pickTrader(w); addLog(w, `Word on the road: ${TRADER_BY_ID[w.nextTrader].name} is due on day ${nextCaravanDay(w, day(w) + 1)}, dealing in ${traderGoods(w.nextTrader)}.`); }
   if (w.caravan || h !== t.arrive || !t.visits.includes(s.dayOf) || day(w) <= 1) return;
   if (s.season === 'winter' && !hasPerk(w, 'pilgrimsRoad')) return;
-  const spot = caravanSpot(w);
-  w.caravan = { arrived: w.hour, leaves: w.hour + t.stays, x: spot.x, y: spot.y, ...caravanWares(w), sold: {}, visited: false };
-  addLog(w, `A trader's caravan rattles up to the hearth${s.season === 'autumn' ? ' for the harvest fair, paying well' : ''}. It leaves at dusk. Send someone to trade.`, 'good');
+  const spot = caravanSpot(w), trader = w.nextTrader ?? pickTrader(w);
+  w.caravan = { trader, arrived: w.hour, leaves: w.hour + t.stays, x: spot.x, y: spot.y, ...caravanWares(w, trader), sold: {}, visited: false };
+  const name = TRADER_BY_ID[trader].name;
+  addLog(w, `${name.charAt(0).toUpperCase() + name.slice(1)} rattles up to the hearth${s.season === 'autumn' ? ' for the harvest fair, paying well' : ''}. The caravan leaves at dusk. Send someone to trade.`, 'good');
   caravanErrand(w);
 }
 /** someone has to walk to the cart: an errand at its side */

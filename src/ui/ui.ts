@@ -1,5 +1,5 @@
 // DOM overlay: HUD, bottom sheet, decision modals. Talks to the sim only through commands.
-import { BUILDINGS, membersOf, BUILDING_BY_ID, EVENTS, RESEARCH_BY_ID, JOB_NAMES, PERK_BY_ID, PRICE, RESOURCES, TRAIT_BY_ID, ResourceId, SKILL_NAMES, JOB_KINDS, JobKind, Recipe, InputKey, inputName, recipeRate, Stars } from '../sim/content';
+import { BUILDINGS, membersOf, BUILDING_BY_ID, EVENTS, RESEARCH_BY_ID, JOB_NAMES, PERK_BY_ID, TRADER_BY_ID, RESOURCES, TRAIT_BY_ID, ResourceId, SKILL_NAMES, JOB_KINDS, JobKind, Recipe, InputKey, inputName, recipeRate, Stars } from '../sim/content';
 import {
   World, Command, Colonist, alive, avgMood, beds, buildingByUid, charterProgress, colonistById,
   day, hourOfDay, opinion, workersAt, MAX_DEPARTURES, sites, siteWork, remainingCost, storageCap, stored,
@@ -326,7 +326,8 @@ export class UI {
     const t = w.caravan;
     if (!t || w.errands.some(e => e.def === 'caravan') || w.decisions.some(d => d.kind === 'trade')) return '';
     const left = Math.max(0, Math.ceil(t.leaves - w.hour));
-    return `<button type="button" class="errand caravan" data-act="caravan-visit"><b>${icon('caravan')}The caravan</b><small>${t.visited ? 'Trade again' : 'Send someone to trade'} · leaves in ${left}h</small></button>`;
+    const nm = TRADER_BY_ID[t.trader].name;
+    return `<button type="button" class="errand caravan" data-act="caravan-visit"><b>${icon('caravan')}${esc(nm.charAt(0).toUpperCase() + nm.slice(1))}</b><small>${t.visited ? 'Trade again' : 'Send someone to trade'} · leaves in ${left}h</small></button>`;
   }
 
   private errandChip(w: World, e: Errand) {
@@ -665,7 +666,9 @@ export class UI {
     const t = w.caravan; if (!t) return '';
     const autumn = seasonOf(w).season === 'autumn';
     const left = Math.max(0, Math.ceil(t.leaves - w.hour));
-    const charterGoods = new Set((charterProgress(w) ? Object.entries(t.stock).filter(([r, it]) => it && it.price > PRICE[r as ResourceId]).map(([r]) => r) : []));
+    const charterGoods = new Set<string>(charterCounted(w));
+    const tr = TRADER_BY_ID[t.trader];
+    const wants = tr.wants.map(r => RESOURCES.find(x => x.id === r)!.name.toLowerCase());
     const gold = Math.floor(w.gold);
     const btn = (act: string, arg: string, label: string, ok: boolean) => `<button type="button" class="tbtn" data-act="${act}" data-arg="${arg}" ${ok ? '' : 'disabled'}>${label}</button>`;
     const bps = t.blueprints.map(b => { const def = BUILDING_BY_ID[b.id]; const helps = charterHelpers(w.charter ?? '').includes(b.id);
@@ -680,8 +683,9 @@ export class UI {
       const p = sellPrice(w, x.id), sold = t.sold[x.id] ?? 0, room = cap - sold, have = Math.floor(w.res[x.id]);
       return `<div class="trow"><span class="tname">${icon(x.id)}<span><b>${esc(x.name)}</b><small>you have ${have}${sold ? ` · sold ${sold}/${cap}` : ''}${counted.has(x.id) ? ' · your charter counts these' : ''}</small></span></span><span class="tprice">${Number.isInteger(p) ? p : p.toFixed(1)}${icon('gold')}</span>${btn('trade-sell', `${x.id}:5`, '−5', room >= 1 && have >= 1)}${btn('trade-sell', `${x.id}:20`, '−20', room >= 1 && have >= 6)}</div>`;
     }).join('');
-    return `<div class="card-wrap trade"><p class="eyebrow">${icon('caravan')} The caravan · leaves in ${left}h</p><h2>Trading at the cart</h2>
-      <p class="lede">You have <b class="goldnum">${gold} gold</b>.${autumn ? ' It\u2019s the harvest fair, and the trader pays well.' : ''} Bought goods go to your storage; sold goods come out of it.</p>
+    const name = tr.name.charAt(0).toUpperCase() + tr.name.slice(1);
+    return `<div class="card-wrap trade"><p class="eyebrow">${icon('caravan')} The caravan · leaves in ${left}h</p><h2>${esc(name)}</h2>
+      <p class="lede">${esc(tr.who)} You have <b class="goldnum">${gold} gold</b>.${autumn ? ' It\u2019s the harvest fair: everything sells well.' : wants.length ? ` Pays well for ${esc(wants.slice(0, -1).join(', '))} and ${esc(wants[wants.length - 1])}.` : ''}</p>
       ${bps ? `<h3 class="first">Blueprints</h3><div class="tlist">${bps}</div>` : ''}
       <h3>The trader sells</h3><div class="tlist">${wares || '<p class="muted">Nothing left.</p>'}</div>
       <h3>The trader buys <span class="muted">· up to ${cap} of each</span></h3><div class="tlist">${mine || '<p class="muted">You have nothing to sell.</p>'}</div>

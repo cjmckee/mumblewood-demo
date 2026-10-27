@@ -62,10 +62,8 @@ export interface TradeRules {
   stipend: number[];
   /** the caravan's visits: days of the season it comes, the hour it arrives and how many hours it stays */
   visits: number[]; arrive: number; stays: number;
-  /** what the caravan charges over the usual price for goods the current charter needs */
-  premium: number;
-  /** a blueprint from the caravan; more for one that helps the charter */
-  blueprint: number; helper: number;
+  /** each visit: how many of the trader's goods they carry (from, to), how many of each (from, to), and the chance of a blueprint and its price */
+  kinds: [number, number]; each: [number, number]; blueprintChance: number; blueprint: number;
 }
 
 export type Season = 'spring' | 'summer' | 'autumn' | 'winter';
@@ -158,7 +156,7 @@ export const START: Start = {
     rent: { leanto: 2, cottage: 6 },
     stipend: [30, 50],
     visits: [2, 7], arrive: 8, stays: 12,
-    premium: 1.3, blueprint: 45, helper: 55,
+    kinds: [3, 4], each: [4, 10], blueprintChance: 0.5, blueprint: 45,
   },
   intro: ['Three settlers arrive at the edge of the Mumblewood with a cart, a kettle, a stack of borrowed books and great optimism.', 'Nobody knows how to build a kitchen yet. A research desk would be a start.', 'It\u2019s late summer. Winter comes in about two weeks, and then the fields and orchards sleep.'],
 };

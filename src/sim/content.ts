@@ -40,6 +40,21 @@ export const PRICE: Record<ResourceId, number> = {
   planks: 5, bricks: 5, wicker: 4, stew: 5, smokedFish: 5, bread: 6, skewers: 6, pie: 7,
   ale: 7, cider: 7, tea: 6, mead: 9, poultice: 10, tonic: 14,
 };
+/**
+ * The traders who drive the caravan. Each carries a few of the goods they deal in (never all of them, never much), now
+ * and then a blueprint from their trade, and pays the fair rate for the goods they want. Who comes next is known a few
+ * days ahead, so the caravan is something to plan around rather than a shop that always has the next thing needed.
+ */
+export interface TraderDef { id: string; name: string; who: string; sells: ResourceId[]; blueprints: string[]; wants: ResourceId[]; markup: number }
+export const TRADERS: TraderDef[] = [
+  { id: 'timber', name: 'the timber merchant', who: 'A broad woman with a broader axe, and a wagon that is mostly planks.', sells: ['wood', 'planks', 'bricks', 'wicker', 'clay', 'reeds'], blueprints: ['sawmill', 'kiln', 'carpenter', 'claypit'], wants: ['stew', 'bread', 'smokedFish', 'ale'], markup: 1.1 },
+  { id: 'vintner', name: 'the vintner', who: 'He tastes everything twice "for quality" and hums between sips.', sells: ['ale', 'cider', 'mead', 'tea', 'grain', 'apples', 'honey'], blueprints: ['brewery', 'ciderpress', 'apiary', 'orchard', 'tavern'], wants: ['apples', 'grain', 'honey', 'berries'], markup: 1.15 },
+  { id: 'grocer', name: 'the fishwife', who: 'Loud, cheerful, and smells powerfully of yesterday’s catch.', sells: ['fish', 'smokedFish', 'berries', 'mushrooms', 'apples', 'stew'], blueprints: ['dock', 'smokehouse', 'cellar'], wants: ['wood', 'reeds', 'herbs'], markup: 1.1 },
+  { id: 'baker', name: 'the baker’s cart', who: 'Two flour-dusted siblings who finish each other’s sentences, badly.', sells: ['flour', 'bread', 'pie', 'grain', 'berries', 'honey'], blueprints: ['mill', 'bakery', 'pieoven', 'field'], wants: ['wood', 'apples', 'berries'], markup: 1.1 },
+  { id: 'herbalist', name: 'the herbalist', who: 'She talks to her jars. Some of them, she says, talk back.', sells: ['herbs', 'poultice', 'tonic', 'tea', 'honey'], blueprints: ['apothecary', 'herbgarden', 'apiary'], wants: ['honey', 'herbs', 'mushrooms'], markup: 1.15 },
+  { id: 'pedlar', name: 'a pedlar', who: 'He sells a bit of everything and none of it is quite what you wanted.', sells: [], blueprints: [], wants: [], markup: 1.25 },
+];
+export const TRADER_BY_ID: Record<string, TraderDef> = Object.fromEntries(TRADERS.map(t => [t.id, t]));
 /** mood from eating each meal, before tastes and traits */
 export const MEAL_MOOD: Partial<Record<ResourceId, number>> = { pie: 8, skewers: 7, smokedFish: 6, bread: 6, stew: 5 };
 

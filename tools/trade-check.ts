@@ -4,7 +4,7 @@
 import { createWorld, apply, runHours, World, day, hourOfDay, alive, sellPrice } from '../src/sim/world';
 import { seasonOf } from '../src/sim/seasons';
 import { START } from '../src/sim/scenario';
-import { PRICE } from '../src/sim/content';
+import { PRICE, TRADER_BY_ID } from '../src/sim/content';
 
 let failed = 0;
 const check = (ok: boolean, what: string) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}`); if (!ok) failed++; };
@@ -17,6 +17,9 @@ const clear = (keepTrade = true) => {
   }
 };
 check(w.gold === START.trade.gold, `the run starts with ${START.trade.gold} gold`);
+runHours(w, 2); clear();
+check(!!w.nextTrader && w.log.some(l => l.text.startsWith('Word on the road')), `word comes ahead of who's due first (${w.nextTrader})`);
+const due = w.nextTrader;
 // the first caravan: day 2 of the first full season (autumn)
 let seen = false;
 for (let h = 0; h < 24 * 12 && !seen; h++) { clear(); if (w.caravan) seen = true; else runHours(w, 1); }
@@ -24,6 +27,10 @@ const s = seasonOf(w);
 check(seen && START.trade.visits.includes(s.dayOf) && s.season !== 'winter', `a caravan arrives on day ${s.dayOf} of ${s.season}`);
 check(Math.round(hourOfDay(w)) === START.trade.arrive, `at ${START.trade.arrive}:00`);
 check(w.errands.some(e => e.def === 'caravan'), 'someone has to walk over to trade');
+const tr = TRADER_BY_ID[w.caravan!.trader], kinds = Object.keys(w.caravan!.stock);
+check(w.caravan!.trader === due, `the trader who was announced came (${tr.name})`);
+check(kinds.length >= START.trade.kinds[0] && kinds.length <= START.trade.kinds[1] && (!tr.sells.length || kinds.every(r => tr.sells.includes(r as never))), `they carry ${kinds.length} of their goods: ${kinds.join(', ')}`);
+check(Object.values(w.caravan!.stock).every(it => it!.n >= START.trade.each[0] && it!.n <= START.trade.each[1]), 'a handful of each');
 let open = false;
 for (let h = 0; h < 6 && !open; h++) { clear(); open = w.decisions[0]?.kind === 'trade'; if (!open) runHours(w, 1); }
 check(open, 'trading opens when they get there');
@@ -39,8 +46,10 @@ w.gold = item.price * 2; const have = w.res[r];
 check(apply(w, { type: 'buy', res: r, n: 5 }) === null && w.res[r] === have + 2 && w.gold === 0, `buying ${r} at ${item.price}: gold for 2 buys 2`);
 check(apply(w, { type: 'buy', res: r, n: 1 }) !== null, 'no gold, no sale');
 // blueprints
+// a blueprint is a chance, not a given: put one on the cart to test buying it
+if (!w.caravan!.blueprints.length) w.caravan!.blueprints.push({ id: 'tavern', price: START.trade.blueprint });
 const bp = w.caravan!.blueprints[0];
-check(!!bp, `the caravan carries a blueprint (${bp?.id}, ${bp?.price} gold)`);
+check(!!bp, `a blueprint on the cart (${bp?.id}, ${bp?.price} gold)`);
 if (bp) { w.gold = bp.price; check(apply(w, { type: 'buyBlueprint', id: bp.id }) === null && w.owned.includes(bp.id) && w.gold === 0, 'buying it adds it to what can be built'); }
 apply(w, { type: 'resolve', option: 0 });
 check(apply(w, { type: 'sell', res: 'wood', n: 1 }) !== null, 'trading closes when they leave the cart');
@@ -48,6 +57,7 @@ check(apply(w, { type: 'visitCaravan' }) === null && w.errands.some(e => e.def =
 // it leaves at dusk
 for (let h = 0; h < 14; h++) { clear(false); runHours(w, 1); }
 check(!w.caravan, 'it leaves at dusk');
+check(!!w.nextTrader && w.log.slice(-6).some(l => l.text.startsWith('Word on the road')), `and word comes of the next (${w.nextTrader})`);
 // rent: the next season's first morning
 const housed = alive(w).filter(c => c.bed != null).length;
 while (seasonOf(w).dayOf !== 1 || Math.round(hourOfDay(w)) < 7) { clear(false); runHours(w, 1); }
