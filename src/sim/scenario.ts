@@ -12,10 +12,10 @@ export interface Scenario {
   unlocked: string[];
   /** research projects; empty means no research in this scenario */
   research: ResearchDef[];
-  /** the first research offer, fixed so it teaches "which need do I solve first?" */
+  /** the first research offer, fixed so it teaches "which need do I solve first?"; it comes once the first research desk is built */
   firstResearch?: string[];
-  /** when the first charter is offered: at the start, or once this many projects are done or on this day */
-  firstCharter: 'start' | { research: number; day: number };
+  /** when the first charter is offered: at the start, or on the morning of this day */
+  firstCharter: 'start' | { day: number };
   /** blueprint drafts start after the first charter is picked, instead of at the start */
   draftsAfterCharter: boolean;
   charters: CharterDef[];
@@ -53,14 +53,14 @@ export const SCENARIOS: Record<string, Scenario> = {
     intro: ['Six settlers arrive at the edge of the Mumblewood with a cart, a kettle, and great optimism.', 'There are only four beds for six people. Someone should build another lean-to.'],
   },
   frontier: {
-    id: 'frontier', name: 'Frontier start', blurb: 'Three settlers, a woodcutter, a forager and a research desk. Learn what people need, one problem at a time.',
+    id: 'frontier', name: 'Frontier start', blurb: 'Three settlers, a woodcutter and a forager. Build a research desk to learn the rest, one problem at a time.',
     colonists: 3,
     res: { wood: 40, berries: 30, stew: 6 },
-    place: ['stockpile', 'leanto', 'leanto', 'woodcutter', 'forager', 'desk'],
+    place: ['stockpile', 'leanto', 'leanto', 'woodcutter', 'forager'],
     unlocked: ['stockpile', 'leanto', 'woodcutter', 'forager', 'desk'],
     research: RESEARCH,
     firstResearch: ['cookery', 'messhall', 'physick'],
-    firstCharter: { research: 2, day: 4 }, draftsAfterCharter: true,
+    firstCharter: { day: 2 }, draftsAfterCharter: true,
     charters: FRONTIER_CHARTERS,
     collapse: { lost: 6, minAlive: 0 },
     strain: { perPerson: 0.03, rampDays: 40 },
@@ -68,7 +68,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     woodReserve: 10,
     outbreakFrom: { day: 6, pop: 5 },
     jobs: ALL_JOB_KINDS,
-    intro: ['Three settlers arrive at the edge of the Mumblewood with a cart, a kettle, a stack of borrowed books and great optimism.', 'Nobody knows how to build a kitchen yet. Someone should study.'],
+    intro: ['Three settlers arrive at the edge of the Mumblewood with a cart, a kettle, a stack of borrowed books and great optimism.', 'Nobody knows how to build a kitchen yet. A research desk would be a start.'],
   },
 };
 export const DEFAULT_SCENARIO = 'frontier';

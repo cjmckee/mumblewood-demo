@@ -219,7 +219,7 @@ export class UI {
         <div class="charter">
           ${prog ? `<div class="ch-top"><span class="ch-name">${esc(prog.charter.name)}</span><span class="ch-tier">Charter ${w.chartersDone.length + 1} of 3</span></div>
           <div class="meter"><i style="width:${(prog.ratio * 100).toFixed(1)}%"></i></div>
-          <div class="ch-label">${esc(prog.label)}</div>${feastBtn}` : `<div class="ch-top"><span class="ch-name">${w.status === 'won' ? 'Town charter granted' : w.research && !w.charterOffered ? 'The Crown is watching' : 'Awaiting a charter'}</span></div>${w.research && !w.charterOffered ? `<div class="ch-label">The first charter arrives once 2 studies are done, or on day ${(sc.firstCharter as { day: number }).day}.</div>` : ''}`}
+          <div class="ch-label">${esc(prog.label)}</div>${feastBtn}` : `<div class="ch-top"><span class="ch-name">${w.status === 'won' ? 'Town charter granted' : w.research && !w.charterOffered ? 'The Crown is watching' : 'Awaiting a charter'}</span></div>${w.research && !w.charterOffered ? `<div class="ch-label">The first charter arrives on the morning of day ${(sc.firstCharter as { day: number }).day}.</div>` : ''}`}
           ${researchChip}
         </div>
         <div class="threats">
@@ -346,7 +346,7 @@ export class UI {
     const owned = defs.filter(d => !d.decor).map(card).join('');
     const decor = defs.filter(d => d.decor).map(card).join('');
     // buildings still behind research, so the player can see what each study is for
-    const locked = researchLeft(w).flatMap(r => r.unlocks.filter(id => !w.owned.includes(id)).map(id => `<div class="bp locked"><div><b>${esc(BUILDING_BY_ID[id].name)}</b><small>${esc(BUILDING_BY_ID[id].blurb)}</small><small class="cost">Research ${esc(r.name)} to build it${w.research?.current === r.id ? ' · being studied now' : ''}</small></div></div>`)).join('');
+    const locked = researchLeft(w).flatMap(r => r.unlocks.filter(id => !w.owned.includes(id)).map(id => `<div class="bp locked"><div><b>${esc(BUILDING_BY_ID[id].name)}</b><small>${esc(BUILDING_BY_ID[id].blurb)}</small><small class="cost">${desks(w).length ? `Research ${esc(r.name)} to build it` : `Build a research desk, then study ${esc(r.name)}`}${w.research?.current === r.id ? ' · being studied now' : ''}</small></div></div>`)).join('');
     const planned = w.paths.filter(p => p === 1).length, laid = w.paths.filter(p => p === 2).length;
     const queue = sites(w).map(b => this.siteRow(w, b)).join('');
     const done = built(w).filter(b => !BUILDING_BY_ID[b.def].decor).map(b => {

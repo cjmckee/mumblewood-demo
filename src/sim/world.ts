@@ -676,7 +676,6 @@ export function createWorld(seed: number, difficulty: Difficulty = 'normal', sce
   autoAssign(w);
   addLog(w, sc.intro[0], 'good');
   if (sc.intro[1]) addLog(w, sc.intro[1], 'neutral');
-  if (w.research) w.decisions.push(researchDecision(w, sc.firstResearch));
   if (sc.firstCharter === 'start') { w.decisions.push(charterDecision(w, 1)); w.charterOffered = sc.id === 'classic' ? undefined : true; }
   if (!sc.draftsAfterCharter) w.decisions.push(blueprintDecision(w));
   return w;
@@ -1641,6 +1640,10 @@ function completeBuilding(w: World, b: Building) {
   // a new flower bed can make a nearby apiary busier
   if (def.id === 'flowerbed') for (const a of w.buildings) if (bdef(a).needs === 'flowers') a.eff = efficiencyAt(w, a.def, a.x, a.y).eff;
   if (def.slots && w.autoAssignNew) fillSlots(w);
+  // research starts once there's somewhere to study: the first desk brings the first offer
+  if (def.id === 'desk' && w.research && !w.research.current && !w.decisions.some(d => d.kind === 'research') && researchLeft(w).length) {
+    w.decisions.push(researchDecision(w, w.research.done.length ? undefined : scenarioOf(w).firstResearch));
+  }
   // a finished building replaces any planned path under it
   for (let x = b.x; x < b.x + def.w; x++) for (let y = b.y; y < b.y + def.h; y++) if (!def.walkable) w.paths[y * MAP_SIZE + x] = 0;
 }
@@ -1926,7 +1929,7 @@ function hourly(w: World) {
   w.ateOffTable = false;
   if (h === 6) dawn(w);
   // scenarios that hold the first charter back offer it once some research is done, or on a set day
-  if (sc.firstCharter !== 'start' && !w.charterOffered && ((w.research?.done.length ?? 0) >= sc.firstCharter.research || day(w) >= sc.firstCharter.day)) {
+  if (sc.firstCharter !== 'start' && !w.charterOffered && day(w) >= sc.firstCharter.day && h >= 6) {
     w.charterOffered = true; w.decisions.push(charterDecision(w, 1));
   }
   if (w.hour >= w.nextEventHour && h >= 8 && h <= 20) triggerEvent(w);

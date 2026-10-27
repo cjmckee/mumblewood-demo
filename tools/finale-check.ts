@@ -12,9 +12,19 @@ const untilHour = (w: World, h: number, each: () => void = () => {}) => { for (l
 {
   const w = createWorld(77, 'normal', 'frontier');
   ok(alive(w).length === 3, `3 settlers (got ${alive(w).length})`);
-  ok(w.decisions[0]?.kind === 'research' && w.decisions.length === 1, 'the only decision at the start is the first research pick');
+  ok(w.decisions.length === 0, 'no decisions at the start: no research offer, charter or draft yet');
+  ok(!w.buildings.some(b => b.def === 'desk') && w.owned.includes('desk'), 'there is no research desk yet, but one can be built');
   ok(!w.owned.includes('kitchen') && !w.owned.includes('dining') && !w.owned.includes('clinic'), 'kitchen, dining hall and clinic start locked');
   ok(apply(w, { type: 'place', def: 'kitchen', x: 10, y: 10 }) !== null, 'placing a locked kitchen is refused');
+  runHours(w, 6);
+  ok(!w.decisions.some(d => d.kind === 'research'), 'no research offer without a desk');
+  const ds = findSpot(w, 'desk', 16, 16, true)!;
+  ok(!apply(w, { type: 'place', def: 'desk', x: ds.x, y: ds.y }), 'a research desk can be placed');
+  for (let h = 0; h < 48 && !w.decisions.some(d => d.kind === 'research'); h++) { runHours(w, 1); for (let i = 0; i < 10 && w.decisions.length && w.decisions[0].kind !== 'research'; i++) apply(w, { type: 'resolve', option: 0 }); }
+  const offer = w.decisions.find(d => d.kind === 'research');
+  ok(!!offer && desks(w).length === 1, `finishing the desk brings the first research offer (day ${day(w)})`);
+  ok(offer?.kind === 'research' && offer.options.join() === 'cookery,messhall,physick', 'the first offer is Cookery, Mess hall and Physick');
+  while (w.decisions.length && w.decisions[0].kind !== 'research') apply(w, { type: 'resolve', option: 0 });
   apply(w, { type: 'resolve', option: 0 }); // Cookery
   const desk = desks(w)[0];
   const scholar = alive(w)[0];
@@ -29,14 +39,13 @@ const untilHour = (w: World, h: number, each: () => void = () => {}) => { for (l
 // ---- first charter timing and drafts waiting for it ----
 {
   const w = createWorld(78, 'normal', 'frontier');
-  apply(w, { type: 'resolve', option: 0 });
-  let sawBlueprint = false, charterDay = 0;
+  let sawBlueprint = false, charterDay = 0, charterHour = 0;
   for (let h = 0; h < 24 * 5 && !charterDay; h++) {
     runHours(w, 1);
-    for (const d of w.decisions) { if (d.kind === 'blueprint') sawBlueprint = true; if (d.kind === 'charter') charterDay = day(w); }
+    for (const d of w.decisions) { if (d.kind === 'blueprint') sawBlueprint = true; if (d.kind === 'charter' && !charterDay) { charterDay = day(w); charterHour = Math.round(w.hour) % 24; } }
     if (!charterDay) while (w.decisions.length && w.decisions[0].kind !== 'charter') apply(w, { type: 'resolve', option: 0 });
   }
-  ok(charterDay > 0 && charterDay <= 4, `the first charter is offered by day 4 (day ${charterDay})`);
+  ok(charterDay === 2 && charterHour === 6, `the first charter is offered on the morning of day 2 (day ${charterDay}, ${charterHour}:00), with no research done`);
   ok(!sawBlueprint, 'no blueprint draft before the first charter');
   for (let i = 0; i < 20 && w.decisions.length && w.decisions[0].kind !== 'charter'; i++) apply(w, { type: 'resolve', option: 0 });
   apply(w, { type: 'resolve', option: 0 });

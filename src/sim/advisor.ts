@@ -100,6 +100,7 @@ function researchFor(w: World, id: string): { idea: string; fix: Fix } | null {
   if (owns(w, id) || !w.research) return null;
   const r = RESEARCH.find(x => x.unlocks.includes(id)); if (!r) return null;
   const now = w.research.current === r.id;
+  if (!built(w).some(b => b.def === 'desk')) return { idea: `build a research desk, then study ${r.name.toLowerCase()} to unlock the ${name(id)}`, fix: { build: 'desk' } };
   return { idea: now ? `the scholar is studying ${r.name.toLowerCase()}, which unlocks the ${name(id)}: keep someone at the desk` : `study ${r.name.toLowerCase()} at the research desk to unlock the ${name(id)}`, fix: { research: r.id } };
 }
 
