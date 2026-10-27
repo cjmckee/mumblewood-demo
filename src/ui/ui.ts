@@ -12,20 +12,19 @@ import { START } from '../sim/scenario';
 import { assess } from '../sim/advisor';
 import { economy, Account } from '../sim/economy';
 import type { IsoView, Picked } from '../render/iso';
+import { icon } from './icons';
 
 const esc = (s: string) => s.replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]!));
 const first = (c: Colonist) => c.name.split(' ')[0];
 const sum = (o: Partial<Record<string, number>>) => Object.values(o).reduce<number>((n, v) => n + (v ?? 0), 0);
 const hex = (n: number) => `#${n.toString(16).padStart(6, '0')}`;
-const RES_COLOR: Record<ResourceId, string> = {
-  wood: '#a07a4c', planks: '#d2a96a', berries: '#c04a6a', fish: '#5b9cc2', mushrooms: '#b39ad0',
-  stew: '#d98a3c', pie: '#e6c25a', smokedFish: '#9c8c7a', ale: '#d6a33c',
-  apples: '#d2452f', grain: '#d8c060', honey: '#e8a21c', cider: '#b8c25a', mead: '#b06a2a',
-  clay: '#b0603a', reeds: '#9aa860', bricks: '#a8442e', wicker: '#c8a868',
-  herbs: '#5a9a4a', flour: '#e8e0c8', bread: '#c89048', skewers: '#9a6a4a', poultice: '#8ab89a', tonic: '#6a5aa8', tea: '#8aa84a',
-};
-const costText = (cost: Partial<Record<InputKey, number>>) =>
-  Object.entries(cost).map(([r, n]) => `${n} ${r === 'fine' ? 'planks or bricks' : inputName(r as InputKey)}`).join(', ') || 'free';
+const goodLabel = (k: InputKey) => (k === 'fine' ? 'planks or bricks' : inputName(k));
+/** a good or a category with its icon, optionally with a count in front: "[icon]3 planks"; returns HTML */
+const goodHtml = (k: InputKey, n?: number | string, label = goodLabel(k)) => `<span class="gd">${icon(k)}${n != null ? `${n} ` : ''}${esc(label)}</span>`;
+const costHtml = (cost: Partial<Record<InputKey, number>>) =>
+  Object.entries(cost).map(([r, n]) => goodHtml(r as InputKey, n)).join(', ') || 'free';
+/** "2 [wood] + 1 [clay] → [bricks]" as HTML */
+const recipeHtml = (r: Recipe) => `${Object.keys(r.inputs).length ? `${Object.entries(r.inputs).map(([k, n]) => goodHtml(k as InputKey, n)).join(' + ')} → ` : ''}${goodHtml(r.output)}`;
 
 function timeOfDay(h: number) {
   if (h < 6) return 'Night'; if (h < 12) return 'Morning'; if (h < 18) return 'Afternoon'; if (h < 22) return 'Evening'; return 'Night';
@@ -65,8 +64,8 @@ type Detail = { kind: 'colonist' | 'building'; id: number } | null;
 const goodName = (r: ResourceId) => RESOURCES.find(x => x.id === r)!.name.toLowerCase();
 /** " · favourite food pie · not stew", with bold for the detail page */
 const tasteLine = (c: Colonist, bold = true) => {
-  const b = (t: string) => (bold ? `<b>${esc(t)}</b>` : t);
-  return c.tastes.loves.map((r, i) => ` · favourite ${b(goodName(r))}, not ${b(goodName(c.tastes.dislikes[i]))}`).join('');
+  const b = (r: ResourceId) => (bold ? `<b>${goodHtml(r)}</b>` : goodHtml(r));
+  return c.tastes.loves.map((r, i) => ` · favourite ${b(r)}, not ${b(c.tastes.dislikes[i])}`).join('');
 };
 /** "", "needs an orchard hut (not drafted yet)" or "no honey on this map", for a recipe line */
 function reachText(w: World, r: Recipe, forDraft: boolean) {
@@ -226,7 +225,7 @@ export class UI {
     const cap = storageCap(w), st = stored(w);
     const storeChip = `<span class="chip store${st >= cap ? ' full' : ''}"><b>${Math.floor(st)}/${cap}</b> stored${spoilingFood(w) >= 5 ? ' · food spoiling' : ''}</span>`;
     const res = storeChip + RESOURCES.filter(r => w.res[r.id] >= 0.5 || ['wood', 'berries', 'stew'].includes(r.id))
-      .map(r => `<span class="chip"><i style="background:${RES_COLOR[r.id]}"></i><b>${Math.floor(w.res[r.id])}</b> ${r.name}</span>`).join('');
+      .map(r => `<span class="chip" title="${r.name}">${icon(r.id)}<b>${Math.floor(w.res[r.id])}</b> ${r.name}</span>`).join('');
     const html = `
       <div class="bar">
         <div class="clock"><span class="day">Day ${day(w)}</span><span class="time">${hh}:00<span class="phase"> · ${timeOfDay(h)}</span></span></div>
@@ -286,8 +285,8 @@ export class UI {
       <p class="lede">Everyone who isn’t bedridden comes, sulkers included. Each takes a meal, and a drink if there is one, reaching for their favourites first. Strain eases by a share of what it is now, so the deeper the colony is in, the more it helps.</p>
       <ul class="thoughts">
         <li><span>Settlers coming</span><b>${p.guests}</b></li>
-        <li><span>Meals it will use (of ${Math.floor(mealTotal(w))} in storage)</span><b>${p.fed}</b></li>
-        <li><span>Drinks it will use (of ${Math.floor(drinkTotal(w))})</span><b>${p.drank}</b></li>
+        <li><span>${icon('meal')}Meals it will use (of ${Math.floor(mealTotal(w))} in storage)</span><b>${p.fed}</b></li>
+        <li><span>${icon('drink')}Drinks it will use (of ${Math.floor(drinkTotal(w))})</span><b>${p.drank}</b></li>
         <li><span>Getting a favourite</span><b>${p.loved}</b></li>
         <li><span>Strain eased</span><b>${Math.round(p.relief)} (${pct(p.share)})</b></li>
       </ul>
@@ -359,7 +358,7 @@ export class UI {
       <h3>Food rules</h3><p class="muted hint">Turn a food off to keep it in storage for a charter or a feast. Nobody will touch it.</p>
       <div class="foodrules">${(['stew', 'pie', 'smokedFish', 'berries', 'fish', 'mushrooms'] as ResourceId[]).map(f => {
         const on = !w.forbidden.includes(f);
-        return `<button type="button" class="rule${on ? ' on' : ''}" data-act="food" data-arg="${f}" aria-pressed="${on}"><i style="background:${RES_COLOR[f]}"></i>${RESOURCES.find(r => r.id === f)!.name}<small>${on ? 'eaten' : 'kept'} · ${Math.floor(w.res[f])}</small></button>`;
+        return `<button type="button" class="rule${on ? ' on' : ''}" data-act="food" data-arg="${f}" aria-pressed="${on}">${icon(f)}${RESOURCES.find(r => r.id === f)!.name}<small>${on ? 'eaten' : 'kept'} · ${Math.floor(w.res[f])}</small></button>`;
       }).join('')}</div>`;
   }
 
@@ -405,7 +404,7 @@ export class UI {
     const short = (cost: Partial<Record<InputKey, number>>) => Object.entries(cost).filter(([r, n]) => stockOf(w, r as InputKey) < (n ?? 0)).map(([r]) => inputName(r as InputKey));
     const card = (def: typeof BUILDING_BY_ID[string]) => {
       const miss = short(def.cost);
-      return `<div class="bp"><div><b>${esc(def.name)}</b><small>${esc(def.blurb)}</small><small class="cost">${Object.keys(def.cost).length ? `Needs ${esc(costText(def.cost))}` : 'Free'} · ${def.w}×${def.h}${miss.length ? ` · short on ${esc(miss.join(', '))}` : ''}</small></div>
+      return `<div class="bp"><div><b>${esc(def.name)}</b><small>${esc(def.blurb)}</small><small class="cost">${Object.keys(def.cost).length ? `Needs ${costHtml(def.cost)}` : 'Free'} · ${def.w}×${def.h}${miss.length ? ` · short on ${esc(miss.join(', '))}` : ''}</small></div>
         <button type="button" class="act" data-act="build" data-arg="${def.id}">Place</button></div>`;
     };
     const defs = w.owned.map(id => BUILDING_BY_ID[id]);
@@ -434,7 +433,7 @@ export class UI {
     const need = Object.keys(left).length;
     const pct = Math.round((b.progress / siteWork(b)) * 100);
     const stage = def.stages ? `Stage ${(b.stage ?? 0) + 1} of ${def.stages.length}: ${def.stages[b.stage ?? 0].label.toLowerCase()} · ` : '';
-    const status = stage + (need ? `Waiting on ${Object.entries(left).map(([r, n]) => `${Math.ceil(n ?? 0)} ${r === 'fine' ? 'planks or bricks' : inputName(r as InputKey)}`).join(', ')}` : `Building · ${pct}%`);
+    const status = stage + (need ? `Waiting on ${Object.entries(left).map(([r, n]) => `${Math.ceil(n ?? 0)} ${goodLabel(r as InputKey)}`).join(', ')}` : `Building · ${pct}%`);
     const ratio = need ? 1 - sum(left) / Math.max(1, sum(costOf(b))) : b.progress / siteWork(b);
     return `<button type="button" class="row compact site" data-act="building" data-arg="${b.uid}"><span class="who"><b>${esc(def.name)}</b><small>${esc(status)}</small></span><span class="mini ${need ? 'haul' : ''}"><i style="width:${Math.round(ratio * 100)}%"></i></span></button>`;
   }
@@ -481,7 +480,7 @@ export class UI {
         const ms = membersOf(r as InputKey), got = ms.reduce((m, x) => m + (b.delivered[x] ?? 0), 0);
         const mix = ms.length > 1 ? ms.filter(x => (b.delivered[x] ?? 0) >= 0.5).map(x => `${Math.floor(b.delivered[x] ?? 0)} ${goodName(x)}`).join(', ') : '';
         const label = inputName(r as InputKey);
-        return `<li><span>${label.charAt(0).toUpperCase() + label.slice(1)}${mix ? ` (${mix})` : ''}</span><b>${Math.floor(got)} / ${n}</b></li>`;
+        return `<li><span>${icon(r)}${label.charAt(0).toUpperCase() + label.slice(1)}${mix ? ` (${mix})` : ''}</span><b>${Math.floor(got)} / ${n}</b></li>`;
       }).join('');
       return `<div class="detail"><div class="d-head"><button type="button" class="ghost back" data-act="back">All buildings</button></div>
         <h2>${esc(def.name)}</h2><p class="blurb">${def.stages ? `${esc(def.blurb)}</p><p class="prefs">Stage <b>${(b.stage ?? 0) + 1} of ${def.stages.length}</b>: ${esc(def.stages[b.stage ?? 0].label)}. Then: ${esc(def.stages.slice((b.stage ?? 0) + 1).map(x => x.label.toLowerCase()).join(', ') || 'done')}.` : 'Under construction.'}</p>
@@ -492,17 +491,16 @@ export class UI {
     }
     const workers = workersAt(w, b.uid);
     const recs = recipesOf(b), cur = currentRecipe(w, b);
-    const recipeText = (r: Recipe) => `${Object.keys(r.inputs).length ? `${Object.entries(r.inputs).map(([k, n]) => `${n} ${inputName(k as InputKey)}`).join(' + ')} → ` : ''}${RESOURCES.find(x => x.id === r.output)!.name.toLowerCase()}`;
     // whether a recipe's ingredients can come from anywhere: a building owned now, one that could be drafted, or nowhere on this map
     const reach = (r: Recipe) => reachText(w, r, false);
     const recipe = !recs.length ? '' : recs.length === 1 && recipeOn(b, 0)
-      ? `<p class="prefs">${starHtml(recs[0].stars)} ${Object.keys(recs[0].inputs).length ? 'Makes' : 'Gathers'} ${esc(recipeText(recs[0]))} · ${+recipeRate(recs[0]).toFixed(2)} per worker-hour</p>`
+      ? `<p class="prefs">${starHtml(recs[0].stars)} ${Object.keys(recs[0].inputs).length ? 'Makes' : 'Gathers'} ${recipeHtml(recs[0])} · ${+recipeRate(recs[0]).toFixed(2)} per worker-hour</p>`
       : `<h3>Recipes</h3><p class="muted">Workers make the best switched-on recipe they can get ingredients for. Tap to switch one on or off.</p><div class="recipes">${recs.map((r, i) => {
           const on = recipeOn(b, i), now = on && r === cur;
-          return `<button type="button" class="recipe${on ? ' on' : ''}" data-act="recipe-toggle" data-arg="${b.uid}:${i}" aria-pressed="${on}">${starHtml(r.stars)}<span>${esc(recipeText(r))}<small>${+recipeRate(r).toFixed(2)} per worker-hour${now ? ' · making now' : on ? '' : ' · switched off'}${reach(r) ? ` · ${reach(r)}` : ''}</small></span></button>`;
+          return `<button type="button" class="recipe${on ? ' on' : ''}" data-act="recipe-toggle" data-arg="${b.uid}:${i}" aria-pressed="${on}">${starHtml(r.stars)}<span><span class="rline">${recipeHtml(r)}</span><small>${+recipeRate(r).toFixed(2)} per worker-hour${now ? ' · making now' : on ? '' : ' · switched off'}${reach(r) ? ` · ${reach(r)}` : ''}</small></span></button>`;
         }).join('')}</div>`;
     const effLine = def.needs ? `<p class="prefs">${esc(efficiencyAt(w, b.def, b.x, b.y).label)} · works at <b>${Math.round(b.eff * 100)}%</b></p>` : '';
-    const inboxLine = recs.some(r => Object.keys(r.inputs).length) ? `<p class="prefs">Ingredients on hand: ${Object.entries(b.inbox).filter(([, n]) => (n ?? 0) >= 0.5).map(([r, n]) => `${Math.floor(n ?? 0)} ${RESOURCES.find(x => x.id === r)!.name.toLowerCase()}`).join(', ') || '<b>none</b>. Laborers carry them in from storage.'}</p>` : '';
+    const inboxLine = recs.some(r => Object.keys(r.inputs).length) ? `<p class="prefs">Ingredients on hand: ${Object.entries(b.inbox).filter(([, n]) => (n ?? 0) >= 0.5).map(([r, n]) => goodHtml(r as ResourceId, Math.floor(n ?? 0))).join(', ') || '<b>none</b>. Laborers carry them in from storage.'}</p>` : '';
     const blocked = blockedReason(w, b);
     const remedyLine = def.patients ? `<p class="prefs">Remedies in storage: ${w.res.tonic >= 0.5 || w.res.poultice >= 0.5 ? `${Math.floor(w.res.tonic)} tonic, ${Math.floor(w.res.poultice)} poultice. The doctor uses one up every few hours of treatment: a poultice heals faster and halves botched treatments, a tonic heals faster still and never botches.` : '<b>none</b>. An apothecary makes poultices and tonics that help the doctor.'}</p>` : '';
     const patients = def.patients ? `<p class="prefs">Patients: ${patientsAt(w, b).map(c => `${esc(first(c))} (${esc(c.illness!.name.toLowerCase())}, ${Math.round(c.illness!.severity)})`).join(', ') || 'none right now. The doctor helps out as a laborer until someone is ill.'}</p>` : '';
@@ -516,10 +514,10 @@ export class UI {
       staff += `<h3>Workers ${workers.length}/${def.slots}</h3><div class="rows">${cur || '<p class="muted">Nobody works here.</p>'}</div>${cand ? `<h3>Assign someone</h3><div class="rows">${cand}</div>` : ''}`;
     } else if (def.storage) {
       const held = Object.values(b.stock).reduce((n, x) => n + (x ?? 0), 0);
-      const contents = RESOURCES.filter(r => (b.stock[r.id] ?? 0) >= 0.5).map(r => `${Math.floor(b.stock[r.id] ?? 0)} ${r.name.toLowerCase()}`).join(', ');
+      const contents = RESOURCES.filter(r => (b.stock[r.id] ?? 0) >= 0.5).map(r => goodHtml(r.id, Math.floor(b.stock[r.id] ?? 0))).join(', ');
       const mode = !b.allow ? 'all' : b.allow.length === FOODS.length && FOODS.every(f => b.allow!.includes(f)) ? 'food' : b.allow.length === GOODS.length && GOODS.every(f => b.allow!.includes(f)) ? 'goods' : 'custom';
       const preset = (id: string, label: string) => `<button type="button" class="seg${mode === id ? ' on' : ''}" data-act="store-preset" data-arg="${b.uid}:${id}" aria-pressed="${mode === id}">${label}</button>`;
-      const items = RESOURCES.map(r => { const on = accepts(b, r.id); return `<button type="button" class="rule${on ? ' on' : ''}" data-act="store-item" data-arg="${b.uid}:${r.id}" aria-pressed="${on}"><i style="background:${RES_COLOR[r.id]}"></i>${r.name}<small>${on ? 'stored here' : 'not here'}</small></button>`; }).join('');
+      const items = RESOURCES.map(r => { const on = accepts(b, r.id); return `<button type="button" class="rule${on ? ' on' : ''}" data-act="store-item" data-arg="${b.uid}:${r.id}" aria-pressed="${on}">${icon(r.id)}${r.name}<small>${on ? 'stored here' : 'not here'}</small></button>`; }).join('');
       staff += `<p class="prefs">Holding <b>${Math.round(held)} / ${def.storage}</b>${contents ? `: ${contents}` : ''}.${def.keepsFresh ? ' Food here stays fresh.' : ' Food left here slowly spoils.'}</p>
         <h3>Priority</h3><p class="muted">Haulers fill high-priority storage first and top it up from low-priority storage.</p>
         <div class="segs two"><button type="button" class="seg${b.high ? '' : ' on'}" data-act="store-prio" data-arg="${b.uid}:low" aria-pressed="${!b.high}">Low</button><button type="button" class="seg${b.high ? ' on' : ''}" data-act="store-prio" data-arg="${b.uid}:high" aria-pressed="${b.high}">High</button></div>
@@ -540,7 +538,7 @@ export class UI {
     const done = r.done.map(id => RESEARCH_BY_ID[id].name).join(', ');
     if (!cur) return `<p class="prefs">${done ? `Learned: ${esc(done)}.` : ''}</p>`;
     const need = researchStillNeeds(w);
-    const goods = Object.entries(cur.cost).map(([k, n]) => { const left = need[k as InputKey] ?? 0; const nm = inputName(k as InputKey); return `<li><span>${esc(nm.charAt(0).toUpperCase() + nm.slice(1))}</span><b>${Math.floor((n ?? 0) - left)} / ${n}</b></li>`; }).join('');
+    const goods = Object.entries(cur.cost).map(([k, n]) => { const left = need[k as InputKey] ?? 0; const nm = inputName(k as InputKey); return `<li><span>${icon(k)}${esc(nm.charAt(0).toUpperCase() + nm.slice(1))}</span><b>${Math.floor((n ?? 0) - left)} / ${n}</b></li>`; }).join('');
     return `<h3>Studying ${esc(cur.name)}</h3><p class="prefs">${esc(cur.desc)} Unlocks <b>${esc(cur.unlocks.map(u => BUILDING_BY_ID[u].name.toLowerCase()).join(' and '))}</b>.</p>
       <ul class="thoughts">${goods}<li><span>Study</span><b>${Math.floor(r.progress)} / ${cur.hours} hours</b></li></ul>
       <p class="muted">${Object.keys(need).length ? 'The scholar fetches the goods; laborers help when they can.' : 'Everything is here. Study goes faster with a better Studying skill.'}${done ? ` Learned so far: ${esc(done)}.` : ''}</p>`;
@@ -575,32 +573,32 @@ export class UI {
       switch (d.kind) {
         case 'charter': html = this.cards(d.tier === 1 ? 'Your first charter' : `Charter ${d.tier} of 3`,
           d.tier === 1 ? 'The Crown wants proof this colony is worth the paperwork. Complete three charters before the frontier wears everyone down.' : 'The Crown has another demand. Choose one.',
-          d.options.map(id => { const c = charterDef(id)!; return { title: c.name, body: c.desc, tag: `Tier ${c.tier}` }; })); break;
+          d.options.map(id => { const c = charterDef(id)!; return { title: c.name, body: esc(c.desc), tag: `Tier ${c.tier}` }; })); break;
         case 'research': html = this.cards(w.research?.done.length ? 'What next for the scholar?' : 'What should your scholar study first?',
           w.research?.done.length ? 'Pick one project. The ones you pass on can come round again.' : 'Nobody here knows how to build a kitchen, a dining hall or a clinic yet. Pick one project for the research desk. Someone has to sit there, and the goods get carried in.',
-          d.options.map(id => { const r = RESEARCH_BY_ID[id]; return { title: r.name, body: `${r.desc}\nUnlocks: ${r.unlocks.map(u => BUILDING_BY_ID[u].name).join(', ')}`, tag: `Costs ${costText(r.cost)} · about ${r.hours} hours of study` }; })); break;
+          d.options.map(id => { const r = RESEARCH_BY_ID[id]; return { title: r.name, body: `${esc(r.desc)}\nUnlocks: ${esc(r.unlocks.map(u => BUILDING_BY_ID[u].name).join(', '))}`, tag: `Costs ${costHtml(r.cost)} · about ${r.hours} hours of study` }; })); break;
         case 'blueprint': {
           const cost = rerollCost(w), can = w.res.wood >= cost;
           // each card lists what the building makes, best recipe first, so a reroll is a judgement about routes
           const recipeLines = (id: string) => [...(BUILDING_BY_ID[id].recipes ?? [])].sort((a, z) => z.stars - a.stars)
-            .map(r => `${'★'.repeat(r.stars)}${'☆'.repeat(3 - r.stars)} ${Object.keys(r.inputs).length ? `${Object.entries(r.inputs).map(([k, n]) => `${n} ${inputName(k as InputKey)}`).join(' + ')} → ` : ''}${goodName(r.output)}${Object.keys(r.inputs).length ? ` · ${reachText(w, r, true)}` : ''}`).join('\n');
+            .map(r => `<i class="stars">${'★'.repeat(r.stars)}${'☆'.repeat(3 - r.stars)}</i> ${recipeHtml(r)}${Object.keys(r.inputs).length ? ` · ${esc(reachText(w, r, true))}` : ''}`).join('\n');
           const charter = charterDef(w.charter);
           const notes = (id: string) => {
             const def = BUILDING_BY_ID[id], out: string[] = [];
             if (charter && charterHelpers(charter.id).includes(id)) out.push(`Helps your charter: ${charter.name}`);
             if (def.cost.fine && stockOf(w, 'fine') < def.cost.fine && !['sawmill', 'kiln', 'carpenter'].some(m => w.owned.includes(m))) out.push('Needs planks or bricks, and nothing here makes them yet');
-            return out.length ? `\n${out.join('\n')}` : '';
+            return out.length ? `\n${out.map(esc).join('\n')}` : '';
           };
           html = this.cards('A new blueprint', 'Pick one building to add to what you can build this run.',
-            d.options.map(id => { const b = BUILDING_BY_ID[id]; const rl = recipeLines(id); return { title: b.name, body: `${rl ? `${b.blurb}\n${rl}` : b.blurb}${notes(id)}`, tag: `Costs ${costText(b.cost)}${b.slots ? ` · ${b.slots} worker${b.slots > 1 ? 's' : ''}` : ''}` }; }),
+            d.options.map(id => { const b = BUILDING_BY_ID[id]; const rl = recipeLines(id); return { title: b.name, body: `${rl ? `${esc(b.blurb)}\n${rl}` : esc(b.blurb)}${notes(id)}`, tag: `Costs ${costHtml(b.cost)}${b.slots ? ` · ${b.slots} worker${b.slots > 1 ? 's' : ''}` : ''}` }; }),
             undefined,
             `<button type="button" class="ghost skip" data-act="reroll" ${can ? '' : 'disabled'}>Reroll for ${cost} wood${can ? '' : ` (you have ${Math.floor(w.res.wood)})`}</button><p class="muted reroll-note">Each reroll this run costs ${REROLL_STEP} more than the last.</p>`);
           break;
         }
         case 'perk': html = this.cards('The Crown grants a boon', 'Choose one. It lasts the rest of the run.',
-          d.options.map(id => ({ title: PERK_BY_ID[id].name, body: PERK_BY_ID[id].desc, tag: 'Boon' }))); break;
+          d.options.map(id => ({ title: PERK_BY_ID[id].name, body: esc(PERK_BY_ID[id].desc), tag: 'Boon' }))); break;
         case 'recruit': html = this.cards('Settlers at the edge of camp', `They’d like to join. You have ${beds(w)} beds for ${alive(w).length} colonists.`,
-          d.options.map(c => ({ title: c.name, body: c.traits.map(t => `${TRAIT_BY_ID[t].name}: ${TRAIT_BY_ID[t].desc}`).join('\n'), tag: `Loves ${JOB_NAMES[c.likes]} · hates ${JOB_NAMES[c.dislikes]} · best at ${topSkills(c)}${tasteLine(c, false)}`, color: hex(c.shirt) })),
+          d.options.map(c => ({ title: c.name, body: c.traits.map(t => esc(`${TRAIT_BY_ID[t].name}: ${TRAIT_BY_ID[t].desc}`)).join('\n'), tag: `${esc(`Loves ${JOB_NAMES[c.likes]} · hates ${JOB_NAMES[c.dislikes]} · best at ${topSkills(c)}`)}${tasteLine(c, false)}`, color: hex(c.shirt) })),
           'Send them all away'); break;
         case 'errand': { const e = w.errands.find(x => x.id === d.errandId); if (e) html = this.errandPicker(w, e, true); break; }
         case 'event': {
@@ -622,7 +620,7 @@ export class UI {
     return `<div class="card-wrap"><p class="eyebrow">Choose one</p><h2>${esc(title)}</h2><p class="lede">${esc(lede)}</p>
       <div class="opts">${opts.map((o, i) => `<button type="button" class="opt" data-act="resolve" data-arg="${i}">
         <b>${o.color ? `<span class="dot" style="background:${o.color}"></span>` : ''}${esc(o.title)}</b>
-        ${o.body.split('\n').map(line => `<span>${esc(line)}</span>`).join('')}<small>${esc(o.tag)}</small></button>`).join('')}</div>
+        ${o.body.split('\n').map(line => `<span>${line}</span>`).join('')}<small>${o.tag}</small></button>`).join('')}</div>
       ${skip ? `<button type="button" class="ghost skip" data-act="resolve" data-arg="99">${esc(skip)}</button>` : ''}${extra}</div>`;
   }
 
@@ -698,15 +696,16 @@ function concernCards(w: World) {
 
 // ---------- Ledger ----------
 const num = (n: number) => `${n > 0.05 ? '+' : n < -0.05 ? '−' : ''}${Math.abs(n) >= 10 ? Math.round(Math.abs(n)) : Math.abs(n).toFixed(1).replace(/\.0$/, '')}`;
-function accountCard(a: Account) {
+function accountCard(a: Account, ico: InputKey) {
   const max = Math.max(1, ...a.lines.map(l => Math.abs(l.perDay)));
   const rows = a.lines.map(l => `<div class="lg-row ${l.perDay >= 0 ? 'lg-good' : 'lg-bad'}"><span>${esc(l.label)}</span><i><b style="width:${Math.abs(l.perDay) / max * 100}%"></b></i><em>${num(l.perDay)}</em></div>`).join('');
   const verdict = a.daysLeft != null ? `<b class="neg">${num(a.net)} a day</b> · ${Math.floor(a.stock)} on hand lasts about ${a.daysLeft < 1 ? 'less than a day' : `${Math.floor(a.daysLeft)} day${Math.floor(a.daysLeft) === 1 ? '' : 's'}`}` : `<b class="${a.net >= 0 ? 'pos' : ''}">${num(a.net)} a day</b> · ${Math.floor(a.stock)} on hand`;
-  return `<div class="acct"><div class="acct-head"><h4>${a.name}</h4><span>${verdict}</span></div>${rows || '<p class="muted">Nothing moved in the last day.</p>'}</div>`;
+  return `<div class="acct"><div class="acct-head"><h4>${icon(ico)}${a.name}</h4><span>${verdict}</span></div>${rows || '<p class="muted">Nothing moved in the last day.</p>'}</div>`;
 }
 function ledger(w: World) {
   const e = economy(w);
-  const accounts = [e.food, e.wood, ...(e.planks.lines.length || e.planks.stock >= 1 ? [e.planks] : []), ...(e.drinks.lines.length || e.drinks.stock >= 1 ? [e.drinks] : []), ...(e.remedies.lines.length || e.remedies.stock >= 1 ? [e.remedies] : [])];
+  const show = (a: Account) => a.lines.length > 0 || a.stock >= 1;
+  const accounts: [Account, InputKey][] = [[e.food, 'meal'], [e.wood, 'wood'], ...([[e.planks, 'planks'], [e.drinks, 'drink'], [e.remedies, 'remedy']] as [Account, InputKey][]).filter(([a]) => show(a))];
   const jobs = e.jobs.sort((a, z) => (z.slots - z.workers) - (a.slots - a.workers)).map(j => {
     const open = j.slots - j.workers;
     return `<div class="job-row"><span><b>${esc(j.name)}</b><small>${j.workers}/${j.slots} working${open && j.best ? ` · best free hand: ${esc(first(j.best.c))} (${esc(SKILL_NAMES[j.job].toLowerCase())} ${j.best.skill}${j.best.c.likes === j.job ? ', loves it' : ''})` : ''}</small></span>${open ? `<em class="open">${open} open</em>` : '<em>full</em>'}</div>`;
@@ -721,7 +720,7 @@ function ledger(w: World) {
     : 'Laborers have a little slack.';
   const segs = ['hauling', 'building', 'cleaning', 'eating', 'idle'].map(k => `<b class="lt-${k}" style="width:${pct(k)}%"></b>`).join('');
   return `<p class="muted hint">The last 24 hours, scaled to a full day.</p>
-    ${accounts.map(accountCard).join('')}
+    ${accounts.map(([a, k]) => accountCard(a, k)).join('')}
     <h3>Jobs</h3><div class="joblist">${jobs || '<p class="muted">No workplaces yet.</p>'}</div>
     <h3>Laborers <span class="muted">· ${e.laborers.length}</span></h3>
     <div class="lt-bar">${segs}</div>
