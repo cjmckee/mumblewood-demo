@@ -2,7 +2,7 @@
 // It reads the active charter and plays towards it, the way a person would.
 import { BUILDING_BY_ID, BUILDINGS, CATEGORIES, CharterMetric, RESEARCH_BY_ID, EVENTS, ResourceId, MEALS, RAW_FOODS, Recipe, InputKey, membersOf, recipeRate } from './content';
 import { assess, Concern, defsOf } from './advisor';
-import { World, apply, alive, beds, mealTotal, sites, findSpot, CENTER, avgMood, built, MAP_SIZE, pathAt, terrainAt, T_WATER, bdef, workersAt, blockedReason, opinion, Building, Colonist, hourOfDay, charterProgress, buildingByUid, storageFree, storages, FOODS, GOODS, bedridden, foodTotal, currentRecipe, drinkTotal, siteOk, enabledRecipes, recipesOf, rerollCost, stockOf, usableHere, charterDef, charterHelpers, feastCheck, desks, researchLeft } from './world';
+import { World, apply, alive, beds, mealTotal, sites, findSpot, CENTER, avgMood, built, MAP_SIZE, pathAt, terrainAt, T_WATER, bdef, workersAt, blockedReason, opinion, Building, Colonist, hourOfDay, charterProgress, buildingByUid, storageFree, storages, FOODS, GOODS, bedridden, foodTotal, currentRecipe, drinkTotal, siteOk, enabledRecipes, recipesOf, rerollCost, stockOf, usableHere, charterDef, charterHelpers, feastCheck, desks, researchLeft, festivalPreview } from './world';
 
 const BLUEPRINT_PRIORITY = ['sawmill', 'pieoven', 'dock', 'cottage', 'brewery', 'ciderpress', 'tavern', 'kiln', 'claypit', 'carpenter', 'orchard', 'field', 'apiary', 'smokehouse', 'cellar', 'stage', 'bathhouse', 'bakery', 'apothecary', 'herbgarden', 'mill'];
 const DRINK_MAKERS = ['brewery', 'ciderpress'];
@@ -115,7 +115,7 @@ export function charterChain(w: World): string[] {
  * Experiment switches for the balance tools. `advisor` makes the bot play from what's on screen (the complaint
  * panel) instead of its own rules; it's off by default because, so far, it plays worse (see the project doc).
  */
-export const BOT = { comfortsFirst: false, recruitCap: 0, recruitExtra: 4, comforts: true, foodDepot: 'food' as false | 'food' | 'meals', laborersPer: 3.5, advisor: false, gate: true, ranked: true, comfort: 'strict' as 'strict' | 'econ' | 'none', rescue: false, rescueAt: 40, moodBlock: false, reroll: true, variety: false, routes: false, off: [] as string[], skip: [] as string[] };
+export const BOT = { festival: true, festivalAt: 8, comfortsFirst: false, recruitCap: 0, recruitExtra: 4, comforts: true, foodDepot: 'food' as false | 'food' | 'meals', laborersPer: 3.5, advisor: false, gate: true, ranked: true, comfort: 'strict' as 'strict' | 'econ' | 'none', rescue: false, rescueAt: 40, moodBlock: false, reroll: true, variety: false, routes: false, off: [] as string[], skip: [] as string[] };
 
 // ---------- Explaining the bot ----------
 /** one thing the bot decided and why: each option with its score broken into parts, or a staffing or build step */
@@ -383,6 +383,15 @@ export function autoBuild(w: World) {
     const near = centroid(w, ['dining', 'kitchen']);
     const spot = findSpot(w, 'stockpile', near.x, near.y, true);
     if (spot && !apply(w, { type: 'place', def: 'stockpile', x: spot.x, y: spot.y })) depots.set(w, w.buildings[w.buildings.length - 1].uid);
+  }
+  // a festival when strain is biting and the larder can spare it; it holds off while a charter is counting the meals
+  if (BOT.festival && !w.festival?.called && hourOfDay(w) < 17) {
+    const p = festivalPreview(w);
+    const countingMeals = partsOf(w).some(m => (m.kind === 'stock' && m.resources.some(r => MEALS.includes(r))) || (m.kind === 'variety' && m.category === 'meal') || m.kind === 'monument' || m.kind === 'longTable');
+    const spare = mealTotal(w) >= alive(w).length * (countingMeals ? 3 : 1.5);
+    if (!p.wait && w.strain >= BOT.festivalAt && p.fed === p.guests && (spare || w.strain >= BOT.festivalAt * 2)) {
+      if (!apply(w, { type: 'callFestival' })) note(w, { kind: 'decision', title: 'Festival called', lines: [`strain ${Math.round(w.strain)} ≥ ${BOT.festivalAt}; ${Math.floor(mealTotal(w))} meals for ${alive(w).length}${countingMeals ? ' (the charter counts meals, so it keeps 3 each)' : ''}; eases about ${Math.round(p.relief)}`] });
+    }
   }
   // the Long Table: call the feast once everyone would come, sit and get something they like
   if (partsOf(w).some(p => p.kind === 'longTable') && !w.feast?.called && w.hour >= (w.feast?.readyAt ?? 0) && hourOfDay(w) < 17 && feastCheck(w).ok) apply(w, { type: 'callFeast' });

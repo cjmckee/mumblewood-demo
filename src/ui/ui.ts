@@ -5,7 +5,7 @@ import {
   day, hourOfDay, opinion, workersAt, MAX_DEPARTURES, sites, siteWork, remainingCost, storageCap, stored,
   keepsFresh, findSpot, canPlace, laborers, centerOf, built, Building, efficiencyAt, pathAt, MAP_SIZE, blockedReason, Errand, patientsAt, lost, bedridden, spoilingFood, accepts, roomIn, FOODS, GOODS,
   recipesOf, recipeOn, currentRecipe, siteOk, rerollCost, REROLL_STEP, stockOf, recipeReach, charterHelpers, charterDef,
-  costOf, researchLeft, researchStillNeeds, desks, feastCheck,
+  costOf, researchLeft, researchStillNeeds, desks, feastCheck, festivalPreview, mealTotal, drinkTotal,
 } from '../sim/world';
 import { START } from '../sim/scenario';
 import { assess } from '../sim/advisor';
@@ -89,6 +89,7 @@ export class UI {
   /** run history from this browser, shown on the end screen */
   profile: { runs: { result: string; day: number; charters: number }[] } = { runs: [] };
   private picking: number | null = null; // errand id whose colonist picker is open
+  private festivalOpen = false;
 
   constructor(private root: HTMLElement, private getWorld: () => World, private send: (c: Command) => string | null, private view: IsoView) {
     root.addEventListener('click', e => this.click(e));
@@ -172,6 +173,9 @@ export class UI {
         else { const err = this.send({ type: 'sendOnErrand', errand: eid, colonist: cid }); if (err) this.toast(err); }
         this.picking = null; this.lastModal = ''; break; }
       case 'errand-later': this.send({ type: 'resolve', option: 0 }); this.lastModal = ''; break;
+      case 'festival-open': this.festivalOpen = true; this.lastModal = ''; break;
+      case 'festival-close': this.festivalOpen = false; this.lastModal = ''; break;
+      case 'festival-call': { const err = this.send({ type: 'callFestival' }); this.toast(err ?? 'Festival called. Everyone gathers at the hearth at dusk.'); this.festivalOpen = false; this.lastModal = ''; break; }
     }
     this.render(true);
   }
@@ -223,12 +227,40 @@ export class UI {
           ${researchChip}
         </div>
         <div class="threats">
-          <div class="strain" title="Frontier strain: a mood penalty that grows every day"><span>Strain</span><b>${strain ? '−' : ''}${strain}</b></div>
+          <div class="strain" title="Frontier strain: a mood penalty that grows every day. Finishing a charter or holding a festival eases it."><span>Strain</span><b>${strain ? '−' : ''}${strain}</b>${this.festivalChip(w)}</div>
           <div class="leavers" title="If ${sc.collapse.lost} settlers leave or die${sc.collapse.minAlive ? `, or only ${sc.collapse.minAlive} remain` : ''}, the colony collapses"><span>Lost</span><div class="pips">${pips}</div></div>
         </div>
       </div>
       ${w.errands.length ? `<div class="errands">${w.errands.map(e => this.errandChip(w, e)).join('')}</div>` : ''}`;
     if (force || html !== this.lastHud) { (this.root.querySelector('#hud') as HTMLElement).innerHTML = html; this.lastHud = html; }
+  }
+
+  private festivalChip(w: World) {
+    const f = w.festival;
+    if (f?.called) return '<small class="fest on">festival at dusk</small>';
+    const wait = Math.max(0, Math.ceil((f?.readyAt ?? 0) - w.hour));
+    if (wait) return `<small class="fest">festival in ${wait < 24 ? `${wait}h` : `${Math.ceil(wait / 24)}d`}</small>`;
+    return `<button type="button" class="fest" data-act="festival-open">Festival</button>`;
+  }
+
+  private festivalCard(w: World) {
+    const p = festivalPreview(w);
+    const r = START.relief.festival;
+    const pct = (x: number) => `${Math.round(x * 100)}%`;
+    const can = !w.festival?.called && !p.wait && mealTotal(w) >= 1;
+    const short = p.fed < p.guests ? ` ${p.guests - p.fed} would go without, which eases less.` : '';
+    return `<div class="card-wrap event"><p class="eyebrow">At the hearth, at dusk</p><h2>Call a festival?</h2>
+      <p class="lede">Everyone who isn’t bedridden comes, sulkers included. Each takes a meal, and a drink if there is one, reaching for their favourites first. Strain eases by a share of what it is now, so the deeper the colony is in, the more it helps.</p>
+      <ul class="thoughts">
+        <li><span>Settlers coming</span><b>${p.guests}</b></li>
+        <li><span>Meals it will use (of ${Math.floor(mealTotal(w))} in storage)</span><b>${p.fed}</b></li>
+        <li><span>Drinks it will use (of ${Math.floor(drinkTotal(w))})</span><b>${p.drank}</b></li>
+        <li><span>Getting a favourite</span><b>${p.loved}</b></li>
+        <li><span>Strain eased</span><b>${Math.round(p.relief)} (${pct(p.share)})</b></li>
+      </ul>
+      <p class="terms">${pct(r.base)} if everyone eats, ${pct(r.drinks)} more if most have a drink, ${pct(r.loved)} more if most get a favourite. Then ${r.waitDays} days before the next one.${short}</p>
+      <div class="opts"><button type="button" class="opt" data-act="festival-call" ${can ? '' : 'disabled'}><b>Call it for dusk</b><span>${can ? `Eases strain by about ${Math.round(p.relief)}` : mealTotal(w) < 1 ? 'There are no meals to share' : 'Not ready yet'}</span></button></div>
+      <button type="button" class="ghost skip" data-act="festival-close">Not now</button></div>`;
   }
 
   private errandChip(w: World, e: Errand) {
@@ -530,6 +562,7 @@ export class UI {
         }
       }
     }
+    if (!html && this.festivalOpen) html = this.festivalCard(w);
     if (!html && this.picking != null) { const e = w.errands.find(x => x.id === this.picking); if (e) html = this.errandPicker(w, e, false); else this.picking = null; }
     if (force || html !== this.lastModal) { el.innerHTML = html; this.lastModal = html; }
     el.hidden = !html;

@@ -1,6 +1,6 @@
 // Forced checks for the start and the finales, without the bot's judgement in the way.
 // Usage: npx tsx tools/finale-check.ts
-import { createWorld, apply, runHours, findSpot, World, alive, built, desks, workersAt, charterProgress, feastCheck, costOf, laborers, day } from '../src/sim/world';
+import { createWorld, apply, runHours, findSpot, World, alive, built, desks, workersAt, charterProgress, feastCheck, costOf, laborers, day, festivalPreview, debugGrow } from '../src/sim/world';
 import { BUILDING_BY_ID, MEALS } from '../src/sim/content';
 import { START } from '../src/sim/scenario';
 
@@ -120,6 +120,44 @@ const untilHour = (w: World, h: number, each: () => void = () => {}) => { for (l
   const dislikeCider = alive(w3).filter(c => c.tastes.dislikes.includes('cider')).length;
   ok(dislikeCider === 1 && feastCheck(w3).hungry === 1, `with only cider, the one settler who dislikes it can't be served (${feastCheck(w3).hungry} unserved)`);
   void built; void charterProgress;
+}
+
+// ---- strain relief: charters ----
+{
+  const w = createWorld(90); clear(w); debugGrow(w, 6);
+  w.charter = 'settled'; w.charterHolds = []; w.strain = 20;
+  w.res.stew = 40; w.moodLog = Array(24).fill(60); for (const c of alive(w)) { c.mood = 60; c.moodTarget = 60; }
+  runHours(w, 1); clear(w);
+  ok(w.chartersDone.includes('settled'), 'Settled in completes with 6 settlers, 40 stew and mood 60');
+  ok(Math.abs(w.strain - 14) < 0.5, `finishing a charter eases 30% of strain (20 → ${w.strain.toFixed(1)})`);
+}
+
+// ---- strain relief: the festival ----
+{
+  const w = createWorld(91); clear(w); debugGrow(w, 6);
+  w.strain = 20;
+  for (const k of Object.keys(w.res) as (keyof typeof w.res)[]) if (MEALS.includes(k) || ['ale', 'cider', 'mead', 'tea'].includes(k)) w.res[k] = 0;
+  ok(apply(w, { type: 'callFestival' }) !== null, 'a festival with no meals is refused');
+  w.res.stew = 30;
+  for (const c of alive(w)) c.tastes = { loves: ['pie', 'mead'], dislikes: ['bread', 'tea'] };
+  const meals = festivalPreview(w);
+  ok(Math.abs(meals.share - 0.15) < 1e-9 && meals.fed === 6, `stew for all, no drinks, no favourites: eases 15% (${Math.round(meals.share * 100)}%)`);
+  w.res.cider = 30;
+  ok(Math.abs(festivalPreview(w).share - 0.20) < 1e-9, 'with a drink for most: 20%');
+  w.res.pie = 30;
+  ok(Math.abs(festivalPreview(w).share - 0.25) < 1e-9, 'with a favourite for most: 25%');
+  w.res.pie = 0; w.res.stew = 3;
+  ok(Math.abs(festivalPreview(w).share - (0.15 * 3 / 6 + 0.05)) < 1e-9, 'meals for only half: the base share is halved');
+  w.res.stew = 30;
+  ok(apply(w, { type: 'callFestival' }) === null, 'the festival is called');
+  ok(apply(w, { type: 'callFestival' }) !== null, 'calling it twice is refused');
+  const before = w.strain, stew = w.res.stew;
+  untilHour(w, 19);
+  ok(w.strain < before * 0.85, `at dusk strain eases (${before.toFixed(1)} → ${w.strain.toFixed(1)})`);
+  ok(stew - w.res.stew >= 5.9, `everyone ate (${(stew - w.res.stew).toFixed(0)} stew used)`);
+  ok(alive(w).every(c => c.memories.some(m => m.key === 'festival' && m.value > 0)), 'everyone remembers the festival fondly');
+  ok(apply(w, { type: 'callFestival' }) !== null && (w.festival!.readyAt - w.hour) > 24 * 3.5, 'then it waits about 4 days');
+  void day;
 }
 
 console.log(fails ? `\n${fails} check(s) failed` : '\nall checks passed');

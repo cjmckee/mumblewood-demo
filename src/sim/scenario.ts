@@ -22,6 +22,12 @@ export interface Start {
    * means a bigger colony strains a little faster, not twice as fast: growing is a trade-off, not a trap.
    */
   strain: { rate: number; rampDays: number };
+  /**
+   * strain relief, each a share of the current strain so a deeper hole means a bigger climb back: finishing a charter, and
+   * a festival the player calls (base share if everyone eats, more if most also get a drink, more again if most get
+   * something they love), with a wait between festivals
+   */
+  relief: { charter: number; festival: { base: number; drinks: number; loved: number; waitDays: number } };
   /** wood the hearth burns per night hour: a small fire for a small colony that grows with it, up to 1 */
   hearth: { base: number; perPerson: number };
   /** wood workshops (and the research desk) leave in storage for the hearth */
@@ -41,6 +47,7 @@ export const START: Start = {
   draftEvery: 3,
   collapse: { lost: 6, minAlive: 0 },
   strain: { rate: 0.07, rampDays: 40 },
+  relief: { charter: 0.3, festival: { base: 0.15, drinks: 0.05, loved: 0.05, waitDays: 4 } },
   hearth: { base: 0.25, perPerson: 0.06 },
   woodReserve: 10,
   outbreakFrom: { day: 6, pop: 5 },

@@ -11,6 +11,9 @@ if (process.env.RECRUIT_CAP) BOT.recruitCap = Number(process.env.RECRUIT_CAP);
 if (process.env.LABORERS_PER) BOT.laborersPer = Number(process.env.LABORERS_PER);
 if (process.env.RECRUIT_EXTRA) BOT.recruitExtra = Number(process.env.RECRUIT_EXTRA);
 if (process.env.COMFORTS) BOT.comforts = process.env.COMFORTS === '1';
+if (process.env.FESTIVAL) BOT.festival = process.env.FESTIVAL === '1';
+if (process.env.FESTIVAL_AT) BOT.festivalAt = Number(process.env.FESTIVAL_AT);
+if (process.env.CHARTER_RELIEF) START.relief.charter = Number(process.env.CHARTER_RELIEF);
 if (process.env.COMFORTS_FIRST) BOT.comfortsFirst = process.env.COMFORTS_FIRST === '1';
 
 const runs = Number(process.argv[2] ?? 60);
