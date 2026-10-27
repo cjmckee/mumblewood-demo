@@ -2,7 +2,7 @@
 // It reads the active charter and plays towards it, the way a person would.
 import { BUILDING_BY_ID, BUILDINGS, CATEGORIES, CharterMetric, RESEARCH_BY_ID, EVENTS, ResourceId, MEALS, RAW_FOODS, Recipe, InputKey, membersOf, recipeRate } from './content';
 import { assess, Concern, defsOf, KIND_DEFS } from './advisor';
-import { World, apply, alive, beds, mealTotal, sites, findSpot, CENTER, avgMood, built, MAP_SIZE, pathAt, terrainAt, T_WATER, bdef, workersAt, blockedReason, opinion, Building, Colonist, hourOfDay, charterProgress, buildingByUid, storageFree, storages, FOODS, GOODS, bedridden, foodTotal, currentRecipe, drinkTotal, siteOk, enabledRecipes, recipesOf, rerollCost, stockOf, usableHere, charterDef, charterHelpers, feastCheck, desks, researchLeft, festivalPreview, edibleTotal, doorTile, centerOf, winterStores, storageCap, stored, lastDay, lastDayHours, remainingCost, seasonYield } from './world';
+import { World, apply, alive, beds, mealTotal, sites, findSpot, CENTER, avgMood, built, MAP_SIZE, pathAt, terrainAt, T_WATER, bdef, workersAt, blockedReason, opinion, Building, Colonist, hourOfDay, charterProgress, buildingByUid, storageFree, storages, FOODS, GOODS, bedridden, foodTotal, currentRecipe, drinkTotal, siteOk, enabledRecipes, recipesOf, rerollCost, stockOf, usableHere, charterDef, charterHelpers, feastCheck, desks, researchLeft, festivalPreview, edibleTotal, doorTile, centerOf, winterStores, storageCap, stored, lastDay, lastDayHours, remainingCost, seasonYield, recipeOn } from './world';
 import { seasonOf } from './seasons';
 
 const BLUEPRINT_PRIORITY = ['sawmill', 'pieoven', 'dock', 'cottage', 'brewery', 'ciderpress', 'tavern', 'kiln', 'claypit', 'carpenter', 'orchard', 'field', 'apiary', 'smokehouse', 'cellar', 'stage', 'bathhouse', 'bakery', 'apothecary', 'herbgarden', 'mill'];
@@ -43,6 +43,30 @@ function newKinds(w: World, id: string) {
 const plannedUses = (w: World, input: ResourceId) => built(w).some(b => { const r = plannedRecipe(w, b); return !!r && Object.keys(r.inputs).some(k => membersOf(k as InputKey).includes(input)); });
 const PERK_PRIORITY = ['homesteaders', 'postRider', 'saintsDay', 'ironWill', 'hearthSongs', 'communalPot', 'overtime', 'rations', 'earplugs', 'warmHearth', 'gossipBan', 'matchmaker'];
 const MOOD_BUILDINGS = ['tavern', 'brewery', 'ciderpress', 'pieoven', 'bathhouse', 'cottage', 'stage'];
+/**
+ * Which recipes each workshop runs. A workshop makes the first recipe it can, so left alone the apothecary makes
+ * poultices for ever and never a tonic. While the charter is short of something a workshop can make, it makes only
+ * that; otherwise it skips anything there's already plenty of.
+ */
+function manageRecipes(w: World) {
+  const pop = alive(w).length;
+  const wanted = new Set<ResourceId>();
+  for (const p of partsOf(w)) {
+    if (p.kind === 'stock' && p.resources.reduce((n, r) => n + w.res[r], 0) < p.amount) for (const r of p.resources) wanted.add(r);
+    if (p.kind === 'variety') for (const r of CATEGORIES[p.category].members) if (w.res[r] < p.each) wanted.add(r);
+    // the founders' feast: a choice of drinks, so nobody is left with only one they dislike
+    if (p.kind === 'longTable') for (const r of CATEGORIES.drink.members) if (w.res[r] < 6) wanted.add(r);
+  }
+  const plenty = (r: ResourceId) => w.res[r] >= Math.max(30, pop * 3);
+  for (const b of built(w)) {
+    const recs = recipesOf(b); if (recs.length < 2) continue;
+    const can = recs.map(r => Object.keys(r.inputs).every(k => membersOf(k as InputKey).some(m => suppliable(w, m, 2))));
+    const aimed = recs.map((r, i) => can[i] && wanted.has(r.output));
+    let on = aimed.some(Boolean) ? aimed : recs.map((r, i) => !plenty(r.output) || !can[i]);
+    if (!on.some((x, i) => x && can[i])) on = recs.map(() => true);
+    on.forEach((x, i) => { if (x !== recipeOn(b, i)) apply(w, { type: 'toggleRecipe', building: b.uid, recipe: i, on: x }); });
+  }
+}
 /** the parts of the current charter (an all-at-once charter has several) */
 const partsOf = (w: World): CharterMetric[] => { const m = charterDef(w.charter)?.metric; return !m ? [] : m.kind === 'all' ? m.parts : [m]; };
 /** a charter that needs contented people: one with a mood condition, or a finale */
@@ -213,7 +237,7 @@ export function charterChain(w: World): string[] {
  * Experiment switches for the balance tools. `advisor` makes the bot play from what's on screen (the complaint
  * panel) instead of its own rules; it's off by default because, so far, it plays worse (see the project doc).
  */
-export const BOT = { rateStaffing: false, unlockChain: true, ruleGap: true, hallMood: true, varietyRules: true, bankDrinks: true, bankHall: false, chainBeforeWinter: true, effortPick: true, moodFestival: true, festival: true, festivalAt: 8, comfortsFirst: false, recruitCap: 0, recruitExtra: 4, comforts: true, foodDepot: 'food' as false | 'food' | 'meals', laborersPer: 3.5, advisor: false, gate: true, ranked: true, comfort: 'strict' as 'strict' | 'econ' | 'none', rescue: false, rescueAt: 40, moodBlock: false, reroll: true, variety: false, routes: false, off: [] as string[], skip: [] as string[] };
+export const BOT = { recipes: true, rateStaffing: false, unlockChain: true, ruleGap: true, hallMood: true, varietyRules: true, bankDrinks: true, bankHall: false, chainBeforeWinter: true, effortPick: true, moodFestival: true, festival: true, festivalAt: 8, comfortsFirst: false, recruitCap: 0, recruitExtra: 4, comforts: true, foodDepot: 'food' as false | 'food' | 'meals', laborersPer: 3.5, advisor: false, gate: true, ranked: true, comfort: 'strict' as 'strict' | 'econ' | 'none', rescue: false, rescueAt: 40, moodBlock: false, reroll: true, variety: false, routes: false, off: [] as string[], skip: [] as string[] };
 
 // ---------- Explaining the bot ----------
 /** one thing the bot decided and why: each option with its score broken into parts, or a staffing or build step */
@@ -423,6 +447,7 @@ export function staffByNeed(w: World): { woodcutter: number; rawFood: number; wh
 
 export function autoBuild(w: World) {
   rememberEconomy(w);
+  if (BOT.recipes) manageRecipes(w);
   const kind = charterKind(w);
   const hallSite = w.buildings.find(b => b.def === 'hall' && !b.built && (b.stage ?? 0) === 0);
   const saving: ResourceId[] = hallSite ? ['planks'] : w.charter === 'firstplanks' ? ['wood', 'planks'] : [];
