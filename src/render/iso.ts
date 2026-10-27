@@ -47,6 +47,8 @@ export class IsoView {
   private bGfx = new Map<number, { c: Container; label?: Text }>();
   private cGfx = new Map<number, { root: Container; body: Graphics; pip: Graphics; carry: Graphics; zz: Text }>();
   private builtKey = '';
+  /** forget what was drawn, for when a different world is swapped in (a loaded save, a new colony) */
+  resetWorld() { this.builtKey = ''; this.pathKey = ''; this.terrainRef = null; this.selected = null; this.placing = null; this.pathMode = false; }
   selected: Picked | null = null;
   placing: Placing | null = null;
   onPick: (p: Picked | null) => void = () => {};
