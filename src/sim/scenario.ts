@@ -100,9 +100,9 @@ export const START: Start = {
   strain: { rate: 0.15, rampDays: 40 },
   comfortScale: { base: 1.4, slope: 1 },
   relief: { charter: 0.3, festival: { base: 0.15, drinks: 0.05, loved: 0.05, waitDays: 4 } },
-  hearth: { base: 0.25, perPerson: 0.06 },
+  hearth: { base: 0.125, perPerson: 0.03 },
   woodReserve: 10,
-  body: { hungerHours: 26, eatBelow: 45, walk: 7, spoilPerDay: 0.035 },
+  body: { hungerHours: 34, eatBelow: 45, walk: 7, spoilPerDay: 0.035 },
   outbreakFrom: { day: 6, pop: 5 },
   seasons: {
     days: 10,
