@@ -2,7 +2,7 @@
 // It reads the active charter and plays towards it, the way a person would.
 import { BUILDING_BY_ID, BUILDINGS, CATEGORIES, CharterMetric, RESEARCH_BY_ID, EVENTS, ResourceId, MEALS, RAW_FOODS, Recipe, InputKey, membersOf, recipeRate } from './content';
 import { assess, Concern, defsOf, KIND_DEFS } from './advisor';
-import { World, apply, alive, beds, mealTotal, sites, findSpot, CENTER, avgMood, built, MAP_SIZE, pathAt, terrainAt, T_WATER, bdef, workersAt, blockedReason, opinion, Building, Colonist, hourOfDay, charterProgress, buildingByUid, storageFree, storages, FOODS, GOODS, bedridden, foodTotal, currentRecipe, drinkTotal, siteOk, enabledRecipes, recipesOf, rerollCost, stockOf, usableHere, charterDef, charterHelpers, feastCheck, desks, researchLeft, festivalPreview, edibleTotal, doorTile, centerOf, winterStores, storageCap, stored, lastDay, lastDayHours, remainingCost, seasonYield, recipeOn } from './world';
+import { World, apply, alive, beds, mealTotal, sites, findSpot, CENTER, avgMood, built, MAP_SIZE, pathAt, terrainAt, T_WATER, bdef, workersAt, blockedReason, opinion, Building, Colonist, hourOfDay, charterProgress, buildingByUid, storageFree, storages, FOODS, GOODS, bedridden, foodTotal, currentRecipe, drinkTotal, siteOk, enabledRecipes, recipesOf, rerollCost, stockOf, usableHere, charterDef, charterHelpers, feastCheck, desks, researchLeft, festivalPreview, edibleTotal, doorTile, centerOf, winterStores, storageCap, stored, lastDay, lastDayHours, remainingCost, seasonYield, recipeOn, spotOf, canPlace, coversPath, efficiencyAt, footprint, BUILD_MIN, BUILD_MAX, blockedGrid } from './world';
 import { seasonOf } from './seasons';
 
 const BLUEPRINT_PRIORITY = ['sawmill', 'pieoven', 'dock', 'cottage', 'brewery', 'ciderpress', 'tavern', 'kiln', 'claypit', 'carpenter', 'orchard', 'field', 'apiary', 'smokehouse', 'cellar', 'stage', 'bathhouse', 'bakery', 'apothecary', 'herbgarden', 'mill'];
@@ -237,7 +237,7 @@ export function charterChain(w: World): string[] {
  * Experiment switches for the balance tools. `advisor` makes the bot play from what's on screen (the complaint
  * panel) instead of its own rules; it's off by default because, so far, it plays worse (see the project doc).
  */
-export const BOT = { recipes: true, rateStaffing: false, unlockChain: true, ruleGap: true, hallMood: true, varietyRules: true, bankDrinks: true, bankHall: false, chainBeforeWinter: true, effortPick: true, moodFestival: true, festival: true, festivalAt: 8, comfortsFirst: false, recruitCap: 0, recruitExtra: 4, comforts: true, foodDepot: 'food' as false | 'food' | 'meals', laborersPer: 3.5, advisor: false, gate: true, ranked: true, comfort: 'strict' as 'strict' | 'econ' | 'none', rescue: false, rescueAt: 40, moodBlock: false, reroll: true, variety: false, routes: false, off: [] as string[], skip: [] as string[] };
+export const BOT = { shopsByStore: false, layout: true, hutPull: 0.3, recipes: true, rateStaffing: false, unlockChain: true, ruleGap: true, hallMood: true, varietyRules: true, bankDrinks: true, bankHall: false, chainBeforeWinter: true, effortPick: true, moodFestival: true, festival: true, festivalAt: 8, comfortsFirst: false, recruitCap: 0, recruitExtra: 4, comforts: true, foodDepot: 'food' as false | 'food' | 'meals', laborersPer: 3.5, advisor: false, gate: true, ranked: true, comfort: 'strict' as 'strict' | 'econ' | 'none', rescue: false, rescueAt: 40, moodBlock: false, reroll: true, variety: false, routes: false, off: [] as string[], skip: [] as string[] };
 
 // ---------- Explaining the bot ----------
 /** one thing the bot decided and why: each option with its score broken into parts, or a staffing or build step */
@@ -538,9 +538,9 @@ export function autoBuild(w: World) {
       if (short) { skip(id, `can\u2019t afford ${Object.entries(def.cost).map(([r, n]) => `${n} ${r}`).join(', ')}${saving.length ? ` while saving ${saving.join(' and ')}` : ''} (have ${Math.floor(w.res.wood)} wood, ${Math.floor(stockOf(w, 'fine'))} planks or bricks)`); continue; }
       // decorations go by the hearth; storage next to what it serves; everything else near the centre
       const near = storageSpot(w, id);
-      const spot = findSpot(w, id, near.x, near.y, !def.decor);
+      const spot = (BOT.layout && !def.decor && botSpot(w, id)) || findSpot(w, id, near.x, near.y, !def.decor);
       if (!spot) { skip(id, 'no room on the map'); continue; }
-      apply(w, { type: 'place', def: id, x: spot.x, y: spot.y });
+      apply(w, { type: 'place', def: id, x: spot.x, y: spot.y, rot: 'rot' in spot ? (spot.rot as number) : 0 });
       if (TRACE.on) note(w, { kind: 'build', title: `Placed a ${BUILDING_BY_ID[id].name.toLowerCase()}`, lines: [`wanted, in order: ${[...new Set(want)].slice(0, 10).join(', ')}`, ...skipped.slice(0, 6).map(x => `skipped ${x}`)] });
       skipped.length = 0;
       break;
@@ -907,6 +907,53 @@ const centroid = (w: World, ids: string[]) => {
   return { x: (x + CENTER) / 2, y: (y + CENTER) / 2 };
 };
 /** storehouses (food) go between the food producers and the kitchens; extra stockpiles (goods) by the woodcutters */
+/**
+ * Where the bot puts a building, laid out to keep walking short: the kitchens, the dining hall and the storehouse
+ * make a core by the hearth; homes ring it a few steps out; gatherers weigh yield against the walk to the nearest
+ * storage; workshops sit close to the core. Every doorway is turned to face the way people come from, and a gap
+ * is left around each building for walking.
+ */
+const CORE = ['dining', 'kitchen', 'storehouse', 'pieoven', 'smokehouse', 'bakery', 'tavern'];
+const HOMES = ['leanto', 'cottage'];
+function botSpot(w: World, id: string): { x: number; y: number; rot: number } | null {
+  const d = BUILDING_BY_ID[id];
+  const g = blockedGrid(w);
+  const stores = storages(w).map(spotOf);
+  const toStore = (x: number, y: number) => Math.min(Math.hypot(x - CENTER, y - CENTER), ...stores.map(s => Math.hypot(x - s.x, y - s.y)));
+  const pileAt = id === 'stockpile' ? storageSpot(w, id) : null;
+  let best: { x: number; y: number; rot: number } | null = null, bestScore = -1e9;
+  for (let rot = 0; rot < 4; rot++) {
+    const f = footprint(id, rot);
+    for (let x = BUILD_MIN; x <= BUILD_MAX - f.w + 1; x++) for (let y = BUILD_MIN; y <= BUILD_MAX - f.h + 1; y++) {
+      const mid = { x: x + f.w / 2, y: y + f.h / 2 };
+      const dK = Math.hypot(mid.x - CENTER, mid.y - CENTER);
+      if (!d.needs && dK > 13) continue;
+      // a walking gap all round
+      let clear = true;
+      for (let tx = x - 1; tx <= x + f.w && clear; tx++) for (let ty = y - 1; ty <= y + f.h && clear; ty++) {
+        if (tx < 0 || ty < 0 || tx >= MAP_SIZE || ty >= MAP_SIZE) continue;
+        if ((tx < x || tx >= x + f.w || ty < y || ty >= y + f.h) && g[ty * MAP_SIZE + tx] === 1 && terrainAt(w, tx, ty) !== T_WATER) clear = false;
+      }
+      if (!clear) continue;
+      const door = d.walkable ? mid : doorTile(id, x, y, rot);
+      const doorK = Math.hypot(door.x + 0.5 - CENTER, door.y + 0.5 - CENTER);
+      let score: number;
+      if (d.needs) {
+        const e = efficiencyAt(w, id, x, y, rot).eff; if (e <= 0.2) continue;
+        score = e * 10 - toStore(door.x + 0.5, door.y + 0.5) * BOT.hutPull;
+      } else if (HOMES.includes(id)) {
+        if (dK < 4) continue;
+        score = -dK - (doorK > dK ? 0.5 : 0);
+      } else if (pileAt) score = -Math.hypot(mid.x - pileAt.x, mid.y - pileAt.y) - doorK * 0.1;
+      else if (CORE.includes(id)) score = -doorK * 1.2 - dK * 0.2;
+      else score = BOT.shopsByStore ? -toStore(door.x + 0.5, door.y + 0.5) - doorK * 0.3 : -doorK - (doorK > dK ? 0.5 : 0);
+      if (score <= bestScore) continue;
+      if (!canPlace(w, id, x, y, rot).ok || coversPath(w, id, x, y, rot)) continue;
+      bestScore = score; best = { x, y, rot };
+    }
+  }
+  return best;
+}
 function storageSpot(w: World, id: string) {
   if (id === 'storehouse') return centroid(w, ['forager', 'dock', 'orchard', 'kitchen', 'pieoven', 'smokehouse', 'bakery']);
   if (id === 'stockpile' && w.buildings.some(b => b.def === 'stockpile')) return centroid(w, ['woodcutter', 'sawmill', 'brewery', 'ciderpress']);

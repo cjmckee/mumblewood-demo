@@ -34,6 +34,7 @@ const budget: Record<string, number> = {};
 const tot = { rawUse: 0, rawMade: 0, woodUse: 0, woodMade: 0, mealsMade: 0, settlerDays: 0, gatherDays: 0, cutterDays: 0, cookDays: 0, rawEaten: 0, mealsEaten: 0, rawCooked: 0, warmth: 0 };
 const outcomes: string[] = [];
 const sinks: Record<string, Record<string, number>> = { raw: {}, wood: {}, meals: {} };
+const labTime: Record<string, number> = {};
 const sum = (ld: Record<string, number>, f: (g: string, s: string) => boolean) => Object.entries(ld).reduce((n, [k, v]) => { const [g, s] = k.split(':'); return s && f(g, s) ? n + v : n; }, 0);
 for (const seed of SEEDS.slice(0, N)) {
   const w: World = createWorld(seed);
@@ -69,6 +70,7 @@ for (const seed of SEEDS.slice(0, N)) {
       tot.mealsEaten += sum(ld, (g, s) => MEALS.includes(g as ResourceId) && s === '-eaten');
       tot.rawCooked += sum(ld, (g, s) => RAW_FOODS.includes(g as ResourceId) && COOK.some(x => s === `-${x}`));
       tot.warmth += sum(ld, (g, s) => g === 'wood' && (s === '-hearth' || s === '-homes'));
+      for (const [k, v] of Object.entries(ld)) if (k.startsWith('time:laborer:')) labTime[k.slice(13)] = (labTime[k.slice(13)] ?? 0) + v;
       for (const [k, v] of Object.entries(ld)) {
         const [g, s] = k.split(':'); if (!s?.startsWith('-')) continue;
         const kind = RAW_FOODS.includes(g as ResourceId) ? 'raw' : MEALS.includes(g as ResourceId) ? 'meals' : g === 'wood' ? 'wood' : '';
@@ -103,5 +105,7 @@ console.log(`  ${subWood.toFixed(2)} wood a settler a day for the hearth and hom
 console.log(`  SUBSISTENCE: ${pct(sub)} of the colony; the rest of the food and wood work (${pct(Math.max(0, rawPerSettler / rawPerG + mealsPerSettler / mealsPerCook + woodPerSettler / woodPerK - sub))}) is building, stockpiling and spoilage`);
 console.log('\nwhere it goes (share of use):');
 for (const [kind, m] of Object.entries(sinks)) { const t = Object.values(m).reduce((a, b) => a + b, 0) || 1; console.log(`  ${kind.padEnd(6)} ` + Object.entries(m).sort((a, b) => b[1] - a[1]).filter(([, n]) => n / t >= 0.02).map(([k, n]) => `${k} ${pct(n / t)}`).join(' · ')); }
+const lt = Object.values(labTime).reduce((a, b) => a + b, 0) || 1;
+console.log('\na laborer’s day (6-18): ' + Object.entries(labTime).sort((a, b) => b[1] - a[1]).filter(([, n]) => n / lt >= 0.01).map(([k, n]) => `${k} ${pct(n / lt)}`).join(' · '));
 const bt = Object.values(budget).reduce((a, b) => a + b, 0);
 console.log('\na gatherer’s working day: ' + Object.entries(budget).sort((a, b) => b[1] - a[1]).filter(([, n]) => n / bt >= 0.01).map(([k, n]) => `${k} ${pct(n / bt)}`).join(' · '));

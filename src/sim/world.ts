@@ -492,7 +492,7 @@ export function spotOf(b: Building): { x: number; y: number } {
 }
 export const centerOf = (b: Building) => ({ x: b.x + dims(b).w / 2, y: b.y + dims(b).h / 2 });
 
-function blockedGrid(w: World, ignore?: number): Uint8Array {
+export function blockedGrid(w: World, ignore?: number): Uint8Array {
   const g = new Uint8Array(MAP_SIZE * MAP_SIZE);
   for (let i = 0; i < g.length; i++) if (w.terrain[i] === T_WATER) g[i] = 1;
   for (const b of w.buildings) {
@@ -1715,11 +1715,17 @@ function completeBuilding(w: World, b: Building) {
 /** food people are allowed to eat */
 export function edibleTotal(w: World) { return [...RAW_FOODS, ...MEALS].filter(r => !w.forbidden.includes(r)).reduce((n, r) => n + w.res[r], 0); }
 function startMeal(w: World, c: Colonist) {
-  const halls = built(w).filter(b => bdef(b).seats);
-  const hall = halls.find(b => alive(w).filter(o => o.meal?.at === b.uid).length < (bdef(b).seats ?? 0));
-  c.meal = { at: hall?.uid ?? null, until: 0, from: null, got: null };
-  c.meal.from = mealSource(w, c)?.uid ?? null;
-  if (c.meal.from == null) { c.meal = null; return; }
+  // the table and the larder that make the shortest trip, so a second dining hall by the workshops gets used
+  const free = built(w).filter(b => bdef(b).seats && alive(w).filter(o => o.meal?.at === b.uid).length < (bdef(b).seats ?? 0));
+  let best: { at: number | null; from: number; trip: number } | null = null;
+  for (const hall of free.length ? free : [undefined]) {
+    c.meal = { at: hall?.uid ?? null, until: 0, from: null, got: null };
+    const src = mealSource(w, c); if (!src) continue;
+    const trip = dist(spotOf(src), c) + (hall ? dist(spotOf(src), spotOf(hall)) : 0);
+    if (!best || trip < best.trip) best = { at: hall?.uid ?? null, from: src.uid, trip };
+  }
+  if (!best) { c.meal = null; return; }
+  c.meal = { at: best.at, until: 0, from: best.from, got: null };
   // the bedridden get a bowl brought to them
   if (bedridden(c)) {
     c.meal.at = null;
