@@ -668,7 +668,9 @@ export function staffPlan(w: World, explain = false): Map<number, number> {
   const extraHands = fixesOf(w).reduce((n, f) => n + ('laborers' in f ? f.laborers : 0), 0);
   const slack = BOT.advisor && concernsOf(w).some(c => c.id === 'slack') ? 1 : 0;
   const keepFree = Math.max(1, (pop <= 5 ? 1 : Math.max(2, Math.ceil(pop / BOT.laborersPer)) + (sites(w).length > 1 ? 1 : 0)) + Math.min(1, extraHands) - slack);
-  let budget = Math.max(0, pop - keepFree);
+  // nearly out of food: everyone who can forages first
+  const famine = foodTotal(w) < pop * 2;
+  let budget = Math.max(0, pop - (famine ? 1 : keepFree));
   const given: Record<string, number> = {};
   const plan = new Map<number, number>();
   const capacity = (kind: string) => built(w).filter(b => defsOf(kind).includes(b.def) && !blockedReason(w, b)).reduce((n, b) => n + bdef(b).slots, 0);
@@ -685,7 +687,7 @@ export function staffPlan(w: World, explain = false): Map<number, number> {
   } else {
   // 1. essentials, one each
   // food and wood first: everything else is built from them
-  give('rawFood', 1);
+  give('rawFood', famine ? 99 : 1);
   // a small colony studies before it chops, while the woodpile lasts
   if (w.res.wood >= 30) give('desk', 1);
   give('woodcutter', 1); give('desk', 1); give('kitchen', 1);
@@ -816,6 +818,8 @@ function fit(w: World, c: Colonist, b: Building) {
 
 /** Move people to match the staffing plan, changing as few assignments as possible. */
 export function autoStaff(w: World) {
+  // someone laid up in bed can't work: their place goes to a laborer until they're back on their feet
+  for (const c of alive(w)) if (c.job != null && bedridden(c)) apply(w, { type: 'assign', colonist: c.id, building: null });
   const plan = staffPlan(w, TRACE.on && Math.round(hourOfDay(w)) === 9);
   // first, release extras
   for (const [uid, n] of plan) {
