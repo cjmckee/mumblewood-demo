@@ -195,7 +195,7 @@ export function assess(w: World): Concern[] {
     add('ale', `${who('ale')} want a drink`, `Drinks in storage: ${drinkTotal(w) | 0} · brewers ${workersOf(w, 'drinks')}/${slotsOf(w, 'drinks')}`, idea, wt('ale'), who('ale'), fixes);
   }
   // ---- homes ----
-  if (who('beds')) add('beds', `${who('beds')} sleeping on the ground`, `${beds(w)} beds for ${pop} people`, 'build a hut', wt('beds') * 1.5, who('beds'), [{ build: 'leanto' }]);
+  if (who('beds')) add('beds', `${who('beds')} sleeping on the ground`, `${beds(w)} beds for ${pop} people`, 'build a shack', wt('beds') * 1.5, who('beds'), [{ build: 'leanto' }]);
   if (who('vain')) {
     const fixes: Fix[] = [];
     const idea = buildOrDraft(w, 'cottage', fixes) || 'build cottages for the vain';
