@@ -326,6 +326,7 @@ export const ILLNESSES: IllnessDef[] = [
   { id: 'thumb', name: 'Hammered thumb', start: 18, worsen: 0.15 },
   { id: 'ankle', name: 'Sprained ankle', start: 26, worsen: 0.2 },
   { id: 'splinter', name: 'Heroic splinter', start: 16, worsen: 0.15 },
+  { id: 'chill', name: 'Winter chill', start: 18, worsen: 0.35 },
 ];
 
 // ---------- Research ----------

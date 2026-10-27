@@ -1,7 +1,7 @@
 // Draws a kit model (kit.ts) onto a Pixi Graphics: turned, projected, back faces dropped, lit by facing, back to front.
 import type { Graphics } from 'pixi.js';
 import { turnPoint } from '../sim/world';
-import { Model, P3, shade } from './kit';
+import { Model, P3, shade, mix } from './kit';
 
 const TW = 64, TH = 32;
 const proj = (x: number, y: number, z: number) => ({ sx: (x - y) * (TW / 2), sy: (x + y) * (TH / 2) - z });
@@ -27,7 +27,8 @@ function light(n: P3) {
   return x * x * (x > 0 ? 0.74 : 1.06) + y * y * (y > 0 ? 0.96 : 1.1) + z * z * (z > 0 ? 1.1 : 0.6);
 }
 
-export function drawModel(g: Graphics, model: Model, defId: string, bx: number, by: number, rot: number, alpha = 1) {
+/** snow (0..1) whitens every lit face that looks up: roofs, ledges, the tops of things */
+export function drawModel(g: Graphics, model: Model, defId: string, bx: number, by: number, rot: number, alpha = 1, snow = 0) {
   const turn = (u: number, v: number) => { const t = turnPoint(defId, rot, u, v); return [bx + t.x, by + t.y] as [number, number]; };
   const parts = model.map((part, i) => {
     const polys = part.polys.map(p => ({ ...p, w: p.pts.map(([u, v, z]) => { const [x, y] = turn(u, v); return [x, y, z] as P3; }) }));
@@ -55,7 +56,8 @@ export function drawModel(g: Graphics, model: Model, defId: string, bx: number, 
       }
       // a two-sided face is lit from whichever side is showing
       if (p.two && n[0] + n[1] + n[2] * (32 / ZT) < 0) n = [-n[0], -n[1], -n[2]];
-      const col = p.lit === false ? p.col : shade(p.col, light(n));
+      let col = p.lit === false ? p.col : shade(p.col, light(n));
+      if (snow && p.lit !== false && n[2] / (Math.hypot(n[0], n[1], n[2]) || 1) > 0.45) col = mix(col, 0xeef3f6, snow * 0.85);
       const flat: number[] = [];
       for (const q of pts) { const s = proj(q[0], q[1], q[2]); flat.push(s.sx, s.sy); }
       g.poly(flat).fill({ color: col, alpha: (p.alpha ?? 1) * alpha });

@@ -16,6 +16,20 @@ if (process.env.MOOD_FESTIVAL) BOT.moodFestival = process.env.MOOD_FESTIVAL === 
 if (process.env.FESTIVAL) BOT.festival = process.env.FESTIVAL === '1';
 if (process.env.FESTIVAL_AT) BOT.festivalAt = Number(process.env.FESTIVAL_AT);
 if (process.env.CHARTER_RELIEF) START.relief.charter = Number(process.env.CHARTER_RELIEF);
+// seasons: PREP_FROM / PREP_FULL / PREP_SHARE (winter stores), WINTER_FORAGE (forager yield in winter), CHILL (chance a cold night gives a chill)
+if (process.env.PREP_FROM) START.seasons.prep.from = Number(process.env.PREP_FROM);
+if (process.env.PREP_FULL) START.seasons.prep.full = Number(process.env.PREP_FULL);
+if (process.env.PREP_SHARE) START.seasons.prep.share = Number(process.env.PREP_SHARE);
+if (process.env.WINTER_FORAGE) START.seasons.yield.forager.winter = Number(process.env.WINTER_FORAGE);
+if (process.env.CHILL) START.seasons.chill.cold = Number(process.env.CHILL);
+if (process.env.START_DAY) START.seasons.start.day = Number(process.env.START_DAY);
+if (process.env.HARSH) START.seasons.harsh = Number(process.env.HARSH);
+if (process.env.HARSH_YIELD) START.seasons.harshYield = Number(process.env.HARSH_YIELD);
+if (process.env.INDOOR_WINTER) START.seasons.indoor.winter = Number(process.env.INDOOR_WINTER);
+if (process.env.STRICTER_FROM) START.seasons.stricterFromYear = Number(process.env.STRICTER_FROM);
+if (process.env.SUMMER_WORK) START.seasons.work.summer = process.env.SUMMER_WORK.split('-').map(Number) as [number, number];
+if (process.env.RECRUIT_WINTER) START.seasons.recruitEvery.winter = Number(process.env.RECRUIT_WINTER);
+if (process.env.RECRUIT_SPRING) START.seasons.recruitEvery.spring = Number(process.env.RECRUIT_SPRING);
 if (process.env.COMFORTS_FIRST) BOT.comfortsFirst = process.env.COMFORTS_FIRST === '1';
 
 const runs = Number(process.argv[2] ?? 60);

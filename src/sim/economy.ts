@@ -46,7 +46,7 @@ export function economy(w: World): Economy {
   const signed = (k: string, v: number) => (src(k).startsWith('-') ? -v : v);
   const wl = (pred: (k: string) => boolean) => per(Object.entries(f).filter(([k]) => res(k) === 'wood' && pred(src(k))).reduce((n, [k, v]) => n + signed(k, v), 0));
   const wood = account('Wood', w.res.wood, [
-    { label: 'Chopped', perDay: wl(s => s === '+woodcutter') }, { label: 'Hearth', perDay: wl(s => s === '-hearth') },
+    { label: 'Chopped', perDay: wl(s => s === '+woodcutter') }, { label: 'Hearth', perDay: wl(s => s === '-hearth') }, { label: 'Heating homes', perDay: wl(s => s === '-homes') },
     { label: 'Construction', perDay: wl(s => s.startsWith('-build')) }, { label: 'Sawmill', perDay: wl(s => s === '-sawmill') }, { label: 'Brick kiln', perDay: wl(s => s === '-kiln') }, { label: 'Carpenter', perDay: wl(s => s === '-carpenter') },
     { label: 'Pie oven', perDay: wl(s => s === '-pieoven') }, { label: 'Bathhouse', perDay: wl(s => s === '-bathhouse') }, { label: 'Paths', perDay: wl(s => s === '-paths') }, { label: 'Blueprint rerolls', perDay: wl(s => s === '-reroll') },
   ]);

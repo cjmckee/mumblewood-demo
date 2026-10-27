@@ -39,7 +39,49 @@ export interface Start {
   woodReserve: number;
   /** outbreaks wait until this day and this many colonists */
   outbreakFrom: { day: number; pop: number };
+  /** the calendar and what each season does; see seasons.ts */
+  seasons: SeasonRules;
   intro: string[];
+}
+
+export type Season = 'spring' | 'summer' | 'autumn' | 'winter';
+export const SEASONS: Season[] = ['spring', 'summer', 'autumn', 'winter'];
+type BySeason<T> = Partial<Record<Season, T>>;
+export interface SeasonRules {
+  /** days in each season; four seasons make a year */
+  days: number;
+  /** the run starts on this day of this season */
+  start: { season: Season; day: number };
+  /** the hour work starts and ends (dusk); evenings run from dusk to 22:00 */
+  work: Record<Season, [number, number]>;
+  /** how fast buildings go up (1 = normal) */
+  build: BySeason<number>;
+  /** walking speed off laid paths (mud in spring, snow in winter) */
+  offPath: BySeason<number>;
+  /** how fast food left out spoils */
+  spoil: BySeason<number>;
+  /** output by building and season (missing = 1): lean pickings in winter, a harvest in autumn; later winters are
+   *  leaner still (winter yields × harshYield) */
+  yield: Record<string, BySeason<number>>;
+  harshYield: number;
+  /** indoor work by season: workshops that turn ingredients into goods, and study at the desk (long evenings by the fire) */
+  indoor: BySeason<number>;
+  /** the hearth burns this many times as much */
+  hearth: BySeason<number>;
+  /** wood each home burns a day in winter, by building; the second winter and later burn harsh × as much */
+  homeFuel: Record<string, number>;
+  harsh: number;
+  /** days between recruit offers (0 = none that season) */
+  recruitEvery: Record<Season, number>;
+  /** chance a night spent cold gives someone a winter chill (warm settlers get a small share of it) */
+  chill: { cold: number; warm: number };
+  /** what a sensible colony puts by for winter (the bot's and the foreman's target): it starts `from` days before
+   *  winter and is complete `full` days before; `share` of a winter's food and wood, the rest is gathered as it goes */
+  prep: { from: number; full: number; share: number };
+  /** from this year of the run on, every comfort need asks a little more (0 = never) */
+  stricterFromYear: number;
+  /** mood when winter comes, for having held a harvest festival in autumn or not */
+  harvestHome: { held: number; missed: number; hours: number };
 }
 
 export const START: Start = {
@@ -57,5 +99,33 @@ export const START: Start = {
   hearth: { base: 0.25, perPerson: 0.06 },
   woodReserve: 10,
   outbreakFrom: { day: 6, pop: 5 },
-  intro: ['Three settlers arrive at the edge of the Mumblewood with a cart, a kettle, a stack of borrowed books and great optimism.', 'Nobody knows how to build a kitchen yet. A research desk would be a start.'],
+  seasons: {
+    days: 10,
+    start: { season: 'summer', day: 6 },
+    work: { spring: [6, 18], summer: [5, 18], autumn: [6, 18], winter: [7, 18] },
+    build: { spring: 0.85, winter: 0.85 },
+    offPath: { spring: 0.85, winter: 0.85 },
+    spoil: { summer: 1.25, autumn: 1.5, winter: 0.4 },
+    yield: {
+      forager: { spring: 0.8, summer: 1.25, winter: 0.75 },
+      herbgarden: { spring: 0.8, winter: 0.5 },
+      orchard: { spring: 0.4, autumn: 1.5, winter: 0 },
+      field: { spring: 0.4, autumn: 1.5, winter: 0 },
+      apiary: { spring: 0.8, summer: 1.25, winter: 0 },
+      cellar: { autumn: 1.5 },
+      dock: { spring: 1.25 },
+      claypit: { winter: 0.5 },
+    },
+    harshYield: 0.9,
+    indoor: {},
+    hearth: {},
+    homeFuel: { leanto: 0.7, cottage: 0.4 },
+    harsh: 1.25,
+    recruitEvery: { spring: 1, summer: 2, autumn: 2, winter: 3 },
+    chill: { cold: 0.04, warm: 0.005 },
+    prep: { from: 10, full: 3, share: 0.65 },
+    stricterFromYear: 0,
+    harvestHome: { held: 4, missed: -4, hours: 96 },
+  },
+  intro: ['Three settlers arrive at the edge of the Mumblewood with a cart, a kettle, a stack of borrowed books and great optimism.', 'Nobody knows how to build a kitchen yet. A research desk would be a start.', 'It\u2019s late summer. Winter comes in about two weeks, and then the fields and orchards sleep.'],
 };

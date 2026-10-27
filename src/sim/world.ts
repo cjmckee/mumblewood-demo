@@ -6,6 +6,7 @@ import {
   CharterMetric, RESEARCH, RESEARCH_BY_ID,
 } from './content';
 import { START } from './scenario';
+import { seasonOf, rule, SEASON_NAMES } from './seasons';
 
 // ---------- RNG ----------
 export function nextRand(w: { rngState: number }): number {
@@ -71,6 +72,12 @@ export interface Colonist {
   starvingHours: number;
   /** the last thing they ate, for comfort: a cooked meal or raw food, at a table, something they love */
   lastMeal?: { cooked: boolean; table: boolean; loved: boolean };
+  /** the last few things they ate and when (for meal variety and fresh food) */
+  ate?: { r: ResourceId; h: number }[];
+  /** the hour of their last drink */
+  lastDrink?: number;
+  /** cold this winter: no bed, or a home with no fuel */
+  cold?: boolean;
 }
 export interface Building {
   uid: number; def: string; x: number; y: number;
@@ -155,8 +162,10 @@ export interface World {
   feast?: { called: boolean; readyAt: number; done: boolean; last?: string };
   /** the colony's comfort, 0 to 1, refreshed hourly; it sets how fast strain rises */
   comfort?: number;
+  /** the hearth ran out of wood tonight */
+  hearthCold?: boolean;
   /** the festival at the hearth: called for dusk, when it can next be called, and how the last one went */
-  festival?: { called: boolean; readyAt: number; held: number; last?: string };
+  festival?: { called: boolean; readyAt: number; held: number; last?: string; at?: number };
 }
 
 export const TICKS_PER_HOUR = 6;
@@ -249,6 +258,7 @@ function takeDrink(w: World, n: number, why: string, c?: Colonist): ResourceId |
     w.res[r] -= t; flow(w, `${r}:-${why}`, t); left -= t; main ??= r;
     if (left <= 0) break;
   }
+  if (c && main) c.lastDrink = w.hour;
   return main;
 }
 /** mood from the first drink of the evening, by kind */
@@ -701,7 +711,7 @@ export function createWorld(seed: number): World {
   assignBeds(w);
   autoAssign(w);
   addLog(w, sc.intro[0], 'good');
-  if (sc.intro[1]) addLog(w, sc.intro[1], 'neutral');
+  for (const line of sc.intro.slice(1)) addLog(w, line, 'neutral');
   return w;
 }
 
@@ -771,7 +781,7 @@ function researchSupply(w: World, b: Building): SupplyTask[] {
 function researchHourly(w: World, b: Building, c: Colonist, dt: number) {
   const r = w.research; const cur = r?.current ? RESEARCH_BY_ID[r.current] : undefined;
   if (!r || !cur || Object.keys(researchStillNeeds(w)).length) return;
-  r.progress += workSpeed(w, c, 'studying') * dt;
+  r.progress += workSpeed(w, c, 'studying') * dt * rule(START.seasons.indoor, seasonOf(w).season, 1);
   c.skills.studying = Math.min(10, (c.skills.studying ?? 3) + 0.004 * dt * 6);
   if (r.progress < cur.hours) return;
   // spend the goods from the desks and unlock the buildings
@@ -1509,9 +1519,10 @@ function activityFor(w: World, c: Colonist): Activity {
   if (c.meal && !bedridden(c)) return 'eating';
   if (bedridden(c)) return 'sick';
   if (c.errand != null && h >= 6 && h < 22 && w.errands.some(e => e.id === c.errand)) return 'errand';
-  if (h >= 22 || h < 6) return 'sleeping';
+  const [wake, dusk] = workHours(w);
+  if (h >= 22 || h < wake) return 'sleeping';
   if (c.sulking) return 'sulking';
-  if (h >= 18) { const j = buildingByUid(w, c.job); return j?.def === 'tavern' ? 'working' : 'leisure'; }
+  if (h >= dusk) { const j = buildingByUid(w, c.job); return j?.def === 'tavern' ? 'working' : 'leisure'; }
   const job0 = buildingByUid(w, c.job);
   const idleDoctor = job0 && bdef(job0).patients && !alive(w).some(o => bedridden(o));
   const job = idleDoctor ? undefined : job0;
@@ -1617,7 +1628,7 @@ function produce(w: World, dt: number) {
     for (const c of workersAt(w, b.uid)) {
       if (c.activity !== 'working' || !c.goalReached) continue;
       if (sum(b.outbox) >= OUTBOX_CAP) continue;
-      let amount = recipeRate(rec) * workSpeed(w, c, def.job) * dt * b.eff;
+      let amount = recipeRate(rec) * workSpeed(w, c, def.job) * dt * b.eff * seasonYield(w, def.id) * (Object.keys(rec.inputs).length ? rule(START.seasons.indoor, seasonOf(w).season, 1) : 1);
       for (const [r, per] of Object.entries(rec.inputs)) amount = Math.min(amount, inInbox(b, r as InputKey) / (per as number));
       if (amount <= 0) continue;
       for (const [r, per] of Object.entries(rec.inputs)) {
@@ -1661,7 +1672,7 @@ function produce(w: World, dt: number) {
     } else if (c.activity === 'building' && c.task?.kind === 'build') {
       const b = buildingByUid(w, c.task.site);
       if (!b) { c.task = null; continue; }
-      b.progress += workSpeed(w, c) * dt;
+      b.progress += workSpeed(w, c) * dt * rule(START.seasons.build, seasonOf(w).season, 1);
       if (b.progress >= siteWork(b)) completeBuilding(w, b);
     } else if (c.activity === 'cleaning' && c.task?.kind === 'clean') {
       const b = buildingByUid(w, c.task.building);
@@ -1747,6 +1758,7 @@ function finishMeal(w: World, c: Colonist) {
   if (!got) return;
   const meal = MEALS.includes(got) ? got : undefined;
   c.lastMeal = { cooked: !!meal, table: !!(hall && bdef(hall).seats) && !bedridden(c), loved: !!meal && taste(c, meal) > 0 };
+  (c.ate ??= []).push({ r: got, h: w.hour }); if (c.ate.length > 10) c.ate.shift();
   const bonus = (has(c, 'glutton') ? 4 : 0) + (hasPerk(w, 'communalPot') ? 3 : 0);
   if (meal) {
     c.hunger = 100; w.stats.mealsEaten++;
@@ -1757,7 +1769,8 @@ function finishMeal(w: World, c: Colonist) {
   } else {
     const raw = got;
     c.hunger = 85;
-    addMemory(w, c, 'meal', `Ate raw ${raw}`, has(c, 'picky') ? -8 : -3, 14);
+    if (seasonOf(w).season === 'spring' && FRESH.includes(raw)) addMemory(w, c, 'meal', `Fresh spring ${raw}`, has(c, 'picky') ? -2 : 1, 14);
+    else addMemory(w, c, 'meal', `Ate raw ${raw}`, has(c, 'picky') ? -8 : -3, 14);
     w.ateRaw = true;
     if (nextRand(w) < 0.02) { fallIll(w, c, 'tummy'); addLog(w, `${first(c)} ate some questionable ${raw} and now has a bad tummy.`, 'bad'); }
   }
@@ -1863,6 +1876,7 @@ function computeThoughts(w: World, c: Colonist): Thought[] {
   const bed = buildingByUid(w, c.bed);
   if (!bed) add('Sleeping on the ground', -7);
   else if (bdef(bed).bedQuality === 'cozy') add('Sleeps in a cozy cottage', 5);
+  if (c.cold) add(bed ? 'A cold home: no wood for the fire' : 'Freezing out in the open', bed ? -6 : -8);
   if (has(c, 'vain') && (!bed || bdef(bed).bedQuality !== 'cozy')) add('Vain: deserves a cottage', -5);
   const job = buildingByUid(w, c.job);
   if (job) {
@@ -1895,33 +1909,76 @@ function computeThoughts(w: World, c: Colonist): Thought[] {
   return t.sort((a, b) => a.value - b.value);
 }
 
-// ---------- Comfort ----------
+// ---------- Comfort and standing ----------
 /**
  * How well the colony meets one settler's standing needs, 0 to 1: the conditions the player built and supplied, not how
- * they feel today (mood includes luck and strain itself, and strain driving strain would be a death spiral). Five needs,
- * a fifth each, with partial credit.
+ * they feel today (mood includes luck and strain itself, and strain driving strain would be a death spiral).
+ *
+ * Which needs count depends on the town's standing, which charters raise: a camp only asks for a bed, food and a fire;
+ * a settlement wants cooked meals, a clinic and evenings; a village wants proper homes, meals at a table, more than one
+ * kind of meal and pleasant surroundings. From the second year every need asks a little more. Each season adds one:
+ * fresh food in spring, a drink in summer, and warmth in winter (at every standing, since the cold is no joke). Each
+ * counted need weighs the same, with partial credit.
  */
+export const NEED_KEYS = ['shelter', 'food', 'fire', 'meals', 'variety', 'health', 'evenings', 'surroundings', 'fresh', 'drink', 'warmth'] as const;
+export type NeedKey = typeof NEED_KEYS[number];
+/** kept for older callers: the needs a settlement counts outside the seasons */
 export const COMFORT_NEEDS = ['shelter', 'meals', 'evenings', 'health', 'surroundings'] as const;
-export type ComfortNeed = typeof COMFORT_NEEDS[number];
-export function comfortParts(w: World, c: Colonist): Record<ComfortNeed, number> {
-  const bed = buildingByUid(w, c.bed);
-  const shelter = !bed ? 0 : bdef(bed).bedQuality === 'cozy' ? 1 : 0.6;
-  // the last meal: cooked (not raw), at a table, and something they love; going hungry counts as nothing
-  const m = c.lastMeal;
-  const meals = c.hunger < 25 || !m?.cooked ? 0 : 0.6 + (m.table ? 0.25 : 0) + (m.loved ? 0.15 : 0);
-  const evenings = Math.max(0, Math.min(1, (c.fun - 20) / 50));
-  const health = !c.illness ? 1 : c.activity === 'sick' && c.place != null && bdef(buildingByUid(w, c.place)!).patients ? 0.6 : 0;
-  const surroundings = Math.max(0, Math.min(1, (c.beauty + 1) / 4));
-  return { shelter, meals, evenings, health, surroundings };
+export type ComfortNeed = NeedKey;
+export const STANDINGS = ['Camp', 'Settlement', 'Village'] as const;
+/** 0 camp, 1 settlement, 2 village: one step per charter granted */
+export const standingOf = (w: World) => Math.min(STANDINGS.length - 1, w.chartersDone.length);
+const STANDING_NEEDS: NeedKey[][] = [
+  ['shelter', 'food', 'fire'],
+  ['shelter', 'meals', 'health', 'evenings'],
+  ['shelter', 'meals', 'variety', 'health', 'evenings', 'surroundings'],
+];
+/** the needs that count toward comfort right now (or at another standing, for showing what comes next) */
+export function activeNeeds(w: World, standing = standingOf(w)): NeedKey[] {
+  const season = seasonOf(w).season;
+  const extra: NeedKey[] = season === 'winter' ? ['warmth'] : standing >= 1 && season === 'spring' ? ['fresh'] : standing >= 1 && season === 'summer' ? ['drink'] : [];
+  return [...STANDING_NEEDS[standing], ...extra];
 }
-export const comfortOf = (w: World, c: Colonist) => { const p = comfortParts(w, c); return COMFORT_NEEDS.reduce((n, k) => n + p[k], 0) / COMFORT_NEEDS.length; };
+const FRESH: ResourceId[] = ['berries', 'apples', 'fish', 'skewers'];
+/** distinct meals eaten in the last few days */
+const mealKinds = (w: World, c: Colonist, hours: number) => new Set((c.ate ?? []).filter(a => a.h >= w.hour - hours && MEALS.includes(a.r)).map(a => a.r)).size;
+export function comfortParts(w: World, c: Colonist, standing = standingOf(w)): Partial<Record<NeedKey, number>> {
+  const later = START.seasons.stricterFromYear > 0 && seasonOf(w).year >= START.seasons.stricterFromYear;
+  const bed = buildingByUid(w, c.bed);
+  const cozy = !!bed && bdef(bed).bedQuality === 'cozy';
+  const m = c.lastMeal;
+  const fed = c.hunger >= 25;
+  const out: Partial<Record<NeedKey, number>> = {};
+  for (const k of activeNeeds(w, standing)) {
+    switch (k) {
+      case 'shelter': out[k] = !bed ? 0 : cozy || standing === 0 ? 1 : standing === 1 ? (later ? 0.6 : 0.75) : (later ? 0.25 : 0.5); break;
+      case 'food': out[k] = fed ? 1 : 0; break;
+      case 'fire': out[k] = w.hearthCold ? 0 : 1; break;
+      case 'meals': {
+        if (!fed || !m?.cooked) { out[k] = 0; break; }
+        out[k] = standing >= 2 ? 0.5 + (m.table ? 0.35 : 0) + (m.loved ? 0.15 : 0) : 0.7 + (m.table ? 0.15 : 0) + (m.loved ? 0.15 : 0);
+        break;
+      }
+      case 'variety': { const n = mealKinds(w, c, 72); out[k] = later ? (n >= 3 ? 1 : n === 2 ? 0.6 : n === 1 ? 0.2 : 0) : (n >= 2 ? 1 : n === 1 ? 0.4 : 0); break; }
+      case 'health': out[k] = !c.illness ? 1 : c.activity === 'sick' && c.place != null && bdef(buildingByUid(w, c.place)!).patients ? 0.6 : 0; break;
+      case 'evenings': { const floor = standing >= 2 ? (later ? 35 : 30) : 20; out[k] = Math.max(0, Math.min(1, (c.fun - floor) / 50)); break; }
+      case 'surroundings': out[k] = Math.max(0, Math.min(1, (c.beauty + (later ? 0 : 1)) / 4)); break;
+      case 'fresh': out[k] = (c.ate ?? []).some(a => a.h >= w.hour - 72 && FRESH.includes(a.r)) ? 1 : 0; break;
+      case 'drink': out[k] = c.lastDrink != null && c.lastDrink >= w.hour - 30 ? 1 : 0; break;
+      case 'warmth': out[k] = c.cold ? 0 : 1; break;
+    }
+  }
+  return out;
+}
+export const comfortOf = (w: World, c: Colonist) => { const p = Object.values(comfortParts(w, c)); return p.length ? p.reduce((n, x) => n + (x ?? 0), 0) / p.length : 1; };
 export function colonyComfort(w: World) { const a = alive(w); return a.length ? a.reduce((n, c) => n + comfortOf(w, c), 0) / a.length : 0; }
-/** the colony's average for each need, lowest first: what's speeding strain up */
-export function comfortGaps(w: World) {
+/** the colony's average for each counted need, lowest first: what's speeding strain up */
+export function comfortGaps(w: World, standing = standingOf(w)) {
   const a = alive(w); if (!a.length) return [];
-  const sums = Object.fromEntries(COMFORT_NEEDS.map(k => [k, 0])) as Record<ComfortNeed, number>;
-  for (const c of a) { const p = comfortParts(w, c); for (const k of COMFORT_NEEDS) sums[k] += p[k]; }
-  return COMFORT_NEEDS.map(k => ({ need: k, avg: sums[k] / a.length })).sort((x, y) => x.avg - y.avg);
+  const keys = activeNeeds(w, standing);
+  const sums = Object.fromEntries(keys.map(k => [k, 0])) as Record<NeedKey, number>;
+  for (const c of a) { const p = comfortParts(w, c, standing); for (const k of keys) sums[k] += p[k] ?? 0; }
+  return keys.map(k => ({ need: k, avg: sums[k] / a.length })).sort((x, y) => x.avg - y.avg);
 }
 /** how much the colony's comfort scales the strain rise right now */
 export const comfortFactor = (w: World) => Math.max(0.2, START.comfortScale.base - Math.min(1, (w.comfort ?? colonyComfort(w)) * (hasPerk(w, 'homesteaders') ? 1.2 : 1)) * START.comfortScale.slope);
@@ -1941,6 +1998,78 @@ export function lastDay(w: World): Record<string, number> {
 }
 /** hours the last-day figures cover (less than 24 early in a run) */
 export const lastDayHours = (w: World) => Math.max(1, Math.min(24, (w.flowLog ?? []).length));
+// ---------- Seasons ----------
+/** the hours work starts and stops today */
+export const workHours = (w: World) => START.seasons.work[seasonOf(w).season];
+/** how much a building turns out this season, against normal */
+export const seasonYield = (w: World, defId: string) => {
+  const t = START.seasons.yield[defId]; if (!t) return 1;
+  const s = seasonOf(w), y = rule(t, s.season, 1);
+  return s.season === 'winter' && s.winter >= 2 ? y * START.seasons.harshYield : y;
+};
+/**
+ * What a sensible colony puts by for winter: food and wood to get everyone through most of it (what's still gathered
+ * covers the rest). Ramps up through late summer and autumn; in winter, what's left of it. Zero the rest of the year.
+ */
+export function winterStores(w: World): { food: number; wood: number } {
+  const s = seasonOf(w), n = START.seasons.days, p = START.seasons.prep;
+  const ramp = s.season === 'winter' ? (n - s.dayOf + 1) / n : Math.max(0, Math.min(1, (p.from - s.toWinter) / Math.max(1, p.from - p.full)));
+  if (ramp <= 0) return { food: 0, wood: 0 };
+  const pop = alive(w).length;
+  const harsh = s.season === 'winter' ? s.winter >= 2 : s.winter >= 1;
+  return { food: Math.round(pop * 1.3 * n * p.share * ramp), wood: Math.round((winterFuelPerDay(w, harsh) * n * p.share + 15) * ramp) };
+}
+/** wood a home burns a day this season (0 outside winter) */
+export function homeFuel(w: World, defId: string) {
+  const s = seasonOf(w); const base = START.seasons.homeFuel[defId] ?? 0;
+  return s.season !== 'winter' ? 0 : base * (s.winter >= 2 ? START.seasons.harsh : 1);
+}
+/** wood every lived-in home will burn in a full winter day, now or in the coming winter */
+export function winterFuelPerDay(w: World, harsh = seasonOf(w).winter >= 1) {
+  const homes = built(w).filter(b => bdef(b).beds && alive(w).some(c => c.bed === b.uid));
+  const hb = START.hearth, pop = alive(w).length;
+  const hearth = 12 * Math.min(1, hb.base + hb.perPerson * pop) * (START.seasons.hearth.winter ?? 1) * (hasPerk(w, 'warmHearth') ? 0.5 : 1);
+  return homes.reduce((n, b) => n + (START.seasons.homeFuel[b.def] ?? 0), 0) * (harsh ? START.seasons.harsh : 1) + hearth;
+}
+/** in winter, homes burn wood; anyone without a bed, or in a home whose fire is out, is cold */
+function heatHomes(w: World) {
+  const winter = seasonOf(w).season === 'winter';
+  const heated = new Set<number>();
+  if (winter) for (const b of built(w)) {
+    if (!bdef(b).beds || !alive(w).some(c => c.bed === b.uid)) continue;
+    const need = homeFuel(w, b.def) / 24;
+    if (w.res.wood >= need) { w.res.wood -= need; flow(w, 'wood:-homes', need); heated.add(b.uid); }
+  }
+  for (const c of alive(w)) c.cold = winter && (c.bed == null || !heated.has(c.bed));
+}
+/** the morning news: a new season, the harvest home when winter comes, winter chills */
+function seasonDawn(w: World) {
+  const s = seasonOf(w), sc = START.seasons;
+  if (s.dayOf === 1 && day(w) > 1) {
+    const lines: Record<string, string> = {
+      spring: 'Spring. The snow goes, the mud arrives, and the fish are running. Travellers will be on the road again.',
+      summer: 'Summer. Long days, ripe berries, and everyone wants a cold drink.',
+      autumn: `Autumn. The harvest is in, food spoils faster, and winter is ${sc.days} days off. Lay in wood, and hold a harvest festival before the snow.`,
+      winter: s.winter >= 2 ? 'Winter, and a harder one than last. The fields and orchards sleep, foraging is thin, every home burns wood, and the cold gets into people.' : 'Winter. The fields and orchards sleep, foraging is thin, every home burns wood, and the cold gets into people.',
+    };
+    addLog(w, lines[s.season], s.season === 'winter' ? 'bad' : 'neutral');
+    if (s.season === 'winter') {
+      // the harvest home: a festival held in the autumn just gone
+      const held = (w.festival?.at ?? -1e9) >= w.hour - sc.days * 24;
+      const hh = sc.harvestHome;
+      // a camp with no kitchen can't hold one, so only a settlement or better minds going without (like the other seasonal needs)
+      if (held) everyone(w, 'harvestHome', 'We had a proper harvest home', hh.held, hh.hours);
+      else if (standingOf(w) >= 1) everyone(w, 'harvestHome', 'No harvest festival before winter', hh.missed, hh.hours);
+    }
+  }
+  if (s.season === 'winter') {
+    const k = s.winter >= 2 ? sc.harsh : 1;
+    for (const c of alive(w)) if (!c.illness && nextRand(w) < (c.cold ? sc.chill.cold : sc.chill.warm) * k) {
+      fallIll(w, c, 'chill'); addLog(w, `${first(c)} woke up with a winter chill.`, 'bad');
+    }
+  }
+}
+
 function hourly(w: World) {
   (w.flowLog ??= []).push({ ...w.flows }); if (w.flowLog.length > 24) w.flowLog.shift();
   const h = Math.round(hourOfDay(w)) % 24;
@@ -1955,19 +2084,20 @@ function hourly(w: World) {
 
   if (h >= 18 || h < 6) {
     const hb = sc.hearth;
-    const burn = (hasPerk(w, 'warmHearth') ? 0.5 : 1) * Math.min(1, hb.base + hb.perPerson * pop);
-    if (w.res.wood >= burn) { w.res.wood -= burn; flow(w, 'wood:-hearth', burn); }
-    else everyone(w, 'cold', 'The hearth went cold', -5, 12);
+    const burn = (hasPerk(w, 'warmHearth') ? 0.5 : 1) * Math.min(1, hb.base + hb.perPerson * pop) * rule(sc.seasons.hearth, seasonOf(w).season, 1);
+    if (w.res.wood >= burn) { w.res.wood -= burn; flow(w, 'wood:-hearth', burn); w.hearthCold = false; }
+    else { everyone(w, 'cold', 'The hearth went cold', -5, 12); w.hearthCold = true; }
   }
   if (hasBuilt(w, 'bathhouse') && h >= 6 && h < 18) { flow(w, 'wood:-bathhouse', Math.min(0.4, w.res.wood)); w.res.wood = Math.max(0, w.res.wood - 0.4); }
   // food spoils unless it sits somewhere that keeps it fresh (a storehouse)
-  const rot = 0.035 / 24;
+  const rot = (0.035 / 24) * rule(sc.seasons.spoil, seasonOf(w).season, 1);
   for (const r of FOODS) {
     let fresh = 0;
     for (const b of storages(w)) if (bdef(b).keepsFresh) fresh += b.stock[r] ?? 0;
     const loss = Math.max(0, w.res[r] - fresh) * rot;
     if (loss > 0) { w.res[r] -= loss; flow(w, `${r}:-spoiled`, loss); for (const b of storages(w)) if (!bdef(b).keepsFresh && b.stock[r]) b.stock[r]! *= 1 - rot; }
   }
+  heatHomes(w);
   const tavern = built(w).find(b => b.def === 'tavern');
   const stage = hasBuilt(w, 'stage');
 
@@ -2068,9 +2198,11 @@ function leave(w: World, c: Colonist, carted = false) {
 
 function dawn(w: World) {
   const d = day(w);
+  seasonDawn(w);
   // blueprint drafts every few days once the first charter is picked
   if (w.draftsFrom != null && d > w.draftsFrom && (d - w.draftsFrom) % START.draftEvery === 0) w.decisions.push(blueprintDecision(w));
-  if (d % DRAFT_EVERY === 0) {
+  const every = START.seasons.recruitEvery[seasonOf(w).season];
+  if (every > 0 && d % every === 0) {
     const names = new Set(w.colonists.map(c => first(c)));
     const opts = [0, 1, 2].map(() => makeColonist(w, names));
     for (const o of opts) { o.x = 3 + nextRand(w) * 2; o.y = MAP_SIZE - 4; o.px = o.x; o.py = o.y; }
@@ -2173,14 +2305,15 @@ function runFestival(w: World) {
     if (!meal) { addMemory(w, c, 'festival', 'Nothing left for me at the festival', -3, 24); continue; }
     w.res[meal] -= 1; flow(w, `${meal}:-festival`, 1);
     const drink = pickFor(CATEGORIES.drink.members);
-    if (drink) { w.res[drink] -= 1; flow(w, `${drink}:-festival`, 1); }
+    if (drink) { w.res[drink] -= 1; flow(w, `${drink}:-festival`, 1); c.lastDrink = w.hour; }
+    (c.ate ??= []).push({ r: meal, h: w.hour }); if (c.ate.length > 10) c.ate.shift();
     const fav = taste(c, meal) > 0 || (!!drink && taste(c, drink) > 0);
     addMemory(w, c, 'festival', fav ? 'A festival with my favourites' : 'A festival at the hearth', fav ? 8 : 5, 36);
     c.fun = Math.min(100, c.fun + 40);
   }
   reconcileStock(w);
   w.strain = Math.max(0, w.strain - p.relief);
-  f.readyAt = w.hour + START.relief.festival.waitDays * 24; f.held++;
+  f.readyAt = w.hour + START.relief.festival.waitDays * 24; f.held++; f.at = w.hour;
   f.last = `${p.fed} of ${p.guests} ate, ${p.drank} had a drink, ${p.loved} got a favourite; strain eased by ${Math.round(p.relief)}`;
   addLog(w, `The festival: fiddles, stew and dancing badly. ${f.last}.`, 'good');
 }
@@ -2268,7 +2401,7 @@ function move(w: World, c: Colonist, grid: Uint8Array, dt: number) {
     c.path = findPath(w, grid, c.x, c.y, goal.x, goal.y) ?? [];
     c.goalReached = false;
   }
-  let step = WALK_SPEED * dt * (c.carrying ? 0.85 : 1) * (pathAt(w, Math.floor(c.x), Math.floor(c.y)) === 2 ? PATH_SPEED : 1);
+  let step = WALK_SPEED * dt * (c.carrying ? 0.85 : 1) * (pathAt(w, Math.floor(c.x), Math.floor(c.y)) === 2 ? PATH_SPEED : rule(START.seasons.offPath, seasonOf(w).season, 1));
   const pts = [...c.path, { x: goal.x, y: goal.y }];
   while (step > 0 && pts.length) {
     const p = pts[0];
