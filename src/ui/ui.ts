@@ -91,6 +91,12 @@ export class UI {
   profile: { runs: { result: string; day: number; charters: number }[] } = { runs: [] };
   private picking: number | null = null; // errand id whose colonist picker is open
   private festivalOpen = false;
+  /** a saved run was found on boot: the game waits on the welcome-back card */
+  resumeOpen = false;
+  resumeSavedAt = '';
+  onResume: () => void = () => {};
+  /** "start a new colony" asks once before throwing away the run in progress */
+  private confirmNew = false;
   private strainOpen = false;
 
   constructor(private root: HTMLElement, private getWorld: () => World, private send: (c: Command) => string | null, private view: IsoView) {
@@ -165,7 +171,12 @@ export class UI {
       case 'auto': this.send({ type: 'autoAssign' }); this.toast('The foreman has reassigned everyone.'); break;
       case 'resolve': this.send({ type: 'resolve', option: Number(arg) }); this.lastModal = ''; break;
       case 'reroll': { const err = this.send({ type: 'reroll' }); if (err) this.toast(err); this.lastModal = ''; break; }
-      case 'restart': this.onRestart(); break;
+      case 'restart':
+        // from the end screen it's immediate; with a run in progress it asks first
+        if (w.status === 'playing' && !this.confirmNew) { this.confirmNew = true; this.lastModal = ''; this.lastSheet = ''; break; }
+        this.confirmNew = false; this.onRestart(); break;
+      case 'restart-cancel': this.confirmNew = false; this.lastModal = ''; this.lastSheet = ''; break;
+      case 'resume': this.confirmNew = false; this.onResume(); break;
       case 'desk': { const b = desks(w)[0]; if (b) { this.detail = { kind: 'building', id: b.uid }; this.tab = 'build'; this.open = true; this.view.selected = { kind: 'building', id: b.uid }; } break; }
       case 'feast': { const err = this.send({ type: 'callFeast' }); this.toast(err ?? 'The feast is called. Everyone sits down at dusk.'); break; }
       case 'errand-open': this.picking = Number(arg); break;
@@ -535,8 +546,22 @@ export class UI {
       <p class="muted">${Object.keys(need).length ? 'The scholar fetches the goods; laborers help when they can.' : 'Everything is here. Study goes faster with a better Studying skill.'}${done ? ` Learned so far: ${esc(done)}.` : ''}</p>`;
   }
 
+  private resumeCard(w: World) {
+    const prog = charterProgress(w);
+    const when = (() => { const t = Date.parse(this.resumeSavedAt); if (!t) return ''; const m = Math.round((Date.now() - t) / 60000); return m < 1 ? 'just now' : m < 60 ? `${m} minute${m === 1 ? '' : 's'} ago` : m < 60 * 24 ? `${Math.round(m / 60)} hour${Math.round(m / 60) === 1 ? '' : 's'} ago` : `${Math.round(m / 1440)} day${Math.round(m / 1440) === 1 ? '' : 's'} ago`; })();
+    const lines = [`Day ${day(w)} · ${alive(w).length} settlers · mood ${Math.round(avgMood(w))} · strain ${Math.round(w.strain)}`, prog ? `Charter ${w.chartersDone.length + 1} of 3: ${prog.charter.name}, ${prog.label}` : w.chartersDone.length ? `${w.chartersDone.length} charter${w.chartersDone.length > 1 ? 's' : ''} done` : 'No charter yet'];
+    return `<div class="card-wrap"><p class="eyebrow">Welcome back${when ? ` · saved ${when}` : ''}</p><h2>Your colony is waiting</h2>
+      <p class="lede">${lines.map(esc).join('<br>')}</p>
+      <div class="opts"><button type="button" class="opt" data-act="resume"><b>Continue</b><span>Pick up where you left off.</span></button>
+      ${this.confirmNew ? `<button type="button" class="opt danger" data-act="restart"><b>Yes, start over</b><span>This colony will be lost for good.</span></button>` : `<button type="button" class="opt" data-act="restart"><b>Start a new colony</b><span>Three settlers, a cart, a kettle and a fresh patch of the Mumblewood.</span></button>`}</div>
+      ${this.confirmNew ? '<button type="button" class="ghost skip" data-act="restart-cancel">Keep this colony</button>' : ''}</div>`;
+  }
+
   private logList(w: World) {
-    return `<ol class="log">${w.log.slice(-60).reverse().map(l => `<li class="t-${l.tone}"><time>Day ${l.day}, ${String(l.hour).padStart(2, '0')}:00</time><span>${esc(l.text)}</span></li>`).join('')}</ol>`;
+    const restart = this.confirmNew
+      ? `<div class="restart-row"><span>Start a new colony? This one will be lost for good.</span><button type="button" class="ghost danger" data-act="restart">Yes, start over</button><button type="button" class="ghost" data-act="restart-cancel">Keep playing</button></div>`
+      : `<div class="restart-row"><span class="muted">Your colony saves automatically in this browser.</span><button type="button" class="ghost" data-act="restart">Start over</button></div>`;
+    return restart + `<ol class="log">${w.log.slice(-60).reverse().map(l => `<li class="t-${l.tone}"><time>Day ${l.day}, ${String(l.hour).padStart(2, '0')}:00</time><span>${esc(l.text)}</span></li>`).join('')}</ol>`;
   }
 
   // ---------- Decisions ----------
@@ -545,6 +570,7 @@ export class UI {
     let html = '';
     const d = w.decisions[0];
     if (w.status !== 'playing') html = this.endScreen(w);
+    else if (this.resumeOpen) html = this.resumeCard(w);
     else if (d) {
       switch (d.kind) {
         case 'charter': html = this.cards(d.tier === 1 ? 'Your first charter' : `Charter ${d.tier} of 3`,

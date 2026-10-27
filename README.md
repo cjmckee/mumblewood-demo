@@ -33,6 +33,7 @@ npx tsx tools/explain.ts 1000 1 20 decision   # only the choices (also: staff, b
 STRAIN_K=0.05 RECRUIT_EXTRA=2 npx tsx tools/pacing.ts 50   # pacing takes experiment knobs: STRAIN_K, DRAFT_EVERY, RECRUIT_CAP, RECRUIT_EXTRA, LABORERS_PER, COMFORTS, COMFORTS_FIRST
 npx tsx tools/trace.ts 1000 40   # day-by-day trace of one run (LOG=1 adds the log)
 npx tsx tools/finale-check.ts   # forced checks: the small start, research, charter timing, strain, the Crown's Hall and the Long Table
+node tools/save-check.mjs        # browser check of save and resume (build first): reload, continue, start over, old saves ignored
 npx tsc -p .                   # type-check
 ```
 
@@ -56,7 +57,8 @@ Every push to `main` builds the game and publishes `dist/site/index.html` to Git
 | `src/sim/autoplayer.ts` | A heuristic bot used by the balance harness |
 | `src/render/iso.ts` | PixiJS isometric vector renderer, which reads the world and never changes it |
 | `src/ui/ui.ts` | HUD, bottom sheet, placement bar and decision cards. It changes the world only through commands |
-| `src/main.ts` | Game loop and speed control |
+| `src/main.ts` | Game loop, speed control and autosave |
+| `src/save.ts` | Save and resume: a JSON snapshot of the world in this browser's storage. Bump `SAVE_VERSION` when a change to the world would make old saves play wrongly |
 | `tools/harness.ts` | Headless balance harness |
 | `tools/forced.ts`, `tools/charters.ts`, `tools/diagnose.ts`, `tools/issues.ts`, `tools/losses.ts`, `tools/moods.ts`, `tools/review.ts`, `tools/wood.ts` | Bot diagnostics: per-charter health, problem detectors, daily traces |
 
