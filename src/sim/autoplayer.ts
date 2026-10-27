@@ -2,7 +2,7 @@
 // It reads the active charter and plays towards it, the way a person would.
 import { BUILDING_BY_ID, BUILDINGS, CATEGORIES, CharterMetric, RESEARCH_BY_ID, EVENTS, ResourceId, MEALS, RAW_FOODS, Recipe, InputKey, membersOf, recipeRate } from './content';
 import { assess, Concern, defsOf } from './advisor';
-import { World, apply, alive, beds, mealTotal, sites, findSpot, CENTER, avgMood, built, MAP_SIZE, pathAt, terrainAt, T_WATER, bdef, workersAt, blockedReason, opinion, Building, Colonist, hourOfDay, charterProgress, buildingByUid, storageFree, storages, FOODS, GOODS, bedridden, foodTotal, currentRecipe, drinkTotal, siteOk, enabledRecipes, recipesOf, rerollCost, stockOf, usableHere, charterDef, charterHelpers, feastCheck, desks, researchLeft, festivalPreview, edibleTotal } from './world';
+import { World, apply, alive, beds, mealTotal, sites, findSpot, CENTER, avgMood, built, MAP_SIZE, pathAt, terrainAt, T_WATER, bdef, workersAt, blockedReason, opinion, Building, Colonist, hourOfDay, charterProgress, buildingByUid, storageFree, storages, FOODS, GOODS, bedridden, foodTotal, currentRecipe, drinkTotal, siteOk, enabledRecipes, recipesOf, rerollCost, stockOf, usableHere, charterDef, charterHelpers, feastCheck, desks, researchLeft, festivalPreview, edibleTotal, doorTile, centerOf } from './world';
 
 const BLUEPRINT_PRIORITY = ['sawmill', 'pieoven', 'dock', 'cottage', 'brewery', 'ciderpress', 'tavern', 'kiln', 'claypit', 'carpenter', 'orchard', 'field', 'apiary', 'smokehouse', 'cellar', 'stage', 'bathhouse', 'bakery', 'apothecary', 'herbgarden', 'mill'];
 const DRINK_MAKERS = ['brewery', 'ciderpress'];
@@ -461,7 +461,7 @@ export function autoBuild(w: World) {
   if (w.res.wood > 60 && Math.round(w.hour) % 24 === 9) {
     for (const b of built(w)) {
       if (bdef(b).decor || bdef(b).walkable || b.def === 'hearth') continue;
-      let x = b.x + Math.floor(bdef(b).w / 2), y = b.y + bdef(b).h;
+      let { x, y } = doorTile(b.def, b.x, b.y, b.rot);
       for (let i = 0; i < 12 && Math.hypot(x - CENTER, y - CENTER) > 2.5; i++) {
         if (terrainAt(w, x, y) !== T_WATER && pathAt(w, x, y) === 0) apply(w, { type: 'path', x, y, on: true });
         if (Math.abs(x - CENTER) > Math.abs(y - CENTER)) x += Math.sign(CENTER - x); else y += Math.sign(CENTER - y);
@@ -742,7 +742,7 @@ export function autoFoodRules(w: World) {
 const centroid = (w: World, ids: string[]) => {
   const bs = built(w).filter(b => ids.includes(b.def));
   if (!bs.length) return { x: CENTER, y: CENTER };
-  const x = bs.reduce((n, b) => n + b.x + bdef(b).w / 2, 0) / bs.length, y = bs.reduce((n, b) => n + b.y + bdef(b).h / 2, 0) / bs.length;
+  const x = bs.reduce((n, b) => n + centerOf(b).x, 0) / bs.length, y = bs.reduce((n, b) => n + centerOf(b).y, 0) / bs.length;
   return { x: (x + CENTER) / 2, y: (y + CENTER) / 2 };
 };
 /** storehouses (food) go between the food producers and the kitchens; extra stockpiles (goods) by the woodcutters */

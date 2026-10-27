@@ -111,6 +111,13 @@ h3.first { margin-top: 4px; }
 .bp > div { display: grid; gap: 2px; min-width: 0; }
 .bp small { color: var(--muted); font-size: 12px; }
 .bp small.cost { color: var(--accent); }
+.bp.has-ico { grid-template-columns: auto 1fr auto; }
+.bp-ico { width: 44px; height: 44px; border-radius: 10px; background: #1a1f1b; display: grid; place-items: center; }
+.bp .bico { width: 36px; height: 36px; }
+.bp.locked .bico { filter: grayscale(1); opacity: .45; }
+.ico.hico { width: 30px; height: 30px; vertical-align: -6px; margin-right: 8px; }
+.ico.cico { width: 28px; height: 28px; }
+.job .jn { display: inline-flex; align-items: center; gap: 5px; }
 .act { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 999px; padding: 8px 16px; font-weight: 700; font-size: 14px; }
 .act.big { padding: 12px 22px; font-size: 15px; justify-self: start; }
 
@@ -213,12 +220,18 @@ h3.first { margin-top: 4px; }
 .pb-text small { color: var(--muted); font-size: 12px; }
 .pb-text small.low { color: var(--warn); }
 #placebar.two { grid-template-columns: 1fr auto; }
+#placebar:not(.two) { grid-template-columns: auto 1fr auto; }
+#placebar:not(.two) .pb-text { grid-column: 1 / -1; }
+#placebar:not(.two) [data-act=place-cancel] { justify-self: end; }
+#placebar .rotate { display: inline-flex; align-items: center; gap: 6px; }
+#placebar .rotate svg { width: 18px; height: 18px; }
 .chip.store { color: var(--text); }
 .chip.store.full b { color: var(--bad); }
 .status .chip.research, .status .chip.feast { margin-top: 6px; justify-content: flex-start; text-align: left; max-width: 100%; border: 1px solid var(--line); background: #222823; color: var(--text); font: inherit; font-size: 12px; cursor: pointer; }
 .status .chip.feast.ready { border-color: var(--accent); color: var(--accent); }
 .status .chip.feast.on { cursor: default; color: var(--accent); }
 .bp.locked { opacity: 0.6; grid-template-columns: 1fr; }
+.bp.locked.has-ico { grid-template-columns: auto 1fr; }
 button.strain { display: block; font: inherit; color: inherit; text-align: left; background: none; border: 0; padding: 0; cursor: pointer; }
 .strain .rate { display: block; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .fest { display: block; margin-top: 4px; font: inherit; font-size: 11px; color: var(--accent); background: none; border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; cursor: pointer; white-space: nowrap; }

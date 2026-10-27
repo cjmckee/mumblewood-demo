@@ -92,6 +92,8 @@ export interface Building {
   off?: number[];
   /** buildings built in stages (the Crown's Hall): which stage is under way */
   stage?: number;
+  /** quarter-turns from the blueprint's facing: 0 doorway towards +y, 1 towards +x, 2 towards -y, 3 towards -x. Missing means 0 */
+  rot?: number;
 }
 
 export type Decision =
@@ -383,16 +385,43 @@ function genTerrain(w: World) {
   w.paths = new Array(MAP_SIZE * MAP_SIZE).fill(0);
 }
 
-/** would a building here sit on top of a laid path? */
-export function coversPath(w: World, defId: string, x: number, y: number) {
+// ---------- Rotation ----------
+// A blueprint is drawn facing +y: its doorway is in the middle of its +y edge. Each quarter-turn swings the doorway
+// round to the next side (+x, then -y, then -x), and odd turns swap its width and depth.
+/** the tiles a building covers when turned `rot` quarter-turns */
+export function footprint(defId: string, rot = 0): { w: number; h: number } {
   const d = BUILDING_BY_ID[defId];
+  return rot % 2 ? { w: d.h, h: d.w } : { w: d.w, h: d.h };
+}
+export const dims = (b: Building) => footprint(b.def, b.rot ?? 0);
+/** a point in the blueprint's own unturned footprint (u across 0..w, v front-to-back 0..h, the doorway past v = h)
+ *  to an offset from the building's corner tile once turned */
+export function turnPoint(defId: string, rot: number, u: number, v: number): { x: number; y: number } {
+  const d = BUILDING_BY_ID[defId];
+  switch (((rot % 4) + 4) % 4) {
+    case 1: return { x: v, y: d.w - u };
+    case 2: return { x: d.w - u, y: d.h - v };
+    case 3: return { x: d.h - v, y: u };
+    default: return { x: u, y: v };
+  }
+}
+/** the tile just outside the doorway, for a building at (x, y) turned `rot` */
+export function doorTile(defId: string, x: number, y: number, rot = 0): { x: number; y: number } {
+  const d = BUILDING_BY_ID[defId];
+  const p = turnPoint(defId, rot, Math.floor(d.w / 2) + 0.5, d.h + 0.5);
+  return { x: Math.floor(x + p.x), y: Math.floor(y + p.y) };
+}
+
+/** would a building here sit on top of a laid path? */
+export function coversPath(w: World, defId: string, x: number, y: number, rot = 0) {
+  const d = footprint(defId, rot);
   for (let tx = x; tx < x + d.w; tx++) for (let ty = y; ty < y + d.h; ty++) if (pathAt(w, tx, ty) === 2) return true;
   return false;
 }
 
 /** how well a building would work at (x, y), from 0.15 to 1 */
-export function efficiencyAt(w: World, defId: string, x: number, y: number): { eff: number; count: number; label: string } {
-  const d = BUILDING_BY_ID[defId];
+export function efficiencyAt(w: World, defId: string, x: number, y: number, rot = 0): { eff: number; count: number; label: string } {
+  const d = { ...BUILDING_BY_ID[defId], ...footprint(defId, rot) };
   const cx = x + d.w / 2, cy = y + d.h / 2;
   const count = (kind: number, r: number) => {
     let n = 0;
@@ -415,11 +444,11 @@ export function efficiencyAt(w: World, defId: string, x: number, y: number): { e
     for (let tx = x; tx < x + d.w; tx++) for (let ty = y; ty < y + d.h; ty++) if (terrainAt(w, tx, ty) === T_SOIL) n++;
     return { eff: n ? Math.max(0.15, n / (d.w * d.h)) : 0, count: n, label: `${n} of ${d.w * d.h} tiles on good soil` };
   }
-  if (d.needs === 'water') return { eff: touchesWater(w, defId, x, y) ? 1 : 0, count: 0, label: touchesWater(w, defId, x, y) ? 'On the water' : 'Must touch water' };
+  if (d.needs === 'water') return { eff: touchesWater(w, defId, x, y, rot) ? 1 : 0, count: 0, label: touchesWater(w, defId, x, y, rot) ? 'On the water' : 'Must touch water' };
   return { eff: 1, count: 0, label: '' };
 }
-function touchesWater(w: World, defId: string, x: number, y: number) {
-  const d = BUILDING_BY_ID[defId];
+function touchesWater(w: World, defId: string, x: number, y: number, rot = 0) {
+  const d = footprint(defId, rot);
   for (let tx = x - 1; tx <= x + d.w; tx++) for (let ty = y - 1; ty <= y + d.h; ty++) if (terrainAt(w, tx, ty) === T_WATER) return true;
   return false;
 }
@@ -428,8 +457,8 @@ function touchesWater(w: World, defId: string, x: number, y: number) {
 export function beautyAt(w: World, x: number, y: number): number {
   let b = 0;
   for (const bd of w.buildings) {
-    const d = bdef(bd);
-    const cx = bd.x + d.w / 2, cy = bd.y + d.h / 2;
+    const d = bdef(bd), f = dims(bd);
+    const cx = bd.x + f.w / 2, cy = bd.y + f.h / 2;
     const dist = Math.hypot(cx - x, cy - y);
     if (bd.built && d.beauty && dist < 3.5) b += d.beauty * (1 - dist / 4);
     if (!bd.built && dist < 2.5) b -= 1.5;
@@ -447,28 +476,28 @@ export function beautyAt(w: World, x: number, y: number): number {
 // ---------- Geometry ----------
 /** the tile people stand on to use a building: just in front of its lower edge */
 export function spotOf(b: Building): { x: number; y: number } {
-  const d = bdef(b);
-  if (d.walkable) return { x: b.x + d.w / 2, y: b.y + d.h / 2 };
-  if (d.decor) return { x: b.x + 0.5, y: b.y + 1.5 };
-  return { x: b.x + Math.floor(d.w / 2) + 0.5, y: b.y + d.h + 0.5 };
+  const d = bdef(b), f = dims(b);
+  if (d.walkable) return { x: b.x + f.w / 2, y: b.y + f.h / 2 };
+  const p = turnPoint(b.def, b.rot ?? 0, d.decor ? 0.5 : Math.floor(d.w / 2) + 0.5, d.decor ? 1.5 : d.h + 0.5);
+  return { x: b.x + p.x, y: b.y + p.y };
 }
-export const centerOf = (b: Building) => ({ x: b.x + bdef(b).w / 2, y: b.y + bdef(b).h / 2 });
+export const centerOf = (b: Building) => ({ x: b.x + dims(b).w / 2, y: b.y + dims(b).h / 2 });
 
 function blockedGrid(w: World, ignore?: number): Uint8Array {
   const g = new Uint8Array(MAP_SIZE * MAP_SIZE);
   for (let i = 0; i < g.length; i++) if (w.terrain[i] === T_WATER) g[i] = 1;
   for (const b of w.buildings) {
     if (b.uid === ignore) continue;
-    const d = bdef(b);
-    for (let x = b.x; x < b.x + d.w; x++) for (let y = b.y; y < b.y + d.h; y++) g[y * MAP_SIZE + x] = d.walkable ? 2 : 1;
+    const d = bdef(b), f = dims(b);
+    for (let x = b.x; x < b.x + f.w; x++) for (let y = b.y; y < b.y + f.h; y++) g[y * MAP_SIZE + x] = d.walkable ? 2 : 1;
   }
   return g;
 }
 
 export type PlaceCheck = { ok: true } | { ok: false; reason: string };
-export function canPlace(w: World, defId: string, x: number, y: number): PlaceCheck {
-  const d = BUILDING_BY_ID[defId];
-  if (!d) return { ok: false, reason: 'Unknown building.' };
+export function canPlace(w: World, defId: string, x: number, y: number, rot = 0): PlaceCheck {
+  if (!BUILDING_BY_ID[defId]) return { ok: false, reason: 'Unknown building.' };
+  const d = { ...BUILDING_BY_ID[defId], ...footprint(defId, rot) };
   if (x < BUILD_MIN || y < BUILD_MIN || x + d.w - 1 > BUILD_MAX || y + d.h - 1 > BUILD_MAX) return { ok: false, reason: 'Too close to the forest.' };
   const g = blockedGrid(w);
   for (let tx = x; tx < x + d.w; tx++) for (let ty = y; ty < y + d.h; ty++) {
@@ -482,11 +511,11 @@ export function canPlace(w: World, defId: string, x: number, y: number): PlaceCh
     if (t === T_CLAY) return { ok: false, reason: 'The clay bank is in the way.' };
   }
   if (!d.walkable && !d.decor) {
-    const sx = x + Math.floor(d.w / 2), sy = y + d.h;
-    if (sy > BUILD_MAX + 1 || g[sy * MAP_SIZE + sx] === 1) return { ok: false, reason: 'The doorway is blocked.' };
+    const { x: sx, y: sy } = doorTile(defId, x, y, rot);
+    if (sx < BUILD_MIN - 1 || sy < BUILD_MIN - 1 || sx > BUILD_MAX + 1 || sy > BUILD_MAX + 1 || g[sy * MAP_SIZE + sx] === 1) return { ok: false, reason: 'The doorway is blocked.' };
   }
-  if (d.needs === 'water' && !touchesWater(w, defId, x, y)) return { ok: false, reason: 'A dock has to touch the water.' };
-  if (d.needs === 'soil' && efficiencyAt(w, defId, x, y).count < 2) return { ok: false, reason: 'A field has to sit on good soil.' };
+  if (d.needs === 'water' && !touchesWater(w, defId, x, y, rot)) return { ok: false, reason: 'A dock has to touch the water.' };
+  if (d.needs === 'soil' && efficiencyAt(w, defId, x, y, rot).count < 2) return { ok: false, reason: 'A field has to sit on good soil.' };
   for (const b of w.buildings) {
     if (bdef(b).walkable || bdef(b).decor) continue;
     const s = spotOf(b), sx = Math.floor(s.x), sy = Math.floor(s.y);
@@ -631,8 +660,9 @@ function makeColonist(w: World, usedNames: Set<string>): Colonist {
   };
 }
 
-function newBuilding(w: World, def: string, x: number, y: number, isBuilt: boolean): Building {
-  const b: Building = { uid: w.nextUid++, def, x, y, built: isBuilt, progress: 0, delivered: {}, outbox: {}, inbox: {}, clean: 100, eff: efficiencyAt(w, def, x, y).eff || 1, stock: {}, allow: null, high: false };
+function newBuilding(w: World, def: string, x: number, y: number, isBuilt: boolean, rot = 0): Building {
+  const b: Building = { uid: w.nextUid++, def, x, y, built: isBuilt, progress: 0, delivered: {}, outbox: {}, inbox: {}, clean: 100, eff: efficiencyAt(w, def, x, y, rot).eff || 1, stock: {}, allow: null, high: false };
+  if (rot % 4) b.rot = rot % 4;
   w.buildings.push(b); w.version++;
   return b;
 }
@@ -813,7 +843,7 @@ function blueprintDecision(w: World, avoid: string[] = []): Decision {
 // ---------- Commands (the only way the UI changes the world) ----------
 export type Command =
   | { type: 'assign'; colonist: number; building: number | null }
-  | { type: 'place'; def: string; x: number; y: number }
+  | { type: 'place'; def: string; x: number; y: number; rot?: number }
   | { type: 'cancel'; building: number }
   | { type: 'path'; x: number; y: number; on: boolean }
   | { type: 'sendOnErrand'; errand: number; colonist: number | null }
@@ -857,9 +887,10 @@ export function apply(w: World, cmd: Command): string | null {
     case 'place': {
       const def = BUILDING_BY_ID[cmd.def];
       if (!def || !w.owned.includes(def.id)) return 'You don’t have that blueprint.';
-      const chk = canPlace(w, cmd.def, cmd.x, cmd.y);
+      const rot = (((cmd.rot ?? 0) % 4) + 4) % 4;
+      const chk = canPlace(w, cmd.def, cmd.x, cmd.y, rot);
       if (!chk.ok) return chk.reason;
-      newBuilding(w, def.id, cmd.x, cmd.y, false);
+      newBuilding(w, def.id, cmd.x, cmd.y, false, rot);
       for (const c of alive(w)) c.goalKey = ''; // paths may be blocked now
       addLog(w, `Blueprint laid out for a ${def.name.toLowerCase()}.`, 'neutral');
       return null;
@@ -1660,14 +1691,15 @@ function completeBuilding(w: World, b: Building) {
   addLog(w, pick(w, [`The ${def.name.toLowerCase()} is finished. Only one thumb was hammered.`, `The ${def.name.toLowerCase()} is done, and it is mostly level.`, `Work on the ${def.name.toLowerCase()} is complete. Everyone admires it briefly.`]), 'good');
   if (def.beds) assignBeds(w);
   // a new flower bed can make a nearby apiary busier
-  if (def.id === 'flowerbed') for (const a of w.buildings) if (bdef(a).needs === 'flowers') a.eff = efficiencyAt(w, a.def, a.x, a.y).eff;
+  if (def.id === 'flowerbed') for (const a of w.buildings) if (bdef(a).needs === 'flowers') a.eff = efficiencyAt(w, a.def, a.x, a.y, a.rot).eff;
   if (def.slots && w.autoAssignNew) fillSlots(w);
   // research starts once there's somewhere to study: the first desk brings the first offer
   if (def.id === 'desk' && w.research && !w.research.current && !w.decisions.some(d => d.kind === 'research') && researchLeft(w).length) {
     w.decisions.push(researchDecision(w, w.research.done.length ? undefined : START.firstResearch));
   }
   // a finished building replaces any planned path under it
-  for (let x = b.x; x < b.x + def.w; x++) for (let y = b.y; y < b.y + def.h; y++) if (!def.walkable) w.paths[y * MAP_SIZE + x] = 0;
+  const f = dims(b);
+  for (let x = b.x; x < b.x + f.w; x++) for (let y = b.y; y < b.y + f.h; y++) if (!def.walkable) w.paths[y * MAP_SIZE + x] = 0;
 }
 
 /** food people are allowed to eat */
