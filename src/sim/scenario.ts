@@ -37,6 +37,9 @@ export interface Start {
   hearth: { base: number; perPerson: number };
   /** wood workshops (and the research desk) leave in storage for the hearth */
   woodReserve: number;
+  /** the body: hours of waking work from a full belly to empty, how hungry before someone goes for food, walking speed
+   *  in tiles an hour, and the share of food left out (not in a storehouse) that spoils each day */
+  body: { hungerHours: number; eatBelow: number; walk: number; spoilPerDay: number };
   /** outbreaks wait until this day and this many colonists */
   outbreakFrom: { day: number; pop: number };
   /** the calendar and what each season does; see seasons.ts */
@@ -99,6 +102,7 @@ export const START: Start = {
   relief: { charter: 0.3, festival: { base: 0.15, drinks: 0.05, loved: 0.05, waitDays: 4 } },
   hearth: { base: 0.25, perPerson: 0.06 },
   woodReserve: 10,
+  body: { hungerHours: 26, eatBelow: 45, walk: 7, spoilPerDay: 0.035 },
   outbreakFrom: { day: 6, pop: 5 },
   seasons: {
     days: 10,

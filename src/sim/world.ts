@@ -182,7 +182,6 @@ export const CARRY = 15;
 /** recruits come this many days apart (blueprint drafts follow START.draftEvery) */
 export const DRAFT_EVERY = 2;
 export const OUTBOX_CAP = 15;
-const WALK_SPEED = 7; // tiles per hour
 export const PATH_SPEED = 1.25;
 export const INBOX_TARGET = 12;
 export const T_GRASS = 0, T_TREE = 1, T_BUSH = 2, T_WATER = 3, T_APPLE = 4, T_FLOWERS = 5, T_SOIL = 6, T_CLAY = 7;
@@ -2095,7 +2094,7 @@ function hourly(w: World) {
   }
   if (hasBuilt(w, 'bathhouse') && h >= 6 && h < 18) { flow(w, 'wood:-bathhouse', Math.min(0.4, w.res.wood)); w.res.wood = Math.max(0, w.res.wood - 0.4); }
   // food spoils unless it sits somewhere that keeps it fresh (a storehouse)
-  const rot = (0.035 / 24) * rule(sc.seasons.spoil, seasonOf(w).season, 1);
+  const rot = (START.body.spoilPerDay / 24) * rule(sc.seasons.spoil, seasonOf(w).season, 1);
   for (const r of FOODS) {
     let fresh = 0;
     for (const b of storages(w)) if (bdef(b).keepsFresh) fresh += b.stock[r] ?? 0;
@@ -2110,7 +2109,7 @@ function hourly(w: World) {
 
   for (const c of alive(w)) {
     if (c.activity !== 'sleeping') {
-      c.hunger -= (100 / 26) * (has(c, 'glutton') ? 1.6 : 1) * (hasPerk(w, 'rations') ? 0.8 : 1);
+      c.hunger -= (100 / START.body.hungerHours) * (has(c, 'glutton') ? 1.6 : 1) * (hasPerk(w, 'rations') ? 0.8 : 1);
       c.fun -= 2;
       // a job you love is a little fun in itself; the real lifting still happens at the tavern and the stage
       const jb = c.activity === 'working' ? buildingByUid(w, c.job) : undefined;
@@ -2120,7 +2119,7 @@ function hourly(w: World) {
     c.starvingHours = c.hunger <= 0 ? c.starvingHours + 1 : 0;
     if (c.starvingHours === 24) addLog(w, `${first(c)} is starving. Get food into storage.`, 'bad');
     if (c.starvingHours >= 48) { die(w, c, 'hunger'); continue; }
-    if (c.hunger < 45 && !c.meal && !c.carrying && c.activity !== 'sleeping') startMeal(w, c);
+    if (c.hunger < START.body.eatBelow && !c.meal && !c.carrying && c.activity !== 'sleeping') startMeal(w, c);
     if (c.activity === 'leisure' || c.activity === 'sulking' || c.activity === 'idle') {
       const atTavern = tavern && c.place === tavern.uid;
       if (atTavern && drinkTotal(w) >= 0.3) {
@@ -2412,7 +2411,7 @@ function move(w: World, c: Colonist, grid: Uint8Array, dt: number) {
     c.path = findPath(w, grid, c.x, c.y, goal.x, goal.y) ?? [];
     c.goalReached = false;
   }
-  let step = WALK_SPEED * dt * (c.carrying ? 0.85 : 1) * (pathAt(w, Math.floor(c.x), Math.floor(c.y)) === 2 ? PATH_SPEED : rule(START.seasons.offPath, seasonOf(w).season, 1));
+  let step = START.body.walk * dt * (c.carrying ? 0.85 : 1) * (pathAt(w, Math.floor(c.x), Math.floor(c.y)) === 2 ? PATH_SPEED : rule(START.seasons.offPath, seasonOf(w).season, 1));
   const pts = [...c.path, { x: goal.x, y: goal.y }];
   while (step > 0 && pts.length) {
     const p = pts[0];
