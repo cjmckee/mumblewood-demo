@@ -606,6 +606,23 @@ function sack(u: number, v: number): Part[] {
 }
 
 /** the fallback until a building has its own model: a plain house in its colours */
+/** the trader's caravan, parked along x on two tiles: a covered wagon with big wheels, a shaft, and goods stacked beside it */
+export function caravanModel(): Model {
+  const wood = 0x8c6340, cloth = 0xd8cfb4, wheel = 0x4b3524;
+  const disc = (u: number, v: number, r: number): Part => ({ polys: [{ pts: Array.from({ length: 12 }, (_, i) => { const a = (i / 12) * Math.PI * 2; return [u + Math.cos(a) * r, v, 9 + Math.sin(a) * 9 * (r / 0.3)] as P3; }), col: wheel, two: true }], at: [u, v] });
+  const hub = (u: number, v: number): Part => ({ polys: [{ pts: Array.from({ length: 8 }, (_, i) => { const a = (i / 8) * Math.PI * 2; return [u + Math.cos(a) * 0.08, v + (v < 0.5 ? -0.01 : 0.01), 9 + Math.sin(a) * 2.4] as P3; }), col: 0xa7835c, two: true }], at: [u, v + 0.01], layer: 1 });
+  const arch: [number, number][] = [[0.24, 15], [0.27, 24], [0.36, 31], [0.55, 34], [0.74, 31], [0.83, 24], [0.86, 15]];
+  return [
+    patch(rect(0.05, 0.15, 1.95, 0.95), 0x000000, 0.4, 0.16),
+    box(0.25, 0.28, 1.55, 0.82, 7, 15, wood, shade(wood, 1.1)),
+    runU(arch, 0.3, 1.5, cloth, shade(cloth, 0.9)),
+    box(1.55, 0.5, 2.0, 0.6, 7, 9, shade(wood, 0.85)),
+    disc(0.55, 0.24, 0.3), disc(1.25, 0.24, 0.3), disc(0.55, 0.86, 0.3), disc(1.25, 0.86, 0.3),
+    hub(0.55, 0.86), hub(1.25, 0.86),
+    crate(0.3, 1.12, 0.17, 10), box(0.19, 1.01, 0.41, 1.23, 10, 17, 0xc49a62, shade(0xc49a62, 1.1)),
+    ...barrel(0.68, 1.15, 0.14, 12, 0x7c5a3a),
+  ];
+}
 export function modelFor(c: ModelCtx): Model {
   const m = MODELS[c.def.id];
   return m ? m(c) : house(c);

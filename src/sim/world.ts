@@ -106,6 +106,8 @@ export interface Building {
 /** the caravan at the hearth: what it sells (and for how much), the blueprints it carries, and what it has bought this visit */
 export interface Caravan {
   arrived: number; leaves: number;
+  /** where it parks: two free tiles near the hearth, the cart along x */
+  x: number; y: number;
   stock: Partial<Record<ResourceId, { n: number; price: number }>>;
   blueprints: { id: string; price: number }[];
   sold: Partial<Record<ResourceId, number>>;
@@ -952,7 +954,7 @@ export function apply(w: World, cmd: Command): string | null {
     case 'visitCaravan': {
       if (!w.caravan) return 'There is no caravan here.';
       if (w.errands.some(e => e.def === 'caravan') || w.decisions.some(d => d.kind === 'trade')) return 'Someone is already on the way.';
-      spawnErrand(w, JOB_EVENTS.find(j => j.id === 'caravan')!);
+      caravanErrand(w);
       return null;
     }
     case 'toggleRecipe': {
@@ -2472,10 +2474,10 @@ function checkCharter(w: World) {
 // ---------- Gold and the caravan ----------
 export function earn(w: World, n: number, why: string) { if (n <= 0) return; w.gold += n; flow(w, `gold:+${why}`, n); }
 export function spend(w: World, n: number, why: string) { if (w.gold < n) return false; w.gold -= n; flow(w, `gold:-${why}`, n); return true; }
-/** what the caravan pays for one: a share of its price, more at the autumn fair */
+/** what the caravan pays for one, to a tenth of a gold: a share of its price, more at the autumn fair. A sale pays whole gold, rounded down */
 export function sellPrice(w: World, r: ResourceId) {
   const t = START.trade, share = seasonOf(w).season === 'autumn' ? t.fair : t.sell;
-  return Math.max(1, Math.floor(PRICE[r] * share * (hasPerk(w, 'merchantsFavour') ? 1.2 : 1)));
+  return Math.round(PRICE[r] * share * (hasPerk(w, 'merchantsFavour') ? 1.2 : 1) * 10) / 10;
 }
 const favour = (w: World, price: number) => Math.max(1, Math.round(price * (hasPerk(w, 'merchantsFavour') ? 0.8 : 1)));
 /** rent on the first day of a season: each housed settler pays by the home they sleep in */
@@ -2492,6 +2494,17 @@ function offerCornerstone(w: World, why: 'season' | 'charter') {
 }
 /** the parts of the current charter */
 function charterMetrics(w: World): CharterMetric[] { const m = charterDef(w.charter)?.metric; return !m ? [] : m.kind === 'all' ? m.parts : [m]; }
+/** goods some part of the current charter counts (its stock, its kinds, the feast's table, a monument's materials) */
+export function charterCounted(w: World): ResourceId[] {
+  const out = new Set<ResourceId>();
+  for (const p of charterMetrics(w)) {
+    if (p.kind === 'stock') p.resources.forEach(r => out.add(r));
+    if (p.kind === 'variety') CATEGORIES[p.category].members.forEach(r => out.add(r));
+    if (p.kind === 'longTable') [...MEALS, ...CATEGORIES.drink.members].forEach(r => out.add(r));
+    if (p.kind === 'monument') { const b = w.buildings.find(x => x.def === p.def && !x.built); if (b) for (const k of Object.keys(remainingCost(b))) membersOf(k as InputKey).forEach(r => out.add(r)); }
+  }
+  return [...out];
+}
 /** what the caravan brings: the goods the charter is short of (at a premium), what this map can't make, a few staples, and a blueprint or two */
 function caravanWares(w: World): Pick<Caravan, 'stock' | 'blueprints'> {
   const t = START.trade, stock: Caravan['stock'] = {};
@@ -2537,9 +2550,29 @@ function caravanHour(w: World) {
   }
   if (w.caravan || h !== t.arrive || !t.visits.includes(s.dayOf) || day(w) <= 1) return;
   if (s.season === 'winter' && !hasPerk(w, 'pilgrimsRoad')) return;
-  w.caravan = { arrived: w.hour, leaves: w.hour + t.stays, ...caravanWares(w), sold: {}, visited: false };
+  const spot = caravanSpot(w);
+  w.caravan = { arrived: w.hour, leaves: w.hour + t.stays, x: spot.x, y: spot.y, ...caravanWares(w), sold: {}, visited: false };
   addLog(w, `A trader's caravan rattles up to the hearth${s.season === 'autumn' ? ' for the harvest fair, paying well' : ''}. It leaves at dusk. Send someone to trade.`, 'good');
+  caravanErrand(w);
+}
+/** someone has to walk to the cart: an errand at its side */
+function caravanErrand(w: World) {
   spawnErrand(w, JOB_EVENTS.find(j => j.id === 'caravan')!);
+  const e = w.errands[w.errands.length - 1], t = w.caravan;
+  if (e?.def === 'caravan' && t) { e.x = t.x + 1; e.y = t.y + 1.6; }
+}
+/** the nearest two free tiles (side by side along x) to the hearth, clear of doorways */
+function caravanSpot(w: World): { x: number; y: number } {
+  const g = blockedGrid(w);
+  const doors = new Set(w.buildings.filter(b => !bdef(b).walkable).map(b => { const p = spotOf(b); return Math.floor(p.y) * MAP_SIZE + Math.floor(p.x); }));
+  const free = (x: number, y: number) => x >= BUILD_MIN && y >= BUILD_MIN && x <= BUILD_MAX && y <= BUILD_MAX && !g[y * MAP_SIZE + x] && terrainAt(w, x, y) === T_GRASS && !doors.has(y * MAP_SIZE + x);
+  let best = { x: CENTER - 1, y: CENTER + 2 }, bd = 1e9;
+  for (let x = CENTER - 7; x <= CENTER + 6; x++) for (let y = CENTER - 7; y <= CENTER + 7; y++) {
+    if (!free(x, y) || !free(x + 1, y) || !free(x, y + 1) || !free(x + 1, y + 1)) continue;
+    const d = Math.hypot(x + 1 - CENTER, y + 0.5 - CENTER);
+    if (d >= 2 && d < bd) { bd = d; best = { x, y }; }
+  }
+  return best;
 }
 function buy(w: World, r: ResourceId, n: number): string | null {
   const t = w.caravan, item = t?.stock[r];
@@ -2557,7 +2590,7 @@ function sell(w: World, r: ResourceId, n: number): string | null {
   const k = Math.min(Math.floor(n), Math.floor(w.res[r]), START.trade.sellCap - (t.sold[r] ?? 0));
   if (k < 1) return (t.sold[r] ?? 0) >= START.trade.sellCap ? 'The trader has bought all of that she wants.' : 'Nothing to sell.';
   w.res[r] -= k; flow(w, `${r}:-sold`, k); reconcileStock(w);
-  t.sold[r] = (t.sold[r] ?? 0) + k; earn(w, k * sellPrice(w, r), 'sell');
+  t.sold[r] = (t.sold[r] ?? 0) + k; earn(w, Math.floor(k * sellPrice(w, r) + 1e-9), 'sell');
   return null;
 }
 function buyBlueprint(w: World, id: string): string | null {

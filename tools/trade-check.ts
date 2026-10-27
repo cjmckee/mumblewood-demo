@@ -29,7 +29,7 @@ for (let h = 0; h < 6 && !open; h++) { clear(); open = w.decisions[0]?.kind === 
 check(open, 'trading opens when they get there');
 // selling
 w.res.wood = 200; const g0 = w.gold;
-check(apply(w, { type: 'sell', res: 'wood', n: 10 }) === null && w.res.wood === 190 && w.gold === g0 + 10 * sellPrice(w, 'wood'), `selling 10 wood pays ${10 * sellPrice(w, 'wood')} gold (${sellPrice(w, 'wood')} each, list price ${PRICE.wood})`);
+check(apply(w, { type: 'sell', res: 'wood', n: 10 }) === null && w.res.wood === 190 && w.gold === g0 + Math.floor(10 * sellPrice(w, 'wood') + 1e-9), `selling 10 wood pays ${Math.floor(10 * sellPrice(w, 'wood') + 1e-9)} gold (${sellPrice(w, 'wood')} each, list price ${PRICE.wood})`);
 apply(w, { type: 'sell', res: 'wood', n: 999 });
 check(w.caravan!.sold.wood === START.trade.sellCap, `the trader buys at most ${START.trade.sellCap} of one good a visit`);
 check(apply(w, { type: 'sell', res: 'wood', n: 1 }) !== null, 'and refuses more');

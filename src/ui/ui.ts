@@ -1,5 +1,5 @@
 // DOM overlay: HUD, bottom sheet, decision modals. Talks to the sim only through commands.
-import { BUILDINGS, membersOf, BUILDING_BY_ID, EVENTS, RESEARCH_BY_ID, JOB_NAMES, PERK_BY_ID, RESOURCES, TRAIT_BY_ID, ResourceId, SKILL_NAMES, JOB_KINDS, JobKind, Recipe, InputKey, inputName, recipeRate, Stars } from '../sim/content';
+import { BUILDINGS, membersOf, BUILDING_BY_ID, EVENTS, RESEARCH_BY_ID, JOB_NAMES, PERK_BY_ID, PRICE, RESOURCES, TRAIT_BY_ID, ResourceId, SKILL_NAMES, JOB_KINDS, JobKind, Recipe, InputKey, inputName, recipeRate, Stars } from '../sim/content';
 import {
   World, Command, Colonist, alive, avgMood, beds, buildingByUid, charterProgress, colonistById,
   day, hourOfDay, opinion, workersAt, MAX_DEPARTURES, sites, siteWork, remainingCost, storageCap, stored,
@@ -7,6 +7,7 @@ import {
   recipesOf, recipeOn, currentRecipe, siteOk, rerollCost, REROLL_STEP, stockOf, recipeReach, charterHelpers, charterDef,
   costOf, researchLeft, researchStillNeeds, desks, feastCheck, festivalPreview, mealTotal, drinkTotal,
   comfortParts, comfortOf, colonyComfort, comfortGaps, strainPerDay, footprint, activeNeeds, standingOf, STANDINGS, NeedKey, winterFuelPerDay,
+  sellPrice, charterCounted,
 } from '../sim/world';
 import { START } from '../sim/scenario';
 import { assess } from '../sim/advisor';
@@ -172,6 +173,10 @@ export class UI {
       case 'auto': this.send({ type: 'autoAssign' }); this.toast('The foreman has reassigned everyone.'); break;
       case 'resolve': this.send({ type: 'resolve', option: Number(arg) }); this.lastModal = ''; break;
       case 'reroll': { const err = this.send({ type: 'reroll' }); if (err) this.toast(err); this.lastModal = ''; break; }
+      case 'trade-buy': { const [r, n] = arg.split(':'); const err = this.send({ type: 'buy', res: r as ResourceId, n: Number(n) }); if (err) this.toast(err); this.lastModal = ''; break; }
+      case 'trade-sell': { const [r, n] = arg.split(':'); const err = this.send({ type: 'sell', res: r as ResourceId, n: Number(n) }); if (err) this.toast(err); this.lastModal = ''; break; }
+      case 'trade-bp': { const err = this.send({ type: 'buyBlueprint', id: arg }); this.toast(err ?? `${BUILDING_BY_ID[arg].name} added to what you can build.`); this.lastModal = ''; break; }
+      case 'caravan-visit': { const err = this.send({ type: 'visitCaravan' }); this.toast(err ?? 'Pick someone to walk over to the caravan.'); break; }
       case 'restart':
         // from the end screen it's immediate; with a run in progress it asks first
         if (w.status === 'playing' && !this.confirmNew) { this.confirmNew = true; this.lastModal = ''; this.lastSheet = ''; break; }
@@ -230,7 +235,8 @@ export class UI {
     const storeChip = `<span class="chip store${st >= cap ? ' full' : ''}" title="Goods in storage, of what it can hold">${icon('stockpile')}<b>${Math.floor(st)}/${cap}</b><span class="nm"> stored</span></span>`
       + (spoiling ? '<span class="chip spoil" title="Food left on stockpiles is spoiling. A storehouse keeps it fresh."><span class="nm">food </span>spoiling</span>' : '');
     // on a phone the names drop and the icons carry them; they stay for screen readers and on hover
-    const res = storeChip + RESOURCES.filter(r => w.res[r.id] >= 0.5 || ['wood', 'berries', 'stew'].includes(r.id))
+    const goldChip = `<span class="chip gold" title="Gold: rent each season, the Crown's stipend, events and selling to the caravan" aria-label="${Math.floor(w.gold)} gold">${icon('gold')}<b>${Math.floor(w.gold)}</b><span class="nm"> gold</span></span>`;
+    const res = goldChip + storeChip + RESOURCES.filter(r => w.res[r.id] >= 0.5 || ['wood', 'berries', 'stew'].includes(r.id))
       .map(r => `<span class="chip" title="${r.name}" aria-label="${Math.floor(w.res[r.id])} ${r.name}">${icon(r.id)}<b>${Math.floor(w.res[r.id])}</b><span class="nm"> ${r.name}</span></span>`).join('');
     const html = `
       <div class="bar">
@@ -252,7 +258,7 @@ export class UI {
           <div class="leavers" title="If ${sc.collapse.lost} settlers leave or die${sc.collapse.minAlive ? `, or only ${sc.collapse.minAlive} remain` : ''}, the colony collapses"><span>Lost</span><div class="pips">${pips}</div></div>
         </div>
       </div>
-      ${w.errands.length ? `<div class="errands">${w.errands.map(e => this.errandChip(w, e)).join('')}</div>` : ''}`;
+      ${w.errands.length || this.caravanChip(w) ? `<div class="errands">${this.caravanChip(w)}${w.errands.map(e => this.errandChip(w, e)).join('')}</div>` : ''}`;
     if (force || html !== this.lastHud) {
       (this.root.querySelector('#hud') as HTMLElement).innerHTML = html; this.lastHud = html;
       // fade the row's right edge while there are more goods to scroll to
@@ -313,6 +319,14 @@ export class UI {
       <p class="terms">${pct(r.base)} if everyone eats, ${pct(r.drinks)} more if most have a drink, ${pct(r.loved)} more if most get a favourite. Then ${r.waitDays} days before the next one.${short}</p>
       <div class="opts"><button type="button" class="opt" data-act="festival-call" ${can ? '' : 'disabled'}><b>Call it for dusk</b><span>${can ? (p.relief >= 0.5 ? `Eases strain by about ${Math.round(p.relief)}` : 'Strain is low, so it would ease very little') : mealTotal(w) < 1 ? 'There are no meals to share' : 'Not ready yet'}</span></button></div>
       <button type="button" class="ghost skip" data-act="festival-close">Not now</button></div>`;
+  }
+
+  /** the caravan at the hearth once nobody is on the way: a way to send someone (back) over */
+  private caravanChip(w: World) {
+    const t = w.caravan;
+    if (!t || w.errands.some(e => e.def === 'caravan') || w.decisions.some(d => d.kind === 'trade')) return '';
+    const left = Math.max(0, Math.ceil(t.leaves - w.hour));
+    return `<button type="button" class="errand caravan" data-act="caravan-visit"><b>${icon('caravan')}The caravan</b><small>${t.visited ? 'Trade again' : 'Send someone to trade'} · leaves in ${left}h</small></button>`;
   }
 
   private errandChip(w: World, e: Errand) {
@@ -624,8 +638,10 @@ export class UI {
             `<button type="button" class="ghost skip" data-act="reroll" ${can ? '' : 'disabled'}>Reroll for ${cost} wood${can ? '' : ` (you have ${Math.floor(w.res.wood)})`}</button><p class="muted reroll-note">Each reroll this run costs ${REROLL_STEP} more than the last.</p>`);
           break;
         }
-        case 'perk': html = this.cards('The Crown grants a boon', 'Choose one. It lasts the rest of the run.',
-          d.options.map(id => ({ title: PERK_BY_ID[id].name, body: esc(PERK_BY_ID[id].desc), tag: 'Boon' }))); break;
+        case 'perk': html = this.cards(d.why === 'season' ? `${SEASON_NAMES[seasonOf(w).season]}: a new cornerstone` : 'The Crown grants a cornerstone',
+          `${d.why === 'season' ? 'A new season, a new way of doing things.' : 'For the charter just finished.'} Choose one. It lasts the rest of the run.${w.perks.length ? ` You have ${w.perks.length}: ${w.perks.map(p => PERK_BY_ID[p].name).join(', ')}.` : ''}`,
+          d.options.map(id => ({ title: PERK_BY_ID[id].name, icon: 'cornerstone', body: esc(PERK_BY_ID[id].desc), tag: 'Cornerstone' }))); break;
+        case 'trade': html = this.tradeCard(w); break;
         case 'recruit': html = this.cards('Settlers at the edge of camp', `They’d like to join. You have ${beds(w)} beds for ${alive(w).length} colonists.`,
           d.options.map(c => ({ title: c.name, body: c.traits.map(t => esc(`${TRAIT_BY_ID[t].name}: ${TRAIT_BY_ID[t].desc}`)).join('\n'), tag: `${esc(`Loves ${JOB_NAMES[c.likes]} · hates ${JOB_NAMES[c.dislikes]} · best at ${topSkills(c)}`)}${tasteLine(c, false)}`, color: hex(c.shirt) })),
           'Send them all away'); break;
@@ -643,6 +659,33 @@ export class UI {
     if (!html && this.picking != null) { const e = w.errands.find(x => x.id === this.picking); if (e) html = this.errandPicker(w, e, false); else this.picking = null; }
     if (force || html !== this.lastModal) { el.innerHTML = html; this.lastModal = html; }
     el.hidden = !html;
+  }
+
+  private tradeCard(w: World) {
+    const t = w.caravan; if (!t) return '';
+    const autumn = seasonOf(w).season === 'autumn';
+    const left = Math.max(0, Math.ceil(t.leaves - w.hour));
+    const charterGoods = new Set((charterProgress(w) ? Object.entries(t.stock).filter(([r, it]) => it && it.price > PRICE[r as ResourceId]).map(([r]) => r) : []));
+    const gold = Math.floor(w.gold);
+    const btn = (act: string, arg: string, label: string, ok: boolean) => `<button type="button" class="tbtn" data-act="${act}" data-arg="${arg}" ${ok ? '' : 'disabled'}>${label}</button>`;
+    const bps = t.blueprints.map(b => { const def = BUILDING_BY_ID[b.id]; const helps = charterHelpers(w.charter ?? '').includes(b.id);
+      return `<div class="trow"><span class="tname">${icon(b.id)}<span><b>${esc(def.name)}</b><small>${helps ? 'Helps your charter · ' : ''}blueprint</small></span></span><span class="tprice">${b.price}${icon('gold')}</span>${btn('trade-bp', b.id, 'Buy', gold >= b.price)}</div>`; }).join('');
+    const wares = (Object.entries(t.stock) as [ResourceId, { n: number; price: number }][]).filter(([, it]) => it.n > 0).sort((a, b) => Number(charterGoods.has(b[0])) - Number(charterGoods.has(a[0]))).map(([r, it]) => {
+      const name = RESOURCES.find(x => x.id === r)!.name;
+      return `<div class="trow"><span class="tname">${icon(r)}<span><b>${esc(name)}</b><small>${charterGoods.has(r) ? 'For your charter · ' : ''}${it.n} left · you have ${Math.floor(w.res[r])}</small></span></span><span class="tprice">${it.price}${icon('gold')}</span>${btn('trade-buy', `${r}:1`, '+1', gold >= it.price)}${btn('trade-buy', `${r}:5`, '+5', gold >= it.price * Math.min(5, it.n) && it.n >= 5)}</div>`;
+    }).join('');
+    const cap = START.trade.sellCap;
+    const counted = new Set(charterCounted(w));
+    const mine = RESOURCES.filter(x => w.res[x.id] >= 1).sort((a, b) => w.res[b.id] - w.res[a.id]).map(x => {
+      const p = sellPrice(w, x.id), sold = t.sold[x.id] ?? 0, room = cap - sold, have = Math.floor(w.res[x.id]);
+      return `<div class="trow"><span class="tname">${icon(x.id)}<span><b>${esc(x.name)}</b><small>you have ${have}${sold ? ` · sold ${sold}/${cap}` : ''}${counted.has(x.id) ? ' · your charter counts these' : ''}</small></span></span><span class="tprice">${Number.isInteger(p) ? p : p.toFixed(1)}${icon('gold')}</span>${btn('trade-sell', `${x.id}:5`, '−5', room >= 1 && have >= 1)}${btn('trade-sell', `${x.id}:20`, '−20', room >= 1 && have >= 6)}</div>`;
+    }).join('');
+    return `<div class="card-wrap trade"><p class="eyebrow">${icon('caravan')} The caravan · leaves in ${left}h</p><h2>Trading at the cart</h2>
+      <p class="lede">You have <b class="goldnum">${gold} gold</b>.${autumn ? ' It\u2019s the harvest fair, and the trader pays well.' : ''} Bought goods go to your storage; sold goods come out of it.</p>
+      ${bps ? `<h3 class="first">Blueprints</h3><div class="tlist">${bps}</div>` : ''}
+      <h3>The trader sells</h3><div class="tlist">${wares || '<p class="muted">Nothing left.</p>'}</div>
+      <h3>The trader buys <span class="muted">· up to ${cap} of each</span></h3><div class="tlist">${mine || '<p class="muted">You have nothing to sell.</p>'}</div>
+      <button type="button" class="opt" data-act="resolve" data-arg="0"><b>Done trading</b><span>Head back from the cart. While the caravan stays, someone can be sent again.</span></button></div>`;
   }
 
   private cards(title: string, lede: string, opts: { title: string; body: string; tag: string; color?: string; icon?: string }[], skip?: string, extra = '') {
@@ -761,7 +804,11 @@ function ledger(w: World) {
     : pct('idle') >= 20 ? 'Laborers have spare time. An empty job slot would put it to use.'
     : 'Laborers have a little slack.';
   const segs = ['hauling', 'building', 'cleaning', 'eating', 'idle'].map(k => `<b class="lt-${k}" style="width:${pct(k)}%"></b>`).join('');
+  const goldIn = (k: string) => Math.round(w.flows[`gold:+${k}`] ?? 0), goldOut = Object.entries(w.flows).filter(([k]) => k.startsWith('gold:-')).reduce((n, [, v]) => n + v, 0);
+  const goldLine = ['rent', 'stipend', 'sell'].map(k => `${k === 'sell' ? 'selling' : k} ${goldIn(k)}`).join(' · ');
   return `<p class="muted hint">The last 24 hours, scaled to a full day.</p>
+    <div class="acct gold-acct"><div class="acct-head"><b>${icon('gold')}Gold</b><span>${Math.floor(w.gold)} · this run: ${goldLine} · spent ${Math.round(goldOut)}</span></div></div>
+    ${w.perks.length ? `<h3>Cornerstones</h3><ul class="stones">${w.perks.map(p => `<li>${icon('cornerstone')}<span><b>${esc(PERK_BY_ID[p].name)}</b><small>${esc(PERK_BY_ID[p].desc)}</small></span></li>`).join('')}</ul>` : ''}
     ${accounts.map(([a, k]) => accountCard(a, k)).join('')}
     <h3>Jobs</h3><div class="joblist">${jobs || '<p class="muted">No workplaces yet.</p>'}</div>
     <h3>Laborers <span class="muted">· ${e.laborers.length}</span></h3>

@@ -232,6 +232,25 @@ h3.first { margin-top: 4px; }
 #placebar .rotate { display: inline-flex; align-items: center; gap: 6px; }
 #placebar .rotate svg { width: 18px; height: 18px; }
 .chip.store { color: var(--text); }
+.chip.gold b { color: #f0c75a; }
+.errand.caravan b { display: inline-flex; align-items: center; gap: 5px; } .errand.caravan .ico { width: 18px; height: 18px; }
+.trade .eyebrow { display: flex; align-items: center; gap: 6px; } .trade .eyebrow .ico { width: 18px; height: 18px; }
+.goldnum { color: #f0c75a; }
+.tlist { display: grid; gap: 2px; }
+.trow { display: grid; grid-template-columns: 1fr auto auto auto; align-items: center; gap: 6px; padding: 6px 0; border-bottom: 1px solid #262c26; }
+.trow:has(> button:only-of-type) { grid-template-columns: 1fr auto auto; }
+.tname { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.tname .ico { width: 24px; height: 24px; flex: none; }
+.tname span { display: grid; min-width: 0; } .tname b { font-size: 14px; } .tname small { font-size: 11.5px; color: var(--muted); }
+.tprice { display: inline-flex; align-items: center; gap: 2px; font-weight: 700; font-variant-numeric: tabular-nums; color: #f0c75a; font-size: 14px; }
+.tprice .ico { width: 15px; height: 15px; }
+.tbtn { background: #2b332c; border: 1px solid var(--line); color: var(--text); border-radius: 999px; padding: 6px 10px; font-weight: 600; font-size: 13px; min-width: 42px; }
+.tbtn:hover:not(:disabled) { border-color: var(--accent); }
+.tbtn:disabled { opacity: .35; }
+.gold-acct { margin-bottom: 4px; }
+.stones { list-style: none; margin: 0 0 10px; padding: 0; display: grid; gap: 2px; }
+.stones li { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: start; padding: 6px 0; border-bottom: 1px solid #262c26; }
+.stones .ico { width: 22px; height: 22px; } .stones span { display: grid; } .stones b { font-size: 13.5px; } .stones small { font-size: 12px; color: var(--muted); }
 .chip.store.full b { color: var(--bad); }
 .status .chip.research, .status .chip.feast { margin-top: 6px; justify-content: flex-start; text-align: left; max-width: 100%; border: 1px solid var(--line); background: #222823; color: var(--text); font: inherit; font-size: 12px; cursor: pointer; }
 .status .chip.feast.ready { border-color: var(--accent); color: var(--accent); }
