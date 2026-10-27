@@ -213,7 +213,7 @@ export function charterChain(w: World): string[] {
  * Experiment switches for the balance tools. `advisor` makes the bot play from what's on screen (the complaint
  * panel) instead of its own rules; it's off by default because, so far, it plays worse (see the project doc).
  */
-export const BOT = { hallMood: true, varietyRules: true, bankDrinks: true, bankHall: false, chainBeforeWinter: true, effortPick: true, moodFestival: true, festival: true, festivalAt: 8, comfortsFirst: false, recruitCap: 0, recruitExtra: 4, comforts: true, foodDepot: 'food' as false | 'food' | 'meals', laborersPer: 3.5, advisor: false, gate: true, ranked: true, comfort: 'strict' as 'strict' | 'econ' | 'none', rescue: false, rescueAt: 40, moodBlock: false, reroll: true, variety: false, routes: false, off: [] as string[], skip: [] as string[] };
+export const BOT = { unlockChain: true, ruleGap: true, hallMood: true, varietyRules: true, bankDrinks: true, bankHall: false, chainBeforeWinter: true, effortPick: true, moodFestival: true, festival: true, festivalAt: 8, comfortsFirst: false, recruitCap: 0, recruitExtra: 4, comforts: true, foodDepot: 'food' as false | 'food' | 'meals', laborersPer: 3.5, advisor: false, gate: true, ranked: true, comfort: 'strict' as 'strict' | 'econ' | 'none', rescue: false, rescueAt: 40, moodBlock: false, reroll: true, variety: false, routes: false, off: [] as string[], skip: [] as string[] };
 
 // ---------- Explaining the bot ----------
 /** one thing the bot decided and why: each option with its score broken into parts, or a staffing or build step */
@@ -439,8 +439,13 @@ export function autoBuild(w: World) {
     if (storageFree(w, 'wood') < 30 && storages(w).length > 0) want.unshift('stockpile');
     if (count('storehouse') > 0 && storageFree(w, 'berries') < 30) want.unshift(count('storehouse') < 2 ? 'storehouse' : 'stockpile');
     // while the charter's chain is missing a building, wood goes to that chain and to beds and food first
-    const missing = charterChain(w).filter(id => count(id) === 0);
+    // (one that needs planks with no way to get them doesn't hold everything else up: nothing would ever be built)
+    const noFine = (id: string) => (BUILDING_BY_ID[id].cost.fine ?? 0) > stockOf(w, 'fine') && !w.buildings.some(b => FINE_MAKERS.includes(b.def)) && !FINE_MAKERS.some(m => w.owned.includes(m));
+    const missing = charterChain(w).filter(id => count(id) === 0 && !(BOT.unlockChain && noFine(id)));
     const firstNeeds = ['leanto', 'woodcutter', 'forager', 'dock', ...(count('kitchen') ? [] : ['kitchen']), ...(count('dining') ? [] : ['dining'])];
+    // a chain building that needs planks can't go up without something that makes them: that maker unlocks the chain
+    const chainNeedsFine = missing.some(id => (BUILDING_BY_ID[id].cost.fine ?? 0) > stockOf(w, 'fine')) && !w.buildings.some(b => FINE_MAKERS.includes(b.def));
+    if (BOT.unlockChain && chainNeedsFine) firstNeeds.push(...FINE_MAKERS);
     const skipped: string[] = [];
     const skip = (id: string, why: string) => { if (TRACE.on && !skipped.some(x => x.startsWith(id + ':'))) skipped.push(`${id}: ${why}`); };
     for (const id of want) {
@@ -767,7 +772,9 @@ function varietyPart(w: World): { kinds: number; each: number } | null {
 function varietyTargets(w: World, kinds: number): ResourceId[] {
   const making = new Set(built(w).filter(b => workersAt(w, b.uid).length).map(b => currentRecipe(w, b)?.output).filter((x): x is ResourceId => !!x && MEALS.includes(x)));
   const canMake = new Set(built(w).flatMap(b => recipesOf(b).filter(r => MEALS.includes(r.output) && enabledRecipes(b).includes(r)).map(r => r.output)));
-  return [...MEALS].sort((a, z) => (Number(making.has(z)) * 2 + Number(canMake.has(z))) * 1000 + w.res[z] - ((Number(making.has(a)) * 2 + Number(canMake.has(a))) * 1000 + w.res[a])).slice(0, kinds);
+  // kinds already being saved stay chosen, so the choice doesn't swap back and forth
+  const score = (m: ResourceId) => (Number(making.has(m)) * 2 + Number(canMake.has(m))) * 1000 + w.res[m] + (BOT.ruleGap && w.forbidden.includes(m) ? 500 : 0);
+  return [...MEALS].sort((a, z) => score(z) - score(a)).slice(0, kinds);
 }
 /** Keep the food a stockpiling charter needs out of people's mouths, as long as nobody will go hungry. */
 export function autoFoodRules(w: World) {
@@ -780,12 +787,17 @@ export function autoFoodRules(w: World) {
   const rawEaters = concernsOf(w).find(c => c.id === 'raw')?.people ?? 0;
   const close = (charterProgress(w)?.ratio ?? 0) >= 0.6;
   const relaxed = close || rawEaters < pop / 3 || !BOT.advisor || BOT.off.includes('relaxFoodRules');
-  if (w.charter === 'settled' && raw > pop * 3 && relaxed) keep.push(...MEALS);
+  // start keeping meals back with a good pile of raw food, and only stop once it's really run down, so the rules don't
+  // flip back and forth as the pile wobbles around one line
+  const keeping = MEALS.some(m => w.forbidden.includes(m));
+  const rawFor = (start: number, stop: number) => raw > pop * (BOT.ruleGap && keeping ? stop : start);
+  if (w.charter === 'settled' && rawFor(3, 1.8) && relaxed) keep.push(...MEALS);
   // a varied table: keep back only the kinds being built up, and only until each has its share; the rest is eaten as usual
   const vpart = varietyPart(w);
-  if (vpart && raw > pop * 2 && (relaxed || !BOT.varietyRules)) {
+  if (vpart && rawFor(2, 1.2) && (relaxed || !BOT.varietyRules)) {
     if (!BOT.varietyRules) keep.push(...MEALS);
-    else for (const m of varietyTargets(w, vpart.kinds)) if (w.res[m] < vpart.each + 3) keep.push(m);
+    // each kind kept until it's comfortably over its share, and kept again only once it's eaten nearly down to it
+    else for (const m of varietyTargets(w, vpart.kinds)) if (w.res[m] < vpart.each + (BOT.ruleGap ? (w.forbidden.includes(m) ? 6 : 2) : 3)) keep.push(m);
   }
   // Fed and rested: raw food stays in storage while there are meals enough, so every meal is a cooked one
   if (w.charter === 'rested' && mealTotal(w) >= pop * 1.5) keep.push(...RAW_FOODS);
@@ -793,7 +805,7 @@ export function autoFoodRules(w: World) {
   // most in store (so a big pile of stew goes back on the menu before the pies anyone is saving)
   const open = () => [...MEALS, ...RAW_FOODS].filter(f => !keep.includes(f)).reduce((n, f) => n + w.res[f], 0);
   if (!BOT.varietyRules) { if (open() < pop * 1.5) keep.length = 0; }
-  else while (keep.length && open() < pop * 1.5) { keep.sort((a, z) => w.res[z] - w.res[a]); keep.shift(); }
+  else while (keep.length && open() < pop * (BOT.ruleGap && keeping ? 1 : 1.5)) { keep.sort((a, z) => w.res[z] - w.res[a]); keep.shift(); }
   for (const f of [...MEALS, ...RAW_FOODS] as ResourceId[]) {
     const allowed = !keep.includes(f);
     if (allowed === w.forbidden.includes(f)) apply(w, { type: 'foodRule', food: f, allowed });
