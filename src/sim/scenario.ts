@@ -64,6 +64,8 @@ export interface SeasonRules {
    *  leaner still (winter yields × harshYield) */
   yield: Record<string, BySeason<number>>;
   harshYield: number;
+  /** indoor work by season: workshops that turn ingredients into goods, and study at the desk (long evenings by the fire) */
+  indoor: BySeason<number>;
   /** the hearth burns this many times as much */
   hearth: BySeason<number>;
   /** wood each home burns a day in winter, by building; the second winter and later burn harsh × as much */
@@ -112,12 +114,13 @@ export const START: Start = {
       dock: { spring: 1.25, winter: 0.75 },
       claypit: { winter: 0.5 },
     },
-    harshYield: 0.6,
+    harshYield: 0.85,
+    indoor: {},
     hearth: {},
     homeFuel: { leanto: 1, cottage: 0.6 },
     harsh: 1.5,
     recruitEvery: { spring: 1, summer: 2, autumn: 2, winter: 0 },
-    chill: { cold: 0.12, warm: 0.01 },
+    chill: { cold: 0.06, warm: 0.01 },
     prep: { from: 10, full: 3, share: 0.65 },
     harvestHome: { held: 4, missed: -4, hours: 96 },
   },

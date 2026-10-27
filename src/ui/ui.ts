@@ -234,7 +234,7 @@ export class UI {
       .map(r => `<span class="chip" title="${r.name}" aria-label="${Math.floor(w.res[r.id])} ${r.name}">${icon(r.id)}<b>${Math.floor(w.res[r.id])}</b><span class="nm"> ${r.name}</span></span>`).join('');
     const html = `
       <div class="bar">
-        <div class="clock"><span class="day">Day ${day(w)}</span><span class="when"><span class="time">${hh}:00<span class="phase"> · ${timeOfDay(h)}</span></span><span class="season s-${sea.season}" title="${SEASON_NAMES[sea.season]}, day ${sea.dayOf} of ${START.seasons.days}${sea.season !== 'winter' ? `; winter in ${sea.toWinter} days` : ''}">${SEASON_NAMES[sea.season]} ${sea.dayOf}/${START.seasons.days}</span></span></div>
+        <div class="clock"><span class="day">Day ${day(w)}</span><span class="when"><span class="time">${hh}:00<span class="phase"> · ${timeOfDay(h)}</span></span><span class="season s-${sea.season}" title="${SEASON_NAMES[sea.season]}, day ${sea.dayOf} of ${START.seasons.days}${sea.season !== 'winter' ? `; winter in ${sea.toWinter} days` : ''}">${sea.season === 'autumn' ? `Winter in ${sea.toWinter}d` : `${SEASON_NAMES[sea.season]} ${sea.dayOf}/${START.seasons.days}`}</span></span></div>
         <div class="speeds" role="group" aria-label="Game speed">
           ${[['0', 'Pause'], ['1', '1×'], ['2', '2×'], ['3', '3×']].map(([s, l]) => `<button type="button" data-act="speed" data-arg="${s}" class="${this.speed === Number(s) ? 'on' : ''}" aria-pressed="${this.speed === Number(s)}">${l}</button>`).join('')}
         </div>

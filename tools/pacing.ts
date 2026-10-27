@@ -25,6 +25,9 @@ if (process.env.CHILL) START.seasons.chill.cold = Number(process.env.CHILL);
 if (process.env.START_DAY) START.seasons.start.day = Number(process.env.START_DAY);
 if (process.env.HARSH) START.seasons.harsh = Number(process.env.HARSH);
 if (process.env.HARSH_YIELD) START.seasons.harshYield = Number(process.env.HARSH_YIELD);
+if (process.env.INDOOR_WINTER) START.seasons.indoor.winter = Number(process.env.INDOOR_WINTER);
+if (process.env.RECRUIT_WINTER) START.seasons.recruitEvery.winter = Number(process.env.RECRUIT_WINTER);
+if (process.env.RECRUIT_SPRING) START.seasons.recruitEvery.spring = Number(process.env.RECRUIT_SPRING);
 if (process.env.COMFORTS_FIRST) BOT.comfortsFirst = process.env.COMFORTS_FIRST === '1';
 
 const runs = Number(process.argv[2] ?? 60);

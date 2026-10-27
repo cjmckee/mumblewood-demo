@@ -781,7 +781,7 @@ function researchSupply(w: World, b: Building): SupplyTask[] {
 function researchHourly(w: World, b: Building, c: Colonist, dt: number) {
   const r = w.research; const cur = r?.current ? RESEARCH_BY_ID[r.current] : undefined;
   if (!r || !cur || Object.keys(researchStillNeeds(w)).length) return;
-  r.progress += workSpeed(w, c, 'studying') * dt;
+  r.progress += workSpeed(w, c, 'studying') * dt * rule(START.seasons.indoor, seasonOf(w).season, 1);
   c.skills.studying = Math.min(10, (c.skills.studying ?? 3) + 0.004 * dt * 6);
   if (r.progress < cur.hours) return;
   // spend the goods from the desks and unlock the buildings
@@ -1628,7 +1628,7 @@ function produce(w: World, dt: number) {
     for (const c of workersAt(w, b.uid)) {
       if (c.activity !== 'working' || !c.goalReached) continue;
       if (sum(b.outbox) >= OUTBOX_CAP) continue;
-      let amount = recipeRate(rec) * workSpeed(w, c, def.job) * dt * b.eff * seasonYield(w, def.id);
+      let amount = recipeRate(rec) * workSpeed(w, c, def.job) * dt * b.eff * seasonYield(w, def.id) * (Object.keys(rec.inputs).length ? rule(START.seasons.indoor, seasonOf(w).season, 1) : 1);
       for (const [r, per] of Object.entries(rec.inputs)) amount = Math.min(amount, inInbox(b, r as InputKey) / (per as number));
       if (amount <= 0) continue;
       for (const [r, per] of Object.entries(rec.inputs)) {
@@ -2057,7 +2057,9 @@ function seasonDawn(w: World) {
       // the harvest home: a festival held in the autumn just gone
       const held = (w.festival?.at ?? -1e9) >= w.hour - sc.days * 24;
       const hh = sc.harvestHome;
-      everyone(w, 'harvestHome', held ? 'We had a proper harvest home' : 'No harvest festival before winter', held ? hh.held : hh.missed, hh.hours);
+      // a camp with no kitchen can't hold one, so only a settlement or better minds going without (like the other seasonal needs)
+      if (held) everyone(w, 'harvestHome', 'We had a proper harvest home', hh.held, hh.hours);
+      else if (standingOf(w) >= 1) everyone(w, 'harvestHome', 'No harvest festival before winter', hh.missed, hh.hours);
     }
   }
   if (s.season === 'winter') {
