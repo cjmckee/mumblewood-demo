@@ -401,7 +401,7 @@ export function autoBuild(w: World) {
       if (count('flowerbed') < 6 && spare) want.push('flowerbed');
       if (count('statue') < 2 && !saving.includes('planks') && stockOf(w, 'fine') > 30) want.push('statue');
       if (count('lantern') < 3 && spare) want.push('lantern');
-      // swap drafty lean-tos for cottages when planks allow
+      // swap drafty huts for cottages when planks allow
       if (w.owned.includes('cottage') && count('cottage') < Math.ceil(pop / 2) && stockOf(w, 'fine') >= 14) want.unshift('cottage');
     }
     // one of everything owned, except site gatherers nothing is waiting on yet
