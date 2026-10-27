@@ -2017,12 +2017,17 @@ export function winterStores(w: World): { food: number; wood: number } {
   if (ramp <= 0) return { food: 0, wood: 0 };
   const pop = alive(w).length;
   const harsh = s.season === 'winter' ? s.winter >= 2 : s.winter >= 1;
-  return { food: Math.round(pop * 1.3 * n * p.share * ramp), wood: Math.round((winterFuelPerDay(w, harsh) * n * p.share + 15) * ramp) };
+  return { food: Math.round(pop * 1.3 * n * p.share * ramp), wood: Math.round((homeFuelPerDay(w, harsh) * n * p.fuel + 15) * ramp) };
 }
 /** wood a home burns a day this season (0 outside winter) */
 export function homeFuel(w: World, defId: string) {
   const s = seasonOf(w); const base = START.seasons.homeFuel[defId] ?? 0;
   return s.season !== 'winter' ? 0 : base * (s.winter >= 2 ? START.seasons.harsh : 1);
+}
+/** wood the lived-in homes alone will burn in a full winter day (not the hearth, which burns all year) */
+export function homeFuelPerDay(w: World, harsh = seasonOf(w).winter >= 1) {
+  const homes = built(w).filter(b => bdef(b).beds && alive(w).some(c => c.bed === b.uid));
+  return homes.reduce((n, b) => n + (START.seasons.homeFuel[b.def] ?? 0), 0) * (harsh ? START.seasons.harsh : 1);
 }
 /** wood every lived-in home will burn in a full winter day, now or in the coming winter */
 export function winterFuelPerDay(w: World, harsh = seasonOf(w).winter >= 1) {
@@ -2361,6 +2366,12 @@ function runFeast(w: World) {
   else { f.readyAt = w.hour + 72; f.last = short.join('; '); addLog(w, `The founders\u2019 feast fell short: ${short.join('; ')}. Everyone who ate is cheerful, though. It can be called again in three days.`, 'bad'); }
 }
 export function avgBeauty(w: World) { const a = alive(w); return a.length ? a.reduce((s, c) => s + c.beauty, 0) / a.length : 0; }
+/** the current charter's conditions one by one (a single condition for a one-part charter): for tools that ask what's holding it up */
+export function charterParts(w: World): { kind: string; value: number; target: number; label: string; met: boolean }[] {
+  const c = charterDef(w.charter); if (!c) return [];
+  const parts = c.metric.kind === 'all' ? c.metric.parts : [c.metric];
+  return parts.map((p, i) => { const v = metricValue(w, p, i); return { kind: p.kind, ...v, met: v.value >= v.target }; });
+}
 export function charterProgress(w: World) {
   const c = charterDef(w.charter);
   if (!c) return null;

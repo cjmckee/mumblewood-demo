@@ -76,8 +76,9 @@ export interface SeasonRules {
   /** chance a night spent cold gives someone a winter chill (warm settlers get a small share of it) */
   chill: { cold: number; warm: number };
   /** what a sensible colony puts by for winter (the bot's and the foreman's target): it starts `from` days before
-   *  winter and is complete `full` days before; `share` of a winter's food and wood, the rest is gathered as it goes */
-  prep: { from: number; full: number; share: number };
+   *  winter and is complete `full` days before. `share` of a winter's eating (foraging and fishing carry on, thinner);
+   *  for wood, `fuel` of what the homes will burn (woodcutters keep chopping, and the hearth burns all year anyway) */
+  prep: { from: number; full: number; share: number; fuel: number };
   /** from this year of the run on, every comfort need asks a little more (0 = never) */
   stricterFromYear: number;
   /** mood when winter comes, for having held a harvest festival in autumn or not */
@@ -123,7 +124,7 @@ export const START: Start = {
     harsh: 1.25,
     recruitEvery: { spring: 1, summer: 2, autumn: 2, winter: 3 },
     chill: { cold: 0.04, warm: 0.005 },
-    prep: { from: 10, full: 3, share: 0.65 },
+    prep: { from: 10, full: 3, share: 0.3, fuel: 0.6 },
     stricterFromYear: 0,
     harvestHome: { held: 4, missed: -4, hours: 96 },
   },

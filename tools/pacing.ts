@@ -32,6 +32,8 @@ if (process.env.RECRUIT_WINTER) START.seasons.recruitEvery.winter = Number(proce
 if (process.env.RECRUIT_SPRING) START.seasons.recruitEvery.spring = Number(process.env.RECRUIT_SPRING);
 if (process.env.COMFORTS_FIRST) BOT.comfortsFirst = process.env.COMFORTS_FIRST === '1';
 
+// BOT='{"varietyRules":false}' switches bot behaviours for an A/B
+if (process.env.BOT) Object.assign(BOT, JSON.parse(process.env.BOT));
 const runs = Number(process.argv[2] ?? 60);
 const maxDays = Number(process.argv[3] ?? 90);
 const marks = [5, 10, 20, 30, 40, 50, 60];

@@ -131,7 +131,13 @@ export function charterEffort(w: World, id: string): Record<string, number> {
     case 'everyoneBed': add('beds', Math.max(0, pop - beds(w)) * 0.3); break;
     case 'allTable': add('a table for everyone', built(w).some(b => b.def === 'dining') ? 0.5 : w.owned.includes('dining') ? 1.5 : 2.5); if (p.cooked) add('cooked meals for everyone', cheapest(w, MEALS) + 1); break;
     case 'healthy': add('a day with nobody sick', 1); break;
-    case 'monument': add('the Hall: planks, meals, drinks', cheapest(w, CATEGORIES.fine.members) + cheapest(w, MEALS) + cheapest(w, CATEGORIES.drink.members) + 3); break;
+    case 'monument': {
+      add('the Hall: planks, meals, drinks', cheapest(w, CATEGORIES.fine.members) + cheapest(w, MEALS) + cheapest(w, CATEGORIES.drink.members) + 3);
+      // only happy settlers will build it, so a glum town has a long way to go first
+      const gate = BUILDING_BY_ID[p.def].moodGate ?? 0;
+      if (BOT.hallMood && gate) add(`only settlers at mood ${gate}+ build it (mood is ${Math.round(mood)})`, Math.max(0, gate + 5 - mood) / 2);
+      break;
+    }
     case 'longTable': {
       add(`${Math.max(0, p.pop - pop)} more settlers`, Math.max(0, p.pop - pop) * 0.4);
       const g = feastGaps(w);
@@ -207,7 +213,7 @@ export function charterChain(w: World): string[] {
  * Experiment switches for the balance tools. `advisor` makes the bot play from what's on screen (the complaint
  * panel) instead of its own rules; it's off by default because, so far, it plays worse (see the project doc).
  */
-export const BOT = { effortPick: true, moodFestival: true, festival: true, festivalAt: 8, comfortsFirst: false, recruitCap: 0, recruitExtra: 4, comforts: true, foodDepot: 'food' as false | 'food' | 'meals', laborersPer: 3.5, advisor: false, gate: true, ranked: true, comfort: 'strict' as 'strict' | 'econ' | 'none', rescue: false, rescueAt: 40, moodBlock: false, reroll: true, variety: false, routes: false, off: [] as string[], skip: [] as string[] };
+export const BOT = { hallMood: true, varietyRules: true, bankDrinks: true, bankHall: false, chainBeforeWinter: true, effortPick: true, moodFestival: true, festival: true, festivalAt: 8, comfortsFirst: false, recruitCap: 0, recruitExtra: 4, comforts: true, foodDepot: 'food' as false | 'food' | 'meals', laborersPer: 3.5, advisor: false, gate: true, ranked: true, comfort: 'strict' as 'strict' | 'econ' | 'none', rescue: false, rescueAt: 40, moodBlock: false, reroll: true, variety: false, routes: false, off: [] as string[], skip: [] as string[] };
 
 // ---------- Explaining the bot ----------
 /** one thing the bot decided and why: each option with its score broken into parts, or a staffing or build step */
@@ -522,7 +528,9 @@ export function staffWants(w: World): Record<string, number> {
   const second = BOT.variety && comfy ? ['pieoven', 'smokehouse', 'bakery'].find(id => built(w).some(b => b.def === id && plannedRecipe(w, b) && MEALS.includes(plannedRecipe(w, b)!.output))) : undefined;
   const hall = w.buildings.find(b => b.def === 'hall' && !b.built);
   const charterDrinks = (ch === 'roof' && drinkTotal(w) < 18) || ch === 'tasting' || (hall && (hall.stage ?? 0) >= 1) || (ch === 'longtable' && drinkTotal(w) < pop * 1.5);
-  const drinksWanted = charterDrinks ? 2 : drinkTotal(w) < 15 && built(w).some(b => b.def === 'tavern') ? 1 : 0;
+  // a finale that serves drinks needs them banked: the tavern shuts while they build up, and the brewers get more hands
+  const bank = BOT.bankDrinks ? drinksToBank(w) : 0;
+  const drinksWanted = bank > 0 ? 4 : charterDrinks ? 2 : drinkTotal(w) < 15 && built(w).some(b => b.def === 'tavern') ? 1 : 0;
   return {
     woodcutter: 1 + Math.floor(pop / 5) + (moodCharter(w) || ch === 'firstplanks' ? 1 : 0) + (w.res.wood < 25 ? 1 : 0) + (w.res.wood < ws.wood ? 1 + Math.floor(pop / 6) : 0),
     rawFood: rawFoodWorkers(w, pop) + (raw < pop * 4 ? 1 : 0) + (['settled', 'piesky', 'longtable'].includes(ch) ? 1 : 0) + (foodTotal(w) < ws.food ? 1 + Math.floor(pop / 6) : 0),
@@ -543,9 +551,17 @@ export function staffWants(w: World): Record<string, number> {
     field: (drinksWanted || built(w).some(b => b.def === 'mill' || b.def === 'bakery')) && plannedUses(w, 'grain') ? 2 : 0,
     apiary: (drinksWanted || ch === 'hearty') && plannedUses(w, 'honey') ? 1 : 0,
     smokehouse: w.res.fish > 20 || ['menu', 'twokitchens', 'woodsmoke'].includes(ch) || second === 'smokehouse' ? 1 + (ch === 'woodsmoke' ? 1 : 0) : 0,
-    tavern: built(w).some(b => b.def === 'tavern') ? 1 : 0,
+    tavern: built(w).some(b => b.def === 'tavern') && bank <= 0 ? 1 : 0,
     clinic: alive(w).some(c => bedridden(c)) ? 1 : 0,
   };
+}
+/** drinks still to put by for a finale that serves them (the Long Table, the Hall's topping-out); 0 when there's enough */
+export function drinksToBank(w: World) {
+  const pop = alive(w).length;
+  if (w.charter === 'longtable') return Math.max(0, pop + 2 - drinkTotal(w));
+  const hall = w.buildings.find(b => b.def === 'hall' && !b.built);
+  if (BOT.bankHall && w.charter === 'hall' && hall && (hall.stage ?? 0) >= 2) return Math.max(0, 27 - drinkTotal(w));
+  return 0;
 }
 /** fine materials (planks, bricks, wicker) the colony could spend right now: owned blueprints not yet built, plus what sites still need */
 function planksWanted(w: World) {
@@ -608,9 +624,18 @@ export function staffPlan(w: World, explain = false): Map<number, number> {
   };
   if (BOT.comfortsFirst) { stage = 'comforts'; comforts(); stage = 'food and wood top-ups'; }
   const ws = winterStores(w);
-  if (rawStock(w) < pop * 4 || foodTotal(w) < ws.food) give('rawFood', 99);
-  if (w.res.wood < Math.max(30, ws.wood)) give('woodcutter', Math.max(2, Math.ceil(pop / 4)) + (w.res.wood < ws.wood ? 1 : 0));
+  if (rawStock(w) < pop * 4 || (!BOT.chainBeforeWinter && foodTotal(w) < ws.food)) give('rawFood', 99);
+  if (w.res.wood < 30 || (!BOT.chainBeforeWinter && w.res.wood < ws.wood)) give('woodcutter', Math.max(2, Math.ceil(pop / 4)) + (w.res.wood < ws.wood ? 1 : 0));
   give('clinic', 1);
+  // the charter's chain gets its first hands before the winter stores take the rest
+  if (BOT.chainBeforeWinter) {
+    stage = 'charter chain';
+    for (const k of chain) give(k, 1);
+    stage = 'winter stores';
+    if (foodTotal(w) < ws.food) give('rawFood', (given.rawFood ?? 0) + 2);
+    if (w.res.wood < ws.wood) give('woodcutter', (given.woodcutter ?? 0) + 2);
+    stage = 'food and wood top-ups';
+  }
   serveFixes();
   // planks unlock every mood building, so the sawmill counts as an essential once there's something to spend them on
   give('sawmill', 1);
@@ -731,6 +756,19 @@ export function autoStaff(w: World) {
   }
 }
 
+/** the current charter's "N kinds of meal with M of each in store" condition, if it has one */
+function varietyPart(w: World): { kinds: number; each: number } | null {
+  const c = charterDef(w.charter); if (!c) return null;
+  const parts = c.metric.kind === 'all' ? c.metric.parts : [c.metric];
+  const v = parts.find(p => p.kind === 'variety' && p.category === 'meal') as { kinds: number; each: number } | undefined;
+  return v ?? null;
+}
+/** the meal kinds to build up for a variety condition: ones a staffed kitchen is making now first, then whatever's in store */
+function varietyTargets(w: World, kinds: number): ResourceId[] {
+  const making = new Set(built(w).filter(b => workersAt(w, b.uid).length).map(b => currentRecipe(w, b)?.output).filter((x): x is ResourceId => !!x && MEALS.includes(x)));
+  const canMake = new Set(built(w).flatMap(b => recipesOf(b).filter(r => MEALS.includes(r.output) && enabledRecipes(b).includes(r)).map(r => r.output)));
+  return [...MEALS].sort((a, z) => (Number(making.has(z)) * 2 + Number(canMake.has(z))) * 1000 + w.res[z] - ((Number(making.has(a)) * 2 + Number(canMake.has(a))) * 1000 + w.res[a])).slice(0, kinds);
+}
 /** Keep the food a stockpiling charter needs out of people's mouths, as long as nobody will go hungry. */
 export function autoFoodRules(w: World) {
   const pop = alive(w).length;
@@ -741,11 +779,21 @@ export function autoFoodRules(w: World) {
   if (w.charter === 'woodsmoke') keep.push('smokedFish');
   const rawEaters = concernsOf(w).find(c => c.id === 'raw')?.people ?? 0;
   const close = (charterProgress(w)?.ratio ?? 0) >= 0.6;
-  if (['settled', 'twokitchens', 'menu'].includes(w.charter ?? '') && raw > pop * 3 && (close || rawEaters < pop / 3 || !BOT.advisor || BOT.off.includes('relaxFoodRules'))) keep.push(...MEALS);
+  const relaxed = close || rawEaters < pop / 3 || !BOT.advisor || BOT.off.includes('relaxFoodRules');
+  if (w.charter === 'settled' && raw > pop * 3 && relaxed) keep.push(...MEALS);
+  // a varied table: keep back only the kinds being built up, and only until each has its share; the rest is eaten as usual
+  const vpart = varietyPart(w);
+  if (vpart && raw > pop * 2 && (relaxed || !BOT.varietyRules)) {
+    if (!BOT.varietyRules) keep.push(...MEALS);
+    else for (const m of varietyTargets(w, vpart.kinds)) if (w.res[m] < vpart.each + 3) keep.push(m);
+  }
   // Fed and rested: raw food stays in storage while there are meals enough, so every meal is a cooked one
   if (w.charter === 'rested' && mealTotal(w) >= pop * 1.5) keep.push(...RAW_FOODS);
-  // never let anyone starve for a charter: lift the rules if what's left to eat is under 1.5 each
-  if ([...MEALS, ...RAW_FOODS].filter(f => !keep.includes(f)).reduce((n, f) => n + w.res[f], 0) < pop * 1.5) keep.length = 0;
+  // never let anyone starve for a charter: while what's left to eat is under 1.5 each, release the kept food with the
+  // most in store (so a big pile of stew goes back on the menu before the pies anyone is saving)
+  const open = () => [...MEALS, ...RAW_FOODS].filter(f => !keep.includes(f)).reduce((n, f) => n + w.res[f], 0);
+  if (!BOT.varietyRules) { if (open() < pop * 1.5) keep.length = 0; }
+  else while (keep.length && open() < pop * 1.5) { keep.sort((a, z) => w.res[z] - w.res[a]); keep.shift(); }
   for (const f of [...MEALS, ...RAW_FOODS] as ResourceId[]) {
     const allowed = !keep.includes(f);
     if (allowed === w.forbidden.includes(f)) apply(w, { type: 'foodRule', food: f, allowed });
