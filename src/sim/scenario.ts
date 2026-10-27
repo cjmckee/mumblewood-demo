@@ -44,7 +44,28 @@ export interface Start {
   outbreakFrom: { day: number; pop: number };
   /** the calendar and what each season does; see seasons.ts */
   seasons: SeasonRules;
+  /** gold and the caravan; see the trade section of world.ts */
+  trade: TradeRules;
   intro: string[];
+}
+
+export interface TradeRules {
+  /** gold at the start */
+  gold: number;
+  /** what the caravan pays for a good, as a share of what it charges; more at the autumn fair */
+  sell: number; fair: number;
+  /** the most of one good the caravan will buy in a visit */
+  sellCap: number;
+  /** rent each housed settler pays on the first day of a season, by home */
+  rent: Record<string, number>;
+  /** the Crown's stipend for finishing charter 1 and charter 2 */
+  stipend: number[];
+  /** the caravan's visits: days of the season it comes, the hour it arrives and how many hours it stays */
+  visits: number[]; arrive: number; stays: number;
+  /** what the caravan charges over the usual price for goods the current charter needs */
+  premium: number;
+  /** a blueprint from the caravan; more for one that helps the charter */
+  blueprint: number; helper: number;
 }
 
 export type Season = 'spring' | 'summer' | 'autumn' | 'winter';
@@ -95,7 +116,7 @@ export const START: Start = {
   unlocked: ['stockpile', 'leanto', 'woodcutter', 'forager', 'desk'],
   firstResearch: ['cookery', 'messhall', 'physick'],
   firstCharterDay: 2,
-  draftEvery: 3,
+  draftEvery: 5,
   collapse: { lost: 6, minAlive: 0 },
   strain: { rate: 0.15, rampDays: 40 },
   comfortScale: { base: 1.4, slope: 1 },
@@ -131,6 +152,13 @@ export const START: Start = {
     prep: { from: 10, full: 3, share: 0.3, fuel: 0.6 },
     stricterFromYear: 0,
     harvestHome: { held: 4, missed: -4, hours: 96 },
+  },
+  trade: {
+    gold: 10, sell: 0.6, fair: 0.8, sellCap: 40,
+    rent: { leanto: 2, cottage: 6 },
+    stipend: [30, 50],
+    visits: [2, 7], arrive: 8, stays: 12,
+    premium: 1.3, blueprint: 45, helper: 55,
   },
   intro: ['Three settlers arrive at the edge of the Mumblewood with a cart, a kettle, a stack of borrowed books and great optimism.', 'Nobody knows how to build a kitchen yet. A research desk would be a start.', 'It\u2019s late summer. Winter comes in about two weeks, and then the fields and orchards sleep.'],
 };

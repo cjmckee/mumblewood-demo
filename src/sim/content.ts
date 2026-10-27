@@ -31,6 +31,15 @@ export const RESOURCES: { id: ResourceId; name: string; kind: 'raw' | 'ingredien
 ];
 export const RAW_FOODS: ResourceId[] = ['berries', 'fish', 'mushrooms', 'apples'];
 export const MEALS: ResourceId[] = ['pie', 'skewers', 'smokedFish', 'bread', 'stew'];
+/**
+ * What the caravan charges for one of each good, in gold. It pays back a share of that when it buys (SELL_SHARE),
+ * more at the autumn fair: raw goods are cheap, and the more work a good holds the more it's worth.
+ */
+export const PRICE: Record<ResourceId, number> = {
+  wood: 2, berries: 2, fish: 2, mushrooms: 2, apples: 2, grain: 2, clay: 2, reeds: 2, herbs: 2, honey: 4, flour: 4,
+  planks: 5, bricks: 5, wicker: 4, stew: 5, smokedFish: 5, bread: 6, skewers: 6, pie: 7,
+  ale: 7, cider: 7, tea: 6, mead: 9, poultice: 10, tonic: 14,
+};
 /** mood from eating each meal, before tastes and traits */
 export const MEAL_MOOD: Partial<Record<ResourceId, number>> = { pie: 8, skewers: 7, smokedFish: 6, bread: 6, stew: 5 };
 
@@ -221,6 +230,14 @@ export const PERKS: PerkDef[] = [
   { id: 'hearthSongs', name: 'Hearth songs', desc: 'Strain eases by 0.5 every evening the tavern is open and staffed.' },
   { id: 'postRider', name: 'A post rider', desc: 'Charters and festivals ease 10% more strain.' },
   { id: 'homesteaders', name: 'Homesteaders', desc: 'Comfort counts for 20% more against strain.' },
+  { id: 'hearthkeepers', name: 'Hearthkeepers', desc: 'Homes burn half as much wood in winter.' },
+  { id: 'lumberGuild', name: 'Lumber guild', desc: 'Woodcutters bring in 50% more wood.' },
+  { id: 'rentCollector', name: 'Rent collector', desc: 'Rent is doubled. Everyone is −2 mood about it, forever.' },
+  { id: 'pilgrimsRoad', name: 'Pilgrims’ road', desc: 'The caravan comes in winter too.' },
+  { id: 'rootCellars', name: 'Root cellars', desc: 'Nothing spoils in winter.' },
+  { id: 'merchantsFavour', name: 'Merchant’s favour', desc: 'The caravan sells for 20% less and pays 20% more.' },
+  { id: 'openRoad', name: 'Open road', desc: 'Settlers ask to join every day, all year. Strain grows 10% faster.' },
+  { id: 'feastDays', name: 'Feast days', desc: 'Festivals ease 50% more strain.' },
 ];
 export const PERK_BY_ID: Record<string, PerkDef> = Object.fromEntries(PERKS.map(p => [p.id, p]));
 
@@ -288,7 +305,22 @@ export const EVENTS: EventDef[] = [
   { id: 'peddler', title: 'A peddler with a cart', text: 'She is selling "authentic" relics and also, more usefully, planks.',
     options: [
       { label: 'Trade 30 wood for 12 planks', detail: 'A decent deal.', effect: 'peddlerPlanks' },
-      { label: 'Buy the relic (10 food)', detail: 'Everyone +3 mood for 3 days. It is a spoon.', effect: 'relic' },
+      { label: 'Buy the relic (8 gold)', detail: 'Everyone +3 mood for 3 days. It is a spoon.', effect: 'relic' },
+    ] },
+  { id: 'purse', title: 'A purse in the mud', text: 'Someone found a purse on the road. It is heavy, embroidered "NOT YOURS", and smells faintly of cheese.',
+    options: [
+      { label: 'Keep it', detail: '+15 gold. The finder feels a bit guilty (−3 mood for 2 days).', effect: 'purseKeep' },
+      { label: 'Leave it at the waystone', detail: 'Everyone +2 mood for 2 days. Honesty is its own reward, apparently.', effect: 'purseReturn' },
+    ] },
+  { id: 'taxman', title: 'The Crown’s tax collector', text: 'A man in a very tall hat has come to count things. He has a ledger, a quill, and no sense of humour.',
+    options: [
+      { label: 'Pay the levy (12 gold)', detail: 'He tips the hat and leaves.', effect: 'taxPay' },
+      { label: 'Hide the valuables', detail: 'He takes 20 food instead, and everyone is −3 mood for 2 days.', effect: 'taxHide' },
+    ] },
+  { id: 'busker', title: 'Buskers at the hearth', text: 'Two fiddlers and a man with a spoon are playing for coins. The spoon man is surprisingly good.',
+    options: [
+      { label: 'Toss them 6 gold', detail: 'Everyone +4 mood for a day, and strain eases by 5%.', effect: 'buskerPay' },
+      { label: 'Applaud politely', detail: 'Nothing happens. The spoon man looks hurt.', effect: 'none' },
     ] },
 ];
 
@@ -312,6 +344,7 @@ export interface JobEventDef {
   requires?: 'rivals';
 }
 export const JOB_EVENTS: JobEventDef[] = [
+  { id: 'caravan', title: 'The caravan is here', text: 'A trader\u2019s caravan is parked by the hearth until dusk. Someone has to walk over and haggle.', hours: 0.5, deadline: 11, at: 'hearth', reward: 'Trade: buy what the charter needs, sell what you have spare, maybe a blueprint.', penalty: 'The caravan leaves without trading.' },
   { id: 'badger', title: 'A badger in the stores', text: 'A badger has moved into the storage. It is eating everything and it has opinions about it.', hours: 3, deadline: 12, at: 'storage', reward: 'Chase it off and nothing is lost.', penalty: 'Lose a quarter of all food.' },
   { id: 'cat', title: 'The cat is up a tree', text: 'The colony cat climbed the tallest tree on the frontier and is now yowling about it.', hours: 2, deadline: 8, at: 'edge', skill: 'chopping', reward: 'Everyone +3 mood for a day.', penalty: 'Everyone −3 mood for a day, from the yowling.' },
   { id: 'feud', title: 'A feud is brewing', text: '{a} and {b} are not speaking, except to say very loud things about each other. Someone should mediate.', hours: 3, deadline: 16, at: 'pair', reward: 'They patch things up a bit (+25 opinion each way).', penalty: 'Both −6 mood for two days, and they like each other even less.', requires: 'rivals' },

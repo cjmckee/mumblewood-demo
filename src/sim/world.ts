@@ -3,7 +3,7 @@ import {
   BUILDING_BY_ID, BuildingDef, CHARTERS, CharterDef, EVENTS, FIRST_NAMES, JOB_NAMES, JobKind, JOB_KINDS,
   MEALS, PERKS, RAW_FOODS, ResourceId, SHIRTS, SKINS, SURNAMES, TRAITS, TRAIT_BY_ID, BUILDINGS, buildWork,
   JOB_EVENTS, JobEventDef, ILLNESSES, RESOURCES, Recipe, InputKey, CATEGORIES, isCategory, membersOf, inputName, recipeRate, SITES, SiteId, MEAL_MOOD,
-  CharterMetric, RESEARCH, RESEARCH_BY_ID,
+  CharterMetric, RESEARCH, RESEARCH_BY_ID, PRICE,
 } from './content';
 import { START } from './scenario';
 import { seasonOf, rule, SEASON_NAMES } from './seasons';
@@ -103,11 +103,22 @@ export interface Building {
   rot?: number;
 }
 
+/** the caravan at the hearth: what it sells (and for how much), the blueprints it carries, and what it has bought this visit */
+export interface Caravan {
+  arrived: number; leaves: number;
+  stock: Partial<Record<ResourceId, { n: number; price: number }>>;
+  blueprints: { id: string; price: number }[];
+  sold: Partial<Record<ResourceId, number>>;
+  /** someone has been to trade this visit */
+  visited: boolean;
+}
+
 export type Decision =
   | { kind: 'charter'; tier: 1 | 2 | 3; options: string[] }
   | { kind: 'blueprint'; options: string[] }
   | { kind: 'recruit'; options: Colonist[] }
-  | { kind: 'perk'; options: string[] }
+  | { kind: 'perk'; options: string[]; why?: 'season' | 'charter' }
+  | { kind: 'trade' }
   | { kind: 'event'; eventId: string }
   | { kind: 'errand'; errandId: number }
   | { kind: 'research'; options: string[] };
@@ -124,6 +135,9 @@ export interface World {
   paths: number[];
   res: Record<ResourceId, number>;
   owned: string[]; perks: string[];
+  /** gold: from rent, the Crown's stipend, events and selling to the caravan */
+  gold: number;
+  caravan: Caravan | null;
   charterTier: number; charter: string | null; charterHours: number; chartersDone: string[];
   decisions: Decision[]; log: LogEntry[];
   opinions: Record<string, number>;
@@ -682,7 +696,7 @@ export function createWorld(seed: number): World {
     seed, rngState: seed >>> 0, hour: 6,
     colonists: [], buildings: [], terrain: [], paths: [],
     res: { wood: 0, berries: 0, fish: 0, mushrooms: 0, stew: 0, pie: 0, smokedFish: 0, planks: 0, ale: 0, apples: 0, grain: 0, honey: 0, cider: 0, mead: 0, clay: 0, reeds: 0, bricks: 0, wicker: 0, herbs: 0, flour: 0, bread: 0, skewers: 0, poultice: 0, tonic: 0, tea: 0, ...sc.res },
-    owned: [...sc.unlocked], perks: [],
+    owned: [...sc.unlocked], perks: [], gold: sc.trade.gold, caravan: null,
     charterTier: 1, charter: null, charterHours: 0, chartersDone: [],
     decisions: [], log: [], opinions: {}, status: 'playing', strain: 0, nextEventHour: 24 * 1.6, sites: [], rerolls: 0,
     errands: [], nextErrandId: 1, moodLog: [], ateOffTable: false, forbidden: [],
@@ -863,6 +877,10 @@ export type Command =
   | { type: 'storageFilter'; building: number; allow: ResourceId[] | null }
   | { type: 'storagePriority'; building: number; high: boolean }
   | { type: 'toggleRecipe'; building: number; recipe: number; on: boolean }
+  | { type: 'buy'; res: ResourceId; n: number }
+  | { type: 'sell'; res: ResourceId; n: number }
+  | { type: 'buyBlueprint'; id: string }
+  | { type: 'visitCaravan' }
   | { type: 'reroll' }
   | { type: 'callFeast' }
   | { type: 'callFestival' };
@@ -926,6 +944,15 @@ export function apply(w: World, cmd: Command): string | null {
       w.rerolls = (w.rerolls ?? 0) + 1;
       w.decisions[0] = blueprintDecision(w, d.options);
       addLog(w, `New blueprints sent for, at a cost of ${cost} wood.`);
+      return null;
+    }
+    case 'buy': return buy(w, cmd.res, cmd.n);
+    case 'sell': return sell(w, cmd.res, cmd.n);
+    case 'buyBlueprint': return buyBlueprint(w, cmd.id);
+    case 'visitCaravan': {
+      if (!w.caravan) return 'There is no caravan here.';
+      if (w.errands.some(e => e.def === 'caravan') || w.decisions.some(d => d.kind === 'trade')) return 'Someone is already on the way.';
+      spawnErrand(w, JOB_EVENTS.find(j => j.id === 'caravan')!);
       return null;
     }
     case 'toggleRecipe': {
@@ -1045,7 +1072,12 @@ function resolveDecision(w: World, option: number): string | null {
     case 'perk': {
       const id = d.options[option] ?? d.options[0];
       w.perks.push(id);
-      addLog(w, `Boon granted: ${PERKS.find(p => p.id === id)!.name}.`, 'good');
+      addLog(w, `A new cornerstone: ${PERKS.find(p => p.id === id)!.name}.`, 'good');
+      break;
+    }
+    case 'trade': {
+      const t = w.caravan;
+      if (t) addLog(w, `Trading done. The colony has ${Math.floor(w.gold)} gold.`);
       break;
     }
     case 'event': {
@@ -1088,6 +1120,10 @@ function finishErrand(w: World, e: Errand, success: boolean) {
   const who = c ? first(c) : 'Somebody';
   if (success) w.stats.errands++;
   switch (e.def) {
+    case 'caravan':
+      if (success && w.caravan) { w.caravan.visited = true; w.decisions.unshift({ kind: 'trade' }); addLog(w, `${who} reaches the caravan. The trader rubs her hands together.`); }
+      else if (!success) addLog(w, 'Nobody got to the caravan in time.', 'bad');
+      break;
     case 'badger':
       if (success) addLog(w, `${who} chased the badger off with a broom and a stern lecture.`, 'good');
       else { for (const r of [...RAW_FOODS, ...MEALS]) w.res[r] *= 0.75; addLog(w, 'The badger ate a quarter of the food, then left a review.', 'bad'); }
@@ -1266,7 +1302,27 @@ function applyEventEffect(w: World, effect: string) {
       addLog(w, `Everyone dances badly under the harvest moon.${e ? ` Strain eases by ${e}.` : ''}`, 'good');
       break;
     }
-    case 'relic': takeFood(w, 10); everyone(w, 'relic', 'We own a holy spoon', 3, 72); addLog(w, 'The Holy Spoon of Saint Pomfrey is installed above the hearth.', 'good'); break;
+    case 'relic':
+      if (spend(w, 8, 'relic')) { everyone(w, 'relic', 'We own a holy spoon', 3, 72); addLog(w, 'The Holy Spoon of Saint Pomfrey is installed above the hearth.', 'good'); }
+      else addLog(w, 'Nobody has 8 gold. The peddler keeps her spoon.');
+      break;
+    case 'purseKeep': {
+      earn(w, 15, 'purse');
+      const finder = pick(w, alive(w));
+      if (finder) addMemory(w, finder, 'purse', 'Kept a purse that wasn’t mine', -3, 48);
+      addLog(w, 'The purse holds 15 gold and a very old cheese. The gold is kept. The cheese is buried.', 'good');
+      break;
+    }
+    case 'purseReturn': everyone(w, 'purse', 'We did the honest thing', 2, 48); addLog(w, 'The purse is left at the waystone. The next morning there is a thank-you note and, unsettlingly, more cheese.', 'good'); break;
+    case 'taxPay':
+      if (spend(w, 12, 'tax')) addLog(w, 'The tax collector counts the coins twice, tips his hat and leaves.');
+      else { addLog(w, 'There aren’t 12 gold in the whole colony. The tax collector helps himself to the larder instead.', 'bad'); applyEventEffect(w, 'taxHide'); }
+      break;
+    case 'taxHide': takeFood(w, 20); everyone(w, 'taxman', 'The tax collector went through our things', -3, 48); addLog(w, 'The tax collector finds the food, if not the valuables, and takes 20 of it.', 'bad'); break;
+    case 'buskerPay':
+      if (spend(w, 6, 'buskers')) { everyone(w, 'buskers', 'Danced to the buskers', 4, 24); const e = ease(w, 0.05); addLog(w, `The spoon solo brings the house down.${e ? ` Strain eases by ${e}.` : ''}`, 'good'); }
+      else addLog(w, 'Nobody has 6 gold. The buskers play one more song out of pity.');
+      break;
   }
 }
 
@@ -1627,7 +1683,7 @@ function produce(w: World, dt: number) {
     for (const c of workersAt(w, b.uid)) {
       if (c.activity !== 'working' || !c.goalReached) continue;
       if (sum(b.outbox) >= OUTBOX_CAP) continue;
-      let amount = recipeRate(rec) * workSpeed(w, c, def.job) * dt * b.eff * seasonYield(w, def.id) * (Object.keys(rec.inputs).length ? rule(START.seasons.indoor, seasonOf(w).season, 1) : 1);
+      let amount = recipeRate(rec) * workSpeed(w, c, def.job) * dt * b.eff * seasonYield(w, def.id) * (def.id === 'woodcutter' && hasPerk(w, 'lumberGuild') ? 1.5 : 1) * (Object.keys(rec.inputs).length ? rule(START.seasons.indoor, seasonOf(w).season, 1) : 1);
       for (const [r, per] of Object.entries(rec.inputs)) amount = Math.min(amount, inInbox(b, r as InputKey) / (per as number));
       if (amount <= 0) continue;
       for (const [r, per] of Object.entries(rec.inputs)) {
@@ -1905,6 +1961,7 @@ function computeThoughts(w: World, c: Colonist): Thought[] {
   if (has(c, 'tippler') && drinkTotal(w) < 1) add('Nothing to drink in the stores', -4);
   if (hasBuilt(w, 'bathhouse') && w.res.wood > 0) add('Feeling fresh from the bathhouse', has(c, 'grumbler') ? 5 : 3);
   if (hasPerk(w, 'saintsDay')) add("Saint Pomfrey's blessing", 4);
+  if (hasPerk(w, 'rentCollector')) add('The rent collector', -2);
   if (c.beauty >= 5) add('Beautiful surroundings', 5);
   else if (c.beauty >= 2) add('Pleasant surroundings', 2);
   else if (c.beauty <= -1.2) add('Ugly surroundings', -3);
@@ -1990,7 +2047,7 @@ export const comfortFactor = (w: World) => Math.max(0.2, START.comfortScale.base
 /** strain rise per day at the colony's current size, day and comfort (before boons) */
 export function strainPerDay(w: World) {
   const d = day(w) - 1 + (hourOfDay(w) - 6) / 24;
-  return START.strain.rate * Math.sqrt(alive(w).length) * (1 + Math.max(0, d) / START.strain.rampDays) * comfortFactor(w) * (hasPerk(w, 'ironWill') ? 0.75 : 1);
+  return START.strain.rate * Math.sqrt(alive(w).length) * (1 + Math.max(0, d) / START.strain.rampDays) * comfortFactor(w) * (hasPerk(w, 'ironWill') ? 0.75 : 1) * (hasPerk(w, 'openRoad') ? 1.1 : 1);
 }
 
 /** what happened in the last 24 hours, from the running flow totals */
@@ -2027,12 +2084,12 @@ export function winterStores(w: World): { food: number; wood: number } {
 /** wood a home burns a day this season (0 outside winter) */
 export function homeFuel(w: World, defId: string) {
   const s = seasonOf(w); const base = START.seasons.homeFuel[defId] ?? 0;
-  return s.season !== 'winter' ? 0 : base * (s.winter >= 2 ? START.seasons.harsh : 1);
+  return s.season !== 'winter' ? 0 : base * (s.winter >= 2 ? START.seasons.harsh : 1) * (hasPerk(w, 'hearthkeepers') ? 0.5 : 1);
 }
 /** wood the lived-in homes alone will burn in a full winter day (not the hearth, which burns all year) */
 export function homeFuelPerDay(w: World, harsh = seasonOf(w).winter >= 1) {
   const homes = built(w).filter(b => bdef(b).beds && alive(w).some(c => c.bed === b.uid));
-  return homes.reduce((n, b) => n + (START.seasons.homeFuel[b.def] ?? 0), 0) * (harsh ? START.seasons.harsh : 1);
+  return homes.reduce((n, b) => n + (START.seasons.homeFuel[b.def] ?? 0), 0) * (harsh ? START.seasons.harsh : 1) * (hasPerk(w, 'hearthkeepers') ? 0.5 : 1);
 }
 /** wood every lived-in home will burn in a full winter day, now or in the coming winter */
 export function winterFuelPerDay(w: World, harsh = seasonOf(w).winter >= 1) {
@@ -2063,6 +2120,8 @@ function seasonDawn(w: World) {
       winter: s.winter >= 2 ? 'Winter, and a harder one than last. The fields and orchards sleep, foraging is thin, every home burns wood, and the cold gets into people.' : 'Winter. The fields and orchards sleep, foraging is thin, every home burns wood, and the cold gets into people.',
     };
     addLog(w, lines[s.season], s.season === 'winter' ? 'bad' : 'neutral');
+    collectRent(w);
+    offerCornerstone(w, 'season');
     if (s.season === 'winter') {
       // the harvest home: a festival held in the autumn just gone
       const held = (w.festival?.at ?? -1e9) >= w.hour - sc.days * 24;
@@ -2082,6 +2141,7 @@ function seasonDawn(w: World) {
 
 function hourly(w: World) {
   (w.flowLog ??= []).push({ ...w.flows }); if (w.flowLog.length > 24) w.flowLog.shift();
+  caravanHour(w);
   const h = Math.round(hourOfDay(w)) % 24;
   const pop = alive(w).length;
   const d = day(w) - 1 + (hourOfDay(w) - 6) / 24;
@@ -2100,7 +2160,7 @@ function hourly(w: World) {
   }
   if (hasBuilt(w, 'bathhouse') && h >= 6 && h < 18) { flow(w, 'wood:-bathhouse', Math.min(0.4, w.res.wood)); w.res.wood = Math.max(0, w.res.wood - 0.4); }
   // food spoils unless it sits somewhere that keeps it fresh (a storehouse)
-  const rot = (START.body.spoilPerDay / 24) * rule(sc.seasons.spoil, seasonOf(w).season, 1);
+  const rot = (START.body.spoilPerDay / 24) * rule(sc.seasons.spoil, seasonOf(w).season, 1) * (hasPerk(w, 'rootCellars') && seasonOf(w).season === 'winter' ? 0 : 1);
   for (const r of FOODS) {
     let fresh = 0;
     for (const b of storages(w)) if (bdef(b).keepsFresh) fresh += b.stock[r] ?? 0;
@@ -2211,7 +2271,7 @@ function dawn(w: World) {
   seasonDawn(w);
   // blueprint drafts every few days once the first charter is picked
   if (w.draftsFrom != null && d > w.draftsFrom && (d - w.draftsFrom) % START.draftEvery === 0) w.decisions.push(blueprintDecision(w));
-  const every = START.seasons.recruitEvery[seasonOf(w).season];
+  const every = hasPerk(w, 'openRoad') ? 1 : START.seasons.recruitEvery[seasonOf(w).season];
   if (every > 0 && d % every === 0) {
     const names = new Set(w.colonists.map(c => first(c)));
     const opts = [0, 1, 2].map(() => makeColonist(w, names));
@@ -2227,7 +2287,7 @@ function triggerEvent(w: World) {
   const ob = START.outbreakFrom;
   if (roll < 0.18 && day(w) >= ob.day && alive(w).length >= ob.pop) outbreak(w);
   else if (roll < 0.6) {
-    const jobs = shuffle(w, JOB_EVENTS.filter(j => j.id !== 'remedy'));
+    const jobs = shuffle(w, JOB_EVENTS.filter(j => j.id !== 'remedy' && j.id !== 'caravan'));
     if (!jobs.some(j => spawnErrand(w, j))) w.decisions.push({ kind: 'event', eventId: pick(w, EVENTS.filter(e => eventFits(w, e.requires))).id });
   } else {
     const pool = EVENTS.filter(e => eventFits(w, e.requires));
@@ -2302,7 +2362,7 @@ export function festivalPreview(w: World) {
     if (taste(c, meal) > 0 || (drink && taste(c, drink) > 0)) loved++;
   }
   const n = Math.max(1, guests.length), r = START.relief.festival;
-  const share = r.base * (fed / n) + (drank >= n / 2 ? r.drinks : 0) + (loved >= n / 2 ? r.loved : 0) + (hasPerk(w, 'postRider') && fed ? 0.1 : 0);
+  const share = (r.base * (fed / n) + (drank >= n / 2 ? r.drinks : 0) + (loved >= n / 2 ? r.loved : 0) + (hasPerk(w, 'postRider') && fed ? 0.1 : 0)) * (hasPerk(w, 'feastDays') ? 1.5 : 1);
   return { guests: guests.length, fed, drank, loved, meals: fed, drinks: drank, share, relief: w.strain * share, wait: Math.max(0, Math.ceil((w.festival?.readyAt ?? 0) - w.hour)) };
 }
 function runFestival(w: World) {
@@ -2402,10 +2462,111 @@ function checkCharter(w: World) {
   const eased = ease(w, START.relief.charter);
   if (eased) addLog(w, `Word of the charter spreads around the hearth. Strain eases by ${eased}.`, 'good');
   if (c.tier === 3) { w.status = 'won'; addLog(w, 'The Crown declares the colony a proper town. Someone makes a banner. It is spelled wrong.', 'good'); return; }
-  const perkPool = PERKS.filter(p => !w.perks.includes(p.id)).map(p => p.id);
-  w.decisions.push({ kind: 'perk', options: shuffle(w, perkPool).slice(0, 3) });
+  const stipend = START.trade.stipend[c.tier - 1] ?? 0;
+  if (stipend) { earn(w, stipend, 'stipend'); addLog(w, `The Crown's courier brings a stipend: ${stipend} gold, and a receipt to sign in triplicate.`, 'good'); }
+  offerCornerstone(w, 'charter');
   w.charterTier = c.tier + 1;
   w.decisions.push(charterDecision(w, w.charterTier as 2 | 3));
+}
+
+// ---------- Gold and the caravan ----------
+export function earn(w: World, n: number, why: string) { if (n <= 0) return; w.gold += n; flow(w, `gold:+${why}`, n); }
+export function spend(w: World, n: number, why: string) { if (w.gold < n) return false; w.gold -= n; flow(w, `gold:-${why}`, n); return true; }
+/** what the caravan pays for one: a share of its price, more at the autumn fair */
+export function sellPrice(w: World, r: ResourceId) {
+  const t = START.trade, share = seasonOf(w).season === 'autumn' ? t.fair : t.sell;
+  return Math.max(1, Math.floor(PRICE[r] * share * (hasPerk(w, 'merchantsFavour') ? 1.2 : 1)));
+}
+const favour = (w: World, price: number) => Math.max(1, Math.round(price * (hasPerk(w, 'merchantsFavour') ? 0.8 : 1)));
+/** rent on the first day of a season: each housed settler pays by the home they sleep in */
+function collectRent(w: World) {
+  let gold = 0, payers = 0;
+  for (const c of alive(w)) { const b = buildingByUid(w, c.bed); const r = b ? START.trade.rent[b.def] ?? 0 : 0; if (r) { gold += r; payers++; } }
+  gold *= hasPerk(w, 'rentCollector') ? 2 : 1;
+  if (gold) { earn(w, gold, 'rent'); addLog(w, `Rent day: ${payers} settlers pay ${gold} gold between them, with only light grumbling.`); }
+}
+/** a choice of three cornerstones: at the start of each season and with each charter */
+function offerCornerstone(w: World, why: 'season' | 'charter') {
+  const pool = PERKS.filter(p => !w.perks.includes(p.id)).map(p => p.id);
+  if (pool.length) w.decisions.push({ kind: 'perk', options: shuffle(w, pool).slice(0, 3), why });
+}
+/** the parts of the current charter */
+function charterMetrics(w: World): CharterMetric[] { const m = charterDef(w.charter)?.metric; return !m ? [] : m.kind === 'all' ? m.parts : [m]; }
+/** what the caravan brings: the goods the charter is short of (at a premium), what this map can't make, a few staples, and a blueprint or two */
+function caravanWares(w: World): Pick<Caravan, 'stock' | 'blueprints'> {
+  const t = START.trade, stock: Caravan['stock'] = {};
+  const put = (r: ResourceId, n: number, mult = 1) => {
+    if (n < 1) return;
+    const price = favour(w, PRICE[r] * mult), cur = stock[r];
+    stock[r] = { n: Math.max(Math.round(n), cur?.n ?? 0), price: Math.max(price, cur?.price ?? 0) };
+  };
+  const pop = alive(w).length;
+  const first = (k: InputKey) => membersOf(k).slice().sort((a, b) => w.res[b] - w.res[a])[0];
+  for (const p of charterMetrics(w)) {
+    if (p.kind === 'stock') { const short = p.amount - p.resources.reduce((n, r) => n + w.res[r], 0); if (short > 0) put(p.resources.slice().sort((a, b) => PRICE[a] - PRICE[b])[0], Math.ceil(short * 0.6), t.premium); }
+    if (p.kind === 'variety') {
+      const members = CATEGORIES[p.category].members, full = members.filter(r => w.res[r] >= p.each).length;
+      for (const r of members.filter(r => w.res[r] < p.each).sort((a, b) => w.res[b] - w.res[a]).slice(0, Math.max(0, p.kinds - full))) put(r, p.each - Math.floor(w.res[r]), t.premium);
+    }
+    if (p.kind === 'longTable') {
+      for (const r of CATEGORIES.drink.members.filter(r => w.res[r] < 4).slice(0, 2)) put(r, Math.ceil(pop / 3), t.premium);
+      for (const r of MEALS.filter(r => w.res[r] < 4).slice(0, 1)) put(r, Math.ceil(pop / 3), t.premium);
+    }
+    if (p.kind === 'monument') { const b = w.buildings.find(x => x.def === p.def && !x.built); if (b) for (const [k, n] of Object.entries(remainingCost(b))) if ((n ?? 0) > 0) put(first(k as InputKey), Math.ceil((n ?? 0) * 0.5), t.premium); }
+  }
+  // goods nothing on this map can ever make (no apple grove, no meadow, no clay bank)
+  for (const { id: r } of RESOURCES) if (!BUILDINGS.some(d => siteOk(w, d) && (d.recipes ?? []).some(x => x.output === r))) put(r, 12);
+  // a couple of staples
+  for (const r of shuffle(w, ['planks', 'bricks', 'flour', 'tea', 'ale', 'bread', 'poultice'] as ResourceId[]).slice(0, 2)) put(r, 10);
+  // a blueprint that helps the charter if there is one, and one other
+  const can = BUILDINGS.filter(d => d.draftable && !w.owned.includes(d.id) && siteOk(w, d));
+  const helpers = charterHelpers(w.charter);
+  const helper = can.find(d => helpers.includes(d.id));
+  const other = shuffle(w, can.filter(d => d !== helper))[0];
+  const blueprints = [...(helper ? [{ id: helper.id, price: favour(w, t.helper) }] : []), ...(other ? [{ id: other.id, price: favour(w, t.blueprint) }] : [])];
+  return { stock, blueprints };
+}
+/** the caravan comes on set days of each season (not in winter), parks at the hearth, and leaves at dusk */
+function caravanHour(w: World) {
+  const t = START.trade, s = seasonOf(w), h = Math.round(hourOfDay(w)) % 24;
+  if (w.caravan && w.hour >= w.caravan.leaves) {
+    for (const e of w.errands.filter(x => x.def === 'caravan')) finishErrand(w, e, false);
+    w.decisions = w.decisions.filter(d => d.kind !== 'trade');
+    addLog(w, w.caravan.visited ? 'The caravan creaks off down the road.' : 'The caravan leaves. Nobody went to trade.');
+    w.caravan = null;
+  }
+  if (w.caravan || h !== t.arrive || !t.visits.includes(s.dayOf) || day(w) <= 1) return;
+  if (s.season === 'winter' && !hasPerk(w, 'pilgrimsRoad')) return;
+  w.caravan = { arrived: w.hour, leaves: w.hour + t.stays, ...caravanWares(w), sold: {}, visited: false };
+  addLog(w, `A trader's caravan rattles up to the hearth${s.season === 'autumn' ? ' for the harvest fair, paying well' : ''}. It leaves at dusk. Send someone to trade.`, 'good');
+  spawnErrand(w, JOB_EVENTS.find(j => j.id === 'caravan')!);
+}
+function buy(w: World, r: ResourceId, n: number): string | null {
+  const t = w.caravan, item = t?.stock[r];
+  if (!t || !w.decisions.some(d => d.kind === 'trade')) return 'Nobody is at the caravan.';
+  if (!item || item.n < 1) return 'The caravan has none of that.';
+  const k = Math.min(Math.floor(n), item.n, Math.floor(w.gold / item.price));
+  if (k < 1) return 'Not enough gold.';
+  spend(w, k * item.price, 'buy'); item.n -= k;
+  w.res[r] += k; flow(w, `${r}:+caravan`, k); reconcileStock(w);
+  return null;
+}
+function sell(w: World, r: ResourceId, n: number): string | null {
+  const t = w.caravan;
+  if (!t || !w.decisions.some(d => d.kind === 'trade')) return 'Nobody is at the caravan.';
+  const k = Math.min(Math.floor(n), Math.floor(w.res[r]), START.trade.sellCap - (t.sold[r] ?? 0));
+  if (k < 1) return (t.sold[r] ?? 0) >= START.trade.sellCap ? 'The trader has bought all of that she wants.' : 'Nothing to sell.';
+  w.res[r] -= k; flow(w, `${r}:-sold`, k); reconcileStock(w);
+  t.sold[r] = (t.sold[r] ?? 0) + k; earn(w, k * sellPrice(w, r), 'sell');
+  return null;
+}
+function buyBlueprint(w: World, id: string): string | null {
+  const t = w.caravan, bp = t?.blueprints.find(b => b.id === id);
+  if (!t || !bp || !w.decisions.some(d => d.kind === 'trade')) return 'The caravan doesn’t have that blueprint.';
+  if (!spend(w, bp.price, 'blueprint')) return 'Not enough gold.';
+  t.blueprints = t.blueprints.filter(b => b !== bp); w.owned.push(id);
+  addLog(w, `Blueprint bought from the caravan: ${BUILDING_BY_ID[id].name}.`, 'good');
+  return null;
 }
 
 // ---------- Tick ----------

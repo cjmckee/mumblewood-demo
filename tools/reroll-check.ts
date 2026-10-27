@@ -1,6 +1,7 @@
 // Blueprint reroll rules: 10 wood, then 20, then 30 across the run; three new options when the pool has them;
 // refused when wood is short or nothing is being drafted. Usage: npx tsx tools/reroll-check.ts
 import { createWorld, apply, runHours, World, rerollCost } from '../src/sim/world';
+import { START } from '../src/sim/scenario';
 
 let failed = 0;
 const check = (ok: boolean, what: string) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}`); if (!ok) failed++; };
@@ -10,7 +11,7 @@ while (w.decisions.length) apply(w, { type: 'resolve', option: 0 });
 check(apply(w, { type: 'reroll' }) !== null, 'refused when no blueprint draft is open');
 
 // run to the first blueprint draft (day 3 dawn), answering anything else on the way
-const toDraft = () => { for (let h = 0; h < 24 * 4; h++) { while (w.decisions.length && w.decisions[0].kind !== 'blueprint') apply(w, { type: 'resolve', option: 99 }); if (w.decisions[0]?.kind === 'blueprint') return true; runHours(w, 1); } return false; };
+const toDraft = () => { for (let h = 0; h < 24 * (START.draftEvery + 1); h++) { while (w.decisions.length && w.decisions[0].kind !== 'blueprint') apply(w, { type: 'resolve', option: 99 }); if (w.decisions[0]?.kind === 'blueprint') return true; runHours(w, 1); } return false; };
 check(toDraft(), 'a blueprint draft comes up');
 w.res.wood = 100;
 const first = (w.decisions[0] as { options: string[] }).options.slice();
