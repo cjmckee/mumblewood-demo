@@ -1,6 +1,6 @@
 // Forced checks for the start and the finales, without the bot's judgement in the way.
 // Usage: npx tsx tools/finale-check.ts
-import { createWorld, apply, runHours, findSpot, World, alive, built, desks, workersAt, charterProgress, feastCheck, costOf, laborers, day, festivalPreview, debugGrow } from '../src/sim/world';
+import { createWorld, apply, runHours, findSpot, World, alive, built, desks, workersAt, charterProgress, feastCheck, costOf, laborers, day, festivalPreview, debugGrow, comfortParts, comfortOf, strainPerDay } from '../src/sim/world';
 import { BUILDING_BY_ID, MEALS } from '../src/sim/content';
 import { START } from '../src/sim/scenario';
 
@@ -120,6 +120,26 @@ const untilHour = (w: World, h: number, each: () => void = () => {}) => { for (l
   const dislikeCider = alive(w3).filter(c => c.tastes.dislikes.includes('cider')).length;
   ok(dislikeCider === 1 && feastCheck(w3).hungry === 1, `with only cider, the one settler who dislikes it can't be served (${feastCheck(w3).hungry} unserved)`);
   void built; void charterProgress;
+}
+
+// ---- comfort sets how fast strain rises ----
+{
+  const w = createWorld(92); clear(w); debugGrow(w, 6);
+  const c = alive(w)[0];
+  c.lastMeal = { cooked: false, table: false, loved: false }; c.hunger = 80; c.fun = 10; c.beauty = -1; c.bed = null; c.illness = null;
+  ok(comfortParts(w, c).meals === 0 && comfortParts(w, c).shelter === 0, 'raw food and no bed: meals and shelter at 0');
+  c.lastMeal = { cooked: true, table: true, loved: true };
+  ok(Math.abs(comfortParts(w, c).meals - 1) < 1e-9, 'a favourite meal at a table: meals at 100%');
+  c.hunger = 10;
+  ok(comfortParts(w, c).meals === 0, 'going hungry counts as no meal');
+  for (const x of alive(w)) { x.lastMeal = { cooked: false, table: false, loved: false }; x.fun = 0; x.beauty = -1; x.bed = null; x.illness = null; }
+  w.comfort = undefined;
+  const low = strainPerDay(w), lowC = alive(w).reduce((n, x) => n + comfortOf(w, x), 0) / alive(w).length;
+  for (const x of alive(w)) { x.lastMeal = { cooked: true, table: true, loved: true }; x.hunger = 90; x.fun = 90; x.beauty = 4; }
+  const lean = w.buildings.find(b => b.def === 'leanto')!; for (const x of alive(w)) x.bed = lean.uid;
+  const high = strainPerDay(w), highC = alive(w).reduce((n, x) => n + comfortOf(w, x), 0) / alive(w).length;
+  ok(lowC < 0.25 && highC > 0.85, `comfort runs from ${Math.round(lowC * 100)}% to ${Math.round(highC * 100)}%`);
+  ok(high < low * 0.5, `a comfortable colony strains under half as fast (${high.toFixed(2)} against ${low.toFixed(2)} a day)`);
 }
 
 // ---- strain relief: charters ----

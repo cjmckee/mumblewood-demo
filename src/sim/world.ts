@@ -69,6 +69,8 @@ export interface Colonist {
   errand: number | null;
   died: boolean;
   starvingHours: number;
+  /** the last thing they ate, for comfort: a cooked meal or raw food, at a table, something they love */
+  lastMeal?: { cooked: boolean; table: boolean; loved: boolean };
 }
 export interface Building {
   uid: number; def: string; x: number; y: number;
@@ -147,6 +149,8 @@ export interface World {
   charterHolds?: number[];
   /** the founders' feast for the Long Table: called for tonight, when it can next be called, and whether it worked */
   feast?: { called: boolean; readyAt: number; done: boolean; last?: string };
+  /** the colony's comfort, 0 to 1, refreshed hourly; it sets how fast strain rises */
+  comfort?: number;
   /** the festival at the hearth: called for dusk, when it can next be called, and how the last one went */
   festival?: { called: boolean; readyAt: number; held: number; last?: string };
 }
@@ -1680,6 +1684,7 @@ function finishMeal(w: World, c: Colonist) {
   c.meal = null;
   if (!got) return;
   const meal = MEALS.includes(got) ? got : undefined;
+  c.lastMeal = { cooked: !!meal, table: !!(hall && bdef(hall).seats) && !bedridden(c), loved: !!meal && taste(c, meal) > 0 };
   const bonus = (has(c, 'glutton') ? 4 : 0) + (hasPerk(w, 'communalPot') ? 3 : 0);
   if (meal) {
     c.hunger = 100; w.stats.mealsEaten++;
@@ -1827,6 +1832,42 @@ function computeThoughts(w: World, c: Colonist): Thought[] {
   return t.sort((a, b) => a.value - b.value);
 }
 
+// ---------- Comfort ----------
+/**
+ * How well the colony meets one settler's standing needs, 0 to 1: the conditions the player built and supplied, not how
+ * they feel today (mood includes luck and strain itself, and strain driving strain would be a death spiral). Five needs,
+ * a fifth each, with partial credit.
+ */
+export const COMFORT_NEEDS = ['shelter', 'meals', 'evenings', 'health', 'surroundings'] as const;
+export type ComfortNeed = typeof COMFORT_NEEDS[number];
+export function comfortParts(w: World, c: Colonist): Record<ComfortNeed, number> {
+  const bed = buildingByUid(w, c.bed);
+  const shelter = !bed ? 0 : bdef(bed).bedQuality === 'cozy' ? 1 : 0.6;
+  // the last meal: cooked (not raw), at a table, and something they love; going hungry counts as nothing
+  const m = c.lastMeal;
+  const meals = c.hunger < 25 || !m?.cooked ? 0 : 0.6 + (m.table ? 0.25 : 0) + (m.loved ? 0.15 : 0);
+  const evenings = Math.max(0, Math.min(1, (c.fun - 20) / 50));
+  const health = !c.illness ? 1 : c.activity === 'sick' && c.place != null && bdef(buildingByUid(w, c.place)!).patients ? 0.6 : 0;
+  const surroundings = Math.max(0, Math.min(1, (c.beauty + 1) / 4));
+  return { shelter, meals, evenings, health, surroundings };
+}
+export const comfortOf = (w: World, c: Colonist) => { const p = comfortParts(w, c); return COMFORT_NEEDS.reduce((n, k) => n + p[k], 0) / COMFORT_NEEDS.length; };
+export function colonyComfort(w: World) { const a = alive(w); return a.length ? a.reduce((n, c) => n + comfortOf(w, c), 0) / a.length : 0; }
+/** the colony's average for each need, lowest first: what's speeding strain up */
+export function comfortGaps(w: World) {
+  const a = alive(w); if (!a.length) return [];
+  const sums = Object.fromEntries(COMFORT_NEEDS.map(k => [k, 0])) as Record<ComfortNeed, number>;
+  for (const c of a) { const p = comfortParts(w, c); for (const k of COMFORT_NEEDS) sums[k] += p[k]; }
+  return COMFORT_NEEDS.map(k => ({ need: k, avg: sums[k] / a.length })).sort((x, y) => x.avg - y.avg);
+}
+/** how much the colony's comfort scales the strain rise right now */
+export const comfortFactor = (w: World) => Math.max(0.2, START.comfortScale.base - (w.comfort ?? colonyComfort(w)) * START.comfortScale.slope);
+/** strain rise per day at the colony's current size, day and comfort (before boons) */
+export function strainPerDay(w: World) {
+  const d = day(w) - 1 + (hourOfDay(w) - 6) / 24;
+  return START.strain.rate * Math.sqrt(alive(w).length) * (1 + Math.max(0, d) / START.strain.rampDays) * comfortFactor(w) * (hasPerk(w, 'ironWill') ? 0.75 : 1);
+}
+
 /** what happened in the last 24 hours, from the running flow totals */
 export function lastDay(w: World): Record<string, number> {
   const log = w.flowLog ?? [];
@@ -1843,8 +1884,11 @@ function hourly(w: World) {
   const pop = alive(w).length;
   const d = day(w) - 1 + (hourOfDay(w) - 6) / 24;
   const sc = START;
-  // strain builds up with every person the frontier has to wear down, faster as the run goes on; it never goes back down
-  w.strain += sc.strain.rate * Math.sqrt(pop) * (1 + Math.max(0, d) / sc.strain.rampDays) / 24 * (hasPerk(w, 'ironWill') ? 0.75 : 1);
+  // strain builds up with the colony's size and the run's length, faster when people's needs go unmet and slower when
+  // they're met; relief (charters, festivals) brings it back down
+  w.comfort = colonyComfort(w);
+  w.strain += strainPerDay(w) / 24;
+  void sc; void d; void pop;
 
   if (h >= 18 || h < 6) {
     const hb = sc.hearth;

@@ -23,6 +23,11 @@ export interface Start {
    */
   strain: { rate: number; rampDays: number };
   /**
+   * how much the colony's comfort (0 to 1, see comfortOf) changes the strain rise: rise × (base − comfort × slope).
+   * With base 1.4 and slope 1: a neglected town (0.1) strains 1.3×, a middling one (0.4) 1×, a great one (1.0) 0.4×.
+   */
+  comfortScale: { base: number; slope: number };
+  /**
    * strain relief, each a share of the current strain so a deeper hole means a bigger climb back: finishing a charter, and
    * a festival the player calls (base share if everyone eats, more if most also get a drink, more again if most get
    * something they love), with a wait between festivals
@@ -46,7 +51,8 @@ export const START: Start = {
   firstCharterDay: 2,
   draftEvery: 3,
   collapse: { lost: 6, minAlive: 0 },
-  strain: { rate: 0.07, rampDays: 40 },
+  strain: { rate: 0.15, rampDays: 40 },
+  comfortScale: { base: 1.4, slope: 1 },
   relief: { charter: 0.3, festival: { base: 0.15, drinks: 0.05, loved: 0.05, waitDays: 4 } },
   hearth: { base: 0.25, perPerson: 0.06 },
   woodReserve: 10,

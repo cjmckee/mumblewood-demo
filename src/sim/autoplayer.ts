@@ -64,6 +64,88 @@ function researchParts(w: World, id: string): Record<string, number> {
   return p;
 }
 const researchScore = (w: World, id: string) => sumParts(researchParts(w, id));
+// ---------- Charter effort ----------
+/**
+ * Rough work to start making a good: 0 when something built makes it, 1 for each owned building still to put up, 3 for
+ * each blueprint still to be drafted (luck), and the same again for whatever it's made from. 50 means this map can't.
+ */
+export function goodCost(w: World, r: ResourceId, depth = 3): number {
+  if (['wood', 'berries'].includes(r)) return 0;
+  const step = (id: string) => (built(w).some(b => b.def === id) ? 0 : w.owned.includes(id) ? 1 : BUILDING_BY_ID[id].draftable ? 3 : 50);
+  let best = 50;
+  for (const d of BUILDINGS) {
+    if (!siteOk(w, d)) continue;
+    for (const rec of d.recipes ?? []) {
+      if (rec.output !== r) continue;
+      let c = step(d.id);
+      if (c >= best) continue;
+      if (depth <= 0 && Object.keys(rec.inputs).length) continue;
+      for (const k of Object.keys(rec.inputs)) c += Math.min(...membersOf(k as InputKey).map(m => goodCost(w, m, depth - 1)));
+      best = Math.min(best, c);
+    }
+  }
+  return best;
+}
+const cheapest = (w: World, goods: ResourceId[]) => Math.min(...goods.map(g => goodCost(w, g)));
+/** for the founders' feast: kinds of meal and drink the colony makes now, and the settlers none of them would suit */
+function feastGaps(w: World) {
+  const making = (cat: 'meal' | 'drink') => CATEGORIES[cat].members.filter(r => w.res[r] >= 1 || goodCost(w, r) === 0);
+  const meals = making('meal'), drinks = making('drink');
+  const unsuited = (goods: ResourceId[]) => alive(w).filter(c => !goods.some(g => !c.tastes.dislikes.includes(g)));
+  return { meals, drinks, noMeal: unsuited(meals), noDrink: unsuited(drinks) };
+}
+/** the next kind that would suit the most unsuited settlers, cheapest first */
+function nextKind(w: World, cat: 'meal' | 'drink', have: ResourceId[], people: Colonist[]) {
+  const options = CATEGORIES[cat].members.filter(r => !have.includes(r) && goodCost(w, r) < 50);
+  return options.sort((a, b) => people.filter(c => !c.tastes.dislikes.includes(b)).length - people.filter(c => !c.tastes.dislikes.includes(a)).length || goodCost(w, a) - goodCost(w, b))[0];
+}
+/** how far a charter is from done, part by part: the bot picks the charter with the least left to do */
+export function charterEffort(w: World, id: string): Record<string, number> {
+  const def = charterDef(id)!;
+  const parts = def.metric.kind === 'all' ? def.metric.parts : [def.metric];
+  const pop = alive(w).length;
+  const log = w.moodLog ?? [];
+  const mood = log.length ? log.reduce((a, b) => a + b, 0) / log.length : avgMood(w);
+  const out: Record<string, number> = {};
+  const add = (k: string, v: number) => { if (v) out[k] = Math.round(((out[k] ?? 0) + v) * 10) / 10; };
+  for (const p of parts) switch (p.kind) {
+    case 'population': add(`${Math.max(0, p.amount - pop)} more settlers`, Math.max(0, p.amount - pop) * 0.4); break;
+    case 'avgMood': add(`mood ${Math.round(mood)} → ${p.amount}`, Math.max(0, p.amount - mood) / 4); break;
+    case 'stock': {
+      const have = p.resources.reduce((n, r) => n + w.res[r], 0);
+      if (have < p.amount) add(`make ${p.resources.length > 3 ? 'them' : p.resources.join('/')}`, cheapest(w, p.resources) + 2 * (1 - have / p.amount));
+      break;
+    }
+    case 'variety': {
+      const costs = CATEGORIES[p.category].members.map(r => (w.res[r] >= p.each ? 0 : goodCost(w, r) + 1)).sort((a, b) => a - b).slice(0, p.kinds);
+      add(`${p.kinds} kinds of ${p.category}`, costs.reduce((a, b) => a + b, 0));
+      break;
+    }
+    case 'built': {
+      const n = built(w).filter(b => b.def === p.def).length;
+      if (n < p.amount) add(`${p.amount - n} more ${p.def}s`, (p.amount - n) * 0.7 + (w.owned.includes(p.def) ? 0 : 3) + (BUILDING_BY_ID[p.def].cost.fine ? cheapest(w, CATEGORIES.fine.members) : 0));
+      break;
+    }
+    case 'everyoneBed': add('beds', Math.max(0, pop - beds(w)) * 0.3); break;
+    case 'allTable': add('a table for everyone', built(w).some(b => b.def === 'dining') ? 0.5 : w.owned.includes('dining') ? 1.5 : 3); break;
+    case 'healthy': add('a day with nobody sick', 1); break;
+    case 'monument': add('the Hall: planks, meals, drinks', cheapest(w, CATEGORIES.fine.members) + cheapest(w, MEALS) + cheapest(w, CATEGORIES.drink.members) + 3); break;
+    case 'longTable': {
+      add(`${Math.max(0, p.pop - pop)} more settlers`, Math.max(0, p.pop - pop) * 0.4);
+      const g = feastGaps(w);
+      // each settler no kind on hand would suit needs another kind; a drink at all is the first step
+      const drinkStep = !g.drinks.length ? cheapest(w, CATEGORIES.drink.members) : 0;
+      const nd = nextKind(w, 'drink', g.drinks, g.noDrink.length ? g.noDrink : alive(w)), nm = nextKind(w, 'meal', g.meals, g.noMeal);
+      add('a drink for everyone', drinkStep + (g.noDrink.length || !g.drinks.length ? (nd ? goodCost(w, nd) + 1 : 50) : 0));
+      add('a meal for everyone', g.noMeal.length ? (nm ? goodCost(w, nm) + 1 : 50) : 0);
+      add('seats for everyone', 1 + Math.max(0, p.pop - built(w).reduce((n, b) => n + (bdef(b).seats ?? 0), 0)) / 6);
+      add('nobody sulking', 1);
+      break;
+    }
+  }
+  return out;
+}
+
 // ---------- Charter chains ----------
 /** the goods the current charter is waiting on, by its unfinished parts */
 function charterGoods(w: World): ResourceId[] {
@@ -78,7 +160,14 @@ function charterGoods(w: World): ResourceId[] {
     }
     if (p.kind === 'built' && BUILDING_BY_ID[p.def].cost.fine) out.push('planks');
     if (p.kind === 'monument') { const b = w.buildings.find(x => x.def === p.def); const key = Object.keys(b ? (BUILDING_BY_ID[p.def].stages?.[b.stage ?? 0]?.cost ?? {}) : BUILDING_BY_ID[p.def].cost)[0]; if (key) out.push(...membersOf(key as InputKey).filter(makeable).slice(0, 2)); }
-    if (p.kind === 'longTable') { out.push(...MEALS.filter(makeable).slice(0, 2)); out.push(...CATEGORIES.drink.members.filter(makeable).slice(0, 2)); }
+    if (p.kind === 'longTable') {
+      // what the feast is missing: a meal and a drink at all, then the kinds that suit the people nothing on hand suits
+      const g = feastGaps(w);
+      if (!g.meals.length) out.push(...MEALS.filter(makeable).slice(0, 1)); else out.push(...g.meals);
+      if (!g.drinks.length) { const d = nextKind(w, 'drink', [], alive(w)); if (d) out.push(d); } else out.push(...g.drinks);
+      const nd = g.noDrink.length ? nextKind(w, 'drink', g.drinks, g.noDrink) : undefined; if (nd) out.push(nd);
+      const nm = g.noMeal.length ? nextKind(w, 'meal', g.meals, g.noMeal) : undefined; if (nm) out.push(nm);
+    }
   }
   return [...new Set(out)];
 }
@@ -115,7 +204,7 @@ export function charterChain(w: World): string[] {
  * Experiment switches for the balance tools. `advisor` makes the bot play from what's on screen (the complaint
  * panel) instead of its own rules; it's off by default because, so far, it plays worse (see the project doc).
  */
-export const BOT = { festival: true, festivalAt: 8, comfortsFirst: false, recruitCap: 0, recruitExtra: 4, comforts: true, foodDepot: 'food' as false | 'food' | 'meals', laborersPer: 3.5, advisor: false, gate: true, ranked: true, comfort: 'strict' as 'strict' | 'econ' | 'none', rescue: false, rescueAt: 40, moodBlock: false, reroll: true, variety: false, routes: false, off: [] as string[], skip: [] as string[] };
+export const BOT = { effortPick: true, festival: true, festivalAt: 8, comfortsFirst: false, recruitCap: 0, recruitExtra: 4, comforts: true, foodDepot: 'food' as false | 'food' | 'meals', laborersPer: 3.5, advisor: false, gate: true, ranked: true, comfort: 'strict' as 'strict' | 'econ' | 'none', rescue: false, rescueAt: 40, moodBlock: false, reroll: true, variety: false, routes: false, off: [] as string[], skip: [] as string[] };
 
 // ---------- Explaining the bot ----------
 /** one thing the bot decided and why: each option with its score broken into parts, or a staffing or build step */
@@ -183,16 +272,11 @@ export function autoDecide(w: World, style: 'greedy' | 'random' = 'greedy', rand
       option = Math.floor(rand() * n);
     } else if (d.kind === 'charter') {
       // prefer charters we're already close to; long mood holds are a gamble
-      const scoreParts = (id: string): Record<string, number> => {
-        const c = charterDef(id)!;
-        // a variety charter is a bad bet until the colony can already make enough different kinds
-        const parts = c.metric.kind === 'all' ? c.metric.parts : [c.metric];
-        const short = parts.reduce((n, m) => n + (m.kind === 'variety' ? Math.max(0, m.kinds - kindsMakeable(w, CATEGORIES[m.category].members)) * -2 : 0), 0);
-        return { 'progress already (×3)': progressIf(w, id) * 3, 'kinds it can\u2019t make yet': short };
-      };
+      // the charter with the least left to do: each condition's gap, and the buildings and drafts its goods still need
+      const scoreParts = (id: string): Record<string, number> => (BOT.effortPick ? charterEffort(w, id) : { 'progress already (×−3)': -progressIf(w, id) * 3 });
       const score = (id: string) => sumParts(scoreParts(id));
-      option = d.options.map(score).reduce((b, s, i, arr) => (s > arr[b] ? i : b), 0);
-      if (TRACE.on) note(w, { kind: 'decision', title: `Charter pick (tier ${d.tier})`, better: 'higher', chosen: d.options[option], options: d.options.map(id => ({ id, parts: scoreParts(id), score: score(id) })) });
+      option = d.options.map(score).reduce((b, s, i, arr) => (s < arr[b] ? i : b), 0);
+      if (TRACE.on) note(w, { kind: 'decision', title: `Charter pick (tier ${d.tier})`, better: 'lower', chosen: d.options[option], options: d.options.map(id => ({ id, parts: scoreParts(id), score: score(id) })) });
     } else if (d.kind === 'blueprint') {
       const helpers = charterHelpers(w.charter);
       const feedable = (id: string) => id !== 'smokehouse' || w.owned.includes('dock');

@@ -6,6 +6,7 @@ import {
   keepsFresh, findSpot, canPlace, laborers, centerOf, built, Building, efficiencyAt, pathAt, MAP_SIZE, blockedReason, Errand, patientsAt, lost, bedridden, spoilingFood, accepts, roomIn, FOODS, GOODS,
   recipesOf, recipeOn, currentRecipe, siteOk, rerollCost, REROLL_STEP, stockOf, recipeReach, charterHelpers, charterDef,
   costOf, researchLeft, researchStillNeeds, desks, feastCheck, festivalPreview, mealTotal, drinkTotal,
+  comfortParts, comfortOf, colonyComfort, comfortGaps, strainPerDay, COMFORT_NEEDS,
 } from '../sim/world';
 import { START } from '../sim/scenario';
 import { assess } from '../sim/advisor';
@@ -90,6 +91,7 @@ export class UI {
   profile: { runs: { result: string; day: number; charters: number }[] } = { runs: [] };
   private picking: number | null = null; // errand id whose colonist picker is open
   private festivalOpen = false;
+  private strainOpen = false;
 
   constructor(private root: HTMLElement, private getWorld: () => World, private send: (c: Command) => string | null, private view: IsoView) {
     root.addEventListener('click', e => this.click(e));
@@ -174,6 +176,9 @@ export class UI {
         this.picking = null; this.lastModal = ''; break; }
       case 'errand-later': this.send({ type: 'resolve', option: 0 }); this.lastModal = ''; break;
       case 'festival-open': this.festivalOpen = true; this.lastModal = ''; break;
+      case 'strain-open': this.strainOpen = true; this.lastModal = ''; break;
+      case 'strain-close': this.strainOpen = false; this.lastModal = ''; break;
+      case 'strain-festival': this.strainOpen = false; this.festivalOpen = true; this.lastModal = ''; break;
       case 'festival-close': this.festivalOpen = false; this.lastModal = ''; break;
       case 'festival-call': { const err = this.send({ type: 'callFestival' }); this.toast(err ?? 'Festival called. Everyone gathers at the hearth at dusk.'); this.festivalOpen = false; this.lastModal = ''; break; }
     }
@@ -227,12 +232,29 @@ export class UI {
           ${researchChip}
         </div>
         <div class="threats">
-          <div class="strain" title="Frontier strain: a mood penalty that grows every day. Finishing a charter or holding a festival eases it."><span>Strain</span><b>${strain ? '−' : ''}${strain}</b>${this.festivalChip(w)}</div>
+          <button type="button" class="strain" data-act="strain-open" title="Frontier strain: a mood penalty that rises every day, faster when people's needs go unmet. Tap for why."><span>Strain</span><b>${strain ? '−' : ''}${strain}</b><small class="rate">+${strainPerDay(w).toFixed(1)}/day</small></button>${this.festivalChip(w)}
           <div class="leavers" title="If ${sc.collapse.lost} settlers leave or die${sc.collapse.minAlive ? `, or only ${sc.collapse.minAlive} remain` : ''}, the colony collapses"><span>Lost</span><div class="pips">${pips}</div></div>
         </div>
       </div>
       ${w.errands.length ? `<div class="errands">${w.errands.map(e => this.errandChip(w, e)).join('')}</div>` : ''}`;
     if (force || html !== this.lastHud) { (this.root.querySelector('#hud') as HTMLElement).innerHTML = html; this.lastHud = html; }
+  }
+
+  private strainCard(w: World) {
+    const comfort = colonyComfort(w);
+    const gaps = comfortGaps(w);
+    const pct = (x: number) => `${Math.round(x * 100)}%`;
+    const factor = Math.max(0.2, START.comfortScale.base - comfort * START.comfortScale.slope);
+    const rows = gaps.map(g => `<div class="lg-row ${g.avg >= 0.7 ? 'lg-good' : 'lg-bad'}"><span>${NEED_NAMES[g.need]}</span><i><b style="width:${Math.round(g.avg * 100)}%"></b></i><em>${pct(g.avg)}</em></div>`).join('');
+    const worst = gaps.filter(g => g.avg < 0.7).slice(0, 2).map(g => NEED_FIX[g.need]);
+    return `<div class="card-wrap event"><p class="eyebrow">Frontier strain</p><h2>Strain ${Math.round(w.strain)}, rising ${strainPerDay(w).toFixed(1)} a day</h2>
+      <p class="lede">The frontier wears on everyone, more as the colony grows and as the weeks go by. How comfortable people are sets how fast: a comfortable colony strains far slower.</p>
+      <p class="prefs">Comfort <b>${pct(comfort)}</b>, so strain rises at <b>${factor.toFixed(2)}×</b>. A fully comfortable colony would rise at ${Math.max(0.2, START.comfortScale.base - START.comfortScale.slope).toFixed(1)}×.</p>
+      <div class="ledger">${rows}</div>
+      ${worst.length ? `<p class="terms">Biggest gaps: ${worst.join('; ')}.</p>` : ''}
+      <p class="terms">It eases when a charter is finished (by ${pct(START.relief.charter)}) or when you hold a festival.</p>
+      <div class="opts">${!w.festival?.called && !festivalPreview(w).wait ? `<button type="button" class="opt" data-act="strain-festival"><b>Plan a festival</b><span>${festivalPreview(w).relief >= 0.5 ? `Eases strain by about ${Math.round(festivalPreview(w).relief)}` : 'Strain is low, so it would ease very little'}</span></button>` : ''}</div>
+      <button type="button" class="ghost skip" data-act="strain-close">Close</button></div>`;
   }
 
   private festivalChip(w: World) {
@@ -259,7 +281,7 @@ export class UI {
         <li><span>Strain eased</span><b>${Math.round(p.relief)} (${pct(p.share)})</b></li>
       </ul>
       <p class="terms">${pct(r.base)} if everyone eats, ${pct(r.drinks)} more if most have a drink, ${pct(r.loved)} more if most get a favourite. Then ${r.waitDays} days before the next one.${short}</p>
-      <div class="opts"><button type="button" class="opt" data-act="festival-call" ${can ? '' : 'disabled'}><b>Call it for dusk</b><span>${can ? `Eases strain by about ${Math.round(p.relief)}` : mealTotal(w) < 1 ? 'There are no meals to share' : 'Not ready yet'}</span></button></div>
+      <div class="opts"><button type="button" class="opt" data-act="festival-call" ${can ? '' : 'disabled'}><b>Call it for dusk</b><span>${can ? (p.relief >= 0.5 ? `Eases strain by about ${Math.round(p.relief)}` : 'Strain is low, so it would ease very little') : mealTotal(w) < 1 ? 'There are no meals to share' : 'Not ready yet'}</span></button></div>
       <button type="button" class="ghost skip" data-act="festival-close">Not now</button></div>`;
   }
 
@@ -360,6 +382,7 @@ export class UI {
       ${c.illness ? `<p class="warnline">${esc(c.illness.name)} · severity ${Math.round(c.illness.severity)} of 100. ${built(w).some(b => b.def === 'clinic') ? 'A clinic with a doctor speeds recovery.' : 'Build a clinic and assign a doctor to speed recovery.'} At 100 they leave for a city physician.</p>` : ''}
       <p class="prefs">Loves <b>${JOB_NAMES[c.likes]}</b> · hates <b>${JOB_NAMES[c.dislikes]}</b>${tasteLine(c)} · hunger ${Math.round(c.hunger)} · fun ${Math.round(c.fun)}</p>
       <h3>Skills</h3><div class="skills">${skillKinds(c).map(k => `<div class="skill${k === c.likes ? ' fav' : ''}"><span>${SKILL_NAMES[k]}</span><i><b style="width:${c.skills[k] * 10}%"></b></i><em>${Math.floor(c.skills[k])}</em></div>`).join('')}</div>
+      <h3>Comfort <span class="muted">· ${Math.round(comfortOf(w, c) * 100)}%, how well their needs are met</span></h3>${comfortRows(w, c)}
       <h3>Why they feel this way</h3>${moodLedger(c)}<ul class="thoughts">${thoughts}</ul>
       <h3>Relationships</h3><div class="rels">${rel}</div>
       <h3>Job ${job ? '' : '<span class="muted">· none</span>'}</h3>
@@ -563,6 +586,7 @@ export class UI {
       }
     }
     if (!html && this.festivalOpen) html = this.festivalCard(w);
+    if (!html && this.strainOpen) html = this.strainCard(w);
     if (!html && this.picking != null) { const e = w.errands.find(x => x.id === this.picking); if (e) html = this.errandPicker(w, e, false); else this.picking = null; }
     if (force || html !== this.lastModal) { el.innerHTML = html; this.lastModal = html; }
     el.hidden = !html;
@@ -605,6 +629,27 @@ function storeLabel(b: Building) {
   if (b.allow.length === FOODS.length && FOODS.every(f => b.allow!.includes(f))) return 'food only';
   if (b.allow.length === GOODS.length && GOODS.every(f => b.allow!.includes(f))) return 'goods only';
   return `${b.allow.length} kinds`;
+}
+
+const NEED_NAMES: Record<string, string> = { shelter: 'Shelter', meals: 'Meals', evenings: 'Evenings', health: 'Health', surroundings: 'Surroundings' };
+const NEED_FIX: Record<string, string> = {
+  shelter: 'beds for everyone, cottages better still',
+  meals: 'cooked meals at a table, favourites best',
+  evenings: 'something to do in the evening: a tavern, a stage',
+  health: 'a clinic with a doctor for the sick',
+  surroundings: 'paths and decorations where people spend time',
+};
+/** one settler's comfort, need by need, with what would raise each */
+function comfortRows(w: World, c: Colonist) {
+  const p = comfortParts(w, c);
+  const why: Record<string, string> = {
+    shelter: p.shelter >= 1 ? 'a cozy cottage' : p.shelter > 0 ? 'a bed (a cottage would be better)' : 'sleeping on the ground',
+    meals: p.meals >= 1 ? 'a favourite meal at a table' : p.meals >= 0.85 ? 'a cooked meal at a table' : p.meals > 0 ? 'cooked, but not at a table' : 'raw food or going hungry',
+    evenings: p.evenings >= 0.8 ? 'well entertained' : p.evenings > 0.3 ? 'some fun' : 'bored',
+    health: p.health >= 1 ? 'healthy' : p.health > 0 ? 'ill, being looked after' : 'ill, nobody treating them',
+    surroundings: p.surroundings >= 0.75 ? 'pleasant' : p.surroundings > 0.25 ? 'plain' : 'drab',
+  };
+  return `<div class="ledger">${COMFORT_NEEDS.map(k => `<div class="lg-row need ${p[k] >= 0.7 ? 'lg-good' : 'lg-bad'}"><span>${NEED_NAMES[k]}<small>${esc(why[k])}</small></span><i><b style="width:${Math.round(p[k] * 100)}%"></b></i><em>${Math.round(p[k] * 100)}%</em></div>`).join('')}</div>`;
 }
 
 /** base 50, plus the good, minus the gripes, minus this colonist's share of frontier wear */
