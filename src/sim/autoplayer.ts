@@ -2,7 +2,7 @@
 // It reads the active charter and plays towards it, the way a person would.
 import { BUILDING_BY_ID, BUILDINGS, CATEGORIES, CharterMetric, RESEARCH_BY_ID, EVENTS, ResourceId, MEALS, RAW_FOODS, Recipe, InputKey, membersOf, recipeRate } from './content';
 import { assess, Concern, defsOf } from './advisor';
-import { World, apply, alive, beds, mealTotal, sites, findSpot, CENTER, avgMood, built, MAP_SIZE, pathAt, terrainAt, T_WATER, bdef, workersAt, blockedReason, opinion, Building, Colonist, hourOfDay, charterProgress, buildingByUid, storageFree, storages, FOODS, GOODS, bedridden, foodTotal, currentRecipe, drinkTotal, siteOk, enabledRecipes, recipesOf, rerollCost, stockOf, usableHere, charterDef, charterHelpers, feastCheck, desks, researchLeft, festivalPreview, edibleTotal, doorTile, centerOf, winterStores, storageCap, stored } from './world';
+import { World, apply, alive, beds, mealTotal, sites, findSpot, CENTER, avgMood, built, MAP_SIZE, pathAt, terrainAt, T_WATER, bdef, workersAt, blockedReason, opinion, Building, Colonist, hourOfDay, charterProgress, buildingByUid, storageFree, storages, FOODS, GOODS, bedridden, foodTotal, currentRecipe, drinkTotal, siteOk, enabledRecipes, recipesOf, rerollCost, stockOf, usableHere, charterDef, charterHelpers, feastCheck, desks, researchLeft, festivalPreview, edibleTotal, doorTile, centerOf, winterStores, storageCap, stored, lastDay, lastDayHours, remainingCost } from './world';
 import { seasonOf } from './seasons';
 
 const BLUEPRINT_PRIORITY = ['sawmill', 'pieoven', 'dock', 'cottage', 'brewery', 'ciderpress', 'tavern', 'kiln', 'claypit', 'carpenter', 'orchard', 'field', 'apiary', 'smokehouse', 'cellar', 'stage', 'bathhouse', 'bakery', 'apothecary', 'herbgarden', 'mill'];
@@ -213,7 +213,7 @@ export function charterChain(w: World): string[] {
  * Experiment switches for the balance tools. `advisor` makes the bot play from what's on screen (the complaint
  * panel) instead of its own rules; it's off by default because, so far, it plays worse (see the project doc).
  */
-export const BOT = { unlockChain: true, ruleGap: true, hallMood: true, varietyRules: true, bankDrinks: true, bankHall: false, chainBeforeWinter: true, effortPick: true, moodFestival: true, festival: true, festivalAt: 8, comfortsFirst: false, recruitCap: 0, recruitExtra: 4, comforts: true, foodDepot: 'food' as false | 'food' | 'meals', laborersPer: 3.5, advisor: false, gate: true, ranked: true, comfort: 'strict' as 'strict' | 'econ' | 'none', rescue: false, rescueAt: 40, moodBlock: false, reroll: true, variety: false, routes: false, off: [] as string[], skip: [] as string[] };
+export const BOT = { rateStaffing: true, unlockChain: true, ruleGap: true, hallMood: true, varietyRules: true, bankDrinks: true, bankHall: false, chainBeforeWinter: true, effortPick: true, moodFestival: true, festival: true, festivalAt: 8, comfortsFirst: false, recruitCap: 0, recruitExtra: 4, comforts: true, foodDepot: 'food' as false | 'food' | 'meals', laborersPer: 3.5, advisor: false, gate: true, ranked: true, comfort: 'strict' as 'strict' | 'econ' | 'none', rescue: false, rescueAt: 40, moodBlock: false, reroll: true, variety: false, routes: false, off: [] as string[], skip: [] as string[] };
 
 // ---------- Explaining the bot ----------
 /** one thing the bot decided and why: each option with its score broken into parts, or a staffing or build step */
@@ -373,7 +373,53 @@ function canPay(w: World, effect: string) {
 }
 
 /** Lay out blueprints the colony can afford, at most two construction sites at a time. Called hourly. */
+// ---------- Staffing by need ----------
+// Food and wood are staffed from what the colony actually uses and what a worker actually brings in, read off the
+// ledger, not from thresholds: (daily use + a refill toward a target stock over a couple of days) / output per worker.
+const RAW_MAKERS = ['forager', 'dock', 'cellar', 'orchard'];
+interface EconMemory { day: number; woodUse: number[]; rawUse: number[]; staff: { wood: number; raw: number }[] }
+const econMemory = new WeakMap<World, EconMemory>();
+const sumKeys = (ld: Record<string, number>, test: (good: string, src: string) => boolean) =>
+  Object.entries(ld).reduce((n, [k, v]) => { const [g, s] = k.split(':'); return s && test(g, s) ? n + v : n; }, 0);
+/** once an hour: who works the food and wood jobs, and at each dawn yesterday's use */
+function rememberEconomy(w: World) {
+  const m = econMemory.get(w) ?? { day: 0, woodUse: [], rawUse: [], staff: [] };
+  econMemory.set(w, m);
+  const at = (ids: string[]) => alive(w).filter(c => { const j = buildingByUid(w, c.job); return !!j && ids.includes(j.def); }).length;
+  m.staff.push({ wood: at(['woodcutter']), raw: at(RAW_MAKERS) }); if (m.staff.length > 24) m.staff.shift();
+  if (day(w) !== m.day) {
+    m.day = day(w);
+    const ld = lastDay(w), scale = 24 / lastDayHours(w);
+    m.woodUse.push(sumKeys(ld, (g, s) => g === 'wood' && s.startsWith('-')) * scale); if (m.woodUse.length > 3) m.woodUse.shift();
+    m.rawUse.push(sumKeys(ld, (g, s) => RAW_FOODS.includes(g as ResourceId) && s.startsWith('-')) * scale); if (m.rawUse.length > 3) m.rawUse.shift();
+  }
+}
+/** workers wanted on wood and on raw food, and why (for explaining) */
+export function staffByNeed(w: World): { woodcutter: number; rawFood: number; why: string } {
+  const m = econMemory.get(w);
+  const pop = alive(w).length, ws = winterStores(w), ld = lastDay(w), scale = 24 / lastDayHours(w);
+  const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
+  const staffAvg = (k: 'wood' | 'raw') => avg((m?.staff ?? []).map(x => x[k]));
+  // what one worker brings in a day, from the last day's output, or a modest guess before there's any to go on
+  const perWorker = (made: number, k: 'wood' | 'raw', guess: number) => ((m?.staff.length ?? 0) >= 12 && staffAvg(k) >= 0.5 ? Math.max(guess * 0.4, made * scale / staffAvg(k)) : guess);
+  // wood: today's use or the last few days' (construction comes in lumps), plus what open building sites still need
+  const woodUse = Math.max(sumKeys(ld, (g, s) => g === 'wood' && s.startsWith('-')) * scale, avg(m?.woodUse ?? []), 4);
+  const siteWood = sites(w).reduce((n, b) => n + (remainingCost(b).wood ?? 0), 0);
+  const woodTarget = Math.max(30, ws.wood) + siteWood;
+  const woodRefill = Math.max(-woodUse * 0.5, (woodTarget - w.res.wood) / 2);
+  const woodPer = perWorker(sumKeys(ld, (g, s) => g === 'wood' && s === '+woodcutter'), 'wood', 6);
+  const woodcutter = Math.max(1, Math.ceil((woodUse + woodRefill) / woodPer));
+  // raw food: eaten, cooked and spoiled; the target covers a few days for everyone and what winter wants put by
+  const rawUse = Math.max(sumKeys(ld, (g, s) => RAW_FOODS.includes(g as ResourceId) && s.startsWith('-')) * scale, avg(m?.rawUse ?? []), pop * 1.2);
+  const rawTarget = Math.max(pop * 3, ws.food - mealTotal(w));
+  const rawRefill = Math.max(-rawUse * 0.5, (rawTarget - rawStock(w)) / 2);
+  const rawPer = perWorker(sumKeys(ld, (g, s) => RAW_FOODS.includes(g as ResourceId) && RAW_MAKERS.some(r => s === `+${r}`)), 'raw', 7);
+  const rawFood = Math.max(1, Math.ceil((rawUse + rawRefill) / rawPer));
+  return { woodcutter, rawFood, why: `wood: use ${woodUse.toFixed(0)}/day, stock ${Math.floor(w.res.wood)} of ${Math.round(woodTarget)}, ${woodPer.toFixed(1)} per worker → ${woodcutter} · raw food: use ${rawUse.toFixed(0)}/day, stock ${Math.floor(rawStock(w))} of ${Math.round(rawTarget)}, ${rawPer.toFixed(1)} per worker → ${rawFood}` };
+}
+
 export function autoBuild(w: World) {
+  rememberEconomy(w);
   const kind = charterKind(w);
   const hallSite = w.buildings.find(b => b.def === 'hall' && !b.built && (b.stage ?? 0) === 0);
   const saving: ResourceId[] = hallSite ? ['planks'] : w.charter === 'firstplanks' ? ['wood', 'planks'] : [];
@@ -528,6 +574,7 @@ export function staffWants(w: World): Record<string, number> {
   const raw = rawStock(w);
   // stores for the coming winter
   const ws = winterStores(w);
+  const need = BOT.rateStaffing ? staffByNeed(w) : null;
   // a second meal route once food and wood are comfortable: one cook on the first pie oven, smokehouse or bakery that can be fed
   const comfy = foodTotal(w) >= pop * 4 && w.res.wood >= 25;
   const second = BOT.variety && comfy ? ['pieoven', 'smokehouse', 'bakery'].find(id => built(w).some(b => b.def === id && plannedRecipe(w, b) && MEALS.includes(plannedRecipe(w, b)!.output))) : undefined;
@@ -537,8 +584,8 @@ export function staffWants(w: World): Record<string, number> {
   const bank = BOT.bankDrinks ? drinksToBank(w) : 0;
   const drinksWanted = bank > 0 ? 4 : charterDrinks ? 2 : drinkTotal(w) < 15 && built(w).some(b => b.def === 'tavern') ? 1 : 0;
   return {
-    woodcutter: 1 + Math.floor(pop / 5) + (moodCharter(w) || ch === 'firstplanks' ? 1 : 0) + (w.res.wood < 25 ? 1 : 0) + (w.res.wood < ws.wood ? 1 + Math.floor(pop / 6) : 0),
-    rawFood: rawFoodWorkers(w, pop) + (raw < pop * 4 ? 1 : 0) + (['settled', 'piesky', 'longtable'].includes(ch) ? 1 : 0) + (foodTotal(w) < ws.food ? 1 + Math.floor(pop / 6) : 0),
+    woodcutter: need ? need.woodcutter : 1 + Math.floor(pop / 5) + (moodCharter(w) || ch === 'firstplanks' ? 1 : 0) + (w.res.wood < 25 ? 1 : 0) + (w.res.wood < ws.wood ? 1 + Math.floor(pop / 6) : 0),
+    rawFood: need ? need.rawFood : rawFoodWorkers(w, pop) + (raw < pop * 4 ? 1 : 0) + (['settled', 'piesky', 'longtable'].includes(ch) ? 1 : 0) + (foodTotal(w) < ws.food ? 1 + Math.floor(pop / 6) : 0),
     kitchen: Math.max(1, Math.ceil(pop / 9)) + (['settled', 'longtable'].includes(ch) || (hall?.stage ?? 0) === 1 ? 1 : 0),
     desk: w.research?.current && desks(w).length ? 1 : 0,
     sawmill: (stockOf(w, 'fine') < planksWanted(w) ? 2 : stockOf(w, 'fine') < 25 ? 1 : 0) + (['firstplanks', 'roof', 'hall'].includes(ch) ? 1 : 0),
@@ -616,7 +663,8 @@ export function staffPlan(w: World, explain = false): Map<number, number> {
   give('woodcutter', 1); give('desk', 1); give('kitchen', 1);
   stage = 'food and wood top-ups';
   // then what the complaints call for, biggest first
-  const serveFixes = () => { for (const f of fixesOf(w)) if ('staff' in f) { want[f.staff] = Math.max(want[f.staff] ?? 0, f.n); give(f.staff, f.n); } };
+  // (with staffing by need, food and wood already match the colony's use; the foreman's "more woodcutters" doesn't stack on top)
+  const serveFixes = () => { for (const f of fixesOf(w)) if ('staff' in f && !(BOT.rateStaffing && ['rawFood', 'woodcutter'].includes(f.staff))) { want[f.staff] = Math.max(want[f.staff] ?? 0, f.n); give(f.staff, f.n); } };
   // comforts already built get a person before the food and wood top-ups take everyone (BOT.comfortsFirst), or after them
   const comforts = () => {
     if (BOT.comforts && built(w).some(b => b.def === 'tavern')) {
@@ -629,11 +677,17 @@ export function staffPlan(w: World, explain = false): Map<number, number> {
   };
   if (BOT.comfortsFirst) { stage = 'comforts'; comforts(); stage = 'food and wood top-ups'; }
   const ws = winterStores(w);
-  if (rawStock(w) < pop * 4 || (!BOT.chainBeforeWinter && foodTotal(w) < ws.food)) give('rawFood', 99);
-  if (w.res.wood < 30 || (!BOT.chainBeforeWinter && w.res.wood < ws.wood)) give('woodcutter', Math.max(2, Math.ceil(pop / 4)) + (w.res.wood < ws.wood ? 1 : 0));
+  if (BOT.rateStaffing) {
+    // as many as the colony's actual use calls for (wanted counts already come from staffByNeed)
+    give('rawFood', want.rawFood ?? 1); give('woodcutter', want.woodcutter ?? 1);
+    if (explain) steps.push(`  need: ${staffByNeed(w).why}`);
+  } else {
+    if (rawStock(w) < pop * 4 || (!BOT.chainBeforeWinter && foodTotal(w) < ws.food)) give('rawFood', 99);
+    if (w.res.wood < 30 || (!BOT.chainBeforeWinter && w.res.wood < ws.wood)) give('woodcutter', Math.max(2, Math.ceil(pop / 4)) + (w.res.wood < ws.wood ? 1 : 0));
+  }
   give('clinic', 1);
   // the charter's chain gets its first hands before the winter stores take the rest
-  if (BOT.chainBeforeWinter) {
+  if (BOT.chainBeforeWinter && !BOT.rateStaffing) {
     stage = 'charter chain';
     for (const k of chain) give(k, 1);
     stage = 'winter stores';
