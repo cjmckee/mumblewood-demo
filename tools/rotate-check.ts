@@ -23,13 +23,13 @@ while (w.decisions.length) apply(w, { type: 'resolve', option: 0 });
 for (const r of [1, 2, 3]) {
   const s = findSpot(w, 'leanto'); if (!s) { check(false, 'no spot'); break; }
   const err = apply(w, { type: 'place', def: 'leanto', x: s.x, y: s.y, rot: r });
-  check(!err, `place hut turned ${r}: ${err}`);
+  check(!err, `place shack turned ${r}: ${err}`);
 }
 const turned = w.buildings.filter(b => b.def === 'leanto' && b.rot);
-check(turned.length === 3, `3 turned huts placed, got ${turned.length}`);
+check(turned.length === 3, `3 turned shacks placed, got ${turned.length}`);
 w.res.wood += 200;
 for (let h = 0; h < 72 && turned.some(b => !b.built); h++) { runHours(w, 1); while (w.decisions.length) apply(w, { type: 'resolve', option: 0 }); }
-check(turned.every(b => b.built), `turned huts built: ${turned.map(b => b.built).join(',')}`);
+check(turned.every(b => b.built), `turned shacks built: ${turned.map(b => b.built).join(',')}`);
 // placing must not cover another building's turned doorway
 const k = turned[0], dt = doorTile(k.def, k.x, k.y, k.rot);
 check(!canPlace(w, 'leanto', dt.x, dt.y).ok, 'cannot build on a turned doorway');

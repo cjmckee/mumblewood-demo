@@ -1,10 +1,10 @@
-// Browser check for save and resume: build first (node build.mjs), then: node tools/save-check.mjs [outDir]
+// Browser check for save and resume: build first (node build.mjs), then: node tools/save-check.mjs [outDir=dist]
 // Plays, reloads, continues, restarts, and checks old or broken saves are ignored. Uses the pre-installed Playwright.
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 const { chromium } = createRequire(import.meta.url)('playwright');
 const page_ = fileURLToPath(new URL('../dist/mumblewood.html', import.meta.url));
-const out = process.argv[2] ?? '.';
+const out = process.argv[2] ?? 'dist';
 let fails = 0; const ok = (c, m) => { console.log(`${c ? 'ok  ' : 'FAIL'} ${m}`); if (!c) fails++; };
 const browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader'] });
 const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
