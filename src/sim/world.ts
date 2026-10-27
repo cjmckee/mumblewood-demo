@@ -2,8 +2,10 @@
 import {
   BUILDING_BY_ID, BuildingDef, CHARTERS, CharterDef, EVENTS, FIRST_NAMES, JOB_NAMES, JobKind,
   MEALS, PERKS, RAW_FOODS, ResourceId, SHIRTS, SKINS, SURNAMES, TRAITS, TRAIT_BY_ID, BUILDINGS, buildWork,
-  JOB_KINDS, JOB_EVENTS, JobEventDef, ILLNESSES, RESOURCES, Recipe, InputKey, CATEGORIES, isCategory, membersOf, inputName, recipeRate, SITES, SiteId, MEAL_MOOD,
+  JOB_EVENTS, JobEventDef, ILLNESSES, RESOURCES, Recipe, InputKey, CATEGORIES, isCategory, membersOf, inputName, recipeRate, SITES, SiteId, MEAL_MOOD,
+  ALL_CHARTERS, CharterMetric, RESEARCH_BY_ID,
 } from './content';
+import { scenarioOf, envScenario, SCENARIOS } from './scenario';
 
 // ---------- RNG ----------
 export function nextRand(w: { rngState: number }): number {
@@ -88,6 +90,8 @@ export interface Building {
   high: boolean;
   /** workshops: indices of recipes the player has switched off */
   off?: number[];
+  /** buildings built in stages (the Crown's Hall): which stage is under way */
+  stage?: number;
 }
 
 export type Decision =
@@ -96,7 +100,8 @@ export type Decision =
   | { kind: 'recruit'; options: Colonist[] }
   | { kind: 'perk'; options: string[] }
   | { kind: 'event'; eventId: string }
-  | { kind: 'errand'; errandId: number };
+  | { kind: 'errand'; errandId: number }
+  | { kind: 'research'; options: string[] };
 
 export interface LogEntry { day: number; hour: number; text: string; tone: 'good' | 'bad' | 'neutral' | 'love' }
 
@@ -137,6 +142,18 @@ export interface World {
   flowLog: Record<string, number>[];
   stats: { peakPop: number; couples: number; breakups: number; departures: number; mealsEaten: number; built: number; cured: number; errands: number; deaths: number };
   version: number; // bumps when buildings change shape or state, for the renderer
+  /** how the run started (see scenario.ts); missing means classic */
+  scenario?: string;
+  /** research: projects finished, the one under way and its progress in work-hours */
+  research?: { done: string[]; current: string | null; progress: number };
+  /** the first charter has been offered (scenarios that hold it back) */
+  charterOffered?: boolean;
+  /** the day blueprint drafts started, in scenarios that wait for the first charter */
+  draftsFrom?: number | null;
+  /** hours each hold-type condition of an all-at-once charter has held */
+  charterHolds?: number[];
+  /** the founders' feast for the Long Table: called for tonight, when it can next be called, and whether it worked */
+  feast?: { called: boolean; readyAt: number; done: boolean; last?: string };
 }
 
 export const TICKS_PER_HOUR = 6;
@@ -148,6 +165,8 @@ export const BUILD_MIN = 2, BUILD_MAX = MAP_SIZE - 3;
 export const MAX_DEPARTURES = 6;
 /** Workshops won't burn the last of the wood. */
 export const WOOD_RESERVE = 20;
+/** this run's reserve: the classic 20, or a smaller one for a small colony's smaller fire */
+export const woodReserve = (w: World) => scenarioOf(w).woodReserve;
 export const CARRY = 15;
 /** a blueprint draft and a recruit draft each come this many days apart */
 export const DRAFT_EVERY = 2;
@@ -206,7 +225,7 @@ export function enabledRecipes(b: Building): Recipe[] {
 export function inInbox(b: Building, key: InputKey) { return isCategory(key) ? membersOf(key).reduce((n, x) => n + (b.inbox[x] ?? 0), 0) : (b.inbox[key] ?? 0); }
 /** how much of an input a workshop could get: its inbox plus storage, keeping the wood reserve */
 function obtainable(w: World, b: Building, key: InputKey) {
-  return membersOf(key).reduce((n, x) => n + w.res[x] + (b.inbox[x] ?? 0), 0) - (membersOf(key).includes('wood') ? WOOD_RESERVE : 0);
+  return membersOf(key).reduce((n, x) => n + w.res[x] + (b.inbox[x] ?? 0), 0) - (membersOf(key).includes('wood') ? woodReserve(w) : 0);
 }
 const recipeReady = (w: World, b: Building, r: Recipe) => Object.keys(r.inputs).every(k => obtainable(w, b, k as InputKey) >= 1);
 /** The recipe a workshop is working toward: the best switched-on one whose ingredients can be had, else the best switched-on one. */
@@ -590,7 +609,7 @@ function makeColonist(w: World, usedNames: Set<string>): Colonist {
     if (t.group && traits.some(x => TRAIT_BY_ID[x].group === t.group)) continue;
     traits.push(t.id);
   }
-  const jobs = JOB_KINDS;
+  const jobs = scenarioOf(w).jobs;
   const likes = pick(w, jobs);
   let dislikes = pick(w, jobs);
   while (dislikes === likes) dislikes = pick(w, jobs);
@@ -618,25 +637,30 @@ function newBuilding(w: World, def: string, x: number, y: number, isBuilt: boole
   return b;
 }
 
-export function createWorld(seed: number, difficulty: Difficulty = 'normal'): World {
+export function createWorld(seed: number, difficulty: Difficulty = 'normal', scenario: string = envScenario()): World {
+  const sc = SCENARIOS[scenario] ?? SCENARIOS.classic;
   const w: World = {
     seed, rngState: seed >>> 0, hour: 6,
     colonists: [], buildings: [], terrain: [], paths: [],
-    res: { wood: 60, berries: 50, fish: 0, mushrooms: 0, stew: 10, pie: 0, smokedFish: 0, planks: 0, ale: 0, apples: 0, grain: 0, honey: 0, cider: 0, mead: 0, clay: 0, reeds: 0, bricks: 0, wicker: 0, herbs: 0, flour: 0, bread: 0, skewers: 0, poultice: 0, tonic: 0, tea: 0 },
-    owned: BUILDINGS.filter(b => b.basic).map(b => b.id), perks: [],
+    res: { wood: 0, berries: 0, fish: 0, mushrooms: 0, stew: 0, pie: 0, smokedFish: 0, planks: 0, ale: 0, apples: 0, grain: 0, honey: 0, cider: 0, mead: 0, clay: 0, reeds: 0, bricks: 0, wicker: 0, herbs: 0, flour: 0, bread: 0, skewers: 0, poultice: 0, tonic: 0, tea: 0, ...sc.res },
+    owned: [...sc.unlocked], perks: [],
     charterTier: 1, charter: null, charterHours: 0, chartersDone: [],
     decisions: [], log: [], opinions: {}, status: 'playing', strain: 0, nextEventHour: 24 * 1.6, sites: [], rerolls: 0,
     errands: [], nextErrandId: 1, difficulty, charterBase: { cured: 0, errands: 0 }, moodLog: [], ateOffTable: false, forbidden: [],
     nextUid: 1, nextColonistId: 1, autoAssignNew: false,
     flows: {}, flowLog: [],
-    stats: { peakPop: 6, couples: 0, breakups: 0, departures: 0, mealsEaten: 0, built: 0, cured: 0, errands: 0, deaths: 0 },
+    stats: { peakPop: sc.colonists, couples: 0, breakups: 0, departures: 0, mealsEaten: 0, built: 0, cured: 0, errands: 0, deaths: 0 },
     version: 0,
   };
+  if (sc.id !== 'classic') {
+    w.scenario = sc.id;
+    if (sc.research.length) w.research = { done: [], current: null, progress: 0 };
+  }
   for (let i = 0; i < 20; i++) nextRand(w);
   genTerrain(w);
   addLog(w, `Scouts report ${w.sites.map(id => SITES.find(x => x.id === id)!.name).join(' and ')} nearby.`, 'good');
   newBuilding(w, 'hearth', CENTER - 1, CENTER - 1, true);
-  for (const id of ['stockpile', 'leanto', 'leanto', 'woodcutter', 'forager']) {
+  for (const id of sc.place) {
     const s = findSpot(w, id, CENTER, CENTER, true);
     if (s) newBuilding(w, id, s.x, s.y, true);
   }
@@ -646,14 +670,15 @@ export function createWorld(seed: number, difficulty: Difficulty = 'normal'): Wo
     if (edge && !blockedGrid(w)[y * MAP_SIZE + x]) w.paths[y * MAP_SIZE + x] = 2;
   }
   const names = new Set<string>();
-  for (let i = 0; i < 6; i++) w.colonists.push(makeColonist(w, names));
+  for (let i = 0; i < sc.colonists; i++) w.colonists.push(makeColonist(w, names));
   for (const c of w.colonists) { c.px = c.x; c.py = c.y; }
   assignBeds(w);
   autoAssign(w);
-  addLog(w, 'Six settlers arrive at the edge of the Mumblewood with a cart, a kettle, and great optimism.', 'good');
-  addLog(w, 'There are only four beds for six people. Someone should build another lean-to.', 'neutral');
-  w.decisions.push({ kind: 'charter', tier: 1, options: shuffle(w, CHARTERS.filter(c => c.tier === 1)).slice(0, 3).map(c => c.id) });
-  w.decisions.push(blueprintDecision(w));
+  addLog(w, sc.intro[0], 'good');
+  if (sc.intro[1]) addLog(w, sc.intro[1], 'neutral');
+  if (w.research) w.decisions.push(researchDecision(w, sc.firstResearch));
+  if (sc.firstCharter === 'start') { w.decisions.push(charterDecision(w, 1)); w.charterOffered = sc.id === 'classic' ? undefined : true; }
+  if (!sc.draftsAfterCharter) w.decisions.push(blueprintDecision(w));
   return w;
 }
 
@@ -687,19 +712,80 @@ export const CHARTER_HELPERS: Record<string, string[]> = {
   woodpile: ['sawmill'], paved: ['sawmill'], tables: ['cottage'], healthy: ['apothecary', 'bathhouse'], menu: ['smokehouse', 'pieoven', 'bakery'], tasting: ['ciderpress', 'apothecary', 'brewery'], handy: ['cottage'],
   pretty: ['stage', 'sawmill'], masters: ['tavern'], pieday: ['pieoven', 'sawmill'], garden: ['sawmill', 'stage'], calm: ['tavern', 'bathhouse', 'stage'],
 };
+/** blueprints that help a charter: the classic table, or what a frontier charter lists */
+export const charterHelpers = (id: string | null) => (id ? CHARTER_HELPERS[id] ?? ALL_CHARTERS.find(c => c.id === id)?.helpers ?? [] : []);
+export const charterDef = (id: string | null) => (id ? ALL_CHARTERS.find(c => c.id === id) : undefined);
+/** a charter offer: this scenario's charters of the tier, on maps that have the sites they need */
+function charterDecision(w: World, tier: 1 | 2 | 3): Decision {
+  const pool = scenarioOf(w).charters.filter(c => c.tier === tier && (!c.sites || c.sites.every(x => w.sites.includes(x))));
+  return { kind: 'charter', tier, options: shuffle(w, pool).slice(0, 3).map(c => c.id) };
+}
+
+// ---------- Research ----------
+export const desks = (w: World) => built(w).filter(b => b.def === 'desk');
+/** projects not yet done */
+export const researchLeft = (w: World) => scenarioOf(w).research.filter(r => !w.research?.done.includes(r.id));
+function researchDecision(w: World, fixed?: string[]): Decision {
+  const left = researchLeft(w).map(r => r.id);
+  const options = fixed?.length ? fixed.filter(id => left.includes(id)) : shuffle(w, left).slice(0, 3);
+  return { kind: 'research', options };
+}
+/** goods the current project still needs at the desks, by cost key */
+export function researchStillNeeds(w: World): Partial<Record<InputKey, number>> {
+  const cur = w.research?.current ? RESEARCH_BY_ID[w.research.current] : undefined;
+  const out: Partial<Record<InputKey, number>> = {};
+  if (!cur) return out;
+  for (const [k, n] of Object.entries(cur.cost) as [InputKey, number][]) {
+    const have = desks(w).reduce((m, b) => m + inInbox(b, k), 0);
+    if (n - have > 0.001) out[k] = n - have;
+  }
+  return out;
+}
+/** deliveries a desk wants for the current project */
+function researchSupply(w: World, b: Building): SupplyTask[] {
+  const out: SupplyTask[] = [];
+  for (const [key, n] of Object.entries(researchStillNeeds(w)) as [InputKey, number][]) {
+    const members = membersOf(key);
+    const r = isCategory(key) ? [...members].sort((p, q) => w.res[q] - w.res[p])[0] : key;
+    const coming = alive(w).reduce((m, c) => m + (c.task?.kind === 'supply' && c.task.to === b.uid && members.includes(c.task.res) ? c.task.amount : 0), 0);
+    const avail = r === 'wood' ? Math.max(0, w.res.wood - woodReserve(w)) : w.res[r];
+    const want = n - coming;
+    if (want > 0.001 && avail >= Math.min(1, want)) out.push({ kind: 'supply', to: b.uid, res: r, amount: Math.min(CARRY, want, avail) });
+  }
+  return out;
+}
+function researchHourly(w: World, b: Building, c: Colonist, dt: number) {
+  const r = w.research; const cur = r?.current ? RESEARCH_BY_ID[r.current] : undefined;
+  if (!r || !cur || Object.keys(researchStillNeeds(w)).length) return;
+  r.progress += workSpeed(w, c, 'studying') * dt;
+  c.skills.studying = Math.min(10, (c.skills.studying ?? 3) + 0.004 * dt * 6);
+  if (r.progress < cur.hours) return;
+  // spend the goods from the desks and unlock the buildings
+  for (const [k, n] of Object.entries(cur.cost) as [InputKey, number][]) {
+    let need = n;
+    for (const d of desks(w)) for (const x of membersOf(k)) { const t = Math.min(d.inbox[x] ?? 0, need); if (t > 0) { d.inbox[x] = (d.inbox[x] ?? 0) - t; need -= t; flow(w, `${x}:-research`, t); } }
+  }
+  r.done.push(cur.id); r.current = null; r.progress = 0;
+  for (const id of cur.unlocks) if (!w.owned.includes(id)) w.owned.push(id);
+  addLog(w, `${first(c)} finished studying ${cur.name}. You can now build: ${cur.unlocks.map(id => BUILDING_BY_ID[id].name.toLowerCase()).join(' and ')}.`, 'good');
+  if (researchLeft(w).length) w.decisions.push(researchDecision(w));
+  else addLog(w, 'The scholar has read every book in the colony twice and is now reading the labels on jars.');
+  void b;
+}
+
 /** the site a gatherer needs on the map, if any */
 const SITE_FOR: Partial<Record<NonNullable<BuildingDef['needs']>, SiteId>> = { apples: 'grove', flowers: 'meadow', soil: 'soil', clay: 'clay' };
 /** this map has what the building gathers from (every map has trees, bushes and water) */
 export function siteOk(w: World, d: BuildingDef) { const s = d.needs && SITE_FOR[d.needs]; return !s || w.sites.includes(s); }
 /** a building the colony owns, or could own, gathers this good on this map */
 export function canSupply(w: World, r: ResourceId, owned = w.owned) {
-  return BUILDINGS.some(d => (d.basic || owned.includes(d.id)) && siteOk(w, d) && (d.recipes ?? []).some(rec => rec.output === r && !Object.keys(rec.inputs).length));
+  return BUILDINGS.some(d => owned.includes(d.id) && siteOk(w, d) && (d.recipes ?? []).some(rec => rec.output === r && !Object.keys(rec.inputs).length));
 }
 /** at least one recipe in the building can be fed from what the colony owns */
 export function usableHere(w: World, id: string, owned = w.owned) {
   const recs = BUILDING_BY_ID[id].recipes;
   if (!recs) return true;
-  const crafted = (r: ResourceId) => BUILDINGS.some(d => (d.basic || owned.includes(d.id)) && (d.recipes ?? []).some(x => x.output === r && Object.keys(x.inputs).length));
+  const crafted = (r: ResourceId) => BUILDINGS.some(d => owned.includes(d.id) && (d.recipes ?? []).some(x => x.output === r && Object.keys(x.inputs).length));
   return recs.some(rec => Object.keys(rec.inputs).every(k => membersOf(k as InputKey).some(r => canSupply(w, r, owned) || crafted(r))));
 }
 /**
@@ -710,7 +796,7 @@ export function recipeReach(w: World, r: Recipe): { state: 'ready' | 'draft' | '
   const makers = (m: ResourceId) => BUILDINGS.filter(d => siteOk(w, d) && (d.recipes ?? []).some(x => x.output === m));
   for (const k of Object.keys(r.inputs) as InputKey[]) {
     const ms = membersOf(k);
-    if (ms.some(m => makers(m).some(d => d.basic || w.owned.includes(d.id)))) continue;
+    if (ms.some(m => makers(m).some(d => w.owned.includes(d.id)))) continue;
     const options = ms.flatMap(makers).filter(d => d.draftable);
     if (!options.length) return { state: 'never', input: k };
     const via = options.find(d => (d.recipes ?? []).some(x => ms.includes(x.output) && !Object.keys(x.inputs).length)) ?? options[0];
@@ -732,8 +818,10 @@ function blueprintDecision(w: World, avoid: string[] = []): Decision {
   const pool = fresh.length >= 3 ? fresh : all;
   const options = [...shuffle(w, fresh), ...shuffle(w, all.filter(id => avoid.includes(id)))].slice(0, 3);
   const usable = (id: string) => usableHere(w, id);
-  const helpers = (CHARTER_HELPERS[w.charter ?? ''] ?? []).filter(id => pool.includes(id) && usable(id));
-  const ownsHelper = (CHARTER_HELPERS[w.charter ?? ''] ?? []).some(id => w.owned.includes(id) && usable(id));
+  const helpers = charterHelpers(w.charter).filter(id => pool.includes(id) && usable(id));
+  // a frontier charter's route usually takes two of its helpers (a dock and a smokehouse), so the guarantee holds until two are owned
+  const ownedHelpers = charterHelpers(w.charter).filter(id => w.owned.includes(id) && usable(id)).length;
+  const ownsHelper = charterDef(w.charter)?.helpers && !CHARTER_HELPERS[w.charter ?? ''] ? ownedHelpers >= Math.min(2, charterHelpers(w.charter).length) : ownedHelpers > 0;
   if (helpers.length && !ownsHelper && !options.some(o => helpers.includes(o))) options[options.length - 1] = pick(w, helpers);
   return { kind: 'blueprint', options };
 }
@@ -752,18 +840,21 @@ export type Command =
   | { type: 'storageFilter'; building: number; allow: ResourceId[] | null }
   | { type: 'storagePriority'; building: number; high: boolean }
   | { type: 'toggleRecipe'; building: number; recipe: number; on: boolean }
-  | { type: 'reroll' };
+  | { type: 'reroll' }
+  | { type: 'callFeast' };
 
 /** what a site still needs, by cost key; a category key counts every good of that kind already delivered */
 export function remainingCost(b: Building): Partial<Record<InputKey, number>> {
   const out: Partial<Record<InputKey, number>> = {};
-  for (const [k, n] of Object.entries(bdef(b).cost) as [InputKey, number][]) {
+  for (const [k, n] of Object.entries(costOf(b)) as [InputKey, number][]) {
     const left = (n ?? 0) - membersOf(k).reduce((m, r) => m + (b.delivered[r] ?? 0), 0);
     if (left > 0.001) out[k] = left;
   }
   return out;
 }
-export function siteWork(b: Building) { return bdef(b).walkable ? 3 : buildWork(bdef(b)); }
+export function siteWork(b: Building) { const st = bdef(b).stages; return st ? st[b.stage ?? 0].work : bdef(b).walkable ? 3 : buildWork(bdef(b)); }
+/** what this site needs delivered: its cost, or the current stage's for a building built in stages */
+export function costOf(b: Building): Partial<Record<InputKey, number>> { const st = bdef(b).stages; return st ? st[Math.min(st.length - 1, b.stage ?? 0)].cost : bdef(b).cost; }
 export const sites = (w: World) => w.buildings.filter(b => !b.built);
 
 export function apply(w: World, cmd: Command): string | null {
@@ -858,6 +949,15 @@ export function apply(w: World, cmd: Command): string | null {
       if (!cmd.allowed) w.forbidden.push(cmd.food);
       return null;
     }
+    case 'callFeast': {
+      if (charterDef(w.charter)?.metric.kind !== 'longTable') return 'Only the Long Table charter has a founders\u2019 feast.';
+      const f = (w.feast ??= { called: false, readyAt: 0, done: false });
+      if (f.called) return 'The feast is already called for tonight.';
+      if (w.hour < f.readyAt) return `Everyone is still full from the last one. Try again in ${Math.ceil(f.readyAt - w.hour)} hours.`;
+      f.called = true;
+      addLog(w, hourOfDay(w) < 18 ? 'The founders\u2019 feast is called for tonight at dusk. Someone irons a tablecloth.' : 'The founders\u2019 feast is called for tomorrow at dusk. Someone irons a tablecloth.', 'good');
+      return null;
+    }
     case 'autoAssign': autoAssign(w); return null;
     case 'setAutoAssignNew': w.autoAssignNew = cmd.value; return null;
     case 'resolve': return resolveDecision(w, cmd.option);
@@ -873,9 +973,23 @@ function resolveDecision(w: World, option: number): string | null {
       const id = d.options[option] ?? d.options[0];
       w.charter = id; w.charterHours = 0;
       w.charterBase = { cured: w.stats.cured, errands: w.stats.errands }; w.moodLog = [];
+      if (w.scenario) w.charterHolds = [];
       const next = w.decisions[0];
       if (next?.kind === 'blueprint') w.decisions[0] = blueprintDecision(w);
-      addLog(w, `New charter from the Crown: ${CHARTERS.find(c => c.id === id)!.name}.`);
+      const def = charterDef(id)!;
+      addLog(w, `New charter from the Crown: ${def.name}.`);
+      // a monument charter hands over its blueprint
+      for (const m of def.metric.kind === 'all' ? def.metric.parts : [def.metric]) if (m.kind === 'monument' && !w.owned.includes(m.def)) { w.owned.push(m.def); addLog(w, `The Crown sends plans for ${BUILDING_BY_ID[m.def].name}. Find it a good spot.`, 'good'); }
+      // drafts that wait for the first charter start now, with an offer that knows what the charter needs
+      if (scenarioOf(w).draftsAfterCharter && w.draftsFrom == null) { w.draftsFrom = day(w); w.decisions.push(blueprintDecision(w)); }
+      break;
+    }
+    case 'research': {
+      const id = d.options[option] ?? d.options[0];
+      if (!id || !w.research) break;
+      w.research.current = id; w.research.progress = 0;
+      const def = RESEARCH_BY_ID[id];
+      addLog(w, `The scholar opens a book on ${def.name.toLowerCase()}. ${desks(w).some(b => workersAt(w, b.uid).length) ? '' : 'Someone needs to sit at the research desk.'}`.trim());
       break;
     }
     case 'blueprint': {
@@ -1124,18 +1238,23 @@ function buildingPriority(w: World, b: Building): number {
     case 'claypit': return 5;
     case 'brewery': case 'ciderpress': return drinkTotal(w) < 20 ? 6 : 3;
     case 'tavern': return 6.8;
+    case 'desk': return 7.5;
     default: return 4;
   }
 }
 /** Why a workshop can't run right now, or null if it can. */
 export function blockedReason(w: World, b: Building): string | null {
+  if (b.def === 'desk' && b.built && w.research) {
+    if (!w.research.current) return researchLeft(w).length ? 'Nothing to study. Pick a project.' : 'Everything in the colony\u2019s books is learned.';
+    return null;
+  }
   if (!recipesOf(b).length || !b.built) return null;
   const rec = currentRecipe(w, b);
   if (!rec) return 'Every recipe here is switched off.';
   for (const key of Object.keys(rec.inputs) as InputKey[]) {
     if (obtainable(w, b, key) < 1) {
       const name = inputName(key);
-      const HINTS: Partial<Record<string, string>> = { fish: ' Build a fishing dock.', planks: ' Build a sawmill.', clay: ' Dig it at a clay pit by the clay bank.', reeds: ' Switch a fishing dock to cutting reeds.', wood: ' Keep more than 20 wood.', apples: ' Pick apples at an orchard hut.', grain: ' Grow it on a grain field.', honey: ' Keep bees at an apiary.' };
+      const HINTS: Partial<Record<string, string>> = { fish: ' Build a fishing dock.', planks: ' Build a sawmill.', clay: ' Dig it at a clay pit by the clay bank.', reeds: ' Switch a fishing dock to cutting reeds.', wood: ` Keep more than ${woodReserve(w)} wood.`, apples: ' Pick apples at an orchard hut.', grain: ' Grow it on a grain field.', honey: ' Keep bees at an apiary.' };
       const hint = HINTS[key] ?? '';
       return `No ${name} to work with.${hint}`;
     }
@@ -1184,6 +1303,8 @@ function chooseTask(w: World, c: Colonist): Task | null {
   const opts: { t: Task; pri: number; x: number; y: number }[] = [];
   // construction: deliver materials, then build
   for (const b of sites(w)) {
+    // the Crown's Hall: nobody grumpy lays a stone for the Crown
+    const gate = bdef(b).moodGate; if (gate && c.mood < gate) continue;
     const left = remainingCost(b);
     const s = spotOf(b);
     let missing = false;
@@ -1216,6 +1337,8 @@ function chooseTask(w: World, c: Colonist): Task | null {
     const s = spotOf(b);
     opts.push({ t: { kind: 'haul', from: b.uid, res: r, amount: Math.min(CARRY, n), restock: true }, pri: misplaced ? 1.8 : 1.6, x: s.x, y: s.y });
   }
+  // the research desk's goods, once someone is studying there
+  if (w.research?.current) for (const b of desks(w)) if (workersAt(w, b.uid).length) for (const need of researchSupply(w, b)) opts.push({ t: need, pri: 2.5, x: spotOf(b).x, y: spotOf(b).y });
   // carrying ingredients to staffed workshops
   for (const b of built(w)) {
     const rec = currentRecipe(w, b);
@@ -1250,7 +1373,7 @@ function supplyNeeds(w: World, b: Building, rec: Recipe | undefined = currentRec
     const r = isCategory(key) ? [...members].sort((p, q) => w.res[q] - w.res[p])[0] : key;
     const have = inInbox(b, key);
     const coming = alive(w).reduce((n, c) => n + (c.task?.kind === 'supply' && c.task.to === b.uid && members.includes(c.task.res) ? c.task.amount : 0), 0);
-    const avail = r === 'wood' ? Math.max(0, w.res.wood - WOOD_RESERVE) : w.res[r];
+    const avail = r === 'wood' ? Math.max(0, w.res.wood - woodReserve(w)) : w.res[r];
     const want = INBOX_TARGET - have - coming;
     if (want >= 3 && avail >= 1) out.push({ kind: 'supply', to: b.uid, res: r, amount: Math.min(CARRY, want, avail) });
   }
@@ -1346,6 +1469,8 @@ function activityFor(w: World, c: Colonist): Activity {
       const [r] = Object.entries(job.outbox).sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0))[0] as [ResourceId, number];
       if (storageFree(w, r) > 0 && taskCount(w, t => t.kind === 'haul' && t.from === job.uid) === 0) c.task = { kind: 'haul', from: job.uid, res: r, amount: Math.min(CARRY, job.outbox[r] ?? 0) };
     }
+    // the scholar fetches the project's goods if nobody has brought them
+    if (!c.task && job.def === 'desk' && w.research?.current) { const need = researchSupply(w, job)[0]; if (need) c.task = need; }
     // nobody brought ingredients: fetch them yourself
     const rec = currentRecipe(w, job);
     if (!c.task && rec && Object.keys(rec.inputs).length && !canCook(w, job, rec)) {
@@ -1399,7 +1524,7 @@ function arrive(w: World, c: Colonist) {
       const to = buildingByUid(w, t.to);
       if (!to) { dropTask(w, c); return; }
       if (!c.carrying) {
-        const avail = t.res === 'wood' ? Math.max(0, w.res.wood - WOOD_RESERVE) : w.res[t.res];
+        const avail = t.res === 'wood' ? Math.max(0, w.res.wood - woodReserve(w)) : w.res[t.res];
         const amt = takeOut(w, buildingByUid(w, t.via ?? null), t.res, Math.min(t.amount, avail));
         if (amt <= 0) { c.task = null; return; }
         c.carrying = { res: t.res, amount: amt }; t.amount = amt;
@@ -1459,6 +1584,8 @@ function produce(w: World, dt: number) {
       }
     }
   }
+  // study at the research desk
+  if (w.research?.current) for (const b of desks(w)) for (const c of workersAt(w, b.uid)) if (c.activity === 'working' && c.goalReached) researchHourly(w, b, c, dt);
   // construction, paving, cleaning and errands
   for (const c of alive(w)) {
     if (!c.goalReached) continue;
@@ -1499,9 +1626,16 @@ function canCook(w: World, b: Building, rec: Recipe, share = 0.2) {
 }
 
 function completeBuilding(w: World, b: Building) {
+  const def = bdef(b);
+  // a building in stages moves on to the next one, with its own materials
+  if (def.stages && (b.stage ?? 0) < def.stages.length - 1) {
+    b.stage = (b.stage ?? 0) + 1; b.progress = 0; b.delivered = {}; w.version++;
+    for (const c of alive(w)) if (c.task?.kind === 'build' && c.task.site === b.uid) c.task = null;
+    addLog(w, `${def.name}: ${def.stages[b.stage - 1].label.toLowerCase()} done. Next: ${def.stages[b.stage].label.toLowerCase()}.`, 'good');
+    return;
+  }
   b.built = true; b.progress = siteWork(b); w.version++; w.stats.built++;
   for (const c of alive(w)) if (c.task?.kind === 'build' && c.task.site === b.uid) c.task = null;
-  const def = bdef(b);
   addLog(w, pick(w, [`The ${def.name.toLowerCase()} is finished. Only one thumb was hammered.`, `The ${def.name.toLowerCase()} is done, and it is mostly level.`, `Work on the ${def.name.toLowerCase()} is complete. Everyone admires it briefly.`]), 'good');
   if (def.beds) assignBeds(w);
   // a new flower bed can make a nearby apiary busier
@@ -1717,10 +1851,14 @@ function hourly(w: World) {
   const h = Math.round(hourOfDay(w)) % 24;
   const pop = alive(w).length;
   const d = day(w) - 1 + (hourOfDay(w) - 6) / 24;
-  w.strain = Math.max(0, (d * 0.6 + d * d * 0.02) * DIFFICULTY_STRAIN[w.difficulty] * (hasPerk(w, 'ironWill') ? 0.75 : 1) + Math.max(0, pop - 8) * 0.5);
+  const sc = scenarioOf(w);
+  if (sc.strain === 'classic') w.strain = Math.max(0, (d * 0.6 + d * d * 0.02) * DIFFICULTY_STRAIN[w.difficulty] * (hasPerk(w, 'ironWill') ? 0.75 : 1) + Math.max(0, pop - 8) * 0.5);
+  // strain builds up with every person the frontier has to wear down, faster as the run goes on; it never goes back down
+  else w.strain += sc.strain.perPerson * pop * (1 + Math.max(0, d) / sc.strain.rampDays) / 24 * DIFFICULTY_STRAIN[w.difficulty] * (hasPerk(w, 'ironWill') ? 0.75 : 1);
 
   if (h >= 18 || h < 6) {
-    const burn = hasPerk(w, 'warmHearth') ? 0.5 : 1;
+    const hb = sc.hearth;
+    const burn = (hasPerk(w, 'warmHearth') ? 0.5 : 1) * (hb === 'flat' ? 1 : Math.min(1, hb.base + hb.perPerson * pop));
     if (w.res.wood >= burn) { w.res.wood -= burn; flow(w, 'wood:-hearth', burn); }
     else everyone(w, 'cold', 'The hearth went cold', -5, 12);
   }
@@ -1783,11 +1921,16 @@ function hourly(w: World) {
   // eating raw food now and then upsets a stomach
   socialHour(w);
   if (h === 6) dailyRelationships(w);
+  if (h === 18 && w.feast?.called) runFeast(w);
   checkCharter(w);
   w.ateOffTable = false;
   if (h === 6) dawn(w);
+  // scenarios that hold the first charter back offer it once some research is done, or on a set day
+  if (sc.firstCharter !== 'start' && !w.charterOffered && ((w.research?.done.length ?? 0) >= sc.firstCharter.research || day(w) >= sc.firstCharter.day)) {
+    w.charterOffered = true; w.decisions.push(charterDecision(w, 1));
+  }
   if (w.hour >= w.nextEventHour && h >= 8 && h <= 20) triggerEvent(w);
-  if (w.status === 'playing' && (lost(w) >= MAX_DEPARTURES || alive(w).length <= 2)) {
+  if (w.status === 'playing' && (lost(w) >= sc.collapse.lost || alive(w).length <= sc.collapse.minAlive)) {
     w.status = 'lost';
     addLog(w, 'Too many settlers are gone. The Crown revokes the charter. The kettle remains.', 'bad');
   }
@@ -1825,7 +1968,8 @@ function leave(w: World, c: Colonist, carted = false) {
 
 function dawn(w: World) {
   const d = day(w);
-  if (d % DRAFT_EVERY === 1 % DRAFT_EVERY && d > 1) w.decisions.push(blueprintDecision(w));
+  if (scenarioOf(w).draftsAfterCharter) { if (w.draftsFrom != null && d > w.draftsFrom && (d - w.draftsFrom) % DRAFT_EVERY === 0) w.decisions.push(blueprintDecision(w)); }
+  else if (d % DRAFT_EVERY === 1 % DRAFT_EVERY && d > 1) w.decisions.push(blueprintDecision(w));
   if (d % DRAFT_EVERY === 0) {
     const names = new Set(w.colonists.map(c => first(c)));
     const opts = [0, 1, 2].map(() => makeColonist(w, names));
@@ -1836,7 +1980,8 @@ function dawn(w: World) {
 
 function triggerEvent(w: World) {
   const roll = nextRand(w);
-  if (roll < 0.18 && day(w) >= 3) outbreak(w);
+  const ob = scenarioOf(w).outbreakFrom;
+  if (roll < 0.18 && day(w) >= ob.day && alive(w).length >= ob.pop) outbreak(w);
   else if (roll < 0.6) {
     const jobs = shuffle(w, JOB_EVENTS.filter(j => j.id !== 'remedy'));
     if (!jobs.some(j => spawnErrand(w, j))) w.decisions.push({ kind: 'event', eventId: pick(w, EVENTS.filter(e => e.requires !== 'couple' || couples(w) > 0)).id });
@@ -1848,8 +1993,11 @@ function triggerEvent(w: World) {
   w.nextEventHour = w.hour + gap * 24;
 }
 
-function charterValue(w: World, c: CharterDef): { value: number; target: number; label: string } {
-  const m = c.metric;
+function charterValue(w: World, c: CharterDef): { value: number; target: number; label: string } { return metricValue(w, c.metric, -1); }
+/** hours a hold-type condition has held: the charter's own counter, or a part's slot in an all-at-once charter */
+const holdOf = (w: World, slot: number) => (slot < 0 ? w.charterHours : w.charterHolds?.[slot] ?? 0);
+function metricValue(w: World, m: CharterMetric, slot: number): { value: number; target: number; label: string } {
+  const held = holdOf(w, slot);
   switch (m.kind) {
     case 'stock': { const v = m.resources.reduce((n, r) => n + w.res[r], 0); return { value: v, target: m.amount, label: `${Math.floor(v)} / ${m.amount} in storage` }; }
     case 'population': { const v = alive(w).length; return { value: v, target: m.amount, label: `${v} / ${m.amount} colonists` }; }
@@ -1874,31 +2022,106 @@ function charterValue(w: World, c: CharterDef): { value: number; target: number;
       const d = built(w).filter(b => bdef(b).decor).length, p = w.paths.filter(x => x === 2).length;
       return { value: Math.min(d / m.decor, p / m.paths), target: 1, label: `${d}/${m.decor} decorations · ${p}/${m.paths} paths` };
     }
-    case 'allTable': return { value: w.charterHours, target: m.hours, label: `${w.charterHours}h / ${m.hours}h with every meal at a table` };
+    case 'allTable': return { value: held, target: m.hours, label: `${held}h / ${m.hours}h with every meal at a table` };
     case 'curedSince': { const v = w.stats.cured - w.charterBase.cured; return { value: v, target: m.amount, label: `${v} / ${m.amount} recovered` }; }
     case 'errandsSince': { const v = w.stats.errands - w.charterBase.errands; return { value: v, target: m.amount, label: `${v} / ${m.amount} urgent jobs done` }; }
-    case 'avgBeauty': return { value: w.charterHours, target: m.hours, label: `beauty ${avgBeauty(w).toFixed(1)} · ${w.charterHours}h / ${m.hours}h` };
+    case 'avgBeauty': return { value: held, target: m.hours, label: `beauty ${avgBeauty(w).toFixed(1)} · ${held}h / ${m.hours}h` };
     case 'skilled': { const v = alive(w).filter(c => Object.values(c.skills).some(x => x >= m.level)).length; return { value: v, target: m.count, label: `${v} / ${m.count} colonists at skill ${m.level}+` }; }
-    case 'calm': return { value: w.charterHours, target: m.hours, label: `${alive(w).length}/${m.pop} colonists · ${w.charterHours}h / ${m.hours}h without sulking` };
+    case 'calm': return { value: held, target: m.hours, label: `${alive(w).length}/${m.pop} colonists · ${held}h / ${m.hours}h without sulking` };
     case 'variety': {
       // the best `kinds` goods of the category, each counted up to `each`
       const best = CATEGORIES[m.category].members.map(r => Math.min(m.each, Math.floor(w.res[r]))).sort((a, b) => b - a).slice(0, m.kinds);
       const full = best.filter(n => n >= m.each).length;
       return { value: best.reduce((a, b) => a + b, 0), target: m.kinds * m.each, label: `${full} / ${m.kinds} kinds with ${m.each}+ stored` };
     }
+    case 'all': {
+      const vs = m.parts.map((p, i) => metricValue(w, p, i));
+      const done = vs.every(v => v.value >= v.target);
+      const ratio = Math.min(...vs.map(v => Math.min(1, v.value / v.target)));
+      return { value: done ? 1 : Math.min(0.99, ratio), target: 1, label: vs.map(v => (v.value >= v.target ? '✓ ' : '') + v.label).join(' · ') };
+    }
+    case 'built': { const v = built(w).filter(b => b.def === m.def).length; return { value: v, target: m.amount, label: `${v} / ${m.amount} ${BUILDING_BY_ID[m.def].name.toLowerCase()}s` }; }
+    case 'everyoneBed': { const a = alive(w); const v = a.filter(c => c.bed != null).length; return { value: v, target: Math.max(1, a.length), label: `${v} / ${a.length} in a bed` }; }
+    case 'healthy': return { value: held, target: m.hours, label: `${held}h / ${m.hours}h with nobody sick or hurt` };
+    case 'monument': {
+      const b = w.buildings.find(x => x.def === m.def); const stages = BUILDING_BY_ID[m.def].stages?.length ?? 1;
+      if (!b) return { value: 0, target: stages, label: `${BUILDING_BY_ID[m.def].name} not placed yet` };
+      if (b.built) return { value: stages, target: stages, label: `${BUILDING_BY_ID[m.def].name} finished` };
+      const st = BUILDING_BY_ID[m.def].stages?.[b.stage ?? 0];
+      const left = remainingCost(b);
+      const part = Object.keys(left).length ? 0.5 * (1 - sum(left) / Math.max(1, sum(costOf(b)))) : 0.5 + 0.5 * b.progress / siteWork(b);
+      return { value: (b.stage ?? 0) + part, target: stages, label: `stage ${(b.stage ?? 0) + 1} of ${stages}${st ? `, ${st.label.toLowerCase()}` : ''}${Object.keys(left).length ? ` · needs ${Object.entries(left).map(([k, n]) => `${Math.ceil(n ?? 0)} ${inputName(k as InputKey)}`).join(', ')}` : ' · building'}` };
+    }
+    case 'longTable': {
+      if (w.feast?.done) return { value: 1, target: 1, label: 'The founders\u2019 feast was a triumph' };
+      const f = feastCheck(w);
+      return { value: Math.min(0.99, Math.min(f.served, m.pop) / m.pop * (f.ok ? 1 : 0.95)), target: 1, label: `${f.served} / ${m.pop} would be served · ${f.seats} seats${f.sulkers ? ` · ${f.sulkers} sulking` : ''}${w.feast?.called ? ' · called for dusk' : ''}` };
+    }
   }
+}
+
+/** a dry run of the founders' feast: who would come, who would get a meal and a drink they don't dislike */
+export function feastCheck(w: World) {
+  const people = alive(w).filter(c => !bedridden(c));
+  const sulkers = people.filter(c => c.sulking).length;
+  const guests = people.filter(c => !c.sulking);
+  const seats = built(w).reduce((n, b) => n + (bdef(b).seats ?? 0), 0);
+  const stock = { ...w.res };
+  const pickFor = (c: Colonist, goods: ResourceId[]) => [...goods].filter(r => stock[r] >= 1 && taste(c, r) >= 0).sort((a, b) => taste(c, b) - taste(c, a) || stock[b] - stock[a])[0];
+  let served = 0; const hungry: Colonist[] = [];
+  for (const c of guests) {
+    const meal = pickFor(c, MEALS), drink = pickFor(c, CATEGORIES.drink.members);
+    if (meal && drink) { stock[meal] -= 1; stock[drink] -= 1; served++; } else hungry.push(c);
+  }
+  const target = (charterDef(w.charter)?.metric as { pop?: number } | undefined)?.pop ?? 14;
+  const seated = Math.min(served, seats);
+  return { guests: guests.length, sulkers, seats, served: seated, hungry: hungry.length, ok: !sulkers && !hungry.length && seats >= guests.length && served >= target };
+}
+function runFeast(w: World) {
+  const f = w.feast!; f.called = false;
+  const people = alive(w).filter(c => !bedridden(c));
+  const guests = people.filter(c => !c.sulking);
+  const sulkers = people.length - guests.length;
+  const seats = built(w).reduce((n, b) => n + (bdef(b).seats ?? 0), 0);
+  let served = 0, unserved = 0;
+  for (const c of guests) {
+    const pickFor = (goods: ResourceId[]) => [...goods].filter(r => w.res[r] >= 1 && taste(c, r) >= 0).sort((a, b) => taste(c, b) - taste(c, a) || w.res[b] - w.res[a])[0];
+    const meal = pickFor(MEALS), drink = pickFor(CATEGORIES.drink.members);
+    if (meal && drink) {
+      w.res[meal] -= 1; w.res[drink] -= 1; flow(w, `${meal}:-feast`, 1); flow(w, `${drink}:-feast`, 1); served++;
+      addMemory(w, c, 'feast', taste(c, meal) > 0 && taste(c, drink) > 0 ? 'A feast of my favourites' : 'The founders\u2019 feast', taste(c, meal) > 0 && taste(c, drink) > 0 ? 10 : 7, 48);
+    } else { unserved++; addMemory(w, c, 'feast', 'Went without at the feast', -5, 24); }
+  }
+  reconcileStock(w);
+  const target = (charterDef(w.charter)?.metric as { pop?: number } | undefined)?.pop ?? 14;
+  const short: string[] = [];
+  if (sulkers) short.push(`${sulkers} sulked behind the woodpile instead`);
+  if (unserved) short.push(`${unserved} got nothing they would eat and drink`);
+  if (seats < guests.length) short.push(`${guests.length - seats} had to stand`);
+  if (served < target) short.push(`only ${served} of the ${target} the Crown asked for sat down to eat`);
+  if (!short.length) { f.done = true; f.last = 'triumph'; addLog(w, `The founders\u2019 feast: ${served} settlers at one long table, every plate something they like. The Crown\u2019s envoy cries a little.`, 'good'); }
+  else { f.readyAt = w.hour + 72; f.last = short.join('; '); addLog(w, `The founders\u2019 feast fell short: ${short.join('; ')}. Everyone who ate is cheerful, though. It can be called again in three days.`, 'bad'); }
 }
 export function avgBeauty(w: World) { const a = alive(w); return a.length ? a.reduce((s, c) => s + c.beauty, 0) / a.length : 0; }
 export function charterProgress(w: World) {
-  const c = CHARTERS.find(x => x.id === w.charter);
+  const c = charterDef(w.charter);
   if (!c) return null;
   const v = charterValue(w, c);
   return { charter: c, ...v, ratio: Math.min(1, v.value / v.target) };
 }
 function checkCharter(w: World) {
-  const c = CHARTERS.find(x => x.id === w.charter);
+  const c = charterDef(w.charter);
   if (!c || w.status !== 'playing') return;
   const m = c.metric;
+  if (m.kind === 'all') {
+    // every part has its own hold counter; the mood log is shared
+    const holds = (w.charterHolds ??= []);
+    m.parts.forEach((p, i) => {
+      if (p.kind === 'avgMood') { (w.moodLog ??= []).push(avgMood(w)); if (w.moodLog.length > p.hours) w.moodLog.shift(); }
+      if (p.kind === 'allTable') holds[i] = w.ateOffTable ? 0 : (holds[i] ?? 0) + 1;
+      if (p.kind === 'healthy') holds[i] = alive(w).some(x => x.illness) ? 0 : (holds[i] ?? 0) + 1;
+    });
+  }
   if (m.kind === 'avgMood' || m.kind === 'contentPop') {
     if (m.kind === 'contentPop' && alive(w).length < m.pop) w.moodLog = [];
     else { (w.moodLog ??= []).push(avgMood(w)); if (w.moodLog.length > m.hours) w.moodLog.shift(); }
@@ -1914,7 +2137,7 @@ function checkCharter(w: World) {
   const perkPool = PERKS.filter(p => !w.perks.includes(p.id)).map(p => p.id);
   w.decisions.push({ kind: 'perk', options: shuffle(w, perkPool).slice(0, 3) });
   w.charterTier = c.tier + 1;
-  w.decisions.push({ kind: 'charter', tier: w.charterTier as 2 | 3, options: shuffle(w, CHARTERS.filter(x => x.tier === w.charterTier)).slice(0, 3).map(x => x.id) });
+  w.decisions.push(charterDecision(w, w.charterTier as 2 | 3));
 }
 
 // ---------- Tick ----------

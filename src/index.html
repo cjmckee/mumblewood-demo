@@ -208,6 +208,11 @@ h3.first { margin-top: 4px; }
 #placebar.two { grid-template-columns: 1fr auto; }
 .chip.store { color: var(--text); }
 .chip.store.full b { color: var(--bad); }
+.status .chip.research, .status .chip.feast { margin-top: 6px; justify-content: flex-start; text-align: left; max-width: 100%; border: 1px solid var(--line); background: #222823; color: var(--text); font: inherit; font-size: 12px; cursor: pointer; }
+.status .chip.feast.ready { border-color: var(--accent); color: var(--accent); }
+.status .chip.feast.on { cursor: default; color: var(--accent); }
+.bp.locked { opacity: 0.6; grid-template-columns: 1fr; }
+.ch-label { overflow-wrap: anywhere; }
 .hint { margin: -2px 0 8px; font-size: 12px; }
 .mini { width: 64px; height: 5px; border-radius: 3px; background: #2c332b; overflow: hidden; }
 .mini i { display: block; height: 100%; background: var(--accent); }

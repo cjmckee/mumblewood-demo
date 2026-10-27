@@ -34,17 +34,19 @@ export const MEALS: ResourceId[] = ['pie', 'skewers', 'smokedFish', 'bread', 'st
 /** mood from eating each meal, before tastes and traits */
 export const MEAL_MOOD: Partial<Record<ResourceId, number>> = { pie: 8, skewers: 7, smokedFish: 6, bread: 6, stew: 5 };
 
-export type JobKind = 'chopping' | 'foraging' | 'fishing' | 'cooking' | 'crafting' | 'brewing' | 'serving' | 'medicine';
+export type JobKind = 'chopping' | 'foraging' | 'fishing' | 'cooking' | 'crafting' | 'brewing' | 'serving' | 'medicine' | 'studying';
 export const JOB_NAMES: Record<JobKind, string> = {
   chopping: 'chopping wood', foraging: 'foraging', fishing: 'fishing', cooking: 'cooking',
-  crafting: 'carpentry', brewing: 'brewing', serving: 'tavern work', medicine: 'doctoring',
+  crafting: 'carpentry', brewing: 'brewing', serving: 'tavern work', medicine: 'doctoring', studying: 'studying',
 };
 /** short labels for skill bars */
 export const SKILL_NAMES: Record<JobKind, string> = {
   chopping: 'Chopping', foraging: 'Foraging', fishing: 'Fishing', cooking: 'Cooking',
-  crafting: 'Carpentry', brewing: 'Brewing', serving: 'Serving', medicine: 'Medicine',
+  crafting: 'Carpentry', brewing: 'Brewing', serving: 'Serving', medicine: 'Medicine', studying: 'Studying',
 };
-export const JOB_KINDS = Object.keys(JOB_NAMES) as JobKind[];
+/** the jobs colonists roll skills for in the classic start; a scenario can add more (studying, with research) */
+export const JOB_KINDS: JobKind[] = ['chopping', 'foraging', 'fishing', 'cooking', 'crafting', 'brewing', 'serving', 'medicine'];
+export const ALL_JOB_KINDS = Object.keys(JOB_NAMES) as JobKind[];
 
 /** Groups of goods a recipe, need or charter can ask for: "any drink", "any meal". */
 export type Category = 'rawFood' | 'meal' | 'drink' | 'fine' | 'remedy';
@@ -116,9 +118,13 @@ export interface BuildingDef {
   /** colours for the vector renderer */
   wall: number; roof: number;
   height: number;
-  /** always buildable, never drafted */
+  /** always buildable, never drafted (in the classic start; a scenario can put some behind research) */
   basic?: boolean;
   draftable?: boolean;
+  /** built in stages, each with its own materials and work; replaces `cost` once the first stage is done */
+  stages?: { label: string; cost: Partial<Record<InputKey, number>>; work: number }[];
+  /** only colonists at or above this mood will haul for or build it */
+  moodGate?: number;
 }
 
 export const BUILDINGS: BuildingDef[] = [
@@ -159,6 +165,11 @@ export const BUILDINGS: BuildingDef[] = [
   { id: 'cottage', name: 'Cottage', blurb: 'Sleeps 2, cozily. Waking up here is a +5 mood.', cost: { wood: 6, fine: 10 }, w: 1, h: 1, slots: 0, beds: 2, bedQuality: 'cozy', wall: 0xc7a983, roof: 0x4f6f9a, height: 0.9, draftable: true },
   { id: 'bathhouse', name: 'Bathhouse', blurb: 'Uses wood. Everyone feels fresher, and grumblers grumble less.', cost: { wood: 15, fine: 8 }, w: 2, h: 1, slots: 0, wall: 0xb8b0a0, roof: 0x4f8f8a, height: 0.7, draftable: true },
   { id: 'stage', name: "Bard's stage", blurb: 'Evening music at the hearth. Fun builds faster for everyone. Beauty 3.', cost: { wood: 12, fine: 5 }, w: 1, h: 1, slots: 0, beauty: 3, wall: 0x8a5f7a, roof: 0xc25c8a, height: 0.4, draftable: true },
+  // research and the frontier finale (scenario content: never drafted, never basic)
+  { id: 'desk', name: 'Research desk', blurb: 'A wobbly table, a candle and a stack of borrowed books. A scholar here works out how to build the things a colony takes for granted.', cost: { wood: 8 }, w: 1, h: 1, slots: 1, job: 'studying', wall: 0x7a5a3a, roof: 0x5a6f8a, height: 0.45 },
+  { id: 'hall', name: 'The Crown\u2019s Hall', blurb: 'The building that makes Mumblewood a town. Built in three stages. Nobody grumpy lays a stone for the Crown: only colonists at mood 55 or more will haul for it or build it.', cost: { fine: 60 }, w: 3, h: 3, slots: 0, beauty: 6, moodGate: 55,
+    stages: [{ label: 'Foundations and walls', cost: { fine: 60 }, work: 24 }, { label: 'Feeding the masons', cost: { meal: 40 }, work: 16 }, { label: 'Topping out', cost: { drink: 25 }, work: 10 }],
+    wall: 0xc8b48a, roof: 0x8a3a3a, height: 1.4 },
 ];
 /** builder-hours of work to finish a building */
 export const buildWork = (d: BuildingDef) => (d.decor ? 1.5 : Math.max(3, d.w * d.h * 2.5));
@@ -228,9 +239,22 @@ export type CharterMetric =
   | { kind: 'avgBeauty'; amount: number; hours: number }
   | { kind: 'skilled'; count: number; level: number }
   | { kind: 'calm'; pop: number; hours: number }
-  | { kind: 'variety'; category: Category; kinds: number; each: number };
+  | { kind: 'variety'; category: Category; kinds: number; each: number }
+  // frontier charters: several conditions at once, and the finales
+  | { kind: 'all'; parts: CharterMetric[] }
+  | { kind: 'built'; def: string; amount: number }
+  | { kind: 'everyoneBed' }
+  | { kind: 'healthy'; hours: number }
+  | { kind: 'monument'; def: string }
+  | { kind: 'longTable'; pop: number };
 
-export interface CharterDef { id: string; tier: 1 | 2 | 3; name: string; desc: string; metric: CharterMetric }
+export interface CharterDef {
+  id: string; tier: 1 | 2 | 3; name: string; desc: string; metric: CharterMetric;
+  /** blueprints that help, for the draft's charter guarantee (frontier charters carry their own) */
+  helpers?: string[];
+  /** only offered on maps with these sites */
+  sites?: SiteId[];
+}
 export const CHARTERS: CharterDef[] = [
   { id: 'pantry', tier: 1, name: 'A proper pantry', desc: 'Have 40 meals stored at once.', metric: { kind: 'stock', resources: ['stew', 'pie', 'smokedFish'], amount: 40 } },
   { id: 'growing', tier: 1, name: 'Room to grow', desc: 'Reach 9 colonists.', metric: { kind: 'population', amount: 9 } },
@@ -322,3 +346,42 @@ export const ILLNESSES: IllnessDef[] = [
   { id: 'ankle', name: 'Sprained ankle', start: 26, worsen: 0.2 },
   { id: 'splinter', name: 'Heroic splinter', start: 16, worsen: 0.15 },
 ];
+
+// ---------- Research (frontier start) ----------
+/** A project the research desk works through. Finishing it unlocks buildings from the base set. */
+export interface ResearchDef { id: string; name: string; desc: string; unlocks: string[]; cost: Partial<Record<InputKey, number>>; hours: number }
+export const RESEARCH: ResearchDef[] = [
+  { id: 'cookery', name: 'Cookery', desc: 'Raw berries are food, technically. A stew kitchen turns raw food into proper meals.', unlocks: ['kitchen'], cost: { wood: 10, berries: 10 }, hours: 8 },
+  { id: 'messhall', name: 'Mess hall', desc: 'Tables, benches, and the radical idea of not eating in the dirt.', unlocks: ['dining'], cost: { wood: 15 }, hours: 8 },
+  { id: 'physick', name: 'Physick', desc: 'A clinic with cots and a doctor. The sick mend faster, and fewer of them wander off to a city physician.', unlocks: ['clinic'], cost: { wood: 10, berries: 10 }, hours: 10 },
+  { id: 'warehousing', name: 'Warehousing', desc: 'A storehouse under a roof, where food doesn\u2019t spoil.', unlocks: ['storehouse'], cost: { wood: 20 }, hours: 10 },
+  { id: 'gardening', name: 'Gardening', desc: 'Flower beds and lantern posts. Prettier surroundings, happier settlers, confused moths.', unlocks: ['flowerbed', 'lantern'], cost: { wood: 5, berries: 10 }, hours: 6 },
+  { id: 'masonry', name: 'Masonry', desc: 'Benches and a statue of Saint Pomfrey. Paid for in meals, because masons expect lunch.', unlocks: ['bench', 'statue'], cost: { wood: 10, meal: 5 }, hours: 10 },
+];
+export const RESEARCH_BY_ID: Record<string, ResearchDef> = Object.fromEntries(RESEARCH.map(r => [r.id, r]));
+
+// ---------- Frontier charters ----------
+// Each asks for people, a working supply chain and contented settlers at the same time. A "step" is one link in a
+// chain: gathering is one, each processing building another (stew is 2 steps, bread 3).
+const mood = (amount: number): CharterMetric => ({ kind: 'avgMood', amount, hours: 24 });
+const pop = (amount: number): CharterMetric => ({ kind: 'population', amount });
+export const FRONTIER_CHARTERS: CharterDef[] = [
+  // tier 1: a few more people, kept content, and a 1-2 step chain
+  { id: 'settled', tier: 1, name: 'Settled in', desc: '6 colonists, 25 meals in storage, and a 24-hour average mood of 50+.', metric: { kind: 'all', parts: [pop(6), { kind: 'stock', resources: MEALS, amount: 25 }, mood(50)] }, helpers: ['dock', 'smokehouse'] },
+  { id: 'woodsmoke', tier: 1, name: 'Woodsmoke', desc: '6 colonists, 20 smoked fish in storage, and a 24-hour average mood of 50+.', metric: { kind: 'all', parts: [pop(6), { kind: 'stock', resources: ['smokedFish'], amount: 20 }, mood(50)] }, helpers: ['smokehouse', 'dock'] },
+  { id: 'firstplanks', tier: 1, name: 'First planks', desc: '6 colonists, 30 planks, bricks or wicker in storage, and a 24-hour average mood of 50+.', metric: { kind: 'all', parts: [pop(6), { kind: 'stock', resources: CATEGORIES.fine.members, amount: 30 }, mood(50)] }, helpers: ['sawmill', 'kiln', 'claypit', 'carpenter'] },
+  { id: 'rested', tier: 1, name: 'Fed and rested', desc: '6 colonists, everyone in a bed, and nobody eats without a table for a full day.', metric: { kind: 'all', parts: [pop(6), { kind: 'everyoneBed' }, { kind: 'allTable', hours: 24 }] }, helpers: ['cottage'] },
+  // tier 2: more people, harder to please, and a 3-step chain or two 2-step chains
+  { id: 'bread', tier: 2, name: 'Daily bread', desc: '10 colonists, 20 bread in storage, and a 24-hour average mood of 55+. Grain, then flour, then bread.', metric: { kind: 'all', parts: [pop(10), { kind: 'stock', resources: ['bread'], amount: 20 }, mood(55)] }, helpers: ['field', 'mill', 'bakery'], sites: ['soil'] },
+  { id: 'piesky', tier: 2, name: 'Pie in the sky', desc: '10 colonists, 20 pies in storage, and a 24-hour average mood of 55+. Berries and flour make a pie.', metric: { kind: 'all', parts: [pop(10), { kind: 'stock', resources: ['pie'], amount: 20 }, mood(55)] }, helpers: ['pieoven', 'field', 'mill', 'bakery'], sites: ['soil'] },
+  { id: 'twokitchens', tier: 2, name: 'Two kitchens', desc: '10 colonists, 2 kinds of meal with 15 of each in storage, and a 24-hour average mood of 55+.', metric: { kind: 'all', parts: [pop(10), { kind: 'variety', category: 'meal', kinds: 2, each: 15 }, mood(55)] }, helpers: ['smokehouse', 'pieoven', 'bakery', 'dock'] },
+  { id: 'roof', tier: 2, name: 'Raise the roof', desc: '10 colonists, 3 cottages, 15 drinks in storage, and a 24-hour average mood of 55+.', metric: { kind: 'all', parts: [pop(10), { kind: 'built', def: 'cottage', amount: 3 }, { kind: 'stock', resources: CATEGORIES.drink.members, amount: 15 }, mood(55)] }, helpers: ['cottage', 'sawmill', 'brewery', 'ciderpress'] },
+  { id: 'hearty', tier: 2, name: 'Hale and hearty', desc: '10 colonists, 12 tonics in storage, and nobody sick or hurt for a full day.', metric: { kind: 'all', parts: [pop(10), { kind: 'stock', resources: ['tonic'], amount: 12 }, { kind: 'healthy', hours: 24 }] }, helpers: ['apothecary', 'apiary', 'herbgarden'], sites: ['meadow'] },
+  { id: 'fmenu', tier: 2, name: 'A varied table', desc: '10 colonists, 3 kinds of meal with 10 of each in storage, and a 24-hour average mood of 55+.', metric: { kind: 'all', parts: [pop(10), { kind: 'variety', category: 'meal', kinds: 3, each: 10 }, mood(55)] }, helpers: ['smokehouse', 'pieoven', 'bakery'] },
+  { id: 'ftasting', tier: 2, name: 'Something for everyone', desc: '10 colonists, 3 kinds of drink with 8 of each in storage, and a 24-hour average mood of 55+.', metric: { kind: 'all', parts: [pop(10), { kind: 'variety', category: 'drink', kinds: 3, each: 8 }, mood(55)] }, helpers: ['ciderpress', 'apothecary', 'brewery'] },
+  // tier 3: the finale; only a happy town can finish it
+  { id: 'hall', tier: 3, name: 'The Crown\u2019s Hall', desc: 'Build the Crown\u2019s Hall with 12 or more colonists. Three stages: 60 planks or bricks, 40 meals for the masons, then 25 drinks for the topping-out. Only colonists at mood 55+ will work on it.', metric: { kind: 'all', parts: [pop(12), { kind: 'monument', def: 'hall' }] }, helpers: ['sawmill', 'kiln', 'cottage', 'tavern'] },
+  { id: 'longtable', tier: 3, name: 'The Long Table', desc: 'Call a founders\u2019 feast. At dusk 14 or more colonists sit down at once, each served a meal and a drink they don\u2019t dislike. Sulkers won\u2019t come, and everyone needs a seat.', metric: { kind: 'longTable', pop: 14 }, helpers: ['tavern', 'brewery', 'ciderpress', 'pieoven', 'smokehouse', 'bakery'] },
+];
+/** every charter, for looking one up by id */
+export const ALL_CHARTERS: CharterDef[] = [...CHARTERS, ...FRONTIER_CHARTERS];

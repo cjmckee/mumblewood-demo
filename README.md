@@ -27,8 +27,15 @@ npx tsx tools/recipes-check.ts  # multi-recipe engine: star preference, fallback
 npx tsx tools/routes-check.ts   # forces each drink route on a map with its site and checks the drinks come out
 npx tsx tools/routes.ts 60      # which drink routes bot colonies use, by map sites; what gets built
 npx tsx tools/reroll-check.ts   # blueprint reroll: 10, 20, 30 wood across the run; new options; refusals
+SCENARIO=frontier npx tsx tools/pacing.ts 60   # frontier start: when charters are picked and finished, research, population and strain by day
+SCENARIO=frontier npx tsx tools/trace.ts 1000 40  # day-by-day trace of one run in any scenario (LOG=1 adds the log)
+npx tsx tools/finale-check.ts   # forced checks: the small start, research, charter timing, strain, the Crown's Hall and the Long Table
+npx tsx tools/fingerprint.ts 20 40   # hash of 20 classic bot runs; must not change when classic play shouldn't
 npx tsc -p .                   # type-check
 ```
+
+Every tool takes `SCENARIO=frontier` (or `classic`, the default in Node). The game starts in the frontier
+scenario; add `?scenario=classic` to the address, or pick one on the end screen.
 
 Open `dist/mumblewood.html` in a browser. It works on phones too.
 
@@ -41,7 +48,8 @@ Every push to `main` builds the game and publishes `dist/site/index.html` to Git
 
 | Path | What it is |
 | --- | --- |
-| `src/sim/content.ts` | All game data: buildings, traits, charters, events, boons |
+| `src/sim/content.ts` | All game data: buildings, traits, charters, events, boons, research projects |
+| `src/sim/scenario.ts` | How a run starts (RimWorld-style scenarios): settlers, goods, buildings, research, charters, strain, collapse rule. `classic` is the original start; `frontier` is three settlers and research |
 | `src/sim/world.ts` | The deterministic simulation. No DOM, so it runs in Node too |
 | `src/sim/economy.ts` | The ledger: last-24-hour income and use for food, wood, planks and ale, jobs and open slots, laborer time |
 | `src/sim/advisor.ts` | Reads only what the player can see (thoughts, HUD, building cards) and ranks concerns with evidence and next steps |
