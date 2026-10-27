@@ -1,8 +1,8 @@
 // A heuristic player, used by the balance harness to play thousands of runs headlessly.
 // It reads the active charter and plays towards it, the way a person would.
 import { BUILDING_BY_ID, BUILDINGS, CATEGORIES, CharterMetric, RESEARCH_BY_ID, EVENTS, ResourceId, MEALS, RAW_FOODS, Recipe, InputKey, membersOf, recipeRate } from './content';
-import { assess, Concern, defsOf } from './advisor';
-import { World, apply, alive, beds, mealTotal, sites, findSpot, CENTER, avgMood, built, MAP_SIZE, pathAt, terrainAt, T_WATER, bdef, workersAt, blockedReason, opinion, Building, Colonist, hourOfDay, charterProgress, buildingByUid, storageFree, storages, FOODS, GOODS, bedridden, foodTotal, currentRecipe, drinkTotal, siteOk, enabledRecipes, recipesOf, rerollCost, stockOf, usableHere, charterDef, charterHelpers, feastCheck, desks, researchLeft, festivalPreview, edibleTotal, doorTile, centerOf, winterStores, storageCap, stored, lastDay, lastDayHours, remainingCost } from './world';
+import { assess, Concern, defsOf, KIND_DEFS } from './advisor';
+import { World, apply, alive, beds, mealTotal, sites, findSpot, CENTER, avgMood, built, MAP_SIZE, pathAt, terrainAt, T_WATER, bdef, workersAt, blockedReason, opinion, Building, Colonist, hourOfDay, charterProgress, buildingByUid, storageFree, storages, FOODS, GOODS, bedridden, foodTotal, currentRecipe, drinkTotal, siteOk, enabledRecipes, recipesOf, rerollCost, stockOf, usableHere, charterDef, charterHelpers, feastCheck, desks, researchLeft, festivalPreview, edibleTotal, doorTile, centerOf, winterStores, storageCap, stored, lastDay, lastDayHours, remainingCost, seasonYield } from './world';
 import { seasonOf } from './seasons';
 
 const BLUEPRINT_PRIORITY = ['sawmill', 'pieoven', 'dock', 'cottage', 'brewery', 'ciderpress', 'tavern', 'kiln', 'claypit', 'carpenter', 'orchard', 'field', 'apiary', 'smokehouse', 'cellar', 'stage', 'bathhouse', 'bakery', 'apothecary', 'herbgarden', 'mill'];
@@ -717,12 +717,17 @@ export function staffPlan(w: World, explain = false): Map<number, number> {
   stage = 'round-robin extras';
   for (let round = 2; round <= 6; round++) for (const k of ['woodcutter', 'rawFood', 'kitchen', 'sawmill', 'kiln', 'claypit', 'tavern', 'drinks', 'field', 'apiary', 'pieoven', 'smokehouse', 'bakery', 'mill', 'apothecary', 'herbgarden']) give(k, round);
   }
-  // spread each kind's workers over its buildings, best placed first
-  for (const kind of Object.keys(want)) {
+  // spread each kind's workers over its buildings. Single kinds go first, then the groups (raw food, drinks, plank
+  // makers) fill the slots left, best yield this season first, so a worker given to the orchard for cider isn't undone
+  // by the foragers' share. Drinks go one to each maker before any gets a second, for a choice of drinks.
+  const group = (k: string) => k in KIND_DEFS;
+  const yieldOf = (b: Building) => b.eff * seasonYield(w, b.def);
+  for (const kind of Object.keys(want).sort((a, z) => Number(group(a)) - Number(group(z)))) {
     let n = given[kind] ?? 0;
-    for (const b of built(w).filter(b => defsOf(kind).includes(b.def) && !blockedReason(w, b)).sort((a, z) => z.eff - a.eff)) {
-      const take = Math.min(n, bdef(b).slots); plan.set(b.uid, take); n -= take;
-    }
+    const bs = built(w).filter(b => defsOf(kind).includes(b.def) && !blockedReason(w, b)).sort((a, z) => yieldOf(z) - yieldOf(a));
+    const put = (b: Building, upTo: number) => { const take = Math.min(n, upTo - (plan.get(b.uid) ?? 0)); if (take > 0) { plan.set(b.uid, (plan.get(b.uid) ?? 0) + take); n -= take; } };
+    if (kind === 'drinks') for (const b of bs) put(b, 1);
+    for (const b of bs) put(b, bdef(b).slots);
   }
   for (const b of built(w)) if (bdef(b).slots && !plan.has(b.uid)) plan.set(b.uid, 0);
   if (explain) {
