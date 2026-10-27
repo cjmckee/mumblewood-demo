@@ -125,6 +125,8 @@ export interface World {
   moodLog: number[];
   /** someone ate without a table this hour */
   ateOffTable: boolean;
+  /** someone ate raw food this hour */
+  ateRaw?: boolean;
   /** foods colonists are not allowed to eat (kept for charters, feasts and trade) */
   forbidden: ResourceId[];
   /** the resource sites this map has (an apple grove, a meadow, good soil) */
@@ -1171,7 +1173,7 @@ function applyEventEffect(w: World, effect: string) {
     case 'payFood20': takeFood(w, 20); addLog(w, 'The goblin stamps something and leaves. Nobody can read the stamp.'); break;
     case 'graffiti': everyone(w, 'graffiti', 'Goblin graffiti everywhere', -6, 48); addLog(w, 'By morning, every wall says something rude in Goblin.', 'bad'); break;
     case 'bardPlay':
-      if (drinkTotal(w) >= 6) { takeDrink(w, 6, 'bard'); everyone(w, 'bard', 'Heard a wonderful ballad', 6, 24); addLog(w, 'The ballad is long, but it rhymes. Everyone cries a little.', 'good'); }
+      if (drinkTotal(w) >= 6) { takeDrink(w, 6, 'bard'); everyone(w, 'bard', 'Heard a wonderful ballad', 6, 24); const e = ease(w, 0.08); addLog(w, `The ballad is long, but it rhymes. Everyone cries a little.${e ? ` Strain eases by ${e}.` : ''}`, 'good'); }
       else addLog(w, 'There wasn’t enough to drink. The bard plays one note and leaves.', 'bad');
       break;
     case 'pigeonBribe': w.res.berries = Math.max(0, w.res.berries - 15); addLog(w, 'The pigeons accept the berries and sign a peace treaty.'); break;
@@ -1180,7 +1182,8 @@ function applyEventEffect(w: World, effect: string) {
       if (mealTotal(w) >= 8 && drinkTotal(w) >= 5) {
         let n = 8; for (const r of MEALS) { const t = Math.min(w.res[r], n); w.res[r] -= t; n -= t; }
         takeDrink(w, 5, 'wedding'); everyone(w, 'wedding', 'What a lovely wedding', 7, 48);
-        addLog(w, 'A wedding! Someone cried, someone danced on a table, someone fell off it.', 'love');
+        const e = ease(w, 0.1);
+        addLog(w, `A wedding! Someone cried, someone danced on a table, someone fell off it.${e ? ` Strain eases by ${e}.` : ''}`, 'love');
       } else { addLog(w, 'There wasn’t enough for a party, so the couple elopes.', 'bad'); applyEventEffect(w, 'elope'); }
       break;
     }
@@ -1196,6 +1199,33 @@ function applyEventEffect(w: World, effect: string) {
       if (w.res.wood >= 30) { w.res.wood -= 30; w.res.planks += 12; addLog(w, 'The peddler trades fairly, which is the most suspicious thing of all.'); }
       else addLog(w, 'You don’t have the wood. The peddler sighs theatrically.');
       break;
+    case 'lettersRead': {
+      if (edibleTotal(w) < 15) { addLog(w, 'There isn’t 15 food to spare. The courier leaves with the letters and a grudge.', 'bad'); applyEventEffect(w, 'lettersLost'); break; }
+      takeFood(w, 15); everyone(w, 'letters', 'A letter from home', 3, 24);
+      const e = ease(w, alive(w).some(c => c.sulking) ? 0.1 : 0.15);
+      addLog(w, `Letters are read aloud by the hearth. Mostly about aunts.${e ? ` Strain eases by ${e}.` : ''}`, 'good');
+      break;
+    }
+    case 'lettersLost': everyone(w, 'letters', 'The letters went back unread', -2, 24); break;
+    case 'bonfire':
+      if (w.res.wood >= 20) { w.res.wood -= 20; flow(w, 'wood:-bonfire', 20); everyone(w, 'bonfire', 'A big bonfire', 2, 24); addLog(w, 'A bonfire roars all evening. Nobody mentions home.', 'good'); }
+      else { addLog(w, 'There isn’t 20 wood for a bonfire.', 'bad'); applyEventEffect(w, 'homesick'); }
+      break;
+    case 'homesick': w.strain += 3; addLog(w, 'Everyone sits about being homesick. Strain rises by 3.', 'bad'); break;
+    case 'moonDance': {
+      let fed = 0, loved = 0;
+      for (const c of alive(w).filter(x => !bedridden(x))) {
+        const meal = [...MEALS].filter(r => w.res[r] >= 1).sort((a, b) => taste(c, b) - taste(c, a) || w.res[b] - w.res[a])[0];
+        if (!meal) break;
+        w.res[meal] -= 1; flow(w, `${meal}:-moon`, 1); fed++; if (taste(c, meal) > 0) loved++;
+      }
+      reconcileStock(w);
+      if (!fed) { addLog(w, 'Nothing to eat, so nobody dances. The moon is unbothered.', 'bad'); break; }
+      everyone(w, 'moon', 'Danced under the harvest moon', 4, 24);
+      const n = Math.max(1, alive(w).length), e = ease(w, 0.1 * fed / n + (loved >= n / 2 ? 0.05 : 0));
+      addLog(w, `Everyone dances badly under the harvest moon.${e ? ` Strain eases by ${e}.` : ''}`, 'good');
+      break;
+    }
     case 'relic': takeFood(w, 10); everyone(w, 'relic', 'We own a holy spoon', 3, 72); addLog(w, 'The Holy Spoon of Saint Pomfrey is installed above the hearth.', 'good'); break;
   }
 }
@@ -1696,6 +1726,7 @@ function finishMeal(w: World, c: Colonist) {
     const raw = got;
     c.hunger = 85;
     addMemory(w, c, 'meal', `Ate raw ${raw}`, has(c, 'picky') ? -8 : -3, 14);
+    w.ateRaw = true;
     if (nextRand(w) < 0.02) { fallIll(w, c, 'tummy'); addLog(w, `${first(c)} ate some questionable ${raw} and now has a bad tummy.`, 'bad'); }
   }
   if (bedridden(c)) return; // fed in bed
@@ -1861,7 +1892,7 @@ export function comfortGaps(w: World) {
   return COMFORT_NEEDS.map(k => ({ need: k, avg: sums[k] / a.length })).sort((x, y) => x.avg - y.avg);
 }
 /** how much the colony's comfort scales the strain rise right now */
-export const comfortFactor = (w: World) => Math.max(0.2, START.comfortScale.base - (w.comfort ?? colonyComfort(w)) * START.comfortScale.slope);
+export const comfortFactor = (w: World) => Math.max(0.2, START.comfortScale.base - Math.min(1, (w.comfort ?? colonyComfort(w)) * (hasPerk(w, 'homesteaders') ? 1.2 : 1)) * START.comfortScale.slope);
 /** strain rise per day at the colony's current size, day and comfort (before boons) */
 export function strainPerDay(w: World) {
   const d = day(w) - 1 + (hourOfDay(w) - 6) / 24;
@@ -1957,8 +1988,10 @@ function hourly(w: World) {
   if (h === 6) dailyRelationships(w);
   if (h === 18 && w.feast?.called) runFeast(w);
   if (h === 18 && w.festival?.called) runFestival(w);
+  // the Hearth songs boon: an open, staffed tavern eases strain each evening
+  if (h === 21 && hasPerk(w, 'hearthSongs') && built(w).some(b => b.def === 'tavern' && workersAt(w, b.uid).length > 0)) w.strain = Math.max(0, w.strain - 0.5);
   checkCharter(w);
-  w.ateOffTable = false;
+  w.ateOffTable = false; w.ateRaw = false;
   if (h === 6) dawn(w);
   // the first charter comes on the morning of day 2
   if (!w.charterOffered && day(w) >= sc.firstCharterDay && h >= 6) {
@@ -2013,15 +2046,17 @@ function dawn(w: World) {
   }
 }
 
+/** an event's condition: a couple for a wedding, strain of 6+ for the ones about the frontier wearing on people */
+const eventFits = (w: World, req?: 'couple' | 'strain') => !req || (req === 'couple' ? couples(w) > 0 : w.strain >= 6);
 function triggerEvent(w: World) {
   const roll = nextRand(w);
   const ob = START.outbreakFrom;
   if (roll < 0.18 && day(w) >= ob.day && alive(w).length >= ob.pop) outbreak(w);
   else if (roll < 0.6) {
     const jobs = shuffle(w, JOB_EVENTS.filter(j => j.id !== 'remedy'));
-    if (!jobs.some(j => spawnErrand(w, j))) w.decisions.push({ kind: 'event', eventId: pick(w, EVENTS.filter(e => e.requires !== 'couple' || couples(w) > 0)).id });
+    if (!jobs.some(j => spawnErrand(w, j))) w.decisions.push({ kind: 'event', eventId: pick(w, EVENTS.filter(e => eventFits(w, e.requires))).id });
   } else {
-    const pool = EVENTS.filter(e => e.requires !== 'couple' || couples(w) > 0);
+    const pool = EVENTS.filter(e => eventFits(w, e.requires));
     w.decisions.push({ kind: 'event', eventId: pick(w, pool).id });
   }
   const gap = Math.max(0.8, 1.8 - w.strain * 0.03) + nextRand(w) * 0.8;
@@ -2044,7 +2079,7 @@ function metricValue(w: World, m: CharterMetric, slot: number): { value: number;
       const value = full && avg >= m.amount ? 1 : Math.min(0.99, (avg / m.amount) * Math.min(1, log.length / m.hours));
       return { value, target: 1, label: `24h average ${Math.round(avg)} / ${m.amount}${full ? '' : ` · ${m.hours - log.length}h to go`}` };
     }
-    case 'allTable': return { value: held, target: m.hours, label: `${held}h / ${m.hours}h with every meal at a table` };
+    case 'allTable': return { value: held, target: m.hours, label: `${held}h / ${m.hours}h with every meal ${m.cooked ? 'cooked and ' : ''}at a table` };
     case 'variety': {
       // the best `kinds` goods of the category, each counted up to `each`
       const best = CATEGORIES[m.category].members.map(r => Math.min(m.each, Math.floor(w.res[r]))).sort((a, b) => b - a).slice(0, m.kinds);
@@ -2093,7 +2128,7 @@ export function festivalPreview(w: World) {
     if (taste(c, meal) > 0 || (drink && taste(c, drink) > 0)) loved++;
   }
   const n = Math.max(1, guests.length), r = START.relief.festival;
-  const share = r.base * (fed / n) + (drank >= n / 2 ? r.drinks : 0) + (loved >= n / 2 ? r.loved : 0);
+  const share = r.base * (fed / n) + (drank >= n / 2 ? r.drinks : 0) + (loved >= n / 2 ? r.loved : 0) + (hasPerk(w, 'postRider') && fed ? 0.1 : 0);
   return { guests: guests.length, fed, drank, loved, meals: fed, drinks: drank, share, relief: w.strain * share, wait: Math.max(0, Math.ceil((w.festival?.readyAt ?? 0) - w.hour)) };
 }
 function runFestival(w: World) {
@@ -2175,7 +2210,7 @@ function checkCharter(w: World) {
   const holds = (w.charterHolds ??= []);
   (m.kind === 'all' ? m.parts : [m]).forEach((p, i) => {
     if (p.kind === 'avgMood') { (w.moodLog ??= []).push(avgMood(w)); if (w.moodLog.length > p.hours) w.moodLog.shift(); }
-    if (p.kind === 'allTable') holds[i] = w.ateOffTable ? 0 : (holds[i] ?? 0) + 1;
+    if (p.kind === 'allTable') holds[i] = w.ateOffTable || (p.cooked && w.ateRaw) ? 0 : (holds[i] ?? 0) + 1;
     if (p.kind === 'healthy') holds[i] = alive(w).some(x => x.illness) ? 0 : (holds[i] ?? 0) + 1;
   });
   const v = charterValue(w, c);
@@ -2183,8 +2218,8 @@ function checkCharter(w: World) {
   w.chartersDone.push(c.id); w.charter = null;
   addLog(w, `Charter complete: ${c.name}! The Crown sends a stiffly worded note of approval.`, 'good');
   // the Crown's approval eases the frontier's wear: a share of current strain, so a colony deep in it climbs back further
-  const eased = w.strain * START.relief.charter;
-  if (eased >= 0.5) { w.strain -= eased; addLog(w, `Word of the charter spreads around the hearth. Strain eases by ${Math.round(eased)}.`, 'good'); }
+  const eased = ease(w, START.relief.charter);
+  if (eased) addLog(w, `Word of the charter spreads around the hearth. Strain eases by ${eased}.`, 'good');
   if (c.tier === 3) { w.status = 'won'; addLog(w, 'The Crown declares the colony a proper town. Someone makes a banner. It is spelled wrong.', 'good'); return; }
   const perkPool = PERKS.filter(p => !w.perks.includes(p.id)).map(p => p.id);
   w.decisions.push({ kind: 'perk', options: shuffle(w, perkPool).slice(0, 3) });
@@ -2237,6 +2272,14 @@ export function tick(w: World): void {
 }
 
 export function runHours(w: World, hours: number) { for (let i = 0; i < hours * TICKS_PER_HOUR; i++) tick(w); }
+
+/** ease strain by a share of what it is now (boons can add to the share); returns the amount, rounded, for the log */
+function ease(w: World, share: number): number {
+  const s = Math.min(0.9, share + (hasPerk(w, 'postRider') ? 0.1 : 0));
+  const amount = w.strain * s;
+  w.strain = Math.max(0, w.strain - amount);
+  return Math.round(amount);
+}
 
 /** testing: skip the research and recruiting a check isn't about — unlock every researched building and add settlers */
 export function debugGrow(w: World, settlers: number) {

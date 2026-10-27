@@ -216,6 +216,9 @@ export const PERKS: PerkDef[] = [
   { id: 'saintsDay', name: "Saint Pomfrey's blessing", desc: '+4 mood for everyone, forever.' },
   { id: 'gossipBan', name: 'Gossip ordinance', desc: 'Insults happen half as often.' },
   { id: 'warmHearth', name: 'Everburning hearth', desc: 'The hearth burns half as much wood, and evenings there are +2.' },
+  { id: 'hearthSongs', name: 'Hearth songs', desc: 'Strain eases by 0.5 every evening the tavern is open and staffed.' },
+  { id: 'postRider', name: 'A post rider', desc: 'Charters and festivals ease 10% more strain.' },
+  { id: 'homesteaders', name: 'Homesteaders', desc: 'Comfort counts for 20% more against strain.' },
 ];
 export const PERK_BY_ID: Record<string, PerkDef> = Object.fromEntries(PERKS.map(p => [p.id, p]));
 
@@ -223,7 +226,7 @@ export type CharterMetric =
   | { kind: 'stock'; resources: ResourceId[]; amount: number }
   | { kind: 'population'; amount: number }
   | { kind: 'avgMood'; amount: number; hours: number }
-  | { kind: 'allTable'; hours: number }
+  | { kind: 'allTable'; hours: number; cooked?: boolean }
   | { kind: 'variety'; category: Category; kinds: number; each: number }
   // several conditions at once, and the finales
   | { kind: 'all'; parts: CharterMetric[] }
@@ -242,16 +245,17 @@ export interface CharterDef {
 }
 
 export interface EventOption { label: string; detail: string; effect: string }
-export interface EventDef { id: string; title: string; text: string; options: EventOption[]; requires?: 'couple' }
+/** requires: 'couple' needs a couple; 'strain' needs strain of 6 or more (the event is about the frontier wearing on people) */
+export interface EventDef { id: string; title: string; text: string; options: EventOption[]; requires?: 'couple' | 'strain' }
 export const EVENTS: EventDef[] = [
   { id: 'bard', title: 'A travelling bard', text: 'A bard offers to play "The Ballad of Your Colony" for a modest fee. He has not yet written it.',
     options: [
-      { label: 'Pay 6 drinks', detail: 'Everyone +6 mood for a day.', effect: 'bardPlay' },
+      { label: 'Pay 6 drinks', detail: 'Everyone +6 mood for a day, and strain eases by 8%.', effect: 'bardPlay' },
       { label: 'Shoo him away', detail: 'Nothing happens. He writes a mean song anyway.', effect: 'none' },
     ] },
   { id: 'wedding', title: 'A wedding is proposed', text: 'A couple wants to make it official. Everyone is invited, whether they like it or not.', requires: 'couple',
     options: [
-      { label: 'Host it (8 meals, 5 drinks)', detail: 'Everyone +7 mood for 2 days.', effect: 'wedding' },
+      { label: 'Host it (8 meals, 5 drinks)', detail: 'Everyone +7 mood for 2 days, and strain eases by 10%.', effect: 'wedding' },
       { label: 'Elope quietly', detail: 'The couple is −8 mood for 2 days.', effect: 'elope' },
     ] },
   { id: 'frogs', title: 'It is raining frogs', text: 'Small, confused frogs. Some colonists find it delightful. Others are holding umbrellas very tightly.',
@@ -263,6 +267,21 @@ export const EVENTS: EventDef[] = [
     options: [
       { label: 'Rebuild it (10 planks)', detail: 'Lose 10 planks.', effect: 'outhouseFix' },
       { label: 'Live with the ghost', detail: 'Everyone −3 mood for 3 days.', effect: 'ghost' },
+    ] },
+  { id: 'letters', title: 'Letters from home', text: 'A courier staggers out of the woods with a sack of letters, most of them from aunts. He would like feeding before the walk back.', requires: 'strain',
+    options: [
+      { label: 'Feed him (15 food)', detail: 'Strain eases by 10%, or 15% if nobody is sulking. Everyone +3 mood for a day.', effect: 'lettersRead' },
+      { label: 'Send him on his way', detail: 'The letters go back. Everyone −2 mood for a day.', effect: 'lettersLost' },
+    ] },
+  { id: 'homesick', title: 'A cold wind from the east', text: 'The wind smells like somewhere else. People are talking about home, and not fondly about here.', requires: 'strain',
+    options: [
+      { label: 'Light a bonfire (20 wood)', detail: 'Strain doesn’t rise from this, and everyone +2 mood for a day.', effect: 'bonfire' },
+      { label: 'Tough it out', detail: 'Strain rises by 3.', effect: 'homesick' },
+    ] },
+  { id: 'moon', title: 'A harvest moon', text: 'The moon is enormous and orange. Someone suggests a dance. Someone else suggests the dance needs food.',
+    options: [
+      { label: 'Dance under it (a meal each)', detail: 'Strain eases by 10%, more if people get a meal they love. Everyone +4 mood for a day.', effect: 'moonDance' },
+      { label: 'Early night', detail: 'Nothing happens. The moon is unbothered.', effect: 'none' },
     ] },
   { id: 'peddler', title: 'A peddler with a cart', text: 'She is selling "authentic" relics and also, more usefully, planks.',
     options: [
@@ -332,7 +351,7 @@ export const CHARTERS: CharterDef[] = [
   { id: 'settled', tier: 1, name: 'Settled in', desc: '6 colonists, 25 meals in storage, and a 24-hour average mood of 50+.', metric: { kind: 'all', parts: [pop(6), { kind: 'stock', resources: MEALS, amount: 25 }, mood(50)] }, helpers: ['dock', 'smokehouse'] },
   { id: 'woodsmoke', tier: 1, name: 'Woodsmoke', desc: '6 colonists, 20 smoked fish in storage, and a 24-hour average mood of 50+.', metric: { kind: 'all', parts: [pop(6), { kind: 'stock', resources: ['smokedFish'], amount: 20 }, mood(50)] }, helpers: ['smokehouse', 'dock'] },
   { id: 'firstplanks', tier: 1, name: 'First planks', desc: '6 colonists, 30 planks, bricks or wicker in storage, and a 24-hour average mood of 50+.', metric: { kind: 'all', parts: [pop(6), { kind: 'stock', resources: CATEGORIES.fine.members, amount: 30 }, mood(50)] }, helpers: ['sawmill', 'kiln', 'claypit', 'carpenter'] },
-  { id: 'rested', tier: 1, name: 'Fed and rested', desc: '6 colonists, everyone in a bed, and nobody eats without a table for a full day.', metric: { kind: 'all', parts: [pop(6), { kind: 'everyoneBed' }, { kind: 'allTable', hours: 24 }] }, helpers: ['cottage'] },
+  { id: 'rested', tier: 1, name: 'Fed and rested', desc: '6 colonists, everyone in a bed, and a full day where every meal is cooked and eaten at a table.', metric: { kind: 'all', parts: [pop(6), { kind: 'everyoneBed' }, { kind: 'allTable', hours: 24, cooked: true }] }, helpers: ['cottage', 'dock', 'smokehouse'] },
   // tier 2: more people, harder to please, and a 3-step chain or two 2-step chains
   { id: 'bread', tier: 2, name: 'Daily bread', desc: '10 colonists, 20 bread in storage, and a 24-hour average mood of 55+. Grain, then flour, then bread.', metric: { kind: 'all', parts: [pop(10), { kind: 'stock', resources: ['bread'], amount: 20 }, mood(55)] }, helpers: ['field', 'mill', 'bakery'], sites: ['soil'] },
   { id: 'piesky', tier: 2, name: 'Pie in the sky', desc: '10 colonists, 20 pies in storage, and a 24-hour average mood of 55+. Berries and flour make a pie.', metric: { kind: 'all', parts: [pop(10), { kind: 'stock', resources: ['pie'], amount: 20 }, mood(55)] }, helpers: ['pieoven', 'field', 'mill', 'bakery'], sites: ['soil'] },

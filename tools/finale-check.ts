@@ -1,6 +1,6 @@
 // Forced checks for the start and the finales, without the bot's judgement in the way.
 // Usage: npx tsx tools/finale-check.ts
-import { createWorld, apply, runHours, findSpot, World, alive, built, desks, workersAt, charterProgress, feastCheck, costOf, laborers, day, festivalPreview, debugGrow, comfortParts, comfortOf, strainPerDay } from '../src/sim/world';
+import { createWorld, apply, runHours, findSpot, World, alive, built, desks, workersAt, charterProgress, feastCheck, costOf, laborers, day, festivalPreview, debugGrow, comfortParts, comfortOf, strainPerDay, comfortFactor } from '../src/sim/world';
 import { BUILDING_BY_ID, MEALS } from '../src/sim/content';
 import { START } from '../src/sim/scenario';
 
@@ -178,6 +178,42 @@ const untilHour = (w: World, h: number, each: () => void = () => {}) => { for (l
   ok(alive(w).every(c => c.memories.some(m => m.key === 'festival' && m.value > 0)), 'everyone remembers the festival fondly');
   ok(apply(w, { type: 'callFestival' }) !== null && (w.festival!.readyAt - w.hour) > 24 * 3.5, 'then it waits about 4 days');
   void day;
+}
+
+// ---- strain events and boons ----
+{
+  const ev = (w: ReturnType<typeof createWorld>, id: string, option: number) => { w.decisions.push({ kind: 'event', eventId: id }); apply(w, { type: 'resolve', option }); };
+  const w = createWorld(93); clear(w); debugGrow(w, 6);
+  for (const c of alive(w)) c.sulking = false;
+  w.res.berries = 40; w.strain = 20; ev(w, 'letters', 0);
+  ok(Math.abs(w.strain - 17) < 0.01, `letters, nobody sulking: strain eases 15% (20 → ${w.strain.toFixed(1)})`);
+  w.strain = 20; w.res.wood = 30; ev(w, 'homesick', 0);
+  ok(w.strain === 20 && w.res.wood === 10, 'a bonfire: 20 wood, strain unchanged');
+  ev(w, 'homesick', 1);
+  ok(w.strain === 23, 'toughing it out: strain rises by 3');
+  w.strain = 20; w.res.stew = 20; ev(w, 'moon', 0);
+  ok(w.strain < 18.1 && w.strain > 15, `a harvest moon dance with a meal each: strain eases about 10% (${w.strain.toFixed(1)})`);
+  w.strain = 20; w.res.ale = 10; ev(w, 'bard', 0);
+  ok(Math.abs(w.strain - 18.4) < 0.01, `the bard: strain eases 8% (${w.strain.toFixed(1)})`);
+  // boons
+  w.perks.push('postRider'); w.strain = 20; w.res.ale = 10; ev(w, 'bard', 0);
+  ok(Math.abs(w.strain - 16.4) < 0.01, `a post rider adds 10%: the bard eases 18% (${w.strain.toFixed(1)})`);
+  w.comfort = 0.5; const before = comfortFactor(w); w.perks.push('homesteaders');
+  ok(comfortFactor(w) < before - 0.09, `homesteaders: comfort 50% counts as 60% (${before.toFixed(2)}× → ${comfortFactor(w).toFixed(2)}×)`);
+  // strain events only come when strain bites
+  const calm = createWorld(94); clear(calm); calm.strain = 2; let seen = 0;
+  for (let i = 0; i < 300; i++) { calm.nextEventHour = calm.hour; runHours(calm, 1); for (const d of calm.decisions) if (d.kind === 'event' && ['letters', 'homesick'].includes(d.eventId)) seen++; clear(calm); calm.strain = 2; }
+  ok(seen === 0, 'letters and the cold wind never come while strain is under 6');
+}
+
+// ---- Fed and rested: a full day of cooked meals at a table ----
+{
+  const w = createWorld(95); clear(w); debugGrow(w, 6);
+  w.charter = 'rested'; w.charterHolds = [];
+  for (let h = 0; h < 6; h++) { w.ateOffTable = false; w.ateRaw = false; runHours(w, 1); clear(w); }
+  const held = w.charterHolds?.[2] ?? 0;
+  w.ateRaw = true; w.ateOffTable = false; runHours(w, 1); clear(w);
+  ok((w.charterHolds?.[2] ?? 0) <= 1 || held === 0, `raw food resets the cooked-meals day (${held}h → ${w.charterHolds?.[2] ?? 0}h)`);
 }
 
 console.log(fails ? `\n${fails} check(s) failed` : '\nall checks passed');

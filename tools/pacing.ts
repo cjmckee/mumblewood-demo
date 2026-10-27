@@ -12,6 +12,7 @@ if (process.env.LABORERS_PER) BOT.laborersPer = Number(process.env.LABORERS_PER)
 if (process.env.RECRUIT_EXTRA) BOT.recruitExtra = Number(process.env.RECRUIT_EXTRA);
 if (process.env.COMFORTS) BOT.comforts = process.env.COMFORTS === '1';
 if (process.env.EFFORT_PICK) BOT.effortPick = process.env.EFFORT_PICK === '1';
+if (process.env.MOOD_FESTIVAL) BOT.moodFestival = process.env.MOOD_FESTIVAL === '1';
 if (process.env.FESTIVAL) BOT.festival = process.env.FESTIVAL === '1';
 if (process.env.FESTIVAL_AT) BOT.festivalAt = Number(process.env.FESTIVAL_AT);
 if (process.env.CHARTER_RELIEF) START.relief.charter = Number(process.env.CHARTER_RELIEF);

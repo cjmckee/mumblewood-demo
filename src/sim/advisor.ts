@@ -5,7 +5,7 @@
 import { BUILDING_BY_ID, BUILDINGS, MEALS, RAW_FOODS, RESOURCES, CATEGORIES, ResourceId, RESEARCH } from './content';
 import {
   World, Colonist, alive, built, bdef, beds, workersAt, blockedReason, storageCap, stored, spoilingFood, mealTotal,
-  storageFree, currentRecipe, drinkTotal, usableHere, stockOf, recipeReach, enabledRecipes, siteOk, festivalPreview,
+  storageFree, currentRecipe, drinkTotal, usableHere, stockOf, recipeReach, enabledRecipes, siteOk, festivalPreview, charterProgress,
 } from './world';
 import { economy } from './economy';
 
@@ -231,6 +231,14 @@ export function assess(w: World): Concern[] {
       const fix: Fix[] = has(w, upstream) || upstream === 'rawFood' ? [{ staff: upstream, n: workersOf(w, upstream) + 1 }] : [{ build: upstream }];
       add(`idle-${b.def}`, `${def.name} idle`, `Its card says: ${r}`, has(w, upstream) || upstream === 'rawFood' ? `more ${who2} to feed it` : `build a ${name(upstream)} to feed it`, 6, 0, fix);
     }
+  }
+  // a charter waiting only on the 24-hour mood: a festival lifts everyone for a day and a half
+  {
+    const prog = charterProgress(w);
+    const unmet = prog ? prog.label.split(' · ').filter(x => !x.startsWith('✓')) : [];
+    const p = festivalPreview(w);
+    if (unmet.length === 1 && unmet[0].includes('24h average') && !p.wait && !w.festival?.called && mealTotal(w) >= pop)
+      add('moodcharter', 'The charter is waiting on mood', `Charter: ${prog!.label}`, 'call a festival: everyone gets +5 mood (+8 with a favourite) for a day and a half', 12, 0, []);
   }
   // strain: a festival eases it when people are wearing down
   if (w.strain >= 8) {

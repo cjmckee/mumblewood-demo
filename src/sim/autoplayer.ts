@@ -2,7 +2,7 @@
 // It reads the active charter and plays towards it, the way a person would.
 import { BUILDING_BY_ID, BUILDINGS, CATEGORIES, CharterMetric, RESEARCH_BY_ID, EVENTS, ResourceId, MEALS, RAW_FOODS, Recipe, InputKey, membersOf, recipeRate } from './content';
 import { assess, Concern, defsOf } from './advisor';
-import { World, apply, alive, beds, mealTotal, sites, findSpot, CENTER, avgMood, built, MAP_SIZE, pathAt, terrainAt, T_WATER, bdef, workersAt, blockedReason, opinion, Building, Colonist, hourOfDay, charterProgress, buildingByUid, storageFree, storages, FOODS, GOODS, bedridden, foodTotal, currentRecipe, drinkTotal, siteOk, enabledRecipes, recipesOf, rerollCost, stockOf, usableHere, charterDef, charterHelpers, feastCheck, desks, researchLeft, festivalPreview } from './world';
+import { World, apply, alive, beds, mealTotal, sites, findSpot, CENTER, avgMood, built, MAP_SIZE, pathAt, terrainAt, T_WATER, bdef, workersAt, blockedReason, opinion, Building, Colonist, hourOfDay, charterProgress, buildingByUid, storageFree, storages, FOODS, GOODS, bedridden, foodTotal, currentRecipe, drinkTotal, siteOk, enabledRecipes, recipesOf, rerollCost, stockOf, usableHere, charterDef, charterHelpers, feastCheck, desks, researchLeft, festivalPreview, edibleTotal } from './world';
 
 const BLUEPRINT_PRIORITY = ['sawmill', 'pieoven', 'dock', 'cottage', 'brewery', 'ciderpress', 'tavern', 'kiln', 'claypit', 'carpenter', 'orchard', 'field', 'apiary', 'smokehouse', 'cellar', 'stage', 'bathhouse', 'bakery', 'apothecary', 'herbgarden', 'mill'];
 const DRINK_MAKERS = ['brewery', 'ciderpress'];
@@ -40,7 +40,7 @@ function newKinds(w: World, id: string) {
   return goods.filter(r => !can(r, w.owned) && can(r, [...w.owned, id])).length;
 }
 const plannedUses = (w: World, input: ResourceId) => built(w).some(b => { const r = plannedRecipe(w, b); return !!r && Object.keys(r.inputs).some(k => membersOf(k as InputKey).includes(input)); });
-const PERK_PRIORITY = ['saintsDay', 'ironWill', 'communalPot', 'overtime', 'rations', 'earplugs', 'warmHearth', 'gossipBan', 'matchmaker'];
+const PERK_PRIORITY = ['homesteaders', 'postRider', 'saintsDay', 'ironWill', 'hearthSongs', 'communalPot', 'overtime', 'rations', 'earplugs', 'warmHearth', 'gossipBan', 'matchmaker'];
 const MOOD_BUILDINGS = ['tavern', 'brewery', 'ciderpress', 'pieoven', 'bathhouse', 'cottage', 'stage'];
 /** the parts of the current charter (an all-at-once charter has several) */
 const partsOf = (w: World): CharterMetric[] => { const m = charterDef(w.charter)?.metric; return !m ? [] : m.kind === 'all' ? m.parts : [m]; };
@@ -48,7 +48,7 @@ const partsOf = (w: World): CharterMetric[] => { const m = charterDef(w.charter)
 const moodCharter = (w: World) => partsOf(w).some(p => ['avgMood', 'monument', 'longTable'].includes(p.kind));
 /** what each charter leans on, for staffing */
 const FOCUS: Record<string, string[]> = {
-  settled: ['kitchen', 'rawFood'], woodsmoke: ['smokehouse', 'rawFood'], firstplanks: ['sawmill', 'kiln', 'claypit', 'woodcutter'], rested: ['woodcutter'],
+  settled: ['kitchen', 'rawFood'], woodsmoke: ['smokehouse', 'rawFood'], firstplanks: ['sawmill', 'kiln', 'claypit', 'woodcutter'], rested: ['kitchen', 'rawFood', 'woodcutter'],
   bread: ['field', 'mill', 'bakery'], piesky: ['field', 'mill', 'pieoven', 'rawFood'], twokitchens: ['kitchen', 'smokehouse', 'pieoven', 'bakery', 'rawFood'],
   roof: ['sawmill', 'kiln', 'drinks', 'field', 'apiary'], hearty: ['apothecary', 'herbgarden', 'apiary', 'clinic'],
   menu: ['kitchen', 'smokehouse', 'pieoven', 'bakery', 'rawFood'], tasting: ['drinks', 'apothecary', 'herbgarden', 'field', 'apiary'],
@@ -71,7 +71,8 @@ const researchScore = (w: World, id: string) => sumParts(researchParts(w, id));
  */
 export function goodCost(w: World, r: ResourceId, depth = 3): number {
   if (['wood', 'berries'].includes(r)) return 0;
-  const step = (id: string) => (built(w).some(b => b.def === id) ? 0 : w.owned.includes(id) ? 1 : BUILDING_BY_ID[id].draftable ? 3 : 50);
+  // a building still behind research costs a study (about two), like a draft costs luck
+  const step = (id: string) => (built(w).some(b => b.def === id) ? 0 : w.owned.includes(id) ? 1 : researchLeft(w).some(r => r.unlocks.includes(id)) ? 2 : BUILDING_BY_ID[id].draftable ? 3 : 50);
   let best = 50;
   for (const d of BUILDINGS) {
     if (!siteOk(w, d)) continue;
@@ -127,7 +128,7 @@ export function charterEffort(w: World, id: string): Record<string, number> {
       break;
     }
     case 'everyoneBed': add('beds', Math.max(0, pop - beds(w)) * 0.3); break;
-    case 'allTable': add('a table for everyone', built(w).some(b => b.def === 'dining') ? 0.5 : w.owned.includes('dining') ? 1.5 : 3); break;
+    case 'allTable': add('a table for everyone', built(w).some(b => b.def === 'dining') ? 0.5 : w.owned.includes('dining') ? 1.5 : 2.5); if (p.cooked) add('cooked meals for everyone', cheapest(w, MEALS) + 1); break;
     case 'healthy': add('a day with nobody sick', 1); break;
     case 'monument': add('the Hall: planks, meals, drinks', cheapest(w, CATEGORIES.fine.members) + cheapest(w, MEALS) + cheapest(w, CATEGORIES.drink.members) + 3); break;
     case 'longTable': {
@@ -159,6 +160,7 @@ function charterGoods(w: World): ResourceId[] {
       out.push(...rest.slice(0, Math.max(0, p.kinds - have.length)));
     }
     if (p.kind === 'built' && BUILDING_BY_ID[p.def].cost.fine) out.push('planks');
+    if (p.kind === 'allTable' && p.cooked && mealTotal(w) < alive(w).length * 3) out.push(...MEALS.filter(makeable).slice(0, 1));
     if (p.kind === 'monument') { const b = w.buildings.find(x => x.def === p.def); const key = Object.keys(b ? (BUILDING_BY_ID[p.def].stages?.[b.stage ?? 0]?.cost ?? {}) : BUILDING_BY_ID[p.def].cost)[0]; if (key) out.push(...membersOf(key as InputKey).filter(makeable).slice(0, 2)); }
     if (p.kind === 'longTable') {
       // what the feast is missing: a meal and a drink at all, then the kinds that suit the people nothing on hand suits
@@ -204,7 +206,7 @@ export function charterChain(w: World): string[] {
  * Experiment switches for the balance tools. `advisor` makes the bot play from what's on screen (the complaint
  * panel) instead of its own rules; it's off by default because, so far, it plays worse (see the project doc).
  */
-export const BOT = { effortPick: true, festival: true, festivalAt: 8, comfortsFirst: false, recruitCap: 0, recruitExtra: 4, comforts: true, foodDepot: 'food' as false | 'food' | 'meals', laborersPer: 3.5, advisor: false, gate: true, ranked: true, comfort: 'strict' as 'strict' | 'econ' | 'none', rescue: false, rescueAt: 40, moodBlock: false, reroll: true, variety: false, routes: false, off: [] as string[], skip: [] as string[] };
+export const BOT = { effortPick: true, moodFestival: true, festival: true, festivalAt: 8, comfortsFirst: false, recruitCap: 0, recruitExtra: 4, comforts: true, foodDepot: 'food' as false | 'food' | 'meals', laborersPer: 3.5, advisor: false, gate: true, ranked: true, comfort: 'strict' as 'strict' | 'econ' | 'none', rescue: false, rescueAt: 40, moodBlock: false, reroll: true, variety: false, routes: false, off: [] as string[], skip: [] as string[] };
 
 // ---------- Explaining the bot ----------
 /** one thing the bot decided and why: each option with its score broken into parts, or a staffing or build step */
@@ -354,6 +356,10 @@ function canPay(w: World, effect: string) {
     case 'wedding': return mealTotal(w) >= 8 && drinkTotal(w) >= 5;
     case 'outhouseFix': return w.res.planks >= 10;
     case 'peddlerPlanks': return w.res.wood >= 50;
+    // strain trades: worth it once strain bites, if the larder or woodpile can spare it
+    case 'lettersRead': return edibleTotal(w) >= 15 + alive(w).length * 2;
+    case 'bonfire': return w.res.wood >= 40;
+    case 'moonDance': return mealTotal(w) >= alive(w).length * 2 && w.strain >= 5;
     default: return true;
   }
 }
@@ -473,7 +479,13 @@ export function autoBuild(w: World) {
     const p = festivalPreview(w);
     const countingMeals = partsOf(w).some(m => (m.kind === 'stock' && m.resources.some(r => MEALS.includes(r))) || (m.kind === 'variety' && m.category === 'meal') || m.kind === 'monument' || m.kind === 'longTable');
     const spare = mealTotal(w) >= alive(w).length * (countingMeals ? 3 : 1.5);
-    if (!p.wait && w.strain >= BOT.festivalAt && p.fed === p.guests && (spare || w.strain >= BOT.festivalAt * 2)) {
+    // a charter whose only missing piece is the 24-hour mood: a festival lifts everyone for a day and a half
+    const moodPart = partsOf(w).find(m => m.kind === 'avgMood') as { amount: number } | undefined;
+    const log = w.moodLog ?? [];
+    const avg24 = log.length ? log.reduce((a, b) => a + b, 0) / log.length : avgMood(w);
+    const label = charterProgress(w)?.label ?? '';
+    const onlyMood = !!moodPart && avg24 < moodPart.amount && avg24 >= moodPart.amount - 8 && label.split(' · ').filter(x => !x.startsWith('✓')).length === 1;
+    if (!p.wait && p.fed === p.guests && ((w.strain >= BOT.festivalAt && (spare || w.strain >= BOT.festivalAt * 2)) || (BOT.moodFestival && onlyMood && mealTotal(w) >= alive(w).length * 1.2))) {
       if (!apply(w, { type: 'callFestival' })) note(w, { kind: 'decision', title: 'Festival called', lines: [`strain ${Math.round(w.strain)} ≥ ${BOT.festivalAt}; ${Math.floor(mealTotal(w))} meals for ${alive(w).length}${countingMeals ? ' (the charter counts meals, so it keeps 3 each)' : ''}; eases about ${Math.round(p.relief)}`] });
     }
   }
@@ -716,7 +728,10 @@ export function autoFoodRules(w: World) {
   const rawEaters = concernsOf(w).find(c => c.id === 'raw')?.people ?? 0;
   const close = (charterProgress(w)?.ratio ?? 0) >= 0.6;
   if (['settled', 'twokitchens', 'menu'].includes(w.charter ?? '') && raw > pop * 3 && (close || rawEaters < pop / 3 || !BOT.advisor || BOT.off.includes('relaxFoodRules'))) keep.push(...MEALS);
-  if (raw < pop * 1.5) keep.length = 0; // never let anyone starve for a charter
+  // Fed and rested: raw food stays in storage while there are meals enough, so every meal is a cooked one
+  if (w.charter === 'rested' && mealTotal(w) >= pop * 1.5) keep.push(...RAW_FOODS);
+  // never let anyone starve for a charter: lift the rules if what's left to eat is under 1.5 each
+  if ([...MEALS, ...RAW_FOODS].filter(f => !keep.includes(f)).reduce((n, f) => n + w.res[f], 0) < pop * 1.5) keep.length = 0;
   for (const f of [...MEALS, ...RAW_FOODS] as ResourceId[]) {
     const allowed = !keep.includes(f);
     if (allowed === w.forbidden.includes(f)) apply(w, { type: 'foodRule', food: f, allowed });
