@@ -4,7 +4,7 @@ import { createWorld, tick, day, hourOfDay, TICKS_PER_HOUR, alive, avgMood, opin
 import { CHARTERS } from '../src/sim/content';
 import { autoDecide, autoBuild } from '../src/sim/autoplayer';
 
-const id = process.argv[2] ?? 'cheer';
+const id = process.argv[2] ?? 'settled';
 const runs = Number(process.argv[3] ?? 20);
 const ch = CHARTERS.find(c => c.id === id)!;
 const contrib: Record<string, number> = {};
@@ -15,9 +15,9 @@ const startDay: number[] = [], startMood: number[] = [], startStrain: number[] =
 const med = (xs: number[]) => xs.length ? xs.slice().sort((a, b) => a - b)[Math.floor(xs.length / 2)] : NaN;
 const norm = (l: string) => l.replace(/^(Fell for|Broke up with|Insulted by|Has to work with|In love with) .*/, '$1 …').replace(/^\S+ (won’t stop complaining|is a ray of sunshine)/, '… $1').replace(/^Loves .*/, 'Loves their job').replace(/^Hates .*/, 'Hates their job').replace(/^Sick: .*/, 'Sick').replace(/^Ate raw .*/, 'Ate raw food').replace(/ died$/, ' (death)');
 for (let i = 0; i < runs; i++) {
-  const w = createWorld(5000 + i * 7919, 'normal');
+  const w = createWorld(5000 + i * 7919);
   let since = -1, best = 0, b0 = 0, c0 = 0, gotCouple = false; let dayMoods: number[] = [];
-  while (w.status === 'playing' && day(w) <= 50) {
+  while (w.status === 'playing' && day(w) <= 90) {
     const force = () => { for (const d of w.decisions) if (d.kind === 'charter' && d.tier === ch.tier) d.options = [ch.id]; };
     force(); autoDecide(w);
     for (let t = 0; t < TICKS_PER_HOUR; t++) { tick(w); force(); autoDecide(w); }

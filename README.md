@@ -27,8 +27,15 @@ npx tsx tools/recipes-check.ts  # multi-recipe engine: star preference, fallback
 npx tsx tools/routes-check.ts   # forces each drink route on a map with its site and checks the drinks come out
 npx tsx tools/routes.ts 60      # which drink routes bot colonies use, by map sites; what gets built
 npx tsx tools/reroll-check.ts   # blueprint reroll: 10, 20, 30 wood across the run; new options; refusals
+npx tsx tools/pacing.ts 60     # when charters are picked and finished, research, population and strain by day
+npx tsx tools/explain.ts 1000 1 20   # why the bot does what it does: each choice's options and score parts, staffing order, builds placed and skipped
+npx tsx tools/explain.ts 1000 1 20 decision   # only the choices (also: staff, build)
+STRAIN_K=0.05 RECRUIT_EXTRA=2 npx tsx tools/pacing.ts 50   # pacing takes experiment knobs: STRAIN_K, DRAFT_EVERY, RECRUIT_CAP, RECRUIT_EXTRA, LABORERS_PER, COMFORTS, COMFORTS_FIRST
+npx tsx tools/trace.ts 1000 40   # day-by-day trace of one run (LOG=1 adds the log)
+npx tsx tools/finale-check.ts   # forced checks: the small start, research, charter timing, strain, the Crown's Hall and the Long Table
 npx tsc -p .                   # type-check
 ```
+
 
 Open `dist/mumblewood.html` in a browser. It works on phones too.
 
@@ -41,7 +48,8 @@ Every push to `main` builds the game and publishes `dist/site/index.html` to Git
 
 | Path | What it is |
 | --- | --- |
-| `src/sim/content.ts` | All game data: buildings, traits, charters, events, boons |
+| `src/sim/content.ts` | All game data: buildings, traits, charters, events, boons, research projects |
+| `src/sim/scenario.ts` | How a run starts: settlers, goods, starting buildings, what's unlocked, the first research offer, strain, collapse rule. One start for now, kept as data so other starts (RimWorld-style) are easy to add |
 | `src/sim/world.ts` | The deterministic simulation. No DOM, so it runs in Node too |
 | `src/sim/economy.ts` | The ledger: last-24-hour income and use for food, wood, planks and ale, jobs and open slots, laborer time |
 | `src/sim/advisor.ts` | Reads only what the player can see (thoughts, HUD, building cards) and ranks concerns with evidence and next steps |

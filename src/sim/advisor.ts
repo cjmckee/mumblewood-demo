@@ -2,10 +2,10 @@
 // It turns those into ranked concerns, each with the evidence a player would see and the fixes that follow.
 // The bot plays from this, which doubles as a readability test: if visible information is enough to play well,
 // the game is readable. Nothing here peeks at hidden state (fun, opinions, paths, travel times).
-import { BUILDING_BY_ID, BUILDINGS, MEALS, RAW_FOODS, RESOURCES, CATEGORIES, ResourceId } from './content';
+import { BUILDING_BY_ID, BUILDINGS, MEALS, RAW_FOODS, RESOURCES, CATEGORIES, ResourceId, RESEARCH } from './content';
 import {
   World, Colonist, alive, built, bdef, beds, workersAt, blockedReason, storageCap, stored, spoilingFood, mealTotal,
-  storageFree, currentRecipe, drinkTotal, usableHere, stockOf, recipeReach, enabledRecipes, siteOk,
+  storageFree, currentRecipe, drinkTotal, usableHere, stockOf, recipeReach, enabledRecipes, siteOk, festivalPreview, charterProgress,
 } from './world';
 import { economy } from './economy';
 
@@ -15,7 +15,8 @@ export type Fix =
   | { draft: string }
   | { relaxFoodRules: true }
   | { reassign: 'hated' | 'feud' | 'grumbler' }
-  | { laborers: number };
+  | { laborers: number }
+  | { research: string };
 
 export interface Concern {
   id: string;
@@ -94,6 +95,15 @@ function buildOrDraft(w: World, id: string, fixes: Fix[]): string {
   return '';
 }
 
+/** a building still behind research: the idea points at the study instead, with how far along it is */
+function researchFor(w: World, id: string): { idea: string; fix: Fix } | null {
+  if (owns(w, id) || !w.research) return null;
+  const r = RESEARCH.find(x => x.unlocks.includes(id)); if (!r) return null;
+  const now = w.research.current === r.id;
+  if (!built(w).some(b => b.def === 'desk')) return { idea: `build a research desk, then study ${r.name.toLowerCase()} to unlock the ${name(id)}`, fix: { build: 'desk' } };
+  return { idea: now ? `the scholar is studying ${r.name.toLowerCase()}, which unlocks the ${name(id)}: keep someone at the desk` : `study ${r.name.toLowerCase()} at the research desk to unlock the ${name(id)}`, fix: { research: r.id } };
+}
+
 export function assess(w: World): Concern[] {
   const out: Concern[] = [];
   const pop = alive(w).length;
@@ -119,6 +129,8 @@ export function assess(w: World): Concern[] {
     if (locked.length && mealTotal(w) > pop) { fixes.push({ relaxFoodRules: true }); idea = `meals are locked by food rules while ${mealTotal(w) | 0} sit in storage`; }
     else if (idle.length) { fixes.push({ staff: 'rawFood', n: slotsOf(w, 'rawFood') }); idea = 'the kitchen is idle for lack of raw food: more foragers'; }
     else if (cooks < kslots) { fixes.push({ staff: 'kitchen', n: kslots }); idea = `put cooks in the empty kitchen slots (${cooks}/${kslots})`; }
+    else if (researchFor(w, 'kitchen')) { const r = researchFor(w, 'kitchen')!; fixes.push(r.fix); idea = r.idea; }
+    else if (!has(w, 'kitchen')) { fixes.push({ build: 'kitchen' }, { staff: 'kitchen', n: 1 }); idea = 'build a stew kitchen and put a cook in it'; }
     else { fixes.push({ build: 'kitchen' }, { staff: 'kitchen', n: kslots + 2 }); idea = 'every kitchen slot is busy: build another kitchen'; }
     if (owns(w, 'pieoven') && !has(w, 'pieoven')) fixes.push({ build: 'pieoven' });
     add('raw', `${who('raw')} ate raw food`, `Meals in storage: ${mealTotal(w) | 0} · cooks ${cooks}/${kslots}${idle.length ? ' · a kitchen says "no ingredients"' : ''}${locked.length ? ` · food rules lock ${locked.join(', ')}` : ''}`, idea, wt('raw'), who('raw'), fixes);
@@ -158,7 +170,8 @@ export function assess(w: World): Concern[] {
   }
   if (who('table')) {
     const seats = built(w).reduce((n, b) => n + (bdef(b).seats ?? 0), 0);
-    add('table', `${who('table')} ate without a table`, `${seats} seats for ${pop} people (meals overlap, so about half need a seat at once)`, 'build another dining hall', wt('table'), who('table'), [{ build: 'dining' }]);
+    const rs = researchFor(w, 'dining');
+    add('table', `${who('table')} ate without a table`, `${seats} seats for ${pop} people (meals overlap, so about half need a seat at once)`, rs ? rs.idea : seats ? 'build another dining hall' : 'build a dining hall', wt('table'), who('table'), rs ? [rs.fix] : [{ build: 'dining' }]);
   }
   if (who('filthy')) {
     const halls = built(w).filter(b => bdef(b).seats).map(b => `${Math.round(b.clean)}%`).join(', ');
@@ -189,14 +202,15 @@ export function assess(w: World): Concern[] {
     if (has(w, 'cottage')) fixes.push({ build: 'cottage' });
     add('vain', `${who('vain')} want a cottage`, `Cottages: ${built(w).filter(b => b.def === 'cottage').length} · planks and bricks ${stockOf(w, 'fine') | 0}`, idea, wt('vain'), who('vain'), fixes);
   }
-  if (who('ugly')) add('ugly', `${who('ugly')} find it ugly`, 'Their surroundings score low on beauty', 'decorate where people spend time (hearth, dining hall)', wt('ugly'), who('ugly'), [{ build: 'flowerbed' }, { build: 'lantern' }]);
+  if (who('ugly')) add('ugly', `${who('ugly')} find it ugly`, 'Their surroundings score low on beauty', researchFor(w, 'flowerbed')?.idea ?? 'decorate where people spend time (hearth, dining hall)', wt('ugly'), who('ugly'), [{ build: 'flowerbed' }, { build: 'lantern' }]);
   // ---- health and warmth ----
   if (who('sick')) {
     const fixes: Fix[] = [];
     const clinic = hasBuilt(w, 'clinic');
-    if (!has(w, 'clinic')) fixes.push({ build: 'clinic' });
+    const rs = researchFor(w, 'clinic');
+    if (rs) fixes.push(rs.fix); else if (!has(w, 'clinic')) fixes.push({ build: 'clinic' });
     fixes.push({ staff: 'clinic', n: 1 });
-    add('sick', `${who('sick')} sick or hurt`, clinic ? `Clinic doctor: ${workersOf(w, 'clinic') ? 'on duty' : 'none assigned'}` : 'No clinic', clinic ? (workersOf(w, 'clinic') ? (stockOf(w, 'remedy') < 1 ? (owns(w, 'apothecary') ? 'an apothecary’s poultices would help the doctor' : 'a better doctor heals faster; remedies from an apothecary help too') : 'a better doctor heals faster') : 'assign a doctor (best medicine skill)') : 'build a clinic and assign a doctor', wt('sick'), who('sick'), fixes);
+    add('sick', `${who('sick')} sick or hurt`, clinic ? `Clinic doctor: ${workersOf(w, 'clinic') ? 'on duty' : 'none assigned'}` : 'No clinic', clinic ? (workersOf(w, 'clinic') ? (stockOf(w, 'remedy') < 1 ? (owns(w, 'apothecary') ? 'an apothecary’s poultices would help the doctor' : 'a better doctor heals faster; remedies from an apothecary help too') : 'a better doctor heals faster') : 'assign a doctor (best medicine skill)') : rs ? rs.idea : 'build a clinic and assign a doctor', wt('sick'), who('sick'), fixes);
   }
   if (who('cold')) add('cold', 'The hearth went cold', `Wood in storage: ${w.res.wood | 0} · choppers ${workersOf(w, 'woodcutter')}/${slotsOf(w, 'woodcutter')}`, 'more woodcutters: the hearth burns wood every night', wt('cold') * 1.5, who('cold'), [{ staff: 'woodcutter', n: workersOf(w, 'woodcutter') + 2 }, { build: 'woodcutter' }]);
   // ---- work ----
@@ -218,8 +232,26 @@ export function assess(w: World): Concern[] {
       add(`idle-${b.def}`, `${def.name} idle`, `Its card says: ${r}`, has(w, upstream) || upstream === 'rawFood' ? `more ${who2} to feed it` : `build a ${name(upstream)} to feed it`, 6, 0, fix);
     }
   }
+  // a charter waiting only on the 24-hour mood: a festival lifts everyone for a day and a half
+  {
+    const prog = charterProgress(w);
+    const unmet = prog ? prog.label.split(' · ').filter(x => !x.startsWith('✓')) : [];
+    const p = festivalPreview(w);
+    if (unmet.length === 1 && unmet[0].includes('24h average') && !p.wait && !w.festival?.called && mealTotal(w) >= pop)
+      add('moodcharter', 'The charter is waiting on mood', `Charter: ${prog!.label}`, 'call a festival: everyone gets +5 mood (+8 with a favourite) for a day and a half', 12, 0, []);
+  }
+  // strain: a festival eases it when people are wearing down
+  if (w.strain >= 8) {
+    const p = festivalPreview(w);
+    if (!p.wait && !w.festival?.called && mealTotal(w) >= pop) add('festival', 'The frontier is wearing everyone down', `Strain ${Math.round(w.strain)} · ${Math.floor(mealTotal(w))} meals and ${Math.floor(drinkTotal(w))} drinks in storage`, `call a festival at the hearth: it would ease strain by about ${Math.round(p.relief)}`, w.strain / 2, 0, []);
+  }
+  // the research desk: a project waiting on a scholar, or on goods
+  if (w.research?.current) {
+    const desk = built(w).find(b => b.def === 'desk');
+    if (desk && !workersAt(w, desk.uid).length) add('desk', 'Nobody at the research desk', `Studying ${RESEARCH.find(r => r.id === w.research!.current)!.name} · the desk card shows what's left`, 'put someone at the research desk', 7, 0, [{ staff: 'desk', n: 1 }]);
+  }
   if (storageCap(w) && stored(w) / storageCap(w) > 0.85) add('storage', 'Storage nearly full', `${stored(w) | 0}/${storageCap(w)} stored`, 'build another stockpile', 8, 0, [{ build: 'stockpile' }]);
-  if (spoilingFood(w) >= 20) add('spoiling', 'Food spoiling', `${spoilingFood(w) | 0} food sitting outside a storehouse`, has(w, 'storehouse') ? 'set a storehouse to food, or build another' : 'build a storehouse', 5, 0, has(w, 'storehouse') ? [{ build: storageFree(w, 'berries') < 20 ? 'storehouse' : '' }].filter(f => f.build) : [{ build: 'storehouse' }]);
+  if (spoilingFood(w) >= 20) add('spoiling', 'Food spoiling', `${spoilingFood(w) | 0} food sitting outside a storehouse`, has(w, 'storehouse') ? 'set a storehouse to food, or build another' : researchFor(w, 'storehouse')?.idea ?? 'build a storehouse', 5, 0, has(w, 'storehouse') ? [{ build: storageFree(w, 'berries') < 20 ? 'storehouse' : '' }].filter(f => f.build) : [{ build: 'storehouse' }]);
   const plankNeeds = w.owned.filter(id => !has(w, id) && BUILDING_BY_ID[id].cost.fine && !BUILDING_BY_ID[id].decor);
   if (plankNeeds.length && stockOf(w, 'fine') < 8) {
     const fixes: Fix[] = [];

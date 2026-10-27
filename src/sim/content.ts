@@ -34,15 +34,15 @@ export const MEALS: ResourceId[] = ['pie', 'skewers', 'smokedFish', 'bread', 'st
 /** mood from eating each meal, before tastes and traits */
 export const MEAL_MOOD: Partial<Record<ResourceId, number>> = { pie: 8, skewers: 7, smokedFish: 6, bread: 6, stew: 5 };
 
-export type JobKind = 'chopping' | 'foraging' | 'fishing' | 'cooking' | 'crafting' | 'brewing' | 'serving' | 'medicine';
+export type JobKind = 'chopping' | 'foraging' | 'fishing' | 'cooking' | 'crafting' | 'brewing' | 'serving' | 'medicine' | 'studying';
 export const JOB_NAMES: Record<JobKind, string> = {
   chopping: 'chopping wood', foraging: 'foraging', fishing: 'fishing', cooking: 'cooking',
-  crafting: 'carpentry', brewing: 'brewing', serving: 'tavern work', medicine: 'doctoring',
+  crafting: 'carpentry', brewing: 'brewing', serving: 'tavern work', medicine: 'doctoring', studying: 'studying',
 };
 /** short labels for skill bars */
 export const SKILL_NAMES: Record<JobKind, string> = {
   chopping: 'Chopping', foraging: 'Foraging', fishing: 'Fishing', cooking: 'Cooking',
-  crafting: 'Carpentry', brewing: 'Brewing', serving: 'Serving', medicine: 'Medicine',
+  crafting: 'Carpentry', brewing: 'Brewing', serving: 'Serving', medicine: 'Medicine', studying: 'Studying',
 };
 export const JOB_KINDS = Object.keys(JOB_NAMES) as JobKind[];
 
@@ -116,30 +116,32 @@ export interface BuildingDef {
   /** colours for the vector renderer */
   wall: number; roof: number;
   height: number;
-  /** always buildable, never drafted */
-  basic?: boolean;
   draftable?: boolean;
+  /** built in stages, each with its own materials and work; replaces `cost` once the first stage is done */
+  stages?: { label: string; cost: Partial<Record<InputKey, number>>; work: number }[];
+  /** only colonists at or above this mood will haul for or build it */
+  moodGate?: number;
 }
 
 export const BUILDINGS: BuildingDef[] = [
   { id: 'hearth', name: 'Hearth', blurb: 'Where everyone gathers in the evening to gossip. Burns wood at night.', cost: {}, w: 2, h: 2, slots: 0, wall: 0x6b5a4a, roof: 0xe07a2e, height: 0.3 },
-  { id: 'stockpile', name: 'Stockpile', blurb: 'An open patch of ground for goods. Holds 150. Food left out here spoils.', cost: {}, w: 2, h: 2, slots: 0, storage: 150, walkable: true, wall: 0x8a7a5a, roof: 0x8a7a5a, height: 0, basic: true },
-  { id: 'leanto', name: 'Lean-to', blurb: 'Sleeps 2. Drafty, but it counts as a roof.', cost: { wood: 8 }, w: 1, h: 1, slots: 0, beds: 2, bedQuality: 'basic', wall: 0x8a6e4f, roof: 0x7d8f55, height: 0.6, basic: true },
-  { id: 'woodcutter', name: 'Woodcutter', blurb: 'Fells trees. Works best with lots of trees close by.', cost: { wood: 8 }, w: 1, h: 1, slots: 2, job: 'chopping', needs: 'trees', recipes: [{ inputs: {}, output: 'wood', stars: 3 }], wall: 0x7a5a3c, roof: 0x5c7a3e, height: 0.7, basic: true },
-  { id: 'forager', name: 'Forager hut', blurb: 'Picks berries. Works best right next to berry bushes.', cost: { wood: 8 }, w: 1, h: 1, slots: 2, job: 'foraging', needs: 'bushes', recipes: [{ inputs: {}, output: 'berries', stars: 3 }, { inputs: {}, output: 'herbs', stars: 1 }], wall: 0x8c6b4a, roof: 0xa0465a, height: 0.7, basic: true },
-  { id: 'dining', name: 'Dining hall', blurb: 'Tables and benches for 6. Eating here beats eating in the dirt, as long as someone keeps it clean.', cost: { wood: 20 }, w: 2, h: 2, slots: 0, seats: 6, wall: 0x9a7a58, roof: 0x8a4a3a, height: 0.9, basic: true },
-  { id: 'storehouse', name: 'Storehouse', blurb: 'Holds 250 goods under a roof. Food stored here doesn\u2019t spoil.', cost: { wood: 25 }, w: 2, h: 2, slots: 0, storage: 250, keepsFresh: true, wall: 0x7a6a58, roof: 0x5a6a7a, height: 1.0, basic: true },
+  { id: 'stockpile', name: 'Stockpile', blurb: 'An open patch of ground for goods. Holds 150. Food left out here spoils.', cost: {}, w: 2, h: 2, slots: 0, storage: 150, walkable: true, wall: 0x8a7a5a, roof: 0x8a7a5a, height: 0 },
+  { id: 'leanto', name: 'Lean-to', blurb: 'Sleeps 2. Drafty, but it counts as a roof.', cost: { wood: 8 }, w: 1, h: 1, slots: 0, beds: 2, bedQuality: 'basic', wall: 0x8a6e4f, roof: 0x7d8f55, height: 0.6 },
+  { id: 'woodcutter', name: 'Woodcutter', blurb: 'Fells trees. Works best with lots of trees close by.', cost: { wood: 8 }, w: 1, h: 1, slots: 2, job: 'chopping', needs: 'trees', recipes: [{ inputs: {}, output: 'wood', stars: 3 }], wall: 0x7a5a3c, roof: 0x5c7a3e, height: 0.7 },
+  { id: 'forager', name: 'Forager hut', blurb: 'Picks berries. Works best right next to berry bushes.', cost: { wood: 8 }, w: 1, h: 1, slots: 2, job: 'foraging', needs: 'bushes', recipes: [{ inputs: {}, output: 'berries', stars: 3 }, { inputs: {}, output: 'herbs', stars: 1 }], wall: 0x8c6b4a, roof: 0xa0465a, height: 0.7 },
+  { id: 'dining', name: 'Dining hall', blurb: 'Tables and benches for 6. Eating here beats eating in the dirt, as long as someone keeps it clean.', cost: { wood: 20 }, w: 2, h: 2, slots: 0, seats: 6, wall: 0x9a7a58, roof: 0x8a4a3a, height: 0.9 },
+  { id: 'storehouse', name: 'Storehouse', blurb: 'Holds 250 goods under a roof. Food stored here doesn\u2019t spoil.', cost: { wood: 25 }, w: 2, h: 2, slots: 0, storage: 250, keepsFresh: true, wall: 0x7a6a58, roof: 0x5a6a7a, height: 1.0 },
 
-  { id: 'clinic', name: 'Clinic', blurb: 'Two cots and a doctor. The sick and injured recover here much faster, faster still with a skilled doctor and remedies in storage.', cost: { wood: 15 }, w: 2, h: 1, slots: 1, job: 'medicine', patients: 2, wall: 0xd8d0c0, roof: 0x9a3a3a, height: 0.8, basic: true },
+  { id: 'clinic', name: 'Clinic', blurb: 'Two cots and a doctor. The sick and injured recover here much faster, faster still with a skilled doctor and remedies in storage.', cost: { wood: 15 }, w: 2, h: 1, slots: 1, job: 'medicine', patients: 2, wall: 0xd8d0c0, roof: 0x9a3a3a, height: 0.8 },
 
-  { id: 'flowerbed', name: 'Flower bed', blurb: 'Beauty 3. Somebody planted petunias in a wheelbarrow.', cost: { wood: 2 }, w: 1, h: 1, slots: 0, decor: true, beauty: 3, wall: 0x6b4f33, roof: 0xd66a9a, height: 0, basic: true },
-  { id: 'lantern', name: 'Lantern post', blurb: 'Beauty 2. Glows at night, which moths appreciate.', cost: { wood: 4 }, w: 1, h: 1, slots: 0, decor: true, beauty: 2, wall: 0x4a3a2a, roof: 0xf2c46a, height: 0, basic: true },
-  { id: 'bench', name: 'Bench', blurb: 'Beauty 2. A good place to sit and judge passers-by.', cost: { fine: 3 }, w: 1, h: 1, slots: 0, decor: true, beauty: 2, wall: 0x8a6038, roof: 0x8a6038, height: 0, basic: true },
-  { id: 'statue', name: 'Statue of Saint Pomfrey', blurb: 'Beauty 7. He looks mildly disappointed, as in life.', cost: { fine: 12 }, w: 1, h: 1, slots: 0, decor: true, beauty: 7, wall: 0x9a9a92, roof: 0xb8b8b0, height: 0, basic: true },
+  { id: 'flowerbed', name: 'Flower bed', blurb: 'Beauty 3. Somebody planted petunias in a wheelbarrow.', cost: { wood: 2 }, w: 1, h: 1, slots: 0, decor: true, beauty: 3, wall: 0x6b4f33, roof: 0xd66a9a, height: 0 },
+  { id: 'lantern', name: 'Lantern post', blurb: 'Beauty 2. Glows at night, which moths appreciate.', cost: { wood: 4 }, w: 1, h: 1, slots: 0, decor: true, beauty: 2, wall: 0x4a3a2a, roof: 0xf2c46a, height: 0 },
+  { id: 'bench', name: 'Bench', blurb: 'Beauty 2. A good place to sit and judge passers-by.', cost: { fine: 3 }, w: 1, h: 1, slots: 0, decor: true, beauty: 2, wall: 0x8a6038, roof: 0x8a6038, height: 0 },
+  { id: 'statue', name: 'Statue of Saint Pomfrey', blurb: 'Beauty 7. He looks mildly disappointed, as in life.', cost: { fine: 12 }, w: 1, h: 1, slots: 0, decor: true, beauty: 7, wall: 0x9a9a92, roof: 0xb8b8b0, height: 0 },
 
   { id: 'dock', name: 'Fishing dock', blurb: 'Fish, plentiful and mildly judgmental. Can cut reeds instead, slowly. Must touch water.', cost: { wood: 15 }, w: 1, h: 2, slots: 2, job: 'fishing', needs: 'water', recipes: [{ inputs: {}, output: 'fish', stars: 3 }, { inputs: {}, output: 'reeds', stars: 1 }], wall: 0x6d5844, roof: 0x3d7b9a, height: 0.6, draftable: true },
   { id: 'cellar', name: 'Mushroom cellar', blurb: 'Dark, damp, productive. Like a bard.', cost: { wood: 12, fine: 5 }, w: 1, h: 1, slots: 2, job: 'foraging', recipes: [{ inputs: {}, output: 'mushrooms', stars: 3 }], wall: 0x5d5448, roof: 0x8d7aa8, height: 0.5, draftable: true },
-  { id: 'kitchen', name: 'Stew kitchen', blurb: 'Turns any raw food into stew. Can smoke fish or bake bread, badly. Someone has to carry the ingredients in.', cost: { wood: 18 }, w: 2, h: 1, slots: 2, job: 'cooking', recipes: [{ inputs: { rawFood: 1.5 }, output: 'stew', stars: 3 }, { inputs: { fish: 1.8 }, output: 'smokedFish', stars: 1 }, { inputs: { flour: 1.5 }, output: 'bread', stars: 1 }], wall: 0x8a6448, roof: 0xc4703a, height: 0.8, basic: true },
+  { id: 'kitchen', name: 'Stew kitchen', blurb: 'Turns any raw food into stew. Can smoke fish or bake bread, badly. Someone has to carry the ingredients in.', cost: { wood: 18 }, w: 2, h: 1, slots: 2, job: 'cooking', recipes: [{ inputs: { rawFood: 1.5 }, output: 'stew', stars: 3 }, { inputs: { fish: 1.8 }, output: 'smokedFish', stars: 1 }, { inputs: { flour: 1.5 }, output: 'bread', stars: 1 }], wall: 0x8a6448, roof: 0xc4703a, height: 0.8 },
   { id: 'pieoven', name: 'Pie oven', blurb: 'Berries plus wood make pie. Pie is the best thing that has ever happened.', cost: { wood: 12, fine: 8 }, w: 1, h: 1, slots: 2, job: 'cooking', recipes: [{ inputs: { berries: 2, wood: 0.5 }, output: 'pie', stars: 3 }, { inputs: { flour: 1.25 }, output: 'bread', stars: 2 }], wall: 0x9b7452, roof: 0xd6a33c, height: 0.8, draftable: true },
   { id: 'smokehouse', name: 'Smokehouse', blurb: 'Fish goes in, better fish comes out. Also grills mushroom-and-herb skewers.', cost: { wood: 15 }, w: 1, h: 1, slots: 2, job: 'cooking', recipes: [{ inputs: { fish: 1.2 }, output: 'smokedFish', stars: 3 }, { inputs: { mushrooms: 1, herbs: 0.5 }, output: 'skewers', stars: 2 }], wall: 0x5f4d3f, roof: 0x8a8a8a, height: 0.9, draftable: true },
   { id: 'mill', name: 'Mill', blurb: 'Grinds grain into flour, the first half of a loaf.', cost: { wood: 16, fine: 4 }, w: 2, h: 1, slots: 2, job: 'crafting', recipes: [{ inputs: { grain: 1.5 }, output: 'flour', stars: 3 }], wall: 0xa08a68, roof: 0x7a6a4a, height: 1.1, draftable: true },
@@ -159,6 +161,11 @@ export const BUILDINGS: BuildingDef[] = [
   { id: 'cottage', name: 'Cottage', blurb: 'Sleeps 2, cozily. Waking up here is a +5 mood.', cost: { wood: 6, fine: 10 }, w: 1, h: 1, slots: 0, beds: 2, bedQuality: 'cozy', wall: 0xc7a983, roof: 0x4f6f9a, height: 0.9, draftable: true },
   { id: 'bathhouse', name: 'Bathhouse', blurb: 'Uses wood. Everyone feels fresher, and grumblers grumble less.', cost: { wood: 15, fine: 8 }, w: 2, h: 1, slots: 0, wall: 0xb8b0a0, roof: 0x4f8f8a, height: 0.7, draftable: true },
   { id: 'stage', name: "Bard's stage", blurb: 'Evening music at the hearth. Fun builds faster for everyone. Beauty 3.', cost: { wood: 12, fine: 5 }, w: 1, h: 1, slots: 0, beauty: 3, wall: 0x8a5f7a, roof: 0xc25c8a, height: 0.4, draftable: true },
+  // research and the finale (never drafted)
+  { id: 'desk', name: 'Research desk', blurb: 'A wobbly table, a candle and a stack of borrowed books. A scholar here works out how to build the things a colony takes for granted.', cost: { wood: 8 }, w: 1, h: 1, slots: 1, job: 'studying', wall: 0x7a5a3a, roof: 0x5a6f8a, height: 0.45 },
+  { id: 'hall', name: 'The Crown\u2019s Hall', blurb: 'The building that makes Mumblewood a town. Built in three stages. Nobody grumpy lays a stone for the Crown: only colonists at mood 55 or more will haul for it or build it.', cost: { fine: 60 }, w: 3, h: 3, slots: 0, beauty: 6, moodGate: 55,
+    stages: [{ label: 'Foundations and walls', cost: { fine: 60 }, work: 24 }, { label: 'Feeding the masons', cost: { meal: 40 }, work: 16 }, { label: 'Topping out', cost: { drink: 25 }, work: 10 }],
+    wall: 0xc8b48a, roof: 0x8a3a3a, height: 1.4 },
 ];
 /** builder-hours of work to finish a building */
 export const buildWork = (d: BuildingDef) => (d.decor ? 1.5 : Math.max(3, d.w * d.h * 2.5));
@@ -209,63 +216,46 @@ export const PERKS: PerkDef[] = [
   { id: 'saintsDay', name: "Saint Pomfrey's blessing", desc: '+4 mood for everyone, forever.' },
   { id: 'gossipBan', name: 'Gossip ordinance', desc: 'Insults happen half as often.' },
   { id: 'warmHearth', name: 'Everburning hearth', desc: 'The hearth burns half as much wood, and evenings there are +2.' },
+  { id: 'hearthSongs', name: 'Hearth songs', desc: 'Strain eases by 0.5 every evening the tavern is open and staffed.' },
+  { id: 'postRider', name: 'A post rider', desc: 'Charters and festivals ease 10% more strain.' },
+  { id: 'homesteaders', name: 'Homesteaders', desc: 'Comfort counts for 20% more against strain.' },
 ];
 export const PERK_BY_ID: Record<string, PerkDef> = Object.fromEntries(PERKS.map(p => [p.id, p]));
 
 export type CharterMetric =
   | { kind: 'stock'; resources: ResourceId[]; amount: number }
   | { kind: 'population'; amount: number }
-  | { kind: 'buildings'; amount: number }
   | { kind: 'avgMood'; amount: number; hours: number }
-  | { kind: 'couples'; amount: number }
-  | { kind: 'feast'; meals: number; ale: number }
-  | { kind: 'contentPop'; pop: number; mood: number; hours: number }
-  | { kind: 'paths'; amount: number }
-  | { kind: 'decorPaths'; decor: number; paths: number }
-  | { kind: 'allTable'; hours: number }
-  | { kind: 'curedSince'; amount: number }
-  | { kind: 'errandsSince'; amount: number }
-  | { kind: 'avgBeauty'; amount: number; hours: number }
-  | { kind: 'skilled'; count: number; level: number }
-  | { kind: 'calm'; pop: number; hours: number }
-  | { kind: 'variety'; category: Category; kinds: number; each: number };
+  | { kind: 'allTable'; hours: number; cooked?: boolean }
+  | { kind: 'variety'; category: Category; kinds: number; each: number }
+  // several conditions at once, and the finales
+  | { kind: 'all'; parts: CharterMetric[] }
+  | { kind: 'built'; def: string; amount: number }
+  | { kind: 'everyoneBed' }
+  | { kind: 'healthy'; hours: number }
+  | { kind: 'monument'; def: string }
+  | { kind: 'longTable'; pop: number };
 
-export interface CharterDef { id: string; tier: 1 | 2 | 3; name: string; desc: string; metric: CharterMetric }
-export const CHARTERS: CharterDef[] = [
-  { id: 'pantry', tier: 1, name: 'A proper pantry', desc: 'Have 40 meals stored at once.', metric: { kind: 'stock', resources: ['stew', 'pie', 'smokedFish'], amount: 40 } },
-  { id: 'growing', tier: 1, name: 'Room to grow', desc: 'Reach 9 colonists.', metric: { kind: 'population', amount: 9 } },
-  { id: 'township', tier: 1, name: 'Township papers', desc: 'Finish 16 buildings (decorations don\u2019t count).', metric: { kind: 'buildings', amount: 16 } },
-  { id: 'cheer', tier: 2, name: 'Measurable cheer', desc: 'Average mood of 58+ over a full day.', metric: { kind: 'avgMood', amount: 58, hours: 24 } },
-  { id: 'lovebirds', tier: 2, name: 'Lovebirds', desc: 'Have 2 couples at the same time.', metric: { kind: 'couples', amount: 2 } },
-  { id: 'lumber', tier: 2, name: 'Lumber baron', desc: 'Have 40 planks stored at once.', metric: { kind: 'stock', resources: ['planks'], amount: 40 } },
-  { id: 'feast', tier: 3, name: 'The Great Feast', desc: 'Have 60 meals and 30 drinks stored at once.', metric: { kind: 'feast', meals: 60, ale: 30 } },
-  { id: 'harmony', tier: 3, name: 'Frontier harmony', desc: '12+ colonists, averaging 55+ mood over a full day.', metric: { kind: 'contentPop', pop: 12, mood: 55, hours: 24 } },
-  { id: 'boomtown', tier: 3, name: 'Boomtown', desc: 'Reach 16 colonists.', metric: { kind: 'population', amount: 16 } },
-  { id: 'woodpile', tier: 1, name: 'A proper woodpile', desc: 'Have 120 wood stored at once.', metric: { kind: 'stock', resources: ['wood'], amount: 120 } },
-  { id: 'paved', tier: 1, name: 'Paved with good intentions', desc: 'Lay 25 tiles of path.', metric: { kind: 'paths', amount: 25 } },
-  { id: 'tables', tier: 1, name: 'Elbows off the table', desc: 'Nobody eats without a table for a full day.', metric: { kind: 'allTable', hours: 24 } },
-  { id: 'healthy', tier: 2, name: 'Clean bill of health', desc: 'Nurse 3 sick or injured colonists back to health.', metric: { kind: 'curedSince', amount: 3 } },
-  { id: 'handy', tier: 2, name: 'Handy folk', desc: 'Finish 3 urgent jobs.', metric: { kind: 'errandsSince', amount: 3 } },
-  { id: 'pretty', tier: 2, name: 'Pretty as a picture', desc: 'Keep average surroundings at beauty 3 or more for a full day.', metric: { kind: 'avgBeauty', amount: 3, hours: 24 } },
-  { id: 'masters', tier: 2, name: 'Master craftsfolk', desc: 'Have 2 colonists with a skill of 10.', metric: { kind: 'skilled', count: 2, level: 10 } },
-  { id: 'pieday', tier: 3, name: 'Pie Day', desc: 'Have 40 pies stored at once.', metric: { kind: 'stock', resources: ['pie'], amount: 40 } },
-  { id: 'garden', tier: 3, name: 'Garden town', desc: 'Have 14 decorations and 60 tiles of path.', metric: { kind: 'decorPaths', decor: 14, paths: 60 } },
-  { id: 'menu', tier: 2, name: 'A varied table', desc: 'Have 3 kinds of meal stored at once, 10 of each.', metric: { kind: 'variety', category: 'meal', kinds: 3, each: 10 } },
-  { id: 'tasting', tier: 2, name: 'Something for everyone', desc: 'Have 3 kinds of drink stored at once, 8 of each.', metric: { kind: 'variety', category: 'drink', kinds: 3, each: 8 } },
-  { id: 'calm', tier: 3, name: 'Peace and quiet', desc: '12+ colonists and nobody sulking for two full days.', metric: { kind: 'calm', pop: 12, hours: 48 } },
-];
+export interface CharterDef {
+  id: string; tier: 1 | 2 | 3; name: string; desc: string; metric: CharterMetric;
+  /** blueprints that help, for the draft's charter guarantee */
+  helpers?: string[];
+  /** only offered on maps with these sites */
+  sites?: SiteId[];
+}
 
 export interface EventOption { label: string; detail: string; effect: string }
-export interface EventDef { id: string; title: string; text: string; options: EventOption[]; requires?: 'couple' }
+/** requires: 'couple' needs a couple; 'strain' needs strain of 6 or more (the event is about the frontier wearing on people) */
+export interface EventDef { id: string; title: string; text: string; options: EventOption[]; requires?: 'couple' | 'strain' }
 export const EVENTS: EventDef[] = [
   { id: 'bard', title: 'A travelling bard', text: 'A bard offers to play "The Ballad of Your Colony" for a modest fee. He has not yet written it.',
     options: [
-      { label: 'Pay 6 drinks', detail: 'Everyone +6 mood for a day.', effect: 'bardPlay' },
+      { label: 'Pay 6 drinks', detail: 'Everyone +6 mood for a day, and strain eases by 8%.', effect: 'bardPlay' },
       { label: 'Shoo him away', detail: 'Nothing happens. He writes a mean song anyway.', effect: 'none' },
     ] },
   { id: 'wedding', title: 'A wedding is proposed', text: 'A couple wants to make it official. Everyone is invited, whether they like it or not.', requires: 'couple',
     options: [
-      { label: 'Host it (8 meals, 5 drinks)', detail: 'Everyone +7 mood for 2 days.', effect: 'wedding' },
+      { label: 'Host it (8 meals, 5 drinks)', detail: 'Everyone +7 mood for 2 days, and strain eases by 10%.', effect: 'wedding' },
       { label: 'Elope quietly', detail: 'The couple is −8 mood for 2 days.', effect: 'elope' },
     ] },
   { id: 'frogs', title: 'It is raining frogs', text: 'Small, confused frogs. Some colonists find it delightful. Others are holding umbrellas very tightly.',
@@ -277,6 +267,21 @@ export const EVENTS: EventDef[] = [
     options: [
       { label: 'Rebuild it (10 planks)', detail: 'Lose 10 planks.', effect: 'outhouseFix' },
       { label: 'Live with the ghost', detail: 'Everyone −3 mood for 3 days.', effect: 'ghost' },
+    ] },
+  { id: 'letters', title: 'Letters from home', text: 'A courier staggers out of the woods with a sack of letters, most of them from aunts. He would like feeding before the walk back.', requires: 'strain',
+    options: [
+      { label: 'Feed him (15 food)', detail: 'Strain eases by 10%, or 15% if nobody is sulking. Everyone +3 mood for a day.', effect: 'lettersRead' },
+      { label: 'Send him on his way', detail: 'The letters go back. Everyone −2 mood for a day.', effect: 'lettersLost' },
+    ] },
+  { id: 'homesick', title: 'A cold wind from the east', text: 'The wind smells like somewhere else. People are talking about home, and not fondly about here.', requires: 'strain',
+    options: [
+      { label: 'Light a bonfire (20 wood)', detail: 'Strain doesn’t rise from this, and everyone +2 mood for a day.', effect: 'bonfire' },
+      { label: 'Tough it out', detail: 'Strain rises by 3.', effect: 'homesick' },
+    ] },
+  { id: 'moon', title: 'A harvest moon', text: 'The moon is enormous and orange. Someone suggests a dance. Someone else suggests the dance needs food.',
+    options: [
+      { label: 'Dance under it (a meal each)', detail: 'Strain eases by 10%, more if people get a meal they love. Everyone +4 mood for a day.', effect: 'moonDance' },
+      { label: 'Early night', detail: 'Nothing happens. The moon is unbothered.', effect: 'none' },
     ] },
   { id: 'peddler', title: 'A peddler with a cart', text: 'She is selling "authentic" relics and also, more usefully, planks.',
     options: [
@@ -321,4 +326,41 @@ export const ILLNESSES: IllnessDef[] = [
   { id: 'thumb', name: 'Hammered thumb', start: 18, worsen: 0.15 },
   { id: 'ankle', name: 'Sprained ankle', start: 26, worsen: 0.2 },
   { id: 'splinter', name: 'Heroic splinter', start: 16, worsen: 0.15 },
+];
+
+// ---------- Research ----------
+/** A project the research desk works through. Finishing it unlocks buildings from the base set. */
+export interface ResearchDef { id: string; name: string; desc: string; unlocks: string[]; cost: Partial<Record<InputKey, number>>; hours: number }
+export const RESEARCH: ResearchDef[] = [
+  { id: 'cookery', name: 'Cookery', desc: 'Raw berries are food, technically. A stew kitchen turns raw food into proper meals.', unlocks: ['kitchen'], cost: { wood: 10, berries: 10 }, hours: 8 },
+  { id: 'messhall', name: 'Mess hall', desc: 'Tables, benches, and the radical idea of not eating in the dirt.', unlocks: ['dining'], cost: { wood: 15 }, hours: 8 },
+  { id: 'physick', name: 'Physick', desc: 'A clinic with cots and a doctor. The sick mend faster, and fewer of them wander off to a city physician.', unlocks: ['clinic'], cost: { wood: 10, berries: 10 }, hours: 10 },
+  { id: 'warehousing', name: 'Warehousing', desc: 'A storehouse under a roof, where food doesn\u2019t spoil.', unlocks: ['storehouse'], cost: { wood: 20 }, hours: 10 },
+  { id: 'gardening', name: 'Gardening', desc: 'Flower beds and lantern posts. Prettier surroundings, happier settlers, confused moths.', unlocks: ['flowerbed', 'lantern'], cost: { wood: 5, berries: 10 }, hours: 6 },
+  { id: 'masonry', name: 'Masonry', desc: 'Benches and a statue of Saint Pomfrey. Paid for in meals, because masons expect lunch.', unlocks: ['bench', 'statue'], cost: { wood: 10, meal: 5 }, hours: 10 },
+];
+export const RESEARCH_BY_ID: Record<string, ResearchDef> = Object.fromEntries(RESEARCH.map(r => [r.id, r]));
+
+// ---------- Charters ----------
+// Each asks for people, a working supply chain and contented settlers at the same time. A "step" is one link in a
+// chain: gathering is one, each processing building another (stew is 2 steps, bread 3).
+const mood = (amount: number): CharterMetric => ({ kind: 'avgMood', amount, hours: 24 });
+const pop = (amount: number): CharterMetric => ({ kind: 'population', amount });
+export const CHARTERS: CharterDef[] = [
+  // tier 1: a few more people, kept content, and a 1-2 step chain
+  { id: 'settled', tier: 1, name: 'Settled in', desc: '6 colonists, 25 meals in storage, and a 24-hour average mood of 50+.', metric: { kind: 'all', parts: [pop(6), { kind: 'stock', resources: MEALS, amount: 25 }, mood(50)] }, helpers: ['dock', 'smokehouse'] },
+  { id: 'woodsmoke', tier: 1, name: 'Woodsmoke', desc: '6 colonists, 20 smoked fish in storage, and a 24-hour average mood of 50+.', metric: { kind: 'all', parts: [pop(6), { kind: 'stock', resources: ['smokedFish'], amount: 20 }, mood(50)] }, helpers: ['smokehouse', 'dock'] },
+  { id: 'firstplanks', tier: 1, name: 'First planks', desc: '6 colonists, 30 planks, bricks or wicker in storage, and a 24-hour average mood of 50+.', metric: { kind: 'all', parts: [pop(6), { kind: 'stock', resources: CATEGORIES.fine.members, amount: 30 }, mood(50)] }, helpers: ['sawmill', 'kiln', 'claypit', 'carpenter'] },
+  { id: 'rested', tier: 1, name: 'Fed and rested', desc: '6 colonists, everyone in a bed, and a full day where every meal is cooked and eaten at a table.', metric: { kind: 'all', parts: [pop(6), { kind: 'everyoneBed' }, { kind: 'allTable', hours: 24, cooked: true }] }, helpers: ['cottage', 'dock', 'smokehouse'] },
+  // tier 2: more people, harder to please, and a 3-step chain or two 2-step chains
+  { id: 'bread', tier: 2, name: 'Daily bread', desc: '10 colonists, 20 bread in storage, and a 24-hour average mood of 55+. Grain, then flour, then bread.', metric: { kind: 'all', parts: [pop(10), { kind: 'stock', resources: ['bread'], amount: 20 }, mood(55)] }, helpers: ['field', 'mill', 'bakery'], sites: ['soil'] },
+  { id: 'piesky', tier: 2, name: 'Pie in the sky', desc: '10 colonists, 20 pies in storage, and a 24-hour average mood of 55+. Berries and flour make a pie.', metric: { kind: 'all', parts: [pop(10), { kind: 'stock', resources: ['pie'], amount: 20 }, mood(55)] }, helpers: ['pieoven', 'field', 'mill', 'bakery'], sites: ['soil'] },
+  { id: 'twokitchens', tier: 2, name: 'Two kitchens', desc: '10 colonists, 2 kinds of meal with 15 of each in storage, and a 24-hour average mood of 55+.', metric: { kind: 'all', parts: [pop(10), { kind: 'variety', category: 'meal', kinds: 2, each: 15 }, mood(55)] }, helpers: ['smokehouse', 'pieoven', 'bakery', 'dock'] },
+  { id: 'roof', tier: 2, name: 'Raise the roof', desc: '10 colonists, 3 cottages, 15 drinks in storage, and a 24-hour average mood of 55+.', metric: { kind: 'all', parts: [pop(10), { kind: 'built', def: 'cottage', amount: 3 }, { kind: 'stock', resources: CATEGORIES.drink.members, amount: 15 }, mood(55)] }, helpers: ['cottage', 'sawmill', 'brewery', 'ciderpress'] },
+  { id: 'hearty', tier: 2, name: 'Hale and hearty', desc: '10 colonists, 12 tonics in storage, and nobody sick or hurt for a full day.', metric: { kind: 'all', parts: [pop(10), { kind: 'stock', resources: ['tonic'], amount: 12 }, { kind: 'healthy', hours: 24 }] }, helpers: ['apothecary', 'apiary', 'herbgarden'], sites: ['meadow'] },
+  { id: 'menu', tier: 2, name: 'A varied table', desc: '10 colonists, 3 kinds of meal with 10 of each in storage, and a 24-hour average mood of 55+.', metric: { kind: 'all', parts: [pop(10), { kind: 'variety', category: 'meal', kinds: 3, each: 10 }, mood(55)] }, helpers: ['smokehouse', 'pieoven', 'bakery'] },
+  { id: 'tasting', tier: 2, name: 'Something for everyone', desc: '10 colonists, 3 kinds of drink with 8 of each in storage, and a 24-hour average mood of 55+.', metric: { kind: 'all', parts: [pop(10), { kind: 'variety', category: 'drink', kinds: 3, each: 8 }, mood(55)] }, helpers: ['ciderpress', 'apothecary', 'brewery'] },
+  // tier 3: the finale; only a happy town can finish it
+  { id: 'hall', tier: 3, name: 'The Crown\u2019s Hall', desc: 'Build the Crown\u2019s Hall with 12 or more colonists. Three stages: 60 planks or bricks, 40 meals for the masons, then 25 drinks for the topping-out. Only colonists at mood 55+ will work on it.', metric: { kind: 'all', parts: [pop(12), { kind: 'monument', def: 'hall' }] }, helpers: ['sawmill', 'kiln', 'cottage', 'tavern'] },
+  { id: 'longtable', tier: 3, name: 'The Long Table', desc: 'Call a founders\u2019 feast. At dusk 14 or more colonists sit down at once, each served a meal and a drink they don\u2019t dislike. Sulkers won\u2019t come, and everyone needs a seat.', metric: { kind: 'longTable', pop: 14 }, helpers: ['tavern', 'brewery', 'ciderpress', 'pieoven', 'smokehouse', 'bakery'] },
 ];

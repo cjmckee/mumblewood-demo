@@ -5,7 +5,7 @@ import { createWorld, apply, runHours, World, rerollCost } from '../src/sim/worl
 let failed = 0;
 const check = (ok: boolean, what: string) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}`); if (!ok) failed++; };
 
-const w: World = createWorld(2024, 'normal');
+const w: World = createWorld(2024);
 while (w.decisions.length) apply(w, { type: 'resolve', option: 0 });
 check(apply(w, { type: 'reroll' }) !== null, 'refused when no blueprint draft is open');
 

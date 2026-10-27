@@ -9,7 +9,7 @@ const phases: [number, number][] = [[1, 4], [5, 9], [10, 15], [16, 30]];
 const tot = phases.map(() => ({ flows: {} as Record<string, number>, days: 0, cutters: 0, slots: 0, workers: 0, eff: 0, effN: 0, working: 0, assigned: 0, wood: 0, pop: 0, hours: 0 }));
 const snap = (w: World) => ({ ...w.flows });
 for (let i = 0; i < runs; i++) {
-  const w = createWorld(base + i * 7919, 'normal');
+  const w = createWorld(base + i * 7919);
   let start = snap(w), phaseIdx = 0;
   const close = (p: number) => { const t = tot[p]; for (const [k, v] of Object.entries(w.flows)) if (k.startsWith('wood') || k.startsWith('planks')) t.flows[k] = (t.flows[k] ?? 0) + v - (start[k] ?? 0); start = snap(w); };
   while (w.status === 'playing' && day(w) <= 30) {

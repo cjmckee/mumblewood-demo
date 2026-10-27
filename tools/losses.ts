@@ -1,6 +1,6 @@
 // Why do bot runs fail, and where does the time go?
-// Usage: npx tsx tools/losses.ts [runs=200] [seedBase=90000] [difficulty=normal]
-import { createWorld, tick, day, TICKS_PER_HOUR, Difficulty, alive, avgMood } from '../src/sim/world';
+// Usage: npx tsx tools/losses.ts [runs=200] [seedBase=90000]
+import { createWorld, tick, day, TICKS_PER_HOUR, alive, avgMood } from '../src/sim/world';
 import { autoDecide, autoBuild, BOT } from '../src/sim/autoplayer';
 // experiments: BOT_DEPOT=food|meals, BOT_LABORERS=3.5
 if (process.env.BOT_DEPOT) BOT.foodDepot = process.env.BOT_DEPOT === 'none' ? false : process.env.BOT_DEPOT as 'food' | 'meals';
@@ -16,7 +16,6 @@ if (process.env.BOT_LABORERS) BOT.laborersPer = Number(process.env.BOT_LABORERS)
 
 const runs = Number(process.argv[2] ?? 200);
 const base = Number(process.argv[3] ?? 90000);
-const difficulty = (process.argv[4] ?? 'normal') as Difficulty;
 const med = (xs: number[]) => (xs.length ? xs.slice().sort((a, b) => a - b)[Math.floor(xs.length / 2)] : NaN);
 
 const causes: Record<string, number> = {};
@@ -26,9 +25,9 @@ const lossDay: number[] = [], winDay: number[] = [];
 const moodAtLoss: number[] = [];
 let won = 0, lost = 0, timeout = 0;
 for (let i = 0; i < runs; i++) {
-  const w = createWorld(base + i * 104729, difficulty);
+  const w = createWorld(base + i * 104729);
   let tierStart = w.hour, tier = 0;
-  while (w.status === 'playing' && day(w) <= 50) {
+  while (w.status === 'playing' && day(w) <= 90) {
     autoDecide(w);
     for (let t = 0; t < TICKS_PER_HOUR; t++) { tick(w); autoDecide(w); }
     autoBuild(w);
@@ -45,7 +44,7 @@ for (let i = 0; i < runs; i++) {
   else timeout++;
   void alive;
 }
-console.log(`${runs} fresh runs on ${difficulty}: won ${Math.round(won / runs * 100)}%, lost ${Math.round(lost / runs * 100)}%, still going at day 50 ${Math.round(timeout / runs * 100)}%`);
+console.log(`${runs} fresh runs: won ${Math.round(won / runs * 100)}%, lost ${Math.round(lost / runs * 100)}%, still going at day 90 ${Math.round(timeout / runs * 100)}%`);
 console.log(`median winning day ${med(winDay)}, median losing day ${med(lossDay)}, median mood at collapse ${Math.round(med(moodAtLoss))}`);
 console.log(`median days per charter: first ${med(tierDays[0]).toFixed(1)}, second ${med(tierDays[1]).toFixed(1)}, third ${med(tierDays[2]).toFixed(1)}`);
 const totalLost = Object.values(causes).reduce((a, b) => a + b, 0);

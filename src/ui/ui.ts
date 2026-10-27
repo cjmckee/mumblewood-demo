@@ -1,11 +1,14 @@
 // DOM overlay: HUD, bottom sheet, decision modals. Talks to the sim only through commands.
-import { BUILDINGS, membersOf, BUILDING_BY_ID, CHARTERS, EVENTS, JOB_NAMES, PERK_BY_ID, RESOURCES, TRAIT_BY_ID, ResourceId, SKILL_NAMES, JOB_KINDS, JobKind, Recipe, InputKey, inputName, recipeRate, Stars } from '../sim/content';
+import { BUILDINGS, membersOf, BUILDING_BY_ID, EVENTS, RESEARCH_BY_ID, JOB_NAMES, PERK_BY_ID, RESOURCES, TRAIT_BY_ID, ResourceId, SKILL_NAMES, JOB_KINDS, JobKind, Recipe, InputKey, inputName, recipeRate, Stars } from '../sim/content';
 import {
   World, Command, Colonist, alive, avgMood, beds, buildingByUid, charterProgress, colonistById,
   day, hourOfDay, opinion, workersAt, MAX_DEPARTURES, sites, siteWork, remainingCost, storageCap, stored,
-  keepsFresh, findSpot, canPlace, laborers, centerOf, built, Building, efficiencyAt, pathAt, MAP_SIZE, blockedReason, Errand, Difficulty, patientsAt, lost, bedridden, spoilingFood, accepts, roomIn, FOODS, GOODS,
-  recipesOf, recipeOn, currentRecipe, siteOk, rerollCost, REROLL_STEP, stockOf, recipeReach, CHARTER_HELPERS,
+  keepsFresh, findSpot, canPlace, laborers, centerOf, built, Building, efficiencyAt, pathAt, MAP_SIZE, blockedReason, Errand, patientsAt, lost, bedridden, spoilingFood, accepts, roomIn, FOODS, GOODS,
+  recipesOf, recipeOn, currentRecipe, siteOk, rerollCost, REROLL_STEP, stockOf, recipeReach, charterHelpers, charterDef,
+  costOf, researchLeft, researchStillNeeds, desks, feastCheck, festivalPreview, mealTotal, drinkTotal,
+  comfortParts, comfortOf, colonyComfort, comfortGaps, strainPerDay, COMFORT_NEEDS,
 } from '../sim/world';
+import { START } from '../sim/scenario';
 import { assess } from '../sim/advisor';
 import { economy, Account } from '../sim/economy';
 import type { IsoView, Picked } from '../render/iso';
@@ -52,7 +55,8 @@ function activityText(w: World, c: Colonist) {
     }
   }
 }
-function topSkills(c: Colonist) { return [...JOB_KINDS].sort((a, b) => c.skills[b] - c.skills[a]).slice(0, 2).map(k => `${SKILL_NAMES[k].toLowerCase()} ${Math.floor(c.skills[k])}`).join(', '); }
+const skillKinds = (c: Colonist) => (Object.keys(c.skills) as JobKind[]);
+function topSkills(c: Colonist) { return [...skillKinds(c)].sort((a, b) => c.skills[b] - c.skills[a]).slice(0, 2).map(k => `${SKILL_NAMES[k].toLowerCase()} ${Math.floor(c.skills[k])}`).join(', '); }
 function moodClass(m: number, sulking: boolean) { return sulking ? 'sulk' : m >= 60 ? 'good' : m >= 35 ? 'warn' : 'bad'; }
 
 type Tab = 'colonists' | 'build' | 'ledger' | 'log';
@@ -82,10 +86,12 @@ export class UI {
   speed = 1;
   private lastHud = ''; private lastSheet = ''; private lastModal = '';
   onSpeed: (s: number) => void = () => {};
-  onRestart: (d: Difficulty) => void = () => {};
+  onRestart: () => void = () => {};
   /** run history from this browser, shown on the end screen */
-  profile: { runs: { result: string; day: number; charters: number; difficulty: string }[] } = { runs: [] };
+  profile: { runs: { result: string; day: number; charters: number }[] } = { runs: [] };
   private picking: number | null = null; // errand id whose colonist picker is open
+  private festivalOpen = false;
+  private strainOpen = false;
 
   constructor(private root: HTMLElement, private getWorld: () => World, private send: (c: Command) => string | null, private view: IsoView) {
     root.addEventListener('click', e => this.click(e));
@@ -159,7 +165,9 @@ export class UI {
       case 'auto': this.send({ type: 'autoAssign' }); this.toast('The foreman has reassigned everyone.'); break;
       case 'resolve': this.send({ type: 'resolve', option: Number(arg) }); this.lastModal = ''; break;
       case 'reroll': { const err = this.send({ type: 'reroll' }); if (err) this.toast(err); this.lastModal = ''; break; }
-      case 'restart': this.onRestart((arg || 'normal') as Difficulty); break;
+      case 'restart': this.onRestart(); break;
+      case 'desk': { const b = desks(w)[0]; if (b) { this.detail = { kind: 'building', id: b.uid }; this.tab = 'build'; this.open = true; this.view.selected = { kind: 'building', id: b.uid }; } break; }
+      case 'feast': { const err = this.send({ type: 'callFeast' }); this.toast(err ?? 'The feast is called. Everyone sits down at dusk.'); break; }
       case 'errand-open': this.picking = Number(arg); break;
       case 'errand-close': this.picking = null; break;
       case 'errand-send': { const [eid, cid] = arg.split(':').map(Number); const d0 = w.decisions[0];
@@ -167,6 +175,12 @@ export class UI {
         else { const err = this.send({ type: 'sendOnErrand', errand: eid, colonist: cid }); if (err) this.toast(err); }
         this.picking = null; this.lastModal = ''; break; }
       case 'errand-later': this.send({ type: 'resolve', option: 0 }); this.lastModal = ''; break;
+      case 'festival-open': this.festivalOpen = true; this.lastModal = ''; break;
+      case 'strain-open': this.strainOpen = true; this.lastModal = ''; break;
+      case 'strain-close': this.strainOpen = false; this.lastModal = ''; break;
+      case 'strain-festival': this.strainOpen = false; this.festivalOpen = true; this.lastModal = ''; break;
+      case 'festival-close': this.festivalOpen = false; this.lastModal = ''; break;
+      case 'festival-call': { const err = this.send({ type: 'callFestival' }); this.toast(err ?? 'Festival called. Everyone gathers at the hearth at dusk.'); this.festivalOpen = false; this.lastModal = ''; break; }
     }
     this.render(true);
   }
@@ -185,7 +199,18 @@ export class UI {
     const h = hourOfDay(w);
     const hh = String(Math.floor(h)).padStart(2, '0');
     const prog = charterProgress(w);
-    const pips = Array.from({ length: MAX_DEPARTURES }, (_, i) => `<i class="pip${i < lost(w) ? ' on' : ''}"></i>`).join('');
+    const sc = START;
+    const pips = Array.from({ length: sc.collapse.lost }, (_, i) => `<i class="pip${i < lost(w) ? ' on' : ''}"></i>`).join('');
+    const r = w.research, cur = r?.current ? RESEARCH_BY_ID[r.current] : undefined;
+    const studying = cur ? (Object.keys(researchStillNeeds(w)).length ? 'waiting on goods' : desks(w).some(b => workersAt(w, b.uid).length) ? `${Math.floor((r!.progress / cur.hours) * 100)}%` : 'nobody at the desk') : '';
+    const researchChip = !r ? '' : cur ? `<button type="button" class="chip research" data-act="desk"><span><b>Studying</b> ${esc(cur.name)} · ${esc(studying)}</span></button>`
+      : researchLeft(w).length ? '' : '';
+    const ch = charterDef(w.charter);
+    const feastBtn = ch?.metric.kind === 'longTable' && !w.feast?.done ? (() => {
+      const f = feastCheck(w); const wait = Math.max(0, Math.ceil((w.feast?.readyAt ?? 0) - w.hour));
+      return w.feast?.called ? '<span class="chip feast on">Feast called for dusk</span>' : wait ? `<span class="chip feast">Next feast in ${wait}h</span>`
+        : `<button type="button" class="chip feast${f.ok ? ' ready' : ''}" data-act="feast">${f.ok ? 'Call the feast' : 'Call the feast anyway'}</button>`;
+    })() : '';
     const strain = Math.round(w.strain);
     const cap = storageCap(w), st = stored(w);
     const storeChip = `<span class="chip store${st >= cap ? ' full' : ''}"><b>${Math.floor(st)}/${cap}</b> stored${spoilingFood(w) >= 5 ? ' · food spoiling' : ''}</span>`;
@@ -203,15 +228,61 @@ export class UI {
         <div class="charter">
           ${prog ? `<div class="ch-top"><span class="ch-name">${esc(prog.charter.name)}</span><span class="ch-tier">Charter ${w.chartersDone.length + 1} of 3</span></div>
           <div class="meter"><i style="width:${(prog.ratio * 100).toFixed(1)}%"></i></div>
-          <div class="ch-label">${esc(prog.label)}</div>` : `<div class="ch-top"><span class="ch-name">${w.status === 'won' ? 'Town charter granted' : 'Awaiting a charter'}</span></div>`}
+          <div class="ch-label">${esc(prog.label)}</div>${feastBtn}` : `<div class="ch-top"><span class="ch-name">${w.status === 'won' ? 'Town charter granted' : w.research && !w.charterOffered ? 'The Crown is watching' : 'Awaiting a charter'}</span></div>${w.research && !w.charterOffered ? `<div class="ch-label">The first charter arrives on the morning of day ${sc.firstCharterDay}.</div>` : ''}`}
+          ${researchChip}
         </div>
         <div class="threats">
-          <div class="strain" title="Frontier strain: a mood penalty that grows every day"><span>Strain</span><b>−${strain}</b></div>
-          <div class="leavers" title="If ${MAX_DEPARTURES} settlers leave or die, the colony collapses"><span>Lost</span><div class="pips">${pips}</div></div>
+          <button type="button" class="strain" data-act="strain-open" title="Frontier strain: a mood penalty that rises every day, faster when people's needs go unmet. Tap for why."><span>Strain</span><b>${strain ? '−' : ''}${strain}</b><small class="rate">+${strainPerDay(w).toFixed(1)}/day</small></button>${this.festivalChip(w)}
+          <div class="leavers" title="If ${sc.collapse.lost} settlers leave or die${sc.collapse.minAlive ? `, or only ${sc.collapse.minAlive} remain` : ''}, the colony collapses"><span>Lost</span><div class="pips">${pips}</div></div>
         </div>
       </div>
       ${w.errands.length ? `<div class="errands">${w.errands.map(e => this.errandChip(w, e)).join('')}</div>` : ''}`;
     if (force || html !== this.lastHud) { (this.root.querySelector('#hud') as HTMLElement).innerHTML = html; this.lastHud = html; }
+  }
+
+  private strainCard(w: World) {
+    const comfort = colonyComfort(w);
+    const gaps = comfortGaps(w);
+    const pct = (x: number) => `${Math.round(x * 100)}%`;
+    const factor = Math.max(0.2, START.comfortScale.base - comfort * START.comfortScale.slope);
+    const rows = gaps.map(g => `<div class="lg-row ${g.avg >= 0.7 ? 'lg-good' : 'lg-bad'}"><span>${NEED_NAMES[g.need]}</span><i><b style="width:${Math.round(g.avg * 100)}%"></b></i><em>${pct(g.avg)}</em></div>`).join('');
+    const worst = gaps.filter(g => g.avg < 0.7).slice(0, 2).map(g => NEED_FIX[g.need]);
+    return `<div class="card-wrap event"><p class="eyebrow">Frontier strain</p><h2>Strain ${Math.round(w.strain)}, rising ${strainPerDay(w).toFixed(1)} a day</h2>
+      <p class="lede">The frontier wears on everyone, more as the colony grows and as the weeks go by. How comfortable people are sets how fast: a comfortable colony strains far slower.</p>
+      <p class="prefs">Comfort <b>${pct(comfort)}</b>, so strain rises at <b>${factor.toFixed(2)}×</b>. A fully comfortable colony would rise at ${Math.max(0.2, START.comfortScale.base - START.comfortScale.slope).toFixed(1)}×.</p>
+      <div class="ledger">${rows}</div>
+      ${worst.length ? `<p class="terms">Biggest gaps: ${worst.join('; ')}.</p>` : ''}
+      <p class="terms">It eases when a charter is finished (by ${pct(START.relief.charter)}) or when you hold a festival.</p>
+      <div class="opts">${!w.festival?.called && !festivalPreview(w).wait ? `<button type="button" class="opt" data-act="strain-festival"><b>Plan a festival</b><span>${festivalPreview(w).relief >= 0.5 ? `Eases strain by about ${Math.round(festivalPreview(w).relief)}` : 'Strain is low, so it would ease very little'}</span></button>` : ''}</div>
+      <button type="button" class="ghost skip" data-act="strain-close">Close</button></div>`;
+  }
+
+  private festivalChip(w: World) {
+    const f = w.festival;
+    if (f?.called) return '<small class="fest on">festival at dusk</small>';
+    const wait = Math.max(0, Math.ceil((f?.readyAt ?? 0) - w.hour));
+    if (wait) return `<small class="fest">festival in ${wait < 24 ? `${wait}h` : `${Math.ceil(wait / 24)}d`}</small>`;
+    return `<button type="button" class="fest" data-act="festival-open">Festival</button>`;
+  }
+
+  private festivalCard(w: World) {
+    const p = festivalPreview(w);
+    const r = START.relief.festival;
+    const pct = (x: number) => `${Math.round(x * 100)}%`;
+    const can = !w.festival?.called && !p.wait && mealTotal(w) >= 1;
+    const short = p.fed < p.guests ? ` ${p.guests - p.fed} would go without, which eases less.` : '';
+    return `<div class="card-wrap event"><p class="eyebrow">At the hearth, at dusk</p><h2>Call a festival?</h2>
+      <p class="lede">Everyone who isn’t bedridden comes, sulkers included. Each takes a meal, and a drink if there is one, reaching for their favourites first. Strain eases by a share of what it is now, so the deeper the colony is in, the more it helps.</p>
+      <ul class="thoughts">
+        <li><span>Settlers coming</span><b>${p.guests}</b></li>
+        <li><span>Meals it will use (of ${Math.floor(mealTotal(w))} in storage)</span><b>${p.fed}</b></li>
+        <li><span>Drinks it will use (of ${Math.floor(drinkTotal(w))})</span><b>${p.drank}</b></li>
+        <li><span>Getting a favourite</span><b>${p.loved}</b></li>
+        <li><span>Strain eased</span><b>${Math.round(p.relief)} (${pct(p.share)})</b></li>
+      </ul>
+      <p class="terms">${pct(r.base)} if everyone eats, ${pct(r.drinks)} more if most have a drink, ${pct(r.loved)} more if most get a favourite. Then ${r.waitDays} days before the next one.${short}</p>
+      <div class="opts"><button type="button" class="opt" data-act="festival-call" ${can ? '' : 'disabled'}><b>Call it for dusk</b><span>${can ? (p.relief >= 0.5 ? `Eases strain by about ${Math.round(p.relief)}` : 'Strain is low, so it would ease very little') : mealTotal(w) < 1 ? 'There are no meals to share' : 'Not ready yet'}</span></button></div>
+      <button type="button" class="ghost skip" data-act="festival-close">Not now</button></div>`;
   }
 
   private errandChip(w: World, e: Errand) {
@@ -310,7 +381,8 @@ export class UI {
       <div class="traits">${traits}</div>
       ${c.illness ? `<p class="warnline">${esc(c.illness.name)} · severity ${Math.round(c.illness.severity)} of 100. ${built(w).some(b => b.def === 'clinic') ? 'A clinic with a doctor speeds recovery.' : 'Build a clinic and assign a doctor to speed recovery.'} At 100 they leave for a city physician.</p>` : ''}
       <p class="prefs">Loves <b>${JOB_NAMES[c.likes]}</b> · hates <b>${JOB_NAMES[c.dislikes]}</b>${tasteLine(c)} · hunger ${Math.round(c.hunger)} · fun ${Math.round(c.fun)}</p>
-      <h3>Skills</h3><div class="skills">${JOB_KINDS.map(k => `<div class="skill${k === c.likes ? ' fav' : ''}"><span>${SKILL_NAMES[k]}</span><i><b style="width:${c.skills[k] * 10}%"></b></i><em>${Math.floor(c.skills[k])}</em></div>`).join('')}</div>
+      <h3>Skills</h3><div class="skills">${skillKinds(c).map(k => `<div class="skill${k === c.likes ? ' fav' : ''}"><span>${SKILL_NAMES[k]}</span><i><b style="width:${c.skills[k] * 10}%"></b></i><em>${Math.floor(c.skills[k])}</em></div>`).join('')}</div>
+      <h3>Comfort <span class="muted">· ${Math.round(comfortOf(w, c) * 100)}%, how well their needs are met</span></h3>${comfortRows(w, c)}
       <h3>Why they feel this way</h3>${moodLedger(c)}<ul class="thoughts">${thoughts}</ul>
       <h3>Relationships</h3><div class="rels">${rel}</div>
       <h3>Job ${job ? '' : '<span class="muted">· none</span>'}</h3>
@@ -328,6 +400,8 @@ export class UI {
     const defs = w.owned.map(id => BUILDING_BY_ID[id]);
     const owned = defs.filter(d => !d.decor).map(card).join('');
     const decor = defs.filter(d => d.decor).map(card).join('');
+    // buildings still behind research, so the player can see what each study is for
+    const locked = researchLeft(w).flatMap(r => r.unlocks.filter(id => !w.owned.includes(id)).map(id => `<div class="bp locked"><div><b>${esc(BUILDING_BY_ID[id].name)}</b><small>${esc(BUILDING_BY_ID[id].blurb)}</small><small class="cost">${desks(w).length ? `Research ${esc(r.name)} to build it` : `Build a research desk, then study ${esc(r.name)}`}${w.research?.current === r.id ? ' · being studied now' : ''}</small></div></div>`)).join('');
     const planned = w.paths.filter(p => p === 1).length, laid = w.paths.filter(p => p === 2).length;
     const queue = sites(w).map(b => this.siteRow(w, b)).join('');
     const done = built(w).filter(b => !BUILDING_BY_ID[b.def].decor).map(b => {
@@ -337,6 +411,7 @@ export class UI {
     }).join('');
     return `${queue ? `<h3 class="first">Under construction</h3><div class="rows">${queue}</div>` : ''}
       <h3 class="${queue ? '' : 'first'}">Buildings</h3><div class="bps">${owned}</div>
+      ${locked ? `<h3>Not yet known</h3><div class="bps">${locked}</div>` : ''}
       <h3>Paths</h3><div class="bp"><div><b>Lay paths</b><small>People walk 25% faster on paths, and they\u2019re a little prettier than mud. 1 wood per tile, laid by laborers.</small><small class="cost">${laid} laid${planned ? ` · ${planned} planned` : ''}</small></div><button type="button" class="act" data-act="paths">Plan</button></div>
       <h3>Decorations</h3><div class="bps">${decor}</div>
       <h3>In the colony</h3><div class="rows">${done}</div>`;
@@ -347,8 +422,9 @@ export class UI {
     const left = remainingCost(b);
     const need = Object.keys(left).length;
     const pct = Math.round((b.progress / siteWork(b)) * 100);
-    const status = need ? `Waiting on ${Object.entries(left).map(([r, n]) => `${Math.ceil(n ?? 0)} ${r === 'fine' ? 'planks or bricks' : inputName(r as InputKey)}`).join(', ')}` : `Building · ${pct}%`;
-    const ratio = need ? 1 - sum(left) / Math.max(1, sum(def.cost)) : b.progress / siteWork(b);
+    const stage = def.stages ? `Stage ${(b.stage ?? 0) + 1} of ${def.stages.length}: ${def.stages[b.stage ?? 0].label.toLowerCase()} · ` : '';
+    const status = stage + (need ? `Waiting on ${Object.entries(left).map(([r, n]) => `${Math.ceil(n ?? 0)} ${r === 'fine' ? 'planks or bricks' : inputName(r as InputKey)}`).join(', ')}` : `Building · ${pct}%`);
+    const ratio = need ? 1 - sum(left) / Math.max(1, sum(costOf(b))) : b.progress / siteWork(b);
     return `<button type="button" class="row compact site" data-act="building" data-arg="${b.uid}"><span class="who"><b>${esc(def.name)}</b><small>${esc(status)}</small></span><span class="mini ${need ? 'haul' : ''}"><i style="width:${Math.round(ratio * 100)}%"></i></span></button>`;
   }
 
@@ -390,14 +466,15 @@ export class UI {
     const def = BUILDING_BY_ID[b.def];
     if (!b.built) {
       const builders = alive(w).filter(c => c.task && 'site' in c.task && c.task.site === b.uid);
-      const mats = Object.entries(def.cost).map(([r, n]) => {
+      const mats = Object.entries(costOf(b)).map(([r, n]) => {
         const ms = membersOf(r as InputKey), got = ms.reduce((m, x) => m + (b.delivered[x] ?? 0), 0);
         const mix = ms.length > 1 ? ms.filter(x => (b.delivered[x] ?? 0) >= 0.5).map(x => `${Math.floor(b.delivered[x] ?? 0)} ${goodName(x)}`).join(', ') : '';
         const label = inputName(r as InputKey);
         return `<li><span>${label.charAt(0).toUpperCase() + label.slice(1)}${mix ? ` (${mix})` : ''}</span><b>${Math.floor(got)} / ${n}</b></li>`;
       }).join('');
       return `<div class="detail"><div class="d-head"><button type="button" class="ghost back" data-act="back">All buildings</button></div>
-        <h2>${esc(def.name)}</h2><p class="blurb">Under construction.</p>
+        <h2>${esc(def.name)}</h2><p class="blurb">${def.stages ? `${esc(def.blurb)}</p><p class="prefs">Stage <b>${(b.stage ?? 0) + 1} of ${def.stages.length}</b>: ${esc(def.stages[b.stage ?? 0].label)}. Then: ${esc(def.stages.slice((b.stage ?? 0) + 1).map(x => x.label.toLowerCase()).join(', ') || 'done')}.` : 'Under construction.'}</p>
+        ${def.moodGate ? `<p class="${alive(w).filter(c => c.mood >= def.moodGate!).length ? 'prefs' : 'warnline'}">${alive(w).filter(c => c.mood >= def.moodGate!).length} of ${alive(w).length} colonists are at mood ${def.moodGate}+ and willing to work on it${laborers(w).filter(c => c.mood >= def.moodGate!).length ? `, ${laborers(w).filter(c => c.mood >= def.moodGate!).length} of them laborers` : ', but none of them are laborers'}.</p>` : ''}
         <h3>Materials delivered</h3><ul class="thoughts">${mats || '<li><span>No materials needed</span></li>'}</ul>
         <h3>Work</h3><p class="prefs">${Math.round(b.progress * 10) / 10} of ${siteWork(b)} builder-hours. ${builders.length ? `${builders.map(c => esc(first(c))).join(', ')} on it now.` : laborers(w).length ? 'Laborers will get to it.' : 'Nobody is free. Take someone off a job to make them a laborer.'}</p>
         <button type="button" class="ghost danger" data-act="cancel-site" data-arg="${b.uid}">Cancel and return materials</button></div>`;
@@ -418,7 +495,7 @@ export class UI {
     const blocked = blockedReason(w, b);
     const remedyLine = def.patients ? `<p class="prefs">Remedies in storage: ${w.res.tonic >= 0.5 || w.res.poultice >= 0.5 ? `${Math.floor(w.res.tonic)} tonic, ${Math.floor(w.res.poultice)} poultice. The doctor uses one up every few hours of treatment: a poultice heals faster and halves botched treatments, a tonic heals faster still and never botches.` : '<b>none</b>. An apothecary makes poultices and tonics that help the doctor.'}</p>` : '';
     const patients = def.patients ? `<p class="prefs">Patients: ${patientsAt(w, b).map(c => `${esc(first(c))} (${esc(c.illness!.name.toLowerCase())}, ${Math.round(c.illness!.severity)})`).join(', ') || 'none right now. The doctor helps out as a laborer until someone is ill.'}</p>` : '';
-    let staff = (blocked ? `<p class="warnline">${esc(blocked)}</p>` : '') + effLine + inboxLine + patients + remedyLine;
+    let staff = (blocked ? `<p class="warnline">${esc(blocked)}</p>` : '') + effLine + inboxLine + patients + remedyLine + (b.def === 'desk' ? this.deskLines(w) : '');
     if (def.slots) {
       const cur = workers.map(c => `<div class="row static"><span class="dot" style="background:${hex(c.shirt)}"></span><span class="who"><b>${esc(c.name)}</b><small>${def.job ? `${SKILL_NAMES[def.job]} ${Math.floor(c.skills[def.job])} · ` : ''}${def.job === c.likes ? 'loves this job' : def.job === c.dislikes ? 'hates this job' : 'doesn’t mind it'}</small></span><button type="button" class="ghost" data-act="assign" data-arg="${c.id}:none">Remove</button></div>`).join('');
       const cand = workers.length < def.slots ? alive(w).filter(c => c.job !== b.uid).sort((a, z) => (def.job ? z.skills[def.job] - a.skills[def.job] : 0) + (Number(z.likes === def.job) - Number(a.likes === def.job)) * 2).map(c => {
@@ -446,6 +523,18 @@ export class UI {
       <h2>${esc(def.name)}</h2><p class="blurb">${esc(def.blurb)}</p>${recipe}${staff}</div>`;
   }
 
+  private deskLines(w: World) {
+    const r = w.research; if (!r) return '';
+    const cur = r.current ? RESEARCH_BY_ID[r.current] : undefined;
+    const done = r.done.map(id => RESEARCH_BY_ID[id].name).join(', ');
+    if (!cur) return `<p class="prefs">${done ? `Learned: ${esc(done)}.` : ''}</p>`;
+    const need = researchStillNeeds(w);
+    const goods = Object.entries(cur.cost).map(([k, n]) => { const left = need[k as InputKey] ?? 0; const nm = inputName(k as InputKey); return `<li><span>${esc(nm.charAt(0).toUpperCase() + nm.slice(1))}</span><b>${Math.floor((n ?? 0) - left)} / ${n}</b></li>`; }).join('');
+    return `<h3>Studying ${esc(cur.name)}</h3><p class="prefs">${esc(cur.desc)} Unlocks <b>${esc(cur.unlocks.map(u => BUILDING_BY_ID[u].name.toLowerCase()).join(' and '))}</b>.</p>
+      <ul class="thoughts">${goods}<li><span>Study</span><b>${Math.floor(r.progress)} / ${cur.hours} hours</b></li></ul>
+      <p class="muted">${Object.keys(need).length ? 'The scholar fetches the goods; laborers help when they can.' : 'Everything is here. Study goes faster with a better Studying skill.'}${done ? ` Learned so far: ${esc(done)}.` : ''}</p>`;
+  }
+
   private logList(w: World) {
     return `<ol class="log">${w.log.slice(-60).reverse().map(l => `<li class="t-${l.tone}"><time>Day ${l.day}, ${String(l.hour).padStart(2, '0')}:00</time><span>${esc(l.text)}</span></li>`).join('')}</ol>`;
   }
@@ -460,16 +549,19 @@ export class UI {
       switch (d.kind) {
         case 'charter': html = this.cards(d.tier === 1 ? 'Your first charter' : `Charter ${d.tier} of 3`,
           d.tier === 1 ? 'The Crown wants proof this colony is worth the paperwork. Complete three charters before the frontier wears everyone down.' : 'The Crown has another demand. Choose one.',
-          d.options.map(id => { const c = CHARTERS.find(x => x.id === id)!; return { title: c.name, body: c.desc, tag: `Tier ${c.tier}` }; })); break;
+          d.options.map(id => { const c = charterDef(id)!; return { title: c.name, body: c.desc, tag: `Tier ${c.tier}` }; })); break;
+        case 'research': html = this.cards(w.research?.done.length ? 'What next for the scholar?' : 'What should your scholar study first?',
+          w.research?.done.length ? 'Pick one project. The ones you pass on can come round again.' : 'Nobody here knows how to build a kitchen, a dining hall or a clinic yet. Pick one project for the research desk. Someone has to sit there, and the goods get carried in.',
+          d.options.map(id => { const r = RESEARCH_BY_ID[id]; return { title: r.name, body: `${r.desc}\nUnlocks: ${r.unlocks.map(u => BUILDING_BY_ID[u].name).join(', ')}`, tag: `Costs ${costText(r.cost)} · about ${r.hours} hours of study` }; })); break;
         case 'blueprint': {
           const cost = rerollCost(w), can = w.res.wood >= cost;
           // each card lists what the building makes, best recipe first, so a reroll is a judgement about routes
           const recipeLines = (id: string) => [...(BUILDING_BY_ID[id].recipes ?? [])].sort((a, z) => z.stars - a.stars)
             .map(r => `${'★'.repeat(r.stars)}${'☆'.repeat(3 - r.stars)} ${Object.keys(r.inputs).length ? `${Object.entries(r.inputs).map(([k, n]) => `${n} ${inputName(k as InputKey)}`).join(' + ')} → ` : ''}${goodName(r.output)}${Object.keys(r.inputs).length ? ` · ${reachText(w, r, true)}` : ''}`).join('\n');
-          const charter = CHARTERS.find(c => c.id === w.charter);
+          const charter = charterDef(w.charter);
           const notes = (id: string) => {
             const def = BUILDING_BY_ID[id], out: string[] = [];
-            if (charter && (CHARTER_HELPERS[charter.id] ?? []).includes(id)) out.push(`Helps your charter: ${charter.name}`);
+            if (charter && charterHelpers(charter.id).includes(id)) out.push(`Helps your charter: ${charter.name}`);
             if (def.cost.fine && stockOf(w, 'fine') < def.cost.fine && !['sawmill', 'kiln', 'carpenter'].some(m => w.owned.includes(m))) out.push('Needs planks or bricks, and nothing here makes them yet');
             return out.length ? `\n${out.join('\n')}` : '';
           };
@@ -493,6 +585,8 @@ export class UI {
         }
       }
     }
+    if (!html && this.festivalOpen) html = this.festivalCard(w);
+    if (!html && this.strainOpen) html = this.strainCard(w);
     if (!html && this.picking != null) { const e = w.errands.find(x => x.id === this.picking); if (e) html = this.errandPicker(w, e, false); else this.picking = null; }
     if (force || html !== this.lastModal) { el.innerHTML = html; this.lastModal = html; }
     el.hidden = !html;
@@ -511,18 +605,14 @@ export class UI {
     const s = w.stats;
     return `<div class="card-wrap end ${won ? 'won' : 'lost'}"><p class="eyebrow">${won ? 'Victory' : 'The colony collapsed'}</p>
       <h2>${won ? 'Mumblewood is a town' : 'The kettle remains'}</h2>
-      <p class="lede">${won ? 'All three charters complete.' : `Too many settlers were lost.`} You lasted ${day(w)} day${day(w) === 1 ? '' : 's'} on ${w.difficulty[0].toUpperCase() + w.difficulty.slice(1)}.</p>
+      <p class="lede">${won ? 'All three charters complete.' : `Too many settlers were lost.`} You lasted ${day(w)} day${day(w) === 1 ? '' : 's'}.</p>
       <dl class="stats"><div><dt>Charters</dt><dd>${w.chartersDone.length} / 3</dd></div><div><dt>Peak population</dt><dd>${s.peakPop}</dd></div>
       <div><dt>Couples formed</dt><dd>${s.couples}</dd></div><div><dt>Breakups</dt><dd>${s.breakups}</dd></div>
       <div><dt>Left the colony</dt><dd>${s.departures}</dd></div><div><dt>Died</dt><dd>${s.deaths}</dd></div><div><dt>Meals eaten</dt><dd>${s.mealsEaten}</dd></div>
       <div><dt>Errands done</dt><dd>${s.errands}</dd></div><div><dt>Recoveries</dt><dd>${s.cured}</dd></div></dl>
       ${this.ledger()}
-      <h3>Start a new colony</h3>
-      <div class="diffs">
-        <button type="button" class="opt" data-act="restart" data-arg="gentle"><b>Gentle</b><span>Strain grows about a third slower.</span></button>
-        <button type="button" class="opt" data-act="restart" data-arg="normal"><b>Normal</b><span>The frontier as intended.</span></button>
-        <button type="button" class="opt" data-act="restart" data-arg="harsh"><b>Harsh</b><span>Strain grows half again as fast.</span></button>
-      </div></div>`;
+      <button type="button" class="opt restart" data-act="restart"><b>Start a new colony</b><span>Three settlers, a cart, a kettle and a fresh patch of the Mumblewood.</span></button>
+    </div>`;
   }
 
   private ledger() {
@@ -539,6 +629,27 @@ function storeLabel(b: Building) {
   if (b.allow.length === FOODS.length && FOODS.every(f => b.allow!.includes(f))) return 'food only';
   if (b.allow.length === GOODS.length && GOODS.every(f => b.allow!.includes(f))) return 'goods only';
   return `${b.allow.length} kinds`;
+}
+
+const NEED_NAMES: Record<string, string> = { shelter: 'Shelter', meals: 'Meals', evenings: 'Evenings', health: 'Health', surroundings: 'Surroundings' };
+const NEED_FIX: Record<string, string> = {
+  shelter: 'beds for everyone, cottages better still',
+  meals: 'cooked meals at a table, favourites best',
+  evenings: 'something to do in the evening: a tavern, a stage',
+  health: 'a clinic with a doctor for the sick',
+  surroundings: 'paths and decorations where people spend time',
+};
+/** one settler's comfort, need by need, with what would raise each */
+function comfortRows(w: World, c: Colonist) {
+  const p = comfortParts(w, c);
+  const why: Record<string, string> = {
+    shelter: p.shelter >= 1 ? 'a cozy cottage' : p.shelter > 0 ? 'a bed (a cottage would be better)' : 'sleeping on the ground',
+    meals: p.meals >= 1 ? 'a favourite meal at a table' : p.meals >= 0.85 ? 'a cooked meal at a table' : p.meals > 0 ? 'cooked, but not at a table' : 'raw food or going hungry',
+    evenings: p.evenings >= 0.8 ? 'well entertained' : p.evenings > 0.3 ? 'some fun' : 'bored',
+    health: p.health >= 1 ? 'healthy' : p.health > 0 ? 'ill, being looked after' : 'ill, nobody treating them',
+    surroundings: p.surroundings >= 0.75 ? 'pleasant' : p.surroundings > 0.25 ? 'plain' : 'drab',
+  };
+  return `<div class="ledger">${COMFORT_NEEDS.map(k => `<div class="lg-row need ${p[k] >= 0.7 ? 'lg-good' : 'lg-bad'}"><span>${NEED_NAMES[k]}<small>${esc(why[k])}</small></span><i><b style="width:${Math.round(p[k] * 100)}%"></b></i><em>${Math.round(p[k] * 100)}%</em></div>`).join('')}</div>`;
 }
 
 /** base 50, plus the good, minus the gripes, minus this colonist's share of frontier wear */

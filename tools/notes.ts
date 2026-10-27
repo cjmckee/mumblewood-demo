@@ -10,8 +10,8 @@ const runs = Number(process.argv[2] ?? 60);
 const base = Number(process.argv[3] ?? 70000);
 const play = (seed: number, advisor: boolean, onHour?: (w: World) => void) => {
   BOT.advisor = advisor;
-  const w = createWorld(seed, 'normal');
-  while (w.status === 'playing' && day(w) <= 45) {
+  const w = createWorld(seed);
+  while (w.status === 'playing' && day(w) <= 90) {
     autoDecide(w); for (let t = 0; t < TICKS_PER_HOUR; t++) { tick(w); autoDecide(w); } autoBuild(w);
     onHour?.(w);
   }
@@ -45,7 +45,7 @@ for (let i = 0; i < runs; i++) {
       } else if ('build' in f && f.build) {
         if (sites(w).some(b => b.def === f.build)) { note(c.id, `build ${f.build}: under construction`); continue; }
         const def = BUILDING_BY_ID[f.build];
-        if (!w.owned.includes(f.build) && !def.basic) { note(c.id, `build ${f.build}: blueprint not owned`); continue; }
+        if (!w.owned.includes(f.build)) { note(c.id, `build ${f.build}: blueprint not owned`); continue; }
         const short = Object.entries(def.cost).filter(([res, amt]) => stockOf(w, res as InputKey) < (amt ?? 0) + (res === 'wood' ? 10 : 0)).map(([res]) => res);
         if (short.length) note(c.id, `build ${f.build}: can't afford (${short.join(', ')})`);
         else if (sites(w).length >= 2) note(c.id, `build ${f.build}: build queue full`);

@@ -10,14 +10,14 @@ const lag: Record<string, number[]> = {}, neverBuilt: Record<string, number> = {
 const coverage: number[] = [], decisionsPerDay: number[] = [], eventsSeen: number[] = [], distinctEvents: number[] = [], recruitsSkipped: number[] = [];
 let lakeSides: Record<string, number> = {};
 for (let i = 0; i < runs; i++) {
-  const w: World = createWorld(1000 + i * 7919, 'normal');
+  const w: World = createWorld(1000 + i * 7919);
   const draftedAt: Record<string, number> = {}, builtAt: Record<string, number> = {};
   let decisions = 0, skipped = 0; const evIds = new Set<string>(); let evCount = 0;
   // water layout: which quadrant holds most water
   const q = [0, 0, 0, 0]; w.terrain.forEach((t, k) => { if (t === 3) q[(k % 32 < 16 ? 0 : 1) + (Math.floor(k / 32) < 16 ? 0 : 2)]++; });
   const side = ['NW', 'NE', 'SW', 'SE'][q.indexOf(Math.max(...q))]; lakeSides[side] = (lakeSides[side] ?? 0) + 1;
   const seenDecision = new Set<any>();
-  while (w.status === 'playing' && day(w) <= 60) {
+  while (w.status === 'playing' && day(w) <= 90) {
     for (const d of w.decisions) if (!seenDecision.has(d)) { seenDecision.add(d); decisions++; if (d.kind === 'event') { evIds.add(d.eventId); evCount++; } }
     const pop = alive(w).length; const ownedBefore = new Set(w.owned);
     autoDecide(w);

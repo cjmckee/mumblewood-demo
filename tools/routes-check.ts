@@ -1,14 +1,15 @@
 // Forces each drink route on a map that has its site, staffs it, and checks the drinks come out of the right recipe.
 // Also checks: flower beds raise an apiary's output; maps never offer a gatherer for a site they lack.
 // Usage: npx tsx tools/routes-check.ts
-import { createWorld, apply, runHours, findSpot, built, workersAt, alive, World, efficiencyAt, currentRecipe, canPlace, reconcileStock, WALKING_WOUNDED } from '../src/sim/world';
+import { CATEGORIES } from '../src/sim/content';
+import { createWorld, debugGrow, apply, runHours, findSpot, built, workersAt, alive, World, efficiencyAt, currentRecipe, canPlace, reconcileStock, WALKING_WOUNDED } from '../src/sim/world';
 
 let failed = 0;
 const check = (ok: boolean, what: string) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}`); if (!ok) failed++; };
 
 /** first seed whose map has the site */
 function worldWith(site: string): World {
-  for (let s = 1; s < 500; s++) { const w = createWorld(s * 101, 'normal'); if (w.sites.includes(site as any)) { while (w.decisions.length) apply(w, { type: 'resolve', option: 0 }); return w; } }
+  for (let s = 1; s < 500; s++) { const w = createWorld(s * 101); if (w.sites.includes(site as any)) { debugGrow(w, 6); while (w.decisions.length) apply(w, { type: 'resolve', option: 0 }); return w; } }
   throw new Error('no map with ' + site);
 }
 function put(w: World, id: string, nearGood = true) {
@@ -44,7 +45,11 @@ for (const r of routes) {
   run(w, 72);
   const out = made(w, `${r.drink}:+${r.maker}`), used = made(w, `${r.input}:-${r.maker}`);
   check(out > 5 && used > 5, `${r.maker} turned ${used.toFixed(0)} ${r.input} into ${out.toFixed(0)} ${r.drink} in 3 days`);
-  check(currentRecipe(w, m)?.output === r.drink, `${r.maker} is on its ${r.drink} recipe while ${r.input} comes in`);
+  // whenever the input is on hand, that recipe is the one running (between deliveries it falls back to berry ale)
+  let onHand = 0, right = 0;
+  for (let h = 0; h < 24; h++) { run(w, 1); if (w.res[r.input as 'honey'] + (m.inbox[r.input as 'honey'] ?? 0) >= 3) { onHand++; if (currentRecipe(w, m)?.output === r.drink) right++; } }
+  check(onHand > 0 && right === onHand, `${r.maker} runs its ${r.drink} recipe whenever ${r.input} is on hand (${right} of ${onHand} hours)`);
+  void CATEGORIES;
 }
 
 // berry fallback: a brewery with no grain or honey makes ★ berry ale, the press ★★ berry ale for fewer berries
@@ -62,8 +67,9 @@ for (const r of routes) {
 
 // flower beds count as meadow for an apiary: try it on a map with no meadow at all
 {
-  let w = createWorld(7, 'normal');
-  for (let s = 1; w.sites.includes('meadow'); s++) w = createWorld(s * 13, 'normal');
+  let w = createWorld(7);
+  for (let s = 1; w.sites.includes('meadow'); s++) w = createWorld(s * 13);
+  debugGrow(w, 6);
   while (w.decisions.length) apply(w, { type: 'resolve', option: 0 });
   const a = put(w, 'apiary'); const before = a.eff;
   for (let i = 0; i < 3; i++) {
@@ -83,7 +89,7 @@ for (const r of routes) {
 {
   let offered = 0, maps = 0;
   for (let s = 1; s < 80; s++) {
-    const w = createWorld(s * 37, 'normal');
+    const w = createWorld(s * 37);
     const missing = (['soil', 'grove', 'meadow'] as const).find(x => !w.sites.includes(x))!;
     const gatherer = { soil: 'field', grove: 'orchard', meadow: 'apiary' }[missing];
     maps++;
@@ -133,7 +139,7 @@ for (const r of routes) {
 {
   let offered = 0;
   for (let s = 1; s < 60; s++) {
-    const w = createWorld(s * 53, 'normal');
+    const w = createWorld(s * 53);
     if (w.sites.includes('clay')) continue;
     for (let h = 0; h < 24 * 20 && w.status === 'playing'; h++) {
       for (const d of w.decisions) if (d.kind === 'blueprint' && d.options.some(o => o === 'kiln' || o === 'claypit')) offered++;
@@ -208,11 +214,15 @@ for (const r of routes) {
 // the variety charter: 3 kinds of meal, 10 of each
 {
   const w = worldWith('grove');
-  w.charter = 'menu'; w.chartersDone = [];
+  // A varied table also asks for 10 colonists and a 24-hour average mood of 55
+  debugGrow(w, 10);
+  w.charter = 'menu'; w.chartersDone = []; w.charterHolds = [];
+  const cheer = () => { for (const c of alive(w)) { c.mood = 70; c.moodTarget = 70; } w.moodLog = Array(24).fill(70); };
+  cheer();
   w.res.stew = 12; w.res.bread = 11; w.res.skewers = 4; reconcileStock(w);
   run(w, 1);
   const pending = w.charter === 'menu';
-  w.res.skewers = 12; reconcileStock(w);
+  w.res.skewers = 12; reconcileStock(w); cheer();
   run(w, 1);
   check(pending && w.chartersDone.includes('menu'), 'A varied table waits for a third kind, then completes');
 }

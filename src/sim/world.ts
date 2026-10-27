@@ -1,9 +1,11 @@
 // Deterministic colony simulation. No DOM, no rendering: runs in the browser and in Node.
 import {
-  BUILDING_BY_ID, BuildingDef, CHARTERS, CharterDef, EVENTS, FIRST_NAMES, JOB_NAMES, JobKind,
+  BUILDING_BY_ID, BuildingDef, CHARTERS, CharterDef, EVENTS, FIRST_NAMES, JOB_NAMES, JobKind, JOB_KINDS,
   MEALS, PERKS, RAW_FOODS, ResourceId, SHIRTS, SKINS, SURNAMES, TRAITS, TRAIT_BY_ID, BUILDINGS, buildWork,
-  JOB_KINDS, JOB_EVENTS, JobEventDef, ILLNESSES, RESOURCES, Recipe, InputKey, CATEGORIES, isCategory, membersOf, inputName, recipeRate, SITES, SiteId, MEAL_MOOD,
+  JOB_EVENTS, JobEventDef, ILLNESSES, RESOURCES, Recipe, InputKey, CATEGORIES, isCategory, membersOf, inputName, recipeRate, SITES, SiteId, MEAL_MOOD,
+  CharterMetric, RESEARCH, RESEARCH_BY_ID,
 } from './content';
+import { START } from './scenario';
 
 // ---------- RNG ----------
 export function nextRand(w: { rngState: number }): number {
@@ -32,8 +34,6 @@ export interface Errand {
   skill?: JobKind; x: number; y: number;
   assignee: number | null; pair?: [number, number];
 }
-export type Difficulty = 'gentle' | 'normal' | 'harsh';
-export const DIFFICULTY_STRAIN: Record<Difficulty, number> = { gentle: 0.65, normal: 1, harsh: 1.5 };
 export type Task =
   | { kind: 'deliver'; site: number; res: ResourceId; amount: number; via?: number }
   | { kind: 'haul'; from: number; res: ResourceId; amount: number; via?: number; /** moving it out of storage that no longer takes it */ restock?: boolean }
@@ -69,6 +69,8 @@ export interface Colonist {
   errand: number | null;
   died: boolean;
   starvingHours: number;
+  /** the last thing they ate, for comfort: a cooked meal or raw food, at a table, something they love */
+  lastMeal?: { cooked: boolean; table: boolean; loved: boolean };
 }
 export interface Building {
   uid: number; def: string; x: number; y: number;
@@ -88,6 +90,8 @@ export interface Building {
   high: boolean;
   /** workshops: indices of recipes the player has switched off */
   off?: number[];
+  /** buildings built in stages (the Crown's Hall): which stage is under way */
+  stage?: number;
 }
 
 export type Decision =
@@ -96,7 +100,8 @@ export type Decision =
   | { kind: 'recruit'; options: Colonist[] }
   | { kind: 'perk'; options: string[] }
   | { kind: 'event'; eventId: string }
-  | { kind: 'errand'; errandId: number };
+  | { kind: 'errand'; errandId: number }
+  | { kind: 'research'; options: string[] };
 
 export interface LogEntry { day: number; hour: number; text: string; tone: 'good' | 'bad' | 'neutral' | 'love' }
 
@@ -116,15 +121,14 @@ export interface World {
   status: 'playing' | 'won' | 'lost';
   strain: number; nextEventHour: number;
   errands: Errand[]; nextErrandId: number;
-  /** stats when the current charter began, for "since" charters */
-  charterBase: { cured: number; errands: number };
   /** hourly average mood since the charter began (last 24 kept), for the mood charters */
   moodLog: number[];
   /** someone ate without a table this hour */
   ateOffTable: boolean;
+  /** someone ate raw food this hour */
+  ateRaw?: boolean;
   /** foods colonists are not allowed to eat (kept for charters, feasts and trade) */
   forbidden: ResourceId[];
-  difficulty: Difficulty;
   /** the resource sites this map has (an apple grove, a meadow, good soil) */
   sites: SiteId[];
   /** blueprint rerolls used this run; each one costs more */
@@ -137,6 +141,20 @@ export interface World {
   flowLog: Record<string, number>[];
   stats: { peakPop: number; couples: number; breakups: number; departures: number; mealsEaten: number; built: number; cured: number; errands: number; deaths: number };
   version: number; // bumps when buildings change shape or state, for the renderer
+  /** research: projects finished, the one under way and its progress in work-hours */
+  research: { done: string[]; current: string | null; progress: number };
+  /** the first charter has been offered */
+  charterOffered?: boolean;
+  /** the day blueprint drafts started: they wait for the first charter */
+  draftsFrom?: number | null;
+  /** hours each hold-type condition of an all-at-once charter has held */
+  charterHolds?: number[];
+  /** the founders' feast for the Long Table: called for tonight, when it can next be called, and whether it worked */
+  feast?: { called: boolean; readyAt: number; done: boolean; last?: string };
+  /** the colony's comfort, 0 to 1, refreshed hourly; it sets how fast strain rises */
+  comfort?: number;
+  /** the festival at the hearth: called for dusk, when it can next be called, and how the last one went */
+  festival?: { called: boolean; readyAt: number; held: number; last?: string };
 }
 
 export const TICKS_PER_HOUR = 6;
@@ -147,9 +165,10 @@ export const BUILD_MIN = 2, BUILD_MAX = MAP_SIZE - 3;
 /** The colony collapses when this many settlers have left. */
 export const MAX_DEPARTURES = 6;
 /** Workshops won't burn the last of the wood. */
-export const WOOD_RESERVE = 20;
+/** wood left in storage for the hearth: workshops and the research desk won't take it */
+export const woodReserve = (_w: World) => START.woodReserve;
 export const CARRY = 15;
-/** a blueprint draft and a recruit draft each come this many days apart */
+/** recruits come this many days apart (blueprint drafts follow START.draftEvery) */
 export const DRAFT_EVERY = 2;
 export const OUTBOX_CAP = 15;
 const WALK_SPEED = 7; // tiles per hour
@@ -206,7 +225,7 @@ export function enabledRecipes(b: Building): Recipe[] {
 export function inInbox(b: Building, key: InputKey) { return isCategory(key) ? membersOf(key).reduce((n, x) => n + (b.inbox[x] ?? 0), 0) : (b.inbox[key] ?? 0); }
 /** how much of an input a workshop could get: its inbox plus storage, keeping the wood reserve */
 function obtainable(w: World, b: Building, key: InputKey) {
-  return membersOf(key).reduce((n, x) => n + w.res[x] + (b.inbox[x] ?? 0), 0) - (membersOf(key).includes('wood') ? WOOD_RESERVE : 0);
+  return membersOf(key).reduce((n, x) => n + w.res[x] + (b.inbox[x] ?? 0), 0) - (membersOf(key).includes('wood') ? woodReserve(w) : 0);
 }
 const recipeReady = (w: World, b: Building, r: Recipe) => Object.keys(r.inputs).every(k => obtainable(w, b, k as InputKey) >= 1);
 /** The recipe a workshop is working toward: the best switched-on one whose ingredients can be had, else the best switched-on one. */
@@ -618,25 +637,26 @@ function newBuilding(w: World, def: string, x: number, y: number, isBuilt: boole
   return b;
 }
 
-export function createWorld(seed: number, difficulty: Difficulty = 'normal'): World {
+export function createWorld(seed: number): World {
+  const sc = START;
   const w: World = {
     seed, rngState: seed >>> 0, hour: 6,
     colonists: [], buildings: [], terrain: [], paths: [],
-    res: { wood: 60, berries: 50, fish: 0, mushrooms: 0, stew: 10, pie: 0, smokedFish: 0, planks: 0, ale: 0, apples: 0, grain: 0, honey: 0, cider: 0, mead: 0, clay: 0, reeds: 0, bricks: 0, wicker: 0, herbs: 0, flour: 0, bread: 0, skewers: 0, poultice: 0, tonic: 0, tea: 0 },
-    owned: BUILDINGS.filter(b => b.basic).map(b => b.id), perks: [],
+    res: { wood: 0, berries: 0, fish: 0, mushrooms: 0, stew: 0, pie: 0, smokedFish: 0, planks: 0, ale: 0, apples: 0, grain: 0, honey: 0, cider: 0, mead: 0, clay: 0, reeds: 0, bricks: 0, wicker: 0, herbs: 0, flour: 0, bread: 0, skewers: 0, poultice: 0, tonic: 0, tea: 0, ...sc.res },
+    owned: [...sc.unlocked], perks: [],
     charterTier: 1, charter: null, charterHours: 0, chartersDone: [],
     decisions: [], log: [], opinions: {}, status: 'playing', strain: 0, nextEventHour: 24 * 1.6, sites: [], rerolls: 0,
-    errands: [], nextErrandId: 1, difficulty, charterBase: { cured: 0, errands: 0 }, moodLog: [], ateOffTable: false, forbidden: [],
+    errands: [], nextErrandId: 1, moodLog: [], ateOffTable: false, forbidden: [],
     nextUid: 1, nextColonistId: 1, autoAssignNew: false,
     flows: {}, flowLog: [],
-    stats: { peakPop: 6, couples: 0, breakups: 0, departures: 0, mealsEaten: 0, built: 0, cured: 0, errands: 0, deaths: 0 },
-    version: 0,
+    stats: { peakPop: sc.colonists, couples: 0, breakups: 0, departures: 0, mealsEaten: 0, built: 0, cured: 0, errands: 0, deaths: 0 },
+    version: 0, research: { done: [], current: null, progress: 0 },
   };
   for (let i = 0; i < 20; i++) nextRand(w);
   genTerrain(w);
   addLog(w, `Scouts report ${w.sites.map(id => SITES.find(x => x.id === id)!.name).join(' and ')} nearby.`, 'good');
   newBuilding(w, 'hearth', CENTER - 1, CENTER - 1, true);
-  for (const id of ['stockpile', 'leanto', 'leanto', 'woodcutter', 'forager']) {
+  for (const id of sc.place) {
     const s = findSpot(w, id, CENTER, CENTER, true);
     if (s) newBuilding(w, id, s.x, s.y, true);
   }
@@ -646,14 +666,12 @@ export function createWorld(seed: number, difficulty: Difficulty = 'normal'): Wo
     if (edge && !blockedGrid(w)[y * MAP_SIZE + x]) w.paths[y * MAP_SIZE + x] = 2;
   }
   const names = new Set<string>();
-  for (let i = 0; i < 6; i++) w.colonists.push(makeColonist(w, names));
+  for (let i = 0; i < sc.colonists; i++) w.colonists.push(makeColonist(w, names));
   for (const c of w.colonists) { c.px = c.x; c.py = c.y; }
   assignBeds(w);
   autoAssign(w);
-  addLog(w, 'Six settlers arrive at the edge of the Mumblewood with a cart, a kettle, and great optimism.', 'good');
-  addLog(w, 'There are only four beds for six people. Someone should build another lean-to.', 'neutral');
-  w.decisions.push({ kind: 'charter', tier: 1, options: shuffle(w, CHARTERS.filter(c => c.tier === 1)).slice(0, 3).map(c => c.id) });
-  w.decisions.push(blueprintDecision(w));
+  addLog(w, sc.intro[0], 'good');
+  if (sc.intro[1]) addLog(w, sc.intro[1], 'neutral');
   return w;
 }
 
@@ -678,28 +696,80 @@ function assignBeds(w: World) {
   }
 }
 
-/** Buildings that help each charter. A draft always offers one of these if none is owned yet. */
-export const CHARTER_HELPERS: Record<string, string[]> = {
-  pantry: ['pieoven', 'smokehouse', 'dock'], feast: ['brewery', 'ciderpress', 'pieoven', 'smokehouse'],
-  lumber: ['sawmill'], township: ['sawmill', 'dock'], growing: ['cottage', 'cellar'], boomtown: ['cottage', 'cellar'],
-  cheer: ['tavern', 'stage', 'cottage', 'bathhouse', 'pieoven'], harmony: ['tavern', 'stage', 'cottage', 'bathhouse'],
-  lovebirds: ['tavern', 'stage'],
-  woodpile: ['sawmill'], paved: ['sawmill'], tables: ['cottage'], healthy: ['apothecary', 'bathhouse'], menu: ['smokehouse', 'pieoven', 'bakery'], tasting: ['ciderpress', 'apothecary', 'brewery'], handy: ['cottage'],
-  pretty: ['stage', 'sawmill'], masters: ['tavern'], pieday: ['pieoven', 'sawmill'], garden: ['sawmill', 'stage'], calm: ['tavern', 'bathhouse', 'stage'],
-};
+/** blueprints that help a charter; a draft always offers one while the colony owns fewer than two */
+export const charterHelpers = (id: string | null) => (id ? CHARTERS.find(c => c.id === id)?.helpers ?? [] : []);
+export const charterDef = (id: string | null) => (id ? CHARTERS.find(c => c.id === id) : undefined);
+/** a charter offer: charters of the tier, on maps that have the sites they need */
+function charterDecision(w: World, tier: 1 | 2 | 3): Decision {
+  const pool = CHARTERS.filter(c => c.tier === tier && (!c.sites || c.sites.every(x => w.sites.includes(x))));
+  return { kind: 'charter', tier, options: shuffle(w, pool).slice(0, 3).map(c => c.id) };
+}
+
+// ---------- Research ----------
+export const desks = (w: World) => built(w).filter(b => b.def === 'desk');
+/** projects not yet done */
+export const researchLeft = (w: World) => RESEARCH.filter(r => !w.research.done.includes(r.id));
+function researchDecision(w: World, fixed?: string[]): Decision {
+  const left = researchLeft(w).map(r => r.id);
+  const options = fixed?.length ? fixed.filter(id => left.includes(id)) : shuffle(w, left).slice(0, 3);
+  return { kind: 'research', options };
+}
+/** goods the current project still needs at the desks, by cost key */
+export function researchStillNeeds(w: World): Partial<Record<InputKey, number>> {
+  const cur = w.research?.current ? RESEARCH_BY_ID[w.research.current] : undefined;
+  const out: Partial<Record<InputKey, number>> = {};
+  if (!cur) return out;
+  for (const [k, n] of Object.entries(cur.cost) as [InputKey, number][]) {
+    const have = desks(w).reduce((m, b) => m + inInbox(b, k), 0);
+    if (n - have > 0.001) out[k] = n - have;
+  }
+  return out;
+}
+/** deliveries a desk wants for the current project */
+function researchSupply(w: World, b: Building): SupplyTask[] {
+  const out: SupplyTask[] = [];
+  for (const [key, n] of Object.entries(researchStillNeeds(w)) as [InputKey, number][]) {
+    const members = membersOf(key);
+    const r = isCategory(key) ? [...members].sort((p, q) => w.res[q] - w.res[p])[0] : key;
+    const coming = alive(w).reduce((m, c) => m + (c.task?.kind === 'supply' && c.task.to === b.uid && members.includes(c.task.res) ? c.task.amount : 0), 0);
+    const avail = r === 'wood' ? Math.max(0, w.res.wood - woodReserve(w)) : w.res[r];
+    const want = n - coming;
+    if (want > 0.001 && avail >= Math.min(1, want)) out.push({ kind: 'supply', to: b.uid, res: r, amount: Math.min(CARRY, want, avail) });
+  }
+  return out;
+}
+function researchHourly(w: World, b: Building, c: Colonist, dt: number) {
+  const r = w.research; const cur = r?.current ? RESEARCH_BY_ID[r.current] : undefined;
+  if (!r || !cur || Object.keys(researchStillNeeds(w)).length) return;
+  r.progress += workSpeed(w, c, 'studying') * dt;
+  c.skills.studying = Math.min(10, (c.skills.studying ?? 3) + 0.004 * dt * 6);
+  if (r.progress < cur.hours) return;
+  // spend the goods from the desks and unlock the buildings
+  for (const [k, n] of Object.entries(cur.cost) as [InputKey, number][]) {
+    let need = n;
+    for (const d of desks(w)) for (const x of membersOf(k)) { const t = Math.min(d.inbox[x] ?? 0, need); if (t > 0) { d.inbox[x] = (d.inbox[x] ?? 0) - t; need -= t; flow(w, `${x}:-research`, t); } }
+  }
+  r.done.push(cur.id); r.current = null; r.progress = 0;
+  for (const id of cur.unlocks) if (!w.owned.includes(id)) w.owned.push(id);
+  addLog(w, `${first(c)} finished studying ${cur.name}. You can now build: ${cur.unlocks.map(id => BUILDING_BY_ID[id].name.toLowerCase()).join(' and ')}.`, 'good');
+  if (researchLeft(w).length) w.decisions.push(researchDecision(w));
+  else addLog(w, 'The scholar has read every book in the colony twice and is now reading the labels on jars.');
+  void b;
+}
+
 /** the site a gatherer needs on the map, if any */
 const SITE_FOR: Partial<Record<NonNullable<BuildingDef['needs']>, SiteId>> = { apples: 'grove', flowers: 'meadow', soil: 'soil', clay: 'clay' };
 /** this map has what the building gathers from (every map has trees, bushes and water) */
 export function siteOk(w: World, d: BuildingDef) { const s = d.needs && SITE_FOR[d.needs]; return !s || w.sites.includes(s); }
 /** a building the colony owns, or could own, gathers this good on this map */
 export function canSupply(w: World, r: ResourceId, owned = w.owned) {
-  return BUILDINGS.some(d => (d.basic || owned.includes(d.id)) && siteOk(w, d) && (d.recipes ?? []).some(rec => rec.output === r && !Object.keys(rec.inputs).length));
+  return BUILDINGS.some(d => owned.includes(d.id) && siteOk(w, d) && (d.recipes ?? []).some(rec => rec.output === r && !Object.keys(rec.inputs).length));
 }
 /** at least one recipe in the building can be fed from what the colony owns */
 export function usableHere(w: World, id: string, owned = w.owned) {
   const recs = BUILDING_BY_ID[id].recipes;
   if (!recs) return true;
-  const crafted = (r: ResourceId) => BUILDINGS.some(d => (d.basic || owned.includes(d.id)) && (d.recipes ?? []).some(x => x.output === r && Object.keys(x.inputs).length));
+  const crafted = (r: ResourceId) => BUILDINGS.some(d => owned.includes(d.id) && (d.recipes ?? []).some(x => x.output === r && Object.keys(x.inputs).length));
   return recs.some(rec => Object.keys(rec.inputs).every(k => membersOf(k as InputKey).some(r => canSupply(w, r, owned) || crafted(r))));
 }
 /**
@@ -710,7 +780,7 @@ export function recipeReach(w: World, r: Recipe): { state: 'ready' | 'draft' | '
   const makers = (m: ResourceId) => BUILDINGS.filter(d => siteOk(w, d) && (d.recipes ?? []).some(x => x.output === m));
   for (const k of Object.keys(r.inputs) as InputKey[]) {
     const ms = membersOf(k);
-    if (ms.some(m => makers(m).some(d => d.basic || w.owned.includes(d.id)))) continue;
+    if (ms.some(m => makers(m).some(d => w.owned.includes(d.id)))) continue;
     const options = ms.flatMap(makers).filter(d => d.draftable);
     if (!options.length) return { state: 'never', input: k };
     const via = options.find(d => (d.recipes ?? []).some(x => ms.includes(x.output) && !Object.keys(x.inputs).length)) ?? options[0];
@@ -732,8 +802,10 @@ function blueprintDecision(w: World, avoid: string[] = []): Decision {
   const pool = fresh.length >= 3 ? fresh : all;
   const options = [...shuffle(w, fresh), ...shuffle(w, all.filter(id => avoid.includes(id)))].slice(0, 3);
   const usable = (id: string) => usableHere(w, id);
-  const helpers = (CHARTER_HELPERS[w.charter ?? ''] ?? []).filter(id => pool.includes(id) && usable(id));
-  const ownsHelper = (CHARTER_HELPERS[w.charter ?? ''] ?? []).some(id => w.owned.includes(id) && usable(id));
+  const helpers = charterHelpers(w.charter).filter(id => pool.includes(id) && usable(id));
+  // a charter's route usually takes two of its helpers (a dock and a smokehouse), so the guarantee holds until two are owned
+  const ownedHelpers = charterHelpers(w.charter).filter(id => w.owned.includes(id) && usable(id)).length;
+  const ownsHelper = ownedHelpers >= Math.min(2, charterHelpers(w.charter).length);
   if (helpers.length && !ownsHelper && !options.some(o => helpers.includes(o))) options[options.length - 1] = pick(w, helpers);
   return { kind: 'blueprint', options };
 }
@@ -752,18 +824,22 @@ export type Command =
   | { type: 'storageFilter'; building: number; allow: ResourceId[] | null }
   | { type: 'storagePriority'; building: number; high: boolean }
   | { type: 'toggleRecipe'; building: number; recipe: number; on: boolean }
-  | { type: 'reroll' };
+  | { type: 'reroll' }
+  | { type: 'callFeast' }
+  | { type: 'callFestival' };
 
 /** what a site still needs, by cost key; a category key counts every good of that kind already delivered */
 export function remainingCost(b: Building): Partial<Record<InputKey, number>> {
   const out: Partial<Record<InputKey, number>> = {};
-  for (const [k, n] of Object.entries(bdef(b).cost) as [InputKey, number][]) {
+  for (const [k, n] of Object.entries(costOf(b)) as [InputKey, number][]) {
     const left = (n ?? 0) - membersOf(k).reduce((m, r) => m + (b.delivered[r] ?? 0), 0);
     if (left > 0.001) out[k] = left;
   }
   return out;
 }
-export function siteWork(b: Building) { return bdef(b).walkable ? 3 : buildWork(bdef(b)); }
+export function siteWork(b: Building) { const st = bdef(b).stages; return st ? st[b.stage ?? 0].work : bdef(b).walkable ? 3 : buildWork(bdef(b)); }
+/** what this site needs delivered: its cost, or the current stage's for a building built in stages */
+export function costOf(b: Building): Partial<Record<InputKey, number>> { const st = bdef(b).stages; return st ? st[Math.min(st.length - 1, b.stage ?? 0)].cost : bdef(b).cost; }
 export const sites = (w: World) => w.buildings.filter(b => !b.built);
 
 export function apply(w: World, cmd: Command): string | null {
@@ -858,6 +934,24 @@ export function apply(w: World, cmd: Command): string | null {
       if (!cmd.allowed) w.forbidden.push(cmd.food);
       return null;
     }
+    case 'callFestival': {
+      const f = (w.festival ??= { called: false, readyAt: 0, held: 0 });
+      if (f.called) return 'The festival is already called for dusk.';
+      if (w.hour < f.readyAt) return `Everyone is still recovering from the last one. Try again in ${Math.ceil(f.readyAt - w.hour)} hours.`;
+      if (mealTotal(w) < 1) return 'A festival needs meals to share. There are none in storage.';
+      f.called = true;
+      addLog(w, hourOfDay(w) < 18 ? 'A festival is called for tonight at the hearth. Someone finds a fiddle.' : 'A festival is called for tomorrow at dusk. Someone finds a fiddle.', 'good');
+      return null;
+    }
+    case 'callFeast': {
+      if (charterDef(w.charter)?.metric.kind !== 'longTable') return 'Only the Long Table charter has a founders\u2019 feast.';
+      const f = (w.feast ??= { called: false, readyAt: 0, done: false });
+      if (f.called) return 'The feast is already called for tonight.';
+      if (w.hour < f.readyAt) return `Everyone is still full from the last one. Try again in ${Math.ceil(f.readyAt - w.hour)} hours.`;
+      f.called = true;
+      addLog(w, hourOfDay(w) < 18 ? 'The founders\u2019 feast is called for tonight at dusk. Someone irons a tablecloth.' : 'The founders\u2019 feast is called for tomorrow at dusk. Someone irons a tablecloth.', 'good');
+      return null;
+    }
     case 'autoAssign': autoAssign(w); return null;
     case 'setAutoAssignNew': w.autoAssignNew = cmd.value; return null;
     case 'resolve': return resolveDecision(w, cmd.option);
@@ -872,10 +966,23 @@ function resolveDecision(w: World, option: number): string | null {
     case 'charter': {
       const id = d.options[option] ?? d.options[0];
       w.charter = id; w.charterHours = 0;
-      w.charterBase = { cured: w.stats.cured, errands: w.stats.errands }; w.moodLog = [];
+      w.moodLog = []; w.charterHolds = [];
       const next = w.decisions[0];
       if (next?.kind === 'blueprint') w.decisions[0] = blueprintDecision(w);
-      addLog(w, `New charter from the Crown: ${CHARTERS.find(c => c.id === id)!.name}.`);
+      const def = charterDef(id)!;
+      addLog(w, `New charter from the Crown: ${def.name}.`);
+      // a monument charter hands over its blueprint
+      for (const m of def.metric.kind === 'all' ? def.metric.parts : [def.metric]) if (m.kind === 'monument' && !w.owned.includes(m.def)) { w.owned.push(m.def); addLog(w, `The Crown sends plans for ${BUILDING_BY_ID[m.def].name}. Find it a good spot.`, 'good'); }
+      // drafts that wait for the first charter start now, with an offer that knows what the charter needs
+      if (w.draftsFrom == null) { w.draftsFrom = day(w); w.decisions.push(blueprintDecision(w)); }
+      break;
+    }
+    case 'research': {
+      const id = d.options[option] ?? d.options[0];
+      if (!id || !w.research) break;
+      w.research.current = id; w.research.progress = 0;
+      const def = RESEARCH_BY_ID[id];
+      addLog(w, `The scholar opens a book on ${def.name.toLowerCase()}. ${desks(w).some(b => workersAt(w, b.uid).length) ? '' : 'Someone needs to sit at the research desk.'}`.trim());
       break;
     }
     case 'blueprint': {
@@ -1066,7 +1173,7 @@ function applyEventEffect(w: World, effect: string) {
     case 'payFood20': takeFood(w, 20); addLog(w, 'The goblin stamps something and leaves. Nobody can read the stamp.'); break;
     case 'graffiti': everyone(w, 'graffiti', 'Goblin graffiti everywhere', -6, 48); addLog(w, 'By morning, every wall says something rude in Goblin.', 'bad'); break;
     case 'bardPlay':
-      if (drinkTotal(w) >= 6) { takeDrink(w, 6, 'bard'); everyone(w, 'bard', 'Heard a wonderful ballad', 6, 24); addLog(w, 'The ballad is long, but it rhymes. Everyone cries a little.', 'good'); }
+      if (drinkTotal(w) >= 6) { takeDrink(w, 6, 'bard'); everyone(w, 'bard', 'Heard a wonderful ballad', 6, 24); const e = ease(w, 0.08); addLog(w, `The ballad is long, but it rhymes. Everyone cries a little.${e ? ` Strain eases by ${e}.` : ''}`, 'good'); }
       else addLog(w, 'There wasn’t enough to drink. The bard plays one note and leaves.', 'bad');
       break;
     case 'pigeonBribe': w.res.berries = Math.max(0, w.res.berries - 15); addLog(w, 'The pigeons accept the berries and sign a peace treaty.'); break;
@@ -1075,7 +1182,8 @@ function applyEventEffect(w: World, effect: string) {
       if (mealTotal(w) >= 8 && drinkTotal(w) >= 5) {
         let n = 8; for (const r of MEALS) { const t = Math.min(w.res[r], n); w.res[r] -= t; n -= t; }
         takeDrink(w, 5, 'wedding'); everyone(w, 'wedding', 'What a lovely wedding', 7, 48);
-        addLog(w, 'A wedding! Someone cried, someone danced on a table, someone fell off it.', 'love');
+        const e = ease(w, 0.1);
+        addLog(w, `A wedding! Someone cried, someone danced on a table, someone fell off it.${e ? ` Strain eases by ${e}.` : ''}`, 'love');
       } else { addLog(w, 'There wasn’t enough for a party, so the couple elopes.', 'bad'); applyEventEffect(w, 'elope'); }
       break;
     }
@@ -1091,6 +1199,33 @@ function applyEventEffect(w: World, effect: string) {
       if (w.res.wood >= 30) { w.res.wood -= 30; w.res.planks += 12; addLog(w, 'The peddler trades fairly, which is the most suspicious thing of all.'); }
       else addLog(w, 'You don’t have the wood. The peddler sighs theatrically.');
       break;
+    case 'lettersRead': {
+      if (edibleTotal(w) < 15) { addLog(w, 'There isn’t 15 food to spare. The courier leaves with the letters and a grudge.', 'bad'); applyEventEffect(w, 'lettersLost'); break; }
+      takeFood(w, 15); everyone(w, 'letters', 'A letter from home', 3, 24);
+      const e = ease(w, alive(w).some(c => c.sulking) ? 0.1 : 0.15);
+      addLog(w, `Letters are read aloud by the hearth. Mostly about aunts.${e ? ` Strain eases by ${e}.` : ''}`, 'good');
+      break;
+    }
+    case 'lettersLost': everyone(w, 'letters', 'The letters went back unread', -2, 24); break;
+    case 'bonfire':
+      if (w.res.wood >= 20) { w.res.wood -= 20; flow(w, 'wood:-bonfire', 20); everyone(w, 'bonfire', 'A big bonfire', 2, 24); addLog(w, 'A bonfire roars all evening. Nobody mentions home.', 'good'); }
+      else { addLog(w, 'There isn’t 20 wood for a bonfire.', 'bad'); applyEventEffect(w, 'homesick'); }
+      break;
+    case 'homesick': w.strain += 3; addLog(w, 'Everyone sits about being homesick. Strain rises by 3.', 'bad'); break;
+    case 'moonDance': {
+      let fed = 0, loved = 0;
+      for (const c of alive(w).filter(x => !bedridden(x))) {
+        const meal = [...MEALS].filter(r => w.res[r] >= 1).sort((a, b) => taste(c, b) - taste(c, a) || w.res[b] - w.res[a])[0];
+        if (!meal) break;
+        w.res[meal] -= 1; flow(w, `${meal}:-moon`, 1); fed++; if (taste(c, meal) > 0) loved++;
+      }
+      reconcileStock(w);
+      if (!fed) { addLog(w, 'Nothing to eat, so nobody dances. The moon is unbothered.', 'bad'); break; }
+      everyone(w, 'moon', 'Danced under the harvest moon', 4, 24);
+      const n = Math.max(1, alive(w).length), e = ease(w, 0.1 * fed / n + (loved >= n / 2 ? 0.05 : 0));
+      addLog(w, `Everyone dances badly under the harvest moon.${e ? ` Strain eases by ${e}.` : ''}`, 'good');
+      break;
+    }
     case 'relic': takeFood(w, 10); everyone(w, 'relic', 'We own a holy spoon', 3, 72); addLog(w, 'The Holy Spoon of Saint Pomfrey is installed above the hearth.', 'good'); break;
   }
 }
@@ -1124,18 +1259,23 @@ function buildingPriority(w: World, b: Building): number {
     case 'claypit': return 5;
     case 'brewery': case 'ciderpress': return drinkTotal(w) < 20 ? 6 : 3;
     case 'tavern': return 6.8;
+    case 'desk': return 7.5;
     default: return 4;
   }
 }
 /** Why a workshop can't run right now, or null if it can. */
 export function blockedReason(w: World, b: Building): string | null {
+  if (b.def === 'desk' && b.built && w.research) {
+    if (!w.research.current) return researchLeft(w).length ? 'Nothing to study. Pick a project.' : 'Everything in the colony\u2019s books is learned.';
+    return null;
+  }
   if (!recipesOf(b).length || !b.built) return null;
   const rec = currentRecipe(w, b);
   if (!rec) return 'Every recipe here is switched off.';
   for (const key of Object.keys(rec.inputs) as InputKey[]) {
     if (obtainable(w, b, key) < 1) {
       const name = inputName(key);
-      const HINTS: Partial<Record<string, string>> = { fish: ' Build a fishing dock.', planks: ' Build a sawmill.', clay: ' Dig it at a clay pit by the clay bank.', reeds: ' Switch a fishing dock to cutting reeds.', wood: ' Keep more than 20 wood.', apples: ' Pick apples at an orchard hut.', grain: ' Grow it on a grain field.', honey: ' Keep bees at an apiary.' };
+      const HINTS: Partial<Record<string, string>> = { fish: ' Build a fishing dock.', planks: ' Build a sawmill.', clay: ' Dig it at a clay pit by the clay bank.', reeds: ' Switch a fishing dock to cutting reeds.', wood: ` Keep more than ${woodReserve(w)} wood.`, apples: ' Pick apples at an orchard hut.', grain: ' Grow it on a grain field.', honey: ' Keep bees at an apiary.' };
       const hint = HINTS[key] ?? '';
       return `No ${name} to work with.${hint}`;
     }
@@ -1184,6 +1324,8 @@ function chooseTask(w: World, c: Colonist): Task | null {
   const opts: { t: Task; pri: number; x: number; y: number }[] = [];
   // construction: deliver materials, then build
   for (const b of sites(w)) {
+    // the Crown's Hall: nobody grumpy lays a stone for the Crown
+    const gate = bdef(b).moodGate; if (gate && c.mood < gate) continue;
     const left = remainingCost(b);
     const s = spotOf(b);
     let missing = false;
@@ -1216,6 +1358,8 @@ function chooseTask(w: World, c: Colonist): Task | null {
     const s = spotOf(b);
     opts.push({ t: { kind: 'haul', from: b.uid, res: r, amount: Math.min(CARRY, n), restock: true }, pri: misplaced ? 1.8 : 1.6, x: s.x, y: s.y });
   }
+  // the research desk's goods, once someone is studying there
+  if (w.research?.current) for (const b of desks(w)) if (workersAt(w, b.uid).length) for (const need of researchSupply(w, b)) opts.push({ t: need, pri: 2.5, x: spotOf(b).x, y: spotOf(b).y });
   // carrying ingredients to staffed workshops
   for (const b of built(w)) {
     const rec = currentRecipe(w, b);
@@ -1250,7 +1394,7 @@ function supplyNeeds(w: World, b: Building, rec: Recipe | undefined = currentRec
     const r = isCategory(key) ? [...members].sort((p, q) => w.res[q] - w.res[p])[0] : key;
     const have = inInbox(b, key);
     const coming = alive(w).reduce((n, c) => n + (c.task?.kind === 'supply' && c.task.to === b.uid && members.includes(c.task.res) ? c.task.amount : 0), 0);
-    const avail = r === 'wood' ? Math.max(0, w.res.wood - WOOD_RESERVE) : w.res[r];
+    const avail = r === 'wood' ? Math.max(0, w.res.wood - woodReserve(w)) : w.res[r];
     const want = INBOX_TARGET - have - coming;
     if (want >= 3 && avail >= 1) out.push({ kind: 'supply', to: b.uid, res: r, amount: Math.min(CARRY, want, avail) });
   }
@@ -1346,6 +1490,8 @@ function activityFor(w: World, c: Colonist): Activity {
       const [r] = Object.entries(job.outbox).sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0))[0] as [ResourceId, number];
       if (storageFree(w, r) > 0 && taskCount(w, t => t.kind === 'haul' && t.from === job.uid) === 0) c.task = { kind: 'haul', from: job.uid, res: r, amount: Math.min(CARRY, job.outbox[r] ?? 0) };
     }
+    // the scholar fetches the project's goods if nobody has brought them
+    if (!c.task && job.def === 'desk' && w.research?.current) { const need = researchSupply(w, job)[0]; if (need) c.task = need; }
     // nobody brought ingredients: fetch them yourself
     const rec = currentRecipe(w, job);
     if (!c.task && rec && Object.keys(rec.inputs).length && !canCook(w, job, rec)) {
@@ -1399,7 +1545,7 @@ function arrive(w: World, c: Colonist) {
       const to = buildingByUid(w, t.to);
       if (!to) { dropTask(w, c); return; }
       if (!c.carrying) {
-        const avail = t.res === 'wood' ? Math.max(0, w.res.wood - WOOD_RESERVE) : w.res[t.res];
+        const avail = t.res === 'wood' ? Math.max(0, w.res.wood - woodReserve(w)) : w.res[t.res];
         const amt = takeOut(w, buildingByUid(w, t.via ?? null), t.res, Math.min(t.amount, avail));
         if (amt <= 0) { c.task = null; return; }
         c.carrying = { res: t.res, amount: amt }; t.amount = amt;
@@ -1459,6 +1605,8 @@ function produce(w: World, dt: number) {
       }
     }
   }
+  // study at the research desk
+  if (w.research?.current) for (const b of desks(w)) for (const c of workersAt(w, b.uid)) if (c.activity === 'working' && c.goalReached) researchHourly(w, b, c, dt);
   // construction, paving, cleaning and errands
   for (const c of alive(w)) {
     if (!c.goalReached) continue;
@@ -1499,14 +1647,25 @@ function canCook(w: World, b: Building, rec: Recipe, share = 0.2) {
 }
 
 function completeBuilding(w: World, b: Building) {
+  const def = bdef(b);
+  // a building in stages moves on to the next one, with its own materials
+  if (def.stages && (b.stage ?? 0) < def.stages.length - 1) {
+    b.stage = (b.stage ?? 0) + 1; b.progress = 0; b.delivered = {}; w.version++;
+    for (const c of alive(w)) if (c.task?.kind === 'build' && c.task.site === b.uid) c.task = null;
+    addLog(w, `${def.name}: ${def.stages[b.stage - 1].label.toLowerCase()} done. Next: ${def.stages[b.stage].label.toLowerCase()}.`, 'good');
+    return;
+  }
   b.built = true; b.progress = siteWork(b); w.version++; w.stats.built++;
   for (const c of alive(w)) if (c.task?.kind === 'build' && c.task.site === b.uid) c.task = null;
-  const def = bdef(b);
   addLog(w, pick(w, [`The ${def.name.toLowerCase()} is finished. Only one thumb was hammered.`, `The ${def.name.toLowerCase()} is done, and it is mostly level.`, `Work on the ${def.name.toLowerCase()} is complete. Everyone admires it briefly.`]), 'good');
   if (def.beds) assignBeds(w);
   // a new flower bed can make a nearby apiary busier
   if (def.id === 'flowerbed') for (const a of w.buildings) if (bdef(a).needs === 'flowers') a.eff = efficiencyAt(w, a.def, a.x, a.y).eff;
   if (def.slots && w.autoAssignNew) fillSlots(w);
+  // research starts once there's somewhere to study: the first desk brings the first offer
+  if (def.id === 'desk' && w.research && !w.research.current && !w.decisions.some(d => d.kind === 'research') && researchLeft(w).length) {
+    w.decisions.push(researchDecision(w, w.research.done.length ? undefined : START.firstResearch));
+  }
   // a finished building replaces any planned path under it
   for (let x = b.x; x < b.x + def.w; x++) for (let y = b.y; y < b.y + def.h; y++) if (!def.walkable) w.paths[y * MAP_SIZE + x] = 0;
 }
@@ -1555,6 +1714,7 @@ function finishMeal(w: World, c: Colonist) {
   c.meal = null;
   if (!got) return;
   const meal = MEALS.includes(got) ? got : undefined;
+  c.lastMeal = { cooked: !!meal, table: !!(hall && bdef(hall).seats) && !bedridden(c), loved: !!meal && taste(c, meal) > 0 };
   const bonus = (has(c, 'glutton') ? 4 : 0) + (hasPerk(w, 'communalPot') ? 3 : 0);
   if (meal) {
     c.hunger = 100; w.stats.mealsEaten++;
@@ -1566,6 +1726,7 @@ function finishMeal(w: World, c: Colonist) {
     const raw = got;
     c.hunger = 85;
     addMemory(w, c, 'meal', `Ate raw ${raw}`, has(c, 'picky') ? -8 : -3, 14);
+    w.ateRaw = true;
     if (nextRand(w) < 0.02) { fallIll(w, c, 'tummy'); addLog(w, `${first(c)} ate some questionable ${raw} and now has a bad tummy.`, 'bad'); }
   }
   if (bedridden(c)) return; // fed in bed
@@ -1702,6 +1863,42 @@ function computeThoughts(w: World, c: Colonist): Thought[] {
   return t.sort((a, b) => a.value - b.value);
 }
 
+// ---------- Comfort ----------
+/**
+ * How well the colony meets one settler's standing needs, 0 to 1: the conditions the player built and supplied, not how
+ * they feel today (mood includes luck and strain itself, and strain driving strain would be a death spiral). Five needs,
+ * a fifth each, with partial credit.
+ */
+export const COMFORT_NEEDS = ['shelter', 'meals', 'evenings', 'health', 'surroundings'] as const;
+export type ComfortNeed = typeof COMFORT_NEEDS[number];
+export function comfortParts(w: World, c: Colonist): Record<ComfortNeed, number> {
+  const bed = buildingByUid(w, c.bed);
+  const shelter = !bed ? 0 : bdef(bed).bedQuality === 'cozy' ? 1 : 0.6;
+  // the last meal: cooked (not raw), at a table, and something they love; going hungry counts as nothing
+  const m = c.lastMeal;
+  const meals = c.hunger < 25 || !m?.cooked ? 0 : 0.6 + (m.table ? 0.25 : 0) + (m.loved ? 0.15 : 0);
+  const evenings = Math.max(0, Math.min(1, (c.fun - 20) / 50));
+  const health = !c.illness ? 1 : c.activity === 'sick' && c.place != null && bdef(buildingByUid(w, c.place)!).patients ? 0.6 : 0;
+  const surroundings = Math.max(0, Math.min(1, (c.beauty + 1) / 4));
+  return { shelter, meals, evenings, health, surroundings };
+}
+export const comfortOf = (w: World, c: Colonist) => { const p = comfortParts(w, c); return COMFORT_NEEDS.reduce((n, k) => n + p[k], 0) / COMFORT_NEEDS.length; };
+export function colonyComfort(w: World) { const a = alive(w); return a.length ? a.reduce((n, c) => n + comfortOf(w, c), 0) / a.length : 0; }
+/** the colony's average for each need, lowest first: what's speeding strain up */
+export function comfortGaps(w: World) {
+  const a = alive(w); if (!a.length) return [];
+  const sums = Object.fromEntries(COMFORT_NEEDS.map(k => [k, 0])) as Record<ComfortNeed, number>;
+  for (const c of a) { const p = comfortParts(w, c); for (const k of COMFORT_NEEDS) sums[k] += p[k]; }
+  return COMFORT_NEEDS.map(k => ({ need: k, avg: sums[k] / a.length })).sort((x, y) => x.avg - y.avg);
+}
+/** how much the colony's comfort scales the strain rise right now */
+export const comfortFactor = (w: World) => Math.max(0.2, START.comfortScale.base - Math.min(1, (w.comfort ?? colonyComfort(w)) * (hasPerk(w, 'homesteaders') ? 1.2 : 1)) * START.comfortScale.slope);
+/** strain rise per day at the colony's current size, day and comfort (before boons) */
+export function strainPerDay(w: World) {
+  const d = day(w) - 1 + (hourOfDay(w) - 6) / 24;
+  return START.strain.rate * Math.sqrt(alive(w).length) * (1 + Math.max(0, d) / START.strain.rampDays) * comfortFactor(w) * (hasPerk(w, 'ironWill') ? 0.75 : 1);
+}
+
 /** what happened in the last 24 hours, from the running flow totals */
 export function lastDay(w: World): Record<string, number> {
   const log = w.flowLog ?? [];
@@ -1717,10 +1914,16 @@ function hourly(w: World) {
   const h = Math.round(hourOfDay(w)) % 24;
   const pop = alive(w).length;
   const d = day(w) - 1 + (hourOfDay(w) - 6) / 24;
-  w.strain = Math.max(0, (d * 0.6 + d * d * 0.02) * DIFFICULTY_STRAIN[w.difficulty] * (hasPerk(w, 'ironWill') ? 0.75 : 1) + Math.max(0, pop - 8) * 0.5);
+  const sc = START;
+  // strain builds up with the colony's size and the run's length, faster when people's needs go unmet and slower when
+  // they're met; relief (charters, festivals) brings it back down
+  w.comfort = colonyComfort(w);
+  w.strain += strainPerDay(w) / 24;
+  void sc; void d; void pop;
 
   if (h >= 18 || h < 6) {
-    const burn = hasPerk(w, 'warmHearth') ? 0.5 : 1;
+    const hb = sc.hearth;
+    const burn = (hasPerk(w, 'warmHearth') ? 0.5 : 1) * Math.min(1, hb.base + hb.perPerson * pop);
     if (w.res.wood >= burn) { w.res.wood -= burn; flow(w, 'wood:-hearth', burn); }
     else everyone(w, 'cold', 'The hearth went cold', -5, 12);
   }
@@ -1783,11 +1986,19 @@ function hourly(w: World) {
   // eating raw food now and then upsets a stomach
   socialHour(w);
   if (h === 6) dailyRelationships(w);
+  if (h === 18 && w.feast?.called) runFeast(w);
+  if (h === 18 && w.festival?.called) runFestival(w);
+  // the Hearth songs boon: an open, staffed tavern eases strain each evening
+  if (h === 21 && hasPerk(w, 'hearthSongs') && built(w).some(b => b.def === 'tavern' && workersAt(w, b.uid).length > 0)) w.strain = Math.max(0, w.strain - 0.5);
   checkCharter(w);
-  w.ateOffTable = false;
+  w.ateOffTable = false; w.ateRaw = false;
   if (h === 6) dawn(w);
+  // the first charter comes on the morning of day 2
+  if (!w.charterOffered && day(w) >= sc.firstCharterDay && h >= 6) {
+    w.charterOffered = true; w.decisions.push(charterDecision(w, 1));
+  }
   if (w.hour >= w.nextEventHour && h >= 8 && h <= 20) triggerEvent(w);
-  if (w.status === 'playing' && (lost(w) >= MAX_DEPARTURES || alive(w).length <= 2)) {
+  if (w.status === 'playing' && (lost(w) >= sc.collapse.lost || alive(w).length <= sc.collapse.minAlive)) {
     w.status = 'lost';
     addLog(w, 'Too many settlers are gone. The Crown revokes the charter. The kettle remains.', 'bad');
   }
@@ -1825,7 +2036,8 @@ function leave(w: World, c: Colonist, carted = false) {
 
 function dawn(w: World) {
   const d = day(w);
-  if (d % DRAFT_EVERY === 1 % DRAFT_EVERY && d > 1) w.decisions.push(blueprintDecision(w));
+  // blueprint drafts every few days once the first charter is picked
+  if (w.draftsFrom != null && d > w.draftsFrom && (d - w.draftsFrom) % START.draftEvery === 0) w.decisions.push(blueprintDecision(w));
   if (d % DRAFT_EVERY === 0) {
     const names = new Set(w.colonists.map(c => first(c)));
     const opts = [0, 1, 2].map(() => makeColonist(w, names));
@@ -1834,87 +2046,185 @@ function dawn(w: World) {
   }
 }
 
+/** an event's condition: a couple for a wedding, strain of 6+ for the ones about the frontier wearing on people */
+const eventFits = (w: World, req?: 'couple' | 'strain') => !req || (req === 'couple' ? couples(w) > 0 : w.strain >= 6);
 function triggerEvent(w: World) {
   const roll = nextRand(w);
-  if (roll < 0.18 && day(w) >= 3) outbreak(w);
+  const ob = START.outbreakFrom;
+  if (roll < 0.18 && day(w) >= ob.day && alive(w).length >= ob.pop) outbreak(w);
   else if (roll < 0.6) {
     const jobs = shuffle(w, JOB_EVENTS.filter(j => j.id !== 'remedy'));
-    if (!jobs.some(j => spawnErrand(w, j))) w.decisions.push({ kind: 'event', eventId: pick(w, EVENTS.filter(e => e.requires !== 'couple' || couples(w) > 0)).id });
+    if (!jobs.some(j => spawnErrand(w, j))) w.decisions.push({ kind: 'event', eventId: pick(w, EVENTS.filter(e => eventFits(w, e.requires))).id });
   } else {
-    const pool = EVENTS.filter(e => e.requires !== 'couple' || couples(w) > 0);
+    const pool = EVENTS.filter(e => eventFits(w, e.requires));
     w.decisions.push({ kind: 'event', eventId: pick(w, pool).id });
   }
   const gap = Math.max(0.8, 1.8 - w.strain * 0.03) + nextRand(w) * 0.8;
   w.nextEventHour = w.hour + gap * 24;
 }
 
-function charterValue(w: World, c: CharterDef): { value: number; target: number; label: string } {
-  const m = c.metric;
+function charterValue(w: World, c: CharterDef): { value: number; target: number; label: string } { return metricValue(w, c.metric, 0); }
+/** hours a hold-type condition (a full day with every meal at a table, a full day with nobody sick) has held */
+const holdOf = (w: World, slot: number) => w.charterHolds?.[Math.max(0, slot)] ?? 0;
+function metricValue(w: World, m: CharterMetric, slot: number): { value: number; target: number; label: string } {
+  const held = holdOf(w, slot);
   switch (m.kind) {
     case 'stock': { const v = m.resources.reduce((n, r) => n + w.res[r], 0); return { value: v, target: m.amount, label: `${Math.floor(v)} / ${m.amount} in storage` }; }
     case 'population': { const v = alive(w).length; return { value: v, target: m.amount, label: `${v} / ${m.amount} colonists` }; }
-    case 'buildings': { const v = built(w).filter(b => !bdef(b).decor).length; return { value: v, target: m.amount, label: `${v} / ${m.amount} buildings finished` }; }
-    case 'couples': { const v = couples(w); return { value: v, target: m.amount, label: `${v} / ${m.amount} couples` }; }
-    case 'avgMood': case 'contentPop': {
+    case 'avgMood': {
       // judged on the average over the last full day, so the dip before breakfast doesn't reset everything
-      const target = m.kind === 'avgMood' ? m.amount : m.mood;
       const log = w.moodLog ?? [];
       const avg = log.length ? log.reduce((a, b) => a + b, 0) / log.length : avgMood(w);
       const full = log.length >= m.hours;
-      const pop = m.kind === 'contentPop' ? `${alive(w).length}/${m.pop} colonists · ` : '';
-      const value = full && avg >= target ? 1 : Math.min(0.99, (avg / target) * Math.min(1, log.length / m.hours));
-      return { value, target: 1, label: `${pop}24h average ${Math.round(avg)} / ${target}${full ? '' : ` · ${m.hours - log.length}h to go`}` };
+      const value = full && avg >= m.amount ? 1 : Math.min(0.99, (avg / m.amount) * Math.min(1, log.length / m.hours));
+      return { value, target: 1, label: `24h average ${Math.round(avg)} / ${m.amount}${full ? '' : ` · ${m.hours - log.length}h to go`}` };
     }
-    case 'feast': {
-      const meals = mealTotal(w), ale = drinkTotal(w);
-      return { value: Math.min(meals / m.meals, ale / m.ale), target: 1, label: `${Math.floor(meals)}/${m.meals} meals · ${Math.floor(ale)}/${m.ale} drinks` };
-    }
-    case 'paths': { const v = w.paths.filter(p => p === 2).length; return { value: v, target: m.amount, label: `${v} / ${m.amount} path tiles laid` }; }
-    case 'decorPaths': {
-      const d = built(w).filter(b => bdef(b).decor).length, p = w.paths.filter(x => x === 2).length;
-      return { value: Math.min(d / m.decor, p / m.paths), target: 1, label: `${d}/${m.decor} decorations · ${p}/${m.paths} paths` };
-    }
-    case 'allTable': return { value: w.charterHours, target: m.hours, label: `${w.charterHours}h / ${m.hours}h with every meal at a table` };
-    case 'curedSince': { const v = w.stats.cured - w.charterBase.cured; return { value: v, target: m.amount, label: `${v} / ${m.amount} recovered` }; }
-    case 'errandsSince': { const v = w.stats.errands - w.charterBase.errands; return { value: v, target: m.amount, label: `${v} / ${m.amount} urgent jobs done` }; }
-    case 'avgBeauty': return { value: w.charterHours, target: m.hours, label: `beauty ${avgBeauty(w).toFixed(1)} · ${w.charterHours}h / ${m.hours}h` };
-    case 'skilled': { const v = alive(w).filter(c => Object.values(c.skills).some(x => x >= m.level)).length; return { value: v, target: m.count, label: `${v} / ${m.count} colonists at skill ${m.level}+` }; }
-    case 'calm': return { value: w.charterHours, target: m.hours, label: `${alive(w).length}/${m.pop} colonists · ${w.charterHours}h / ${m.hours}h without sulking` };
+    case 'allTable': return { value: held, target: m.hours, label: `${held}h / ${m.hours}h with every meal ${m.cooked ? 'cooked and ' : ''}at a table` };
     case 'variety': {
       // the best `kinds` goods of the category, each counted up to `each`
       const best = CATEGORIES[m.category].members.map(r => Math.min(m.each, Math.floor(w.res[r]))).sort((a, b) => b - a).slice(0, m.kinds);
       const full = best.filter(n => n >= m.each).length;
       return { value: best.reduce((a, b) => a + b, 0), target: m.kinds * m.each, label: `${full} / ${m.kinds} kinds with ${m.each}+ stored` };
     }
+    case 'all': {
+      const vs = m.parts.map((p, i) => metricValue(w, p, i));
+      const done = vs.every(v => v.value >= v.target);
+      const ratio = Math.min(...vs.map(v => Math.min(1, v.value / v.target)));
+      return { value: done ? 1 : Math.min(0.99, ratio), target: 1, label: vs.map(v => (v.value >= v.target ? '✓ ' : '') + v.label).join(' · ') };
+    }
+    case 'built': { const v = built(w).filter(b => b.def === m.def).length; return { value: v, target: m.amount, label: `${v} / ${m.amount} ${BUILDING_BY_ID[m.def].name.toLowerCase()}s` }; }
+    case 'everyoneBed': { const a = alive(w); const v = a.filter(c => c.bed != null).length; return { value: v, target: Math.max(1, a.length), label: `${v} / ${a.length} in a bed` }; }
+    case 'healthy': return { value: held, target: m.hours, label: `${held}h / ${m.hours}h with nobody sick or hurt` };
+    case 'monument': {
+      const b = w.buildings.find(x => x.def === m.def); const stages = BUILDING_BY_ID[m.def].stages?.length ?? 1;
+      if (!b) return { value: 0, target: stages, label: `${BUILDING_BY_ID[m.def].name} not placed yet` };
+      if (b.built) return { value: stages, target: stages, label: `${BUILDING_BY_ID[m.def].name} finished` };
+      const st = BUILDING_BY_ID[m.def].stages?.[b.stage ?? 0];
+      const left = remainingCost(b);
+      const part = Object.keys(left).length ? 0.5 * (1 - sum(left) / Math.max(1, sum(costOf(b)))) : 0.5 + 0.5 * b.progress / siteWork(b);
+      return { value: (b.stage ?? 0) + part, target: stages, label: `stage ${(b.stage ?? 0) + 1} of ${stages}${st ? `, ${st.label.toLowerCase()}` : ''}${Object.keys(left).length ? ` · needs ${Object.entries(left).map(([k, n]) => `${Math.ceil(n ?? 0)} ${inputName(k as InputKey)}`).join(', ')}` : ' · building'}` };
+    }
+    case 'longTable': {
+      if (w.feast?.done) return { value: 1, target: 1, label: 'The founders\u2019 feast was a triumph' };
+      const f = feastCheck(w);
+      return { value: Math.min(0.99, Math.min(f.served, m.pop) / m.pop * (f.ok ? 1 : 0.95)), target: 1, label: `${f.served} / ${m.pop} would be served · ${f.seats} seats${f.sulkers ? ` · ${f.sulkers} sulking` : ''}${w.feast?.called ? ' · called for dusk' : ''}` };
+    }
   }
+}
+
+/**
+ * A dry run of the festival: everyone not bedridden comes (sulkers too: it's a party), each takes a meal and a drink,
+ * preferring ones they love and avoiding ones they dislike while anything else is left. Relief is a share of strain.
+ */
+export function festivalPreview(w: World) {
+  const guests = alive(w).filter(c => !bedridden(c));
+  const stock = { ...w.res };
+  let fed = 0, drank = 0, loved = 0;
+  const pickFor = (c: Colonist, goods: ResourceId[]) => [...goods].filter(r => stock[r] >= 1).sort((a, b) => taste(c, b) - taste(c, a) || stock[b] - stock[a])[0];
+  for (const c of guests) {
+    const meal = pickFor(c, MEALS); if (!meal) continue;
+    stock[meal] -= 1; fed++;
+    const drink = pickFor(c, CATEGORIES.drink.members); if (drink) { stock[drink] -= 1; drank++; }
+    if (taste(c, meal) > 0 || (drink && taste(c, drink) > 0)) loved++;
+  }
+  const n = Math.max(1, guests.length), r = START.relief.festival;
+  const share = r.base * (fed / n) + (drank >= n / 2 ? r.drinks : 0) + (loved >= n / 2 ? r.loved : 0) + (hasPerk(w, 'postRider') && fed ? 0.1 : 0);
+  return { guests: guests.length, fed, drank, loved, meals: fed, drinks: drank, share, relief: w.strain * share, wait: Math.max(0, Math.ceil((w.festival?.readyAt ?? 0) - w.hour)) };
+}
+function runFestival(w: World) {
+  const f = w.festival!; f.called = false;
+  const p = festivalPreview(w);
+  const guests = alive(w).filter(c => !bedridden(c));
+  for (const c of guests) {
+    const pickFor = (goods: ResourceId[]) => [...goods].filter(r => w.res[r] >= 1).sort((a, b) => taste(c, b) - taste(c, a) || w.res[b] - w.res[a])[0];
+    const meal = pickFor(MEALS);
+    if (!meal) { addMemory(w, c, 'festival', 'Nothing left for me at the festival', -3, 24); continue; }
+    w.res[meal] -= 1; flow(w, `${meal}:-festival`, 1);
+    const drink = pickFor(CATEGORIES.drink.members);
+    if (drink) { w.res[drink] -= 1; flow(w, `${drink}:-festival`, 1); }
+    const fav = taste(c, meal) > 0 || (!!drink && taste(c, drink) > 0);
+    addMemory(w, c, 'festival', fav ? 'A festival with my favourites' : 'A festival at the hearth', fav ? 8 : 5, 36);
+    c.fun = Math.min(100, c.fun + 40);
+  }
+  reconcileStock(w);
+  w.strain = Math.max(0, w.strain - p.relief);
+  f.readyAt = w.hour + START.relief.festival.waitDays * 24; f.held++;
+  f.last = `${p.fed} of ${p.guests} ate, ${p.drank} had a drink, ${p.loved} got a favourite; strain eased by ${Math.round(p.relief)}`;
+  addLog(w, `The festival: fiddles, stew and dancing badly. ${f.last}.`, 'good');
+}
+
+/** a dry run of the founders' feast: who would come, who would get a meal and a drink they don't dislike */
+export function feastCheck(w: World) {
+  const people = alive(w).filter(c => !bedridden(c));
+  const sulkers = people.filter(c => c.sulking).length;
+  const guests = people.filter(c => !c.sulking);
+  const seats = built(w).reduce((n, b) => n + (bdef(b).seats ?? 0), 0);
+  const stock = { ...w.res };
+  const pickFor = (c: Colonist, goods: ResourceId[]) => [...goods].filter(r => stock[r] >= 1 && taste(c, r) >= 0).sort((a, b) => taste(c, b) - taste(c, a) || stock[b] - stock[a])[0];
+  let served = 0; const hungry: Colonist[] = [];
+  for (const c of guests) {
+    const meal = pickFor(c, MEALS), drink = pickFor(c, CATEGORIES.drink.members);
+    if (meal && drink) { stock[meal] -= 1; stock[drink] -= 1; served++; } else hungry.push(c);
+  }
+  const target = (charterDef(w.charter)?.metric as { pop?: number } | undefined)?.pop ?? 14;
+  const seated = Math.min(served, seats);
+  return { guests: guests.length, sulkers, seats, served: seated, hungry: hungry.length, ok: !sulkers && !hungry.length && seats >= guests.length && served >= target };
+}
+function runFeast(w: World) {
+  const f = w.feast!; f.called = false;
+  const people = alive(w).filter(c => !bedridden(c));
+  const guests = people.filter(c => !c.sulking);
+  const sulkers = people.length - guests.length;
+  const seats = built(w).reduce((n, b) => n + (bdef(b).seats ?? 0), 0);
+  let served = 0, unserved = 0;
+  for (const c of guests) {
+    const pickFor = (goods: ResourceId[]) => [...goods].filter(r => w.res[r] >= 1 && taste(c, r) >= 0).sort((a, b) => taste(c, b) - taste(c, a) || w.res[b] - w.res[a])[0];
+    const meal = pickFor(MEALS), drink = pickFor(CATEGORIES.drink.members);
+    if (meal && drink) {
+      w.res[meal] -= 1; w.res[drink] -= 1; flow(w, `${meal}:-feast`, 1); flow(w, `${drink}:-feast`, 1); served++;
+      addMemory(w, c, 'feast', taste(c, meal) > 0 && taste(c, drink) > 0 ? 'A feast of my favourites' : 'The founders\u2019 feast', taste(c, meal) > 0 && taste(c, drink) > 0 ? 10 : 7, 48);
+    } else { unserved++; addMemory(w, c, 'feast', 'Went without at the feast', -5, 24); }
+  }
+  reconcileStock(w);
+  const target = (charterDef(w.charter)?.metric as { pop?: number } | undefined)?.pop ?? 14;
+  const short: string[] = [];
+  if (sulkers) short.push(`${sulkers} sulked behind the woodpile instead`);
+  if (unserved) short.push(`${unserved} got nothing they would eat and drink`);
+  if (seats < guests.length) short.push(`${guests.length - seats} had to stand`);
+  if (served < target) short.push(`only ${served} of the ${target} the Crown asked for sat down to eat`);
+  if (!short.length) { f.done = true; f.last = 'triumph'; addLog(w, `The founders\u2019 feast: ${served} settlers at one long table, every plate something they like. The Crown\u2019s envoy cries a little.`, 'good'); }
+  else { f.readyAt = w.hour + 72; f.last = short.join('; '); addLog(w, `The founders\u2019 feast fell short: ${short.join('; ')}. Everyone who ate is cheerful, though. It can be called again in three days.`, 'bad'); }
 }
 export function avgBeauty(w: World) { const a = alive(w); return a.length ? a.reduce((s, c) => s + c.beauty, 0) / a.length : 0; }
 export function charterProgress(w: World) {
-  const c = CHARTERS.find(x => x.id === w.charter);
+  const c = charterDef(w.charter);
   if (!c) return null;
   const v = charterValue(w, c);
   return { charter: c, ...v, ratio: Math.min(1, v.value / v.target) };
 }
 function checkCharter(w: World) {
-  const c = CHARTERS.find(x => x.id === w.charter);
+  const c = charterDef(w.charter);
   if (!c || w.status !== 'playing') return;
   const m = c.metric;
-  if (m.kind === 'avgMood' || m.kind === 'contentPop') {
-    if (m.kind === 'contentPop' && alive(w).length < m.pop) w.moodLog = [];
-    else { (w.moodLog ??= []).push(avgMood(w)); if (w.moodLog.length > m.hours) w.moodLog.shift(); }
-  }
-  if (m.kind === 'allTable') w.charterHours = w.ateOffTable ? 0 : w.charterHours + 1;
-  if (m.kind === 'avgBeauty') w.charterHours = avgBeauty(w) >= m.amount ? w.charterHours + 1 : 0;
-  if (m.kind === 'calm') w.charterHours = alive(w).length >= m.pop && !alive(w).some(c => c.sulking) ? w.charterHours + 1 : 0;
+  // every part has its own hold counter; the mood log is shared
+  const holds = (w.charterHolds ??= []);
+  (m.kind === 'all' ? m.parts : [m]).forEach((p, i) => {
+    if (p.kind === 'avgMood') { (w.moodLog ??= []).push(avgMood(w)); if (w.moodLog.length > p.hours) w.moodLog.shift(); }
+    if (p.kind === 'allTable') holds[i] = w.ateOffTable || (p.cooked && w.ateRaw) ? 0 : (holds[i] ?? 0) + 1;
+    if (p.kind === 'healthy') holds[i] = alive(w).some(x => x.illness) ? 0 : (holds[i] ?? 0) + 1;
+  });
   const v = charterValue(w, c);
   if (v.value < v.target) return;
   w.chartersDone.push(c.id); w.charter = null;
   addLog(w, `Charter complete: ${c.name}! The Crown sends a stiffly worded note of approval.`, 'good');
+  // the Crown's approval eases the frontier's wear: a share of current strain, so a colony deep in it climbs back further
+  const eased = ease(w, START.relief.charter);
+  if (eased) addLog(w, `Word of the charter spreads around the hearth. Strain eases by ${eased}.`, 'good');
   if (c.tier === 3) { w.status = 'won'; addLog(w, 'The Crown declares the colony a proper town. Someone makes a banner. It is spelled wrong.', 'good'); return; }
   const perkPool = PERKS.filter(p => !w.perks.includes(p.id)).map(p => p.id);
   w.decisions.push({ kind: 'perk', options: shuffle(w, perkPool).slice(0, 3) });
   w.charterTier = c.tier + 1;
-  w.decisions.push({ kind: 'charter', tier: w.charterTier as 2 | 3, options: shuffle(w, CHARTERS.filter(x => x.tier === w.charterTier)).slice(0, 3).map(x => x.id) });
+  w.decisions.push(charterDecision(w, w.charterTier as 2 | 3));
 }
 
 // ---------- Tick ----------
@@ -1963,6 +2273,22 @@ export function tick(w: World): void {
 
 export function runHours(w: World, hours: number) { for (let i = 0; i < hours * TICKS_PER_HOUR; i++) tick(w); }
 
+/** ease strain by a share of what it is now (boons can add to the share); returns the amount, rounded, for the log */
+function ease(w: World, share: number): number {
+  const s = Math.min(0.9, share + (hasPerk(w, 'postRider') ? 0.1 : 0));
+  const amount = w.strain * s;
+  w.strain = Math.max(0, w.strain - amount);
+  return Math.round(amount);
+}
+
+/** testing: skip the research and recruiting a check isn't about — unlock every researched building and add settlers */
+export function debugGrow(w: World, settlers: number) {
+  for (const r of RESEARCH) { if (!w.research.done.includes(r.id)) w.research.done.push(r.id); for (const id of r.unlocks) if (!w.owned.includes(id)) w.owned.push(id); }
+  const names = new Set(w.colonists.map(c => first(c)));
+  while (alive(w).length < settlers) { const c = makeColonist(w, names); c.joinedDay = day(w); w.colonists.push(c); }
+  w.stats.peakPop = Math.max(w.stats.peakPop, alive(w).length);
+  assignBeds(w);
+}
 /** debugging: start a specific event job or an outbreak right now */
 export function debugEvent(w: World, id: string) {
   if (id === 'flu') return outbreak(w);
