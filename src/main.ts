@@ -41,6 +41,8 @@ async function boot() {
   const flush = () => { if (world.status === 'playing') save(); };
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); });
   window.addEventListener('pagehide', flush);
+  // R turns the blueprint being placed
+  window.addEventListener('keydown', e => { if ((e.key === 'r' || e.key === 'R') && view.placing && !(e.target instanceof HTMLInputElement)) ui.rotatePlacing(); });
 
   let last = performance.now(), uiTimer = 0;
   view.app.ticker.add(() => {

@@ -1,7 +1,9 @@
 // Isometric vector renderer. Reads the world, never changes it.
 import { Application, Container, Graphics, Text } from 'pixi.js';
 import { BUILDING_BY_ID, ResourceId } from '../sim/content';
-import { World, Building, MAP_SIZE, BUILD_MIN, BUILD_MAX, CENTER, alive, hourOfDay, workersAt, bdef, siteWork, canPlace, spotOf, built, terrainAt, T_TREE, T_BUSH, T_WATER, T_APPLE, T_FLOWERS, T_SOIL, T_CLAY } from '../sim/world';
+import { modelFor, MODELS } from './models';
+import { drawModel } from './draw';
+import { World, Building, MAP_SIZE, BUILD_MIN, BUILD_MAX, CENTER, alive, hourOfDay, workersAt, bdef, siteWork, canPlace, spotOf, built, footprint, doorTile, dims, turnPoint, terrainAt, T_TREE, T_BUSH, T_WATER, T_APPLE, T_FLOWERS, T_SOIL, T_CLAY } from '../sim/world';
 
 const TW = 64, TH = 32; // tile width/height in px
 /** world (tile) coordinates to screen; tile (i, j) spans [i, i+1] x [j, j+1] */
@@ -27,7 +29,7 @@ const flat = (...pts: { sx: number; sy: number }[]) => pts.flatMap(p => [p.sx, p
 const up = (p: { sx: number; sy: number }, h: number) => ({ sx: p.sx, sy: p.sy - h });
 
 export interface Picked { kind: 'building' | 'colonist'; id: number }
-export interface Placing { def: string; x: number; y: number }
+export interface Placing { def: string; x: number; y: number; rot?: number }
 
 export class IsoView {
   app = new Application();
@@ -35,6 +37,8 @@ export class IsoView {
   ground = new Graphics();
   pathG = new Graphics();
   ghost = new Graphics();
+  /** the blueprint being placed, drawn over the town so neighbours don't hide it */
+  ghostModel = new Graphics();
   private terrainRef: number[] | null = null;
   private terrainObjs: Graphics[] = [];
   private pathKey = '';
@@ -60,7 +64,7 @@ export class IsoView {
     await this.app.init({ resizeTo: host, background: 0x22301f, antialias: true, autoDensity: true, resolution: Math.min(2, window.devicePixelRatio || 1) });
     host.appendChild(this.app.canvas);
     this.app.stage.addChild(this.camera, this.night);
-    this.camera.addChild(this.ground, this.pathG, this.glow, this.ghost, this.objects, this.labels);
+    this.camera.addChild(this.ground, this.pathG, this.glow, this.ghost, this.objects, this.ghostModel, this.labels);
     this.objects.sortableChildren = true;
     this.center();
     this.bindInput();
@@ -194,45 +198,6 @@ export class IsoView {
     this.objects.addChild(t); this.terrainObjs.push(t);
   }
 
-  /** an isometric box with a hip roof over footprint (x0,y0)-(x1,y1) */
-  private house(g: Graphics, x0: number, y0: number, x1: number, y1: number, wallH: number, wall: number, roof: number, doorCol: number, alpha = 1) {
-    const N = iso(x0, y0), E = iso(x1, y0), S = iso(x1, y1), W = iso(x0, y1);
-    g.poly(flat(W, S, up(S, wallH), up(W, wallH))).fill({ color: shade(wall, 0.96), alpha });
-    g.poly(flat(S, E, up(E, wallH), up(S, wallH))).fill({ color: shade(wall, 0.72), alpha });
-    // door on the front (+y) wall, in the doorway column
-    const d0 = iso(doorCol + 0.28, y1), d1 = iso(doorCol + 0.72, y1);
-    g.poly(flat(d0, d1, up(d1, 17), up(d0, 17))).fill({ color: 0x3a2a1e, alpha });
-    // windows
-    const lit = 0xf2c46a;
-    for (let wx = x0 + 0.35; wx < x1 - 0.5; wx += 1) {
-      if (wx > doorCol - 0.2 && wx < doorCol + 0.9) continue;
-      const a = iso(wx, y1), b = iso(wx + 0.3, y1);
-      g.poly(flat(up(a, 9), up(b, 9), up(b, 17), up(a, 17))).fill({ color: lit, alpha });
-    }
-    for (let wy = y0 + 0.35; wy < y1 - 0.4; wy += 1) {
-      const a = iso(x1, wy), b = iso(x1, wy + 0.3);
-      g.poly(flat(up(a, 9), up(b, 9), up(b, 17), up(a, 17))).fill({ color: shade(lit, 0.8), alpha });
-    }
-    // hip roof with a small overhang
-    const o = 0.14;
-    const rx0 = x0 - o, ry0 = y0 - o, rx1 = x1 + o, ry1 = y1 + o;
-    const rN = up(iso(rx0, ry0), wallH), rE = up(iso(rx1, ry0), wallH), rS = up(iso(rx1, ry1), wallH), rW = up(iso(rx0, ry1), wallH);
-    const w = rx1 - rx0, h = ry1 - ry0, rise = 10 + Math.min(w, h) * 9;
-    if (w >= h) {
-      const cy = (ry0 + ry1) / 2, A = up(iso(rx0 + h / 2, cy), wallH + rise), B = up(iso(rx1 - h / 2, cy), wallH + rise);
-      g.poly(flat(rN, rE, B, A)).fill({ color: shade(roof, 1.12), alpha });
-      g.poly(flat(rW, rN, A)).fill({ color: shade(roof, 1.05), alpha });
-      g.poly(flat(rW, rS, B, A)).fill({ color: roof, alpha });
-      g.poly(flat(rS, rE, B)).fill({ color: shade(roof, 0.76), alpha });
-    } else {
-      const cx = (rx0 + rx1) / 2, A = up(iso(cx, ry0 + w / 2), wallH + rise), B = up(iso(cx, ry1 - w / 2), wallH + rise);
-      g.poly(flat(rN, rW, B, A)).fill({ color: shade(roof, 1.08), alpha });
-      g.poly(flat(rN, rE, A)).fill({ color: shade(roof, 1.12), alpha });
-      g.poly(flat(rE, rS, B, A)).fill({ color: shade(roof, 0.76), alpha });
-      g.poly(flat(rW, rS, B)).fill({ color: roof, alpha });
-    }
-  }
-
   private crates(g: Graphics, x: number, y: number, goods: [ResourceId, number][], max = 9) {
     let i = 0;
     for (const [r, n] of goods) {
@@ -252,9 +217,11 @@ export class IsoView {
     const def = bdef(b);
     const c = new Container();
     const g = new Graphics();
-    const x0 = b.x, y0 = b.y, x1 = b.x + def.w, y1 = b.y + def.h;
-    const ctr = iso(x0 + def.w / 2, y0 + def.h / 2);
-    const doorCol = b.x + Math.floor(def.w / 2);
+    const f = dims(b), rot = b.rot ?? 0;
+    const x0 = b.x, y0 = b.y, x1 = b.x + f.w, y1 = b.y + f.h;
+    const ctr = iso(x0 + f.w / 2, y0 + f.h / 2);
+    /** a point in the blueprint's own footprint, turned onto the map */
+    const at = (u: number, v: number) => { const t = turnPoint(def.id, rot, u, v); return { x: b.x + t.x, y: b.y + t.y }; };
     // ground pad
     for (let x = x0; x < x1; x++) for (let y = y0; y < y1; y++) this.tile(g, x, y, 0x6f6448, 0.55, 0.02);
     if (selected) g.poly(flat(iso(x0, y0), iso(x1, y0), iso(x1, y1), iso(x0, y1))).stroke({ width: 3, color: 0xe8a33d });
@@ -263,7 +230,9 @@ export class IsoView {
       // construction site: outline, delivered materials, scaffold rising with progress
       const p = Math.min(1, b.progress / siteWork(b));
       g.poly(flat(iso(x0, y0), iso(x1, y0), iso(x1, y1), iso(x0, y1))).stroke({ width: 2, color: 0xf1e9d8, alpha: 0.7 });
-      const wallH = (18 + def.height * 22) * p;
+      const done = def.stages ? b.stage ?? 0 : 0;
+      if (done > 0) drawModel(g, modelFor({ def, W: def.w, H: def.h, night: false, busy: false, stage: done }), def.id, b.x, b.y, rot);
+      const wallH = (18 + def.height * 22) * (def.stages ? Math.max(p, done / def.stages.length) : p);
       if (def.id !== 'stockpile' && p > 0) {
         const N = iso(x0, y0), E = iso(x1, y0), S = iso(x1, y1), W = iso(x0, y1);
         g.poly(flat(W, S, up(S, wallH), up(W, wallH))).fill({ color: def.wall, alpha: 0.75 });
@@ -275,7 +244,7 @@ export class IsoView {
       this.crates(g, x0 + 0.1, y1 - 0.65, goods, 3);
       c.addChild(g);
       const label = this.makeLabel(`${def.name} · ${Math.round(p * 100)}%`, 0xe8c58a);
-      const lp = iso(x0 + def.w / 2, y1 + 0.2); label.position.set(lp.sx, lp.sy);
+      const lp = iso(x0 + f.w / 2, y1 + 0.2); label.position.set(lp.sx, lp.sy);
       c.zIndex = ctr.sy;
       return { c, label };
     }
@@ -298,27 +267,26 @@ export class IsoView {
       this.crates(g, x0 + 0.2, y0 + 0.2, goods, 9);
       c.addChild(g); c.zIndex = ctr.sy - 10;
       const label = this.makeLabel(def.name);
-      const lp = iso(x0 + def.w / 2, y1 + 0.15); label.position.set(lp.sx, lp.sy);
+      const lp = iso(x0 + f.w / 2, y1 + 0.15); label.position.set(lp.sx, lp.sy);
       return { c, label };
     }
-    if (def.decor) { this.drawDecor(g, def.id, x0 + 0.5, y0 + 0.5); c.addChild(g); c.zIndex = ctr.sy; return { c }; }
-    const wallH = 18 + def.height * 22;
+    if (def.decor && !MODELS[def.id]) { this.drawDecor(g, def.id, x0 + 0.5, y0 + 0.5); c.addChild(g); c.zIndex = ctr.sy; return { c }; }
     // shadow
     g.poly(flat(iso(x0 + 0.2, y0 + 0.3), iso(x1 + 0.45, y0 + 0.3), iso(x1 + 0.45, y1 + 0.35), iso(x0 + 0.2, y1 + 0.35))).fill({ color: 0x000000, alpha: 0.16 });
-    this.house(g, x0, y0, x1, y1, wallH, def.wall, def.roof, doorCol);
-    if (def.id === 'woodcutter' || def.id === 'sawmill') { const p = iso(x1 + 0.1, y1 - 0.6); g.rect(p.sx, p.sy - 6, 16, 5).fill(0x8a6038); g.rect(p.sx + 2, p.sy - 11, 14, 5).fill(0x9a7044); }
-    if (def.id === 'dock') { const a = iso(x1, y0 + 0.5), b = iso(x1 + 1.2, y0 + 0.5), c2 = iso(x1 + 1.2, y0 + 1.5), d = iso(x1, y0 + 1.5); g.poly(flat(a, b, c2, d)).fill(0x7a5a3c); this.tile(g, x1 + 1, y0, 0x3d6f8a, 0.9); this.tile(g, x1 + 1, y0 + 1, 0x3d6f8a, 0.9); this.tile(g, x1 + 1, y0 + 2, 0x3d6f8a, 0.9); }
-    if (['kitchen', 'smokehouse', 'pieoven', 'brewery', 'tavern'].includes(def.id)) { const p = up(iso(x0 + def.w * 0.7, y0 + 0.5), wallH + 14); g.rect(p.sx - 3, p.sy - 18, 7, 20).fill(0x5a5048); }
-    if (def.id === 'clinic') { const p = up(iso(x0 + 0.5, y1), wallH - 4); g.rect(p.sx - 8, p.sy - 8, 16, 16).fill(0xf4f1e8); g.rect(p.sx - 2.5, p.sy - 6, 5, 12).fill(0xc23a3a); g.rect(p.sx - 6, p.sy - 2.5, 12, 5).fill(0xc23a3a); }
-    if (def.seats && b.clean < 35) { for (let i = 0; i < 4; i++) { const p = iso(x0 + 0.4 + i * 0.6, y1 + 0.25); g.ellipse(p.sx, p.sy, 5, 2.5).fill({ color: 0x4a3a20, alpha: 0.7 }); } }
+    const h = hourOfDay(w);
+    const water = (u: number, v: number) => { const p = at(u, v); return terrainAt(w, Math.floor(p.x), Math.floor(p.y)) === T_WATER; };
+    drawModel(g, modelFor({ def, W: def.w, H: def.h, night: h >= 19 || h < 6, busy: workersAt(w, b.uid).length > 0, stage: 3, water }), def.id, b.x, b.y, rot);
+    if (def.seats && b.clean < 35) { for (let i = 0; i < 4; i++) { const p = iso(at(0.4 + i * 0.4, def.h + 0.25).x, at(0.4 + i * 0.4, def.h + 0.25).y); g.ellipse(p.sx, p.sy, 5, 2.5).fill({ color: 0x4a3a20, alpha: 0.7 }); } }
     // finished goods waiting by the door
     const out = (Object.entries(b.outbox) as [ResourceId, number][]).filter(([, n]) => n >= 2);
-    if (out.length) this.crates(g, x1 - 0.1, y1 - 0.5, out.map(([r, n]) => [r, n * 2]), 2);
+    // goods sit just outside the front corners: finished ones on the right of the door, ingredients on the left
+    const outAt = at(def.w + 0.15, def.h + 0.15), inAt = at(-0.15, def.h + 0.15);
+    if (out.length) this.crates(g, outAt.x - 0.4, outAt.y - 0.4, out.map(([r, n]) => [r, n * 2]), 2);
     const inn = (Object.entries(b.inbox) as [ResourceId, number][]).filter(([, n]) => n >= 2);
-    if (inn.length) this.crates(g, x0 - 0.55, y1 - 0.5, inn.map(([r, n]) => [r, n * 2]), 2);
+    if (inn.length) this.crates(g, inAt.x - 0.4, inAt.y - 0.4, inn.map(([r, n]) => [r, n * 2]), 2);
     c.addChild(g);
     const label = this.makeLabel(def.name);
-    const lp = iso(x0 + def.w / 2, y1 + 0.25); label.position.set(lp.sx, lp.sy);
+    const lp = iso(x0 + f.w / 2, y1 + 0.25); label.position.set(lp.sx, lp.sy);
     c.zIndex = ctr.sy;
     return { c, label };
   }
@@ -391,15 +359,16 @@ export class IsoView {
   }
 
   private drawGhost(w: World) {
-    const g = this.ghost; g.clear();
+    const g = this.ghost; g.clear(); this.ghostModel.clear();
     if (!this.placing) return;
     const def = BUILDING_BY_ID[this.placing.def];
-    const { x, y } = this.placing;
-    const ok = canPlace(w, def.id, x, y).ok;
+    const { x, y } = this.placing, rot = this.placing.rot ?? 0, f = footprint(def.id, rot);
+    const ok = canPlace(w, def.id, x, y, rot).ok;
     const col = ok ? 0x8ccf6f : 0xe0694a;
-    for (let tx = x; tx < x + def.w; tx++) for (let ty = y; ty < y + def.h; ty++) this.tile(g, tx, ty, col, 0.38, 0.03);
-    g.poly(flat(iso(x, y), iso(x + def.w, y), iso(x + def.w, y + def.h), iso(x, y + def.h))).stroke({ width: 2.5, color: col });
-    if (!def.walkable) { const dx = x + Math.floor(def.w / 2), dy = y + def.h; this.tile(g, dx, dy, 0xf1e9d8, 0.3, 0.18); }
+    for (let tx = x; tx < x + f.w; tx++) for (let ty = y; ty < y + f.h; ty++) this.tile(g, tx, ty, col, 0.38, 0.03);
+    g.poly(flat(iso(x, y), iso(x + f.w, y), iso(x + f.w, y + f.h), iso(x, y + f.h))).stroke({ width: 2.5, color: col });
+    if (!def.walkable && !def.decor) { const d = doorTile(def.id, x, y, rot); this.tile(g, d.x, d.y, 0xf1e9d8, 0.3, 0.18); }
+    if (!def.walkable && !def.decor && def.id !== 'hearth') drawModel(this.ghostModel, modelFor({ def, W: def.w, H: def.h, night: false, busy: false, stage: 3 }), def.id, x, y, rot, 0.62);
     // the other doorways, so the player can see what not to block
     for (const b of w.buildings) if (!bdef(b).walkable) { const s = spotOf(b); this.tile(g, Math.floor(s.x), Math.floor(s.y), 0xf1e9d8, 0.12, 0.25); }
   }
@@ -500,8 +469,8 @@ export class IsoView {
     const p = this.screenToWorld(cx, cy);
     if (this.pathMode) { this.onPathTap(Math.floor(p.x), Math.floor(p.y)); return; }
     if (this.placing) {
-      const def = BUILDING_BY_ID[this.placing.def];
-      this.placing = { ...this.placing, x: Math.round(p.x - def.w / 2), y: Math.round(p.y - def.h / 2) };
+      const f = footprint(this.placing.def, this.placing.rot ?? 0);
+      this.placing = { ...this.placing, x: Math.round(p.x - f.w / 2), y: Math.round(p.y - f.h / 2) };
       this.onPlaceMove(this.placing);
       return;
     }
@@ -516,7 +485,7 @@ export class IsoView {
       // test the ground point, and a point lower on screen to catch taps on roofs
       for (const off of [0, 28, 50]) {
         const g = unIso(p.sx, p.sy + off);
-        const hit = [...w.buildings].reverse().find(b => g.x >= b.x && g.x < b.x + bdef(b).w && g.y >= b.y && g.y < b.y + bdef(b).h);
+        const hit = [...w.buildings].reverse().find(b => g.x >= b.x && g.x < b.x + dims(b).w && g.y >= b.y && g.y < b.y + dims(b).h);
         if (hit) { best = { kind: 'building', id: hit.uid }; break; }
       }
     }
