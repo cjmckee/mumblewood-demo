@@ -26,6 +26,8 @@ if (process.env.START_DAY) START.seasons.start.day = Number(process.env.START_DA
 if (process.env.HARSH) START.seasons.harsh = Number(process.env.HARSH);
 if (process.env.HARSH_YIELD) START.seasons.harshYield = Number(process.env.HARSH_YIELD);
 if (process.env.INDOOR_WINTER) START.seasons.indoor.winter = Number(process.env.INDOOR_WINTER);
+if (process.env.STRICTER_FROM) START.seasons.stricterFromYear = Number(process.env.STRICTER_FROM);
+if (process.env.SUMMER_WORK) START.seasons.work.summer = process.env.SUMMER_WORK.split('-').map(Number) as [number, number];
 if (process.env.RECRUIT_WINTER) START.seasons.recruitEvery.winter = Number(process.env.RECRUIT_WINTER);
 if (process.env.RECRUIT_SPRING) START.seasons.recruitEvery.spring = Number(process.env.RECRUIT_SPRING);
 if (process.env.COMFORTS_FIRST) BOT.comfortsFirst = process.env.COMFORTS_FIRST === '1';

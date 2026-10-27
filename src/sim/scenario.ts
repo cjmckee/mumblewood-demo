@@ -78,6 +78,8 @@ export interface SeasonRules {
   /** what a sensible colony puts by for winter (the bot's and the foreman's target): it starts `from` days before
    *  winter and is complete `full` days before; `share` of a winter's food and wood, the rest is gathered as it goes */
   prep: { from: number; full: number; share: number };
+  /** from this year of the run on, every comfort need asks a little more (0 = never) */
+  stricterFromYear: number;
   /** mood when winter comes, for having held a harvest festival in autumn or not */
   harvestHome: { held: number; missed: number; hours: number };
 }
@@ -100,29 +102,30 @@ export const START: Start = {
   seasons: {
     days: 10,
     start: { season: 'summer', day: 6 },
-    work: { spring: [6, 18], summer: [5, 19], autumn: [6, 18], winter: [7, 17] },
-    build: { spring: 0.8, winter: 0.75 },
-    offPath: { spring: 0.8, winter: 0.7 },
+    work: { spring: [6, 18], summer: [5, 18], autumn: [6, 18], winter: [7, 18] },
+    build: { spring: 0.85, winter: 0.85 },
+    offPath: { spring: 0.85, winter: 0.85 },
     spoil: { summer: 1.25, autumn: 1.5, winter: 0.4 },
     yield: {
-      forager: { spring: 0.8, summer: 1.25, winter: 0.5 },
-      herbgarden: { spring: 0.8, winter: 0.3 },
+      forager: { spring: 0.8, summer: 1.25, winter: 0.75 },
+      herbgarden: { spring: 0.8, winter: 0.5 },
       orchard: { spring: 0.4, autumn: 1.5, winter: 0 },
       field: { spring: 0.4, autumn: 1.5, winter: 0 },
       apiary: { spring: 0.8, summer: 1.25, winter: 0 },
       cellar: { autumn: 1.5 },
-      dock: { spring: 1.25, winter: 0.75 },
+      dock: { spring: 1.25 },
       claypit: { winter: 0.5 },
     },
-    harshYield: 0.85,
+    harshYield: 0.9,
     indoor: {},
     hearth: {},
-    homeFuel: { leanto: 1, cottage: 0.6 },
-    harsh: 1.5,
-    recruitEvery: { spring: 1, summer: 2, autumn: 2, winter: 0 },
-    chill: { cold: 0.06, warm: 0.01 },
+    homeFuel: { leanto: 0.7, cottage: 0.4 },
+    harsh: 1.25,
+    recruitEvery: { spring: 1, summer: 2, autumn: 2, winter: 3 },
+    chill: { cold: 0.04, warm: 0.005 },
     prep: { from: 10, full: 3, share: 0.65 },
+    stricterFromYear: 0,
     harvestHome: { held: 4, missed: -4, hours: 96 },
   },
-  intro: ['Three settlers arrive at the edge of the Mumblewood with a cart, a kettle, a stack of borrowed books and great optimism.', 'Nobody knows how to build a kitchen yet. A research desk would be a start.', 'It\u2019s late summer. Winter comes in about two weeks, and nothing grows then.'],
+  intro: ['Three settlers arrive at the edge of the Mumblewood with a cart, a kettle, a stack of borrowed books and great optimism.', 'Nobody knows how to build a kitchen yet. A research desk would be a start.', 'It\u2019s late summer. Winter comes in about two weeks, and then the fields and orchards sleep.'],
 };

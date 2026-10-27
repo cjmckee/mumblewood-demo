@@ -1943,7 +1943,7 @@ const FRESH: ResourceId[] = ['berries', 'apples', 'fish', 'skewers'];
 /** distinct meals eaten in the last few days */
 const mealKinds = (w: World, c: Colonist, hours: number) => new Set((c.ate ?? []).filter(a => a.h >= w.hour - hours && MEALS.includes(a.r)).map(a => a.r)).size;
 export function comfortParts(w: World, c: Colonist, standing = standingOf(w)): Partial<Record<NeedKey, number>> {
-  const later = seasonOf(w).year >= 2;
+  const later = START.seasons.stricterFromYear > 0 && seasonOf(w).year >= START.seasons.stricterFromYear;
   const bed = buildingByUid(w, c.bed);
   const cozy = !!bed && bdef(bed).bedQuality === 'cozy';
   const m = c.lastMeal;
@@ -2050,7 +2050,7 @@ function seasonDawn(w: World) {
       spring: 'Spring. The snow goes, the mud arrives, and the fish are running. Travellers will be on the road again.',
       summer: 'Summer. Long days, ripe berries, and everyone wants a cold drink.',
       autumn: `Autumn. The harvest is in, food spoils faster, and winter is ${sc.days} days off. Lay in wood, and hold a harvest festival before the snow.`,
-      winter: s.winter >= 2 ? 'Winter, and a harder one than last. Nothing grows, every home burns wood, and the cold gets into people.' : 'Winter. Nothing grows, every home burns wood, and the cold gets into people.',
+      winter: s.winter >= 2 ? 'Winter, and a harder one than last. The fields and orchards sleep, foraging is thin, every home burns wood, and the cold gets into people.' : 'Winter. The fields and orchards sleep, foraging is thin, every home burns wood, and the cold gets into people.',
     };
     addLog(w, lines[s.season], s.season === 'winter' ? 'bad' : 'neutral');
     if (s.season === 'winter') {
