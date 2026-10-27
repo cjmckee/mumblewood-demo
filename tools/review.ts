@@ -43,7 +43,7 @@ function quality(w: World) {
 }
 
 for (let i = 0; i < runs; i++) {
-  const w = createWorld(base + i * 7919, 'normal');
+  const w = createWorld(base + i * 7919);
   const story: string[] = [];
   const say = (s: string) => story.push(`  d${day(w)} ${String(Math.round(hourOfDay(w))).padStart(2, '0')}h  ${s}`);
   let knownUids = new Set(w.buildings.map(b => b.uid));

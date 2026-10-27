@@ -1,6 +1,6 @@
 // Checks the multi-recipe engine on a building given two recipes: preference by stars, fallback, toggles.
 // Usage: npx tsx tools/recipes-check.ts
-import { createWorld, apply, runHours, findSpot, currentRecipe, blockedReason, reconcileStock, workersAt, alive, World } from '../src/sim/world';
+import { createWorld, debugGrow, apply, runHours, findSpot, currentRecipe, blockedReason, reconcileStock, workersAt, alive, World } from '../src/sim/world';
 import { BUILDING_BY_ID } from '../src/sim/content';
 
 let failed = 0;
@@ -11,7 +11,8 @@ BUILDING_BY_ID.kitchen.recipes = [
   { inputs: { rawFood: 1.5 }, output: 'stew', stars: 2 },
   { inputs: { fish: 1.2 }, output: 'smokedFish', stars: 3 },
 ];
-const w: World = createWorld(4242, 'normal');
+const w: World = createWorld(4242);
+debugGrow(w, 6);
 while (w.decisions.length) apply(w, { type: 'resolve', option: 0 });
 const spot = findSpot(w, 'kitchen')!;
 check(apply(w, { type: 'place', def: 'kitchen', x: spot.x, y: spot.y }) === null, 'placed a kitchen');

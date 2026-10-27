@@ -8,7 +8,7 @@ const runs = Number(process.argv[2] ?? 2);
 const base = Number(process.argv[3] ?? 31000);
 const days = (process.argv[4] ?? '4,8,12,16,20').split(',').map(Number);
 for (let i = 0; i < runs; i++) {
-  const w = createWorld(base + i * 7919, 'normal');
+  const w = createWorld(base + i * 7919);
   console.log(`\n=== run ${i} (seed ${base + i * 7919})`);
   while (w.status === 'playing' && day(w) <= Math.max(...days)) {
     autoDecide(w); for (let t = 0; t < TICKS_PER_HOUR; t++) { tick(w); autoDecide(w); } autoBuild(w);

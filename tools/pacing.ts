@@ -1,13 +1,11 @@
-// Pacing probe for a scenario: when each charter is picked and finished, how research goes, and how population and
-// strain grow. Targets for the frontier start: charter 1 by day 10-16, charter 2 by day 28-36, a win by day 50-60.
-// Usage: SCENARIO=frontier npx tsx tools/pacing.ts [runs=60] [maxDays=80]   (VERBOSE=1 prints every run)
+// Pacing probe: when each charter is picked and finished, how research goes, and how population and
+// strain grow. Targets: charter 1 by day 10-16, charter 2 by day 28-36, a win by day 50-60.
+// Usage: npx tsx tools/pacing.ts [runs=60] [maxDays=90]   (VERBOSE=1 prints every run)
 import { createWorld, tick, day, alive, avgMood, TICKS_PER_HOUR, World, charterDef } from '../src/sim/world';
 import { autoDecide, autoBuild } from '../src/sim/autoplayer';
-import { envScenario } from '../src/sim/scenario';
 
 const runs = Number(process.argv[2] ?? 60);
-const maxDays = Number(process.argv[3] ?? 80);
-const scenario = envScenario();
+const maxDays = Number(process.argv[3] ?? 90);
 const marks = [5, 10, 20, 30, 40, 50, 60];
 
 interface Run {
@@ -18,7 +16,7 @@ interface Run {
 const out: Run[] = [];
 for (let i = 0; i < runs; i++) {
   const seed = 1000 + i * 7919;
-  const w: World = createWorld(seed, 'normal', scenario);
+  const w: World = createWorld(seed);
   let r = seed;
   const rand = () => ((r = (r * 1103515245 + 12345) >>> 0) / 4294967296);
   const run: Run = { seed, status: 'timeout', day: 0, peak: 0, lost: 0, deaths: 0, offered: null, picks: [], dones: [], research: [], pop: {}, strain: {}, mood: {} };
@@ -48,7 +46,7 @@ const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.le
 const med = (xs: number[]) => { if (!xs.length) return NaN; const s = [...xs].sort((a, b) => a - b); return s[Math.floor(s.length / 2)]; };
 const pct = (n: number) => `${Math.round((n / runs) * 100)}%`;
 const f1 = (n: number) => (Number.isNaN(n) ? '–' : n.toFixed(1));
-console.log(`scenario=${scenario} runs=${runs} maxDays=${maxDays}`);
+console.log(`runs=${runs} maxDays=${maxDays}`);
 for (const s of ['won', 'lost', 'timeout']) { const g = out.filter(x => x.status === s); console.log(`${s.padEnd(8)} ${pct(g.length).padStart(4)}  median day ${f1(med(g.map(x => x.day)))}  peak pop ${f1(avg(g.map(x => x.peak)))}`); }
 console.log(`first charter offered: median day ${f1(med(out.map(x => x.offered ?? NaN).filter(x => !Number.isNaN(x))))}`);
 for (let t = 0; t < 3; t++) {

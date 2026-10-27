@@ -3,11 +3,11 @@ import { BUILDINGS, membersOf, BUILDING_BY_ID, EVENTS, RESEARCH_BY_ID, JOB_NAMES
 import {
   World, Command, Colonist, alive, avgMood, beds, buildingByUid, charterProgress, colonistById,
   day, hourOfDay, opinion, workersAt, MAX_DEPARTURES, sites, siteWork, remainingCost, storageCap, stored,
-  keepsFresh, findSpot, canPlace, laborers, centerOf, built, Building, efficiencyAt, pathAt, MAP_SIZE, blockedReason, Errand, Difficulty, patientsAt, lost, bedridden, spoilingFood, accepts, roomIn, FOODS, GOODS,
+  keepsFresh, findSpot, canPlace, laborers, centerOf, built, Building, efficiencyAt, pathAt, MAP_SIZE, blockedReason, Errand, patientsAt, lost, bedridden, spoilingFood, accepts, roomIn, FOODS, GOODS,
   recipesOf, recipeOn, currentRecipe, siteOk, rerollCost, REROLL_STEP, stockOf, recipeReach, charterHelpers, charterDef,
   costOf, researchLeft, researchStillNeeds, desks, feastCheck,
 } from '../sim/world';
-import { scenarioOf, SCENARIOS } from '../sim/scenario';
+import { START } from '../sim/scenario';
 import { assess } from '../sim/advisor';
 import { economy, Account } from '../sim/economy';
 import type { IsoView, Picked } from '../render/iso';
@@ -85,9 +85,9 @@ export class UI {
   speed = 1;
   private lastHud = ''; private lastSheet = ''; private lastModal = '';
   onSpeed: (s: number) => void = () => {};
-  onRestart: (d: Difficulty, scenario: string) => void = () => {};
+  onRestart: () => void = () => {};
   /** run history from this browser, shown on the end screen */
-  profile: { runs: { result: string; day: number; charters: number; difficulty: string }[] } = { runs: [] };
+  profile: { runs: { result: string; day: number; charters: number }[] } = { runs: [] };
   private picking: number | null = null; // errand id whose colonist picker is open
 
   constructor(private root: HTMLElement, private getWorld: () => World, private send: (c: Command) => string | null, private view: IsoView) {
@@ -162,7 +162,7 @@ export class UI {
       case 'auto': this.send({ type: 'autoAssign' }); this.toast('The foreman has reassigned everyone.'); break;
       case 'resolve': this.send({ type: 'resolve', option: Number(arg) }); this.lastModal = ''; break;
       case 'reroll': { const err = this.send({ type: 'reroll' }); if (err) this.toast(err); this.lastModal = ''; break; }
-      case 'restart': { const [d, sc] = (arg || 'normal').split(':'); this.onRestart(d as Difficulty, sc || this.getWorld().scenario || 'classic'); break; }
+      case 'restart': this.onRestart(); break;
       case 'desk': { const b = desks(w)[0]; if (b) { this.detail = { kind: 'building', id: b.uid }; this.tab = 'build'; this.open = true; this.view.selected = { kind: 'building', id: b.uid }; } break; }
       case 'feast': { const err = this.send({ type: 'callFeast' }); this.toast(err ?? 'The feast is called. Everyone sits down at dusk.'); break; }
       case 'errand-open': this.picking = Number(arg); break;
@@ -190,7 +190,7 @@ export class UI {
     const h = hourOfDay(w);
     const hh = String(Math.floor(h)).padStart(2, '0');
     const prog = charterProgress(w);
-    const sc = scenarioOf(w);
+    const sc = START;
     const pips = Array.from({ length: sc.collapse.lost }, (_, i) => `<i class="pip${i < lost(w) ? ' on' : ''}"></i>`).join('');
     const r = w.research, cur = r?.current ? RESEARCH_BY_ID[r.current] : undefined;
     const studying = cur ? (Object.keys(researchStillNeeds(w)).length ? 'waiting on goods' : desks(w).some(b => workersAt(w, b.uid).length) ? `${Math.floor((r!.progress / cur.hours) * 100)}%` : 'nobody at the desk') : '';
@@ -219,7 +219,7 @@ export class UI {
         <div class="charter">
           ${prog ? `<div class="ch-top"><span class="ch-name">${esc(prog.charter.name)}</span><span class="ch-tier">Charter ${w.chartersDone.length + 1} of 3</span></div>
           <div class="meter"><i style="width:${(prog.ratio * 100).toFixed(1)}%"></i></div>
-          <div class="ch-label">${esc(prog.label)}</div>${feastBtn}` : `<div class="ch-top"><span class="ch-name">${w.status === 'won' ? 'Town charter granted' : w.research && !w.charterOffered ? 'The Crown is watching' : 'Awaiting a charter'}</span></div>${w.research && !w.charterOffered ? `<div class="ch-label">The first charter arrives on the morning of day ${(sc.firstCharter as { day: number }).day}.</div>` : ''}`}
+          <div class="ch-label">${esc(prog.label)}</div>${feastBtn}` : `<div class="ch-top"><span class="ch-name">${w.status === 'won' ? 'Town charter granted' : w.research && !w.charterOffered ? 'The Crown is watching' : 'Awaiting a charter'}</span></div>${w.research && !w.charterOffered ? `<div class="ch-label">The first charter arrives on the morning of day ${sc.firstCharterDay}.</div>` : ''}`}
           ${researchChip}
         </div>
         <div class="threats">
@@ -548,22 +548,14 @@ export class UI {
     const s = w.stats;
     return `<div class="card-wrap end ${won ? 'won' : 'lost'}"><p class="eyebrow">${won ? 'Victory' : 'The colony collapsed'}</p>
       <h2>${won ? 'Mumblewood is a town' : 'The kettle remains'}</h2>
-      <p class="lede">${won ? 'All three charters complete.' : `Too many settlers were lost.`} You lasted ${day(w)} day${day(w) === 1 ? '' : 's'} on ${w.difficulty[0].toUpperCase() + w.difficulty.slice(1)}.</p>
+      <p class="lede">${won ? 'All three charters complete.' : `Too many settlers were lost.`} You lasted ${day(w)} day${day(w) === 1 ? '' : 's'}.</p>
       <dl class="stats"><div><dt>Charters</dt><dd>${w.chartersDone.length} / 3</dd></div><div><dt>Peak population</dt><dd>${s.peakPop}</dd></div>
       <div><dt>Couples formed</dt><dd>${s.couples}</dd></div><div><dt>Breakups</dt><dd>${s.breakups}</dd></div>
       <div><dt>Left the colony</dt><dd>${s.departures}</dd></div><div><dt>Died</dt><dd>${s.deaths}</dd></div><div><dt>Meals eaten</dt><dd>${s.mealsEaten}</dd></div>
       <div><dt>Errands done</dt><dd>${s.errands}</dd></div><div><dt>Recoveries</dt><dd>${s.cured}</dd></div></dl>
       ${this.ledger()}
-      <h3>Start a new colony</h3>
-      <div class="diffs">
-        ${Object.values(SCENARIOS).map(x => `<button type="button" class="opt" data-act="restart" data-arg="normal:${x.id}"><b>${esc(x.name)}</b><span>${esc(x.blurb)}</span></button>`).join('')}
-      </div>
-      <p class="muted">Difficulty for the next run:</p>
-      <div class="diffs">
-        <button type="button" class="opt" data-act="restart" data-arg="gentle"><b>Gentle</b><span>Strain grows about a third slower.</span></button>
-        <button type="button" class="opt" data-act="restart" data-arg="normal"><b>Normal</b><span>The frontier as intended.</span></button>
-        <button type="button" class="opt" data-act="restart" data-arg="harsh"><b>Harsh</b><span>Strain grows half again as fast.</span></button>
-      </div></div>`;
+      <button type="button" class="opt restart" data-act="restart"><b>Start a new colony</b><span>Three settlers, a cart, a kettle and a fresh patch of the Mumblewood.</span></button>
+    </div>`;
   }
 
   private ledger() {

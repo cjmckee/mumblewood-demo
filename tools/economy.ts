@@ -10,7 +10,7 @@ const base = Number(process.argv[3] ?? 52000);
 type Row = { day: number; pop: number; lab: number; busy: number; foodNet: number; foodStock: number; woodNet: number; woodStock: number; chopped: number; gathered: number; eaten: number; planks: number; mood: number; workers: number };
 const runsData: { status: string; rows: Row[] }[] = [];
 for (let i = 0; i < runs; i++) {
-  const w = createWorld(base + i * 7919, 'normal');
+  const w = createWorld(base + i * 7919);
   const rows: Row[] = [];
   while (w.status === 'playing' && day(w) <= 40) {
     autoDecide(w); for (let t = 0; t < TICKS_PER_HOUR; t++) { tick(w); autoDecide(w); } autoBuild(w);

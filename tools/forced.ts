@@ -16,9 +16,9 @@ for (const ch of CHARTERS.filter(c => !only || c.id === only)) {
   const days: number[] = []; let reached = 0, done = 0, hours = 0;
   const issues: Record<string, number> = {};
   for (let i = 0; i < runs; i++) {
-    const w = createWorld(5000 + i * 7919, 'normal');
+    const w = createWorld(5000 + i * 7919);
     let since = -1;
-    while (w.status === 'playing' && day(w) <= 50) {
+    while (w.status === 'playing' && day(w) <= 90) {
       const force = () => { for (const d of w.decisions) if (d.kind === 'charter' && d.tier === ch.tier) d.options = [ch.id]; };
       force(); autoDecide(w);
       for (let t = 0; t < TICKS_PER_HOUR; t++) { tick(w); force(); autoDecide(w); }

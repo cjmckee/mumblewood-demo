@@ -1,5 +1,5 @@
 // Headless balance harness: plays N seeded runs with the auto-player and reports outcomes.
-// Usage: npx tsx tools/harness.ts [runs=200] [maxDays=60] [style=greedy|random]
+// Usage: npx tsx tools/harness.ts [runs=200] [maxDays=90] [style=greedy|random]
 import { createWorld, tick, day, alive, avgMood, TICKS_PER_HOUR, World } from '../src/sim/world';
 import { autoDecide, autoBuild, BOT } from '../src/sim/autoplayer';
 if (process.env.BOT_ADVISOR) BOT.advisor = process.env.BOT_ADVISOR === '1';
@@ -8,15 +8,14 @@ if (process.env.BOT_VARIETY) BOT.variety = process.env.BOT_VARIETY === '1';
 if (process.env.BOT_ROUTES) BOT.routes = process.env.BOT_ROUTES === '1';
 
 const runs = Number(process.argv[2] ?? 200);
-const maxDays = Number(process.argv[3] ?? 60);
+const maxDays = Number(process.argv[3] ?? 90);
 const style = (process.argv[4] ?? 'greedy') as 'greedy' | 'random';
-const difficulty = (process.argv[5] ?? 'normal') as 'gentle' | 'normal' | 'harsh';
 
 interface Result { seed: number; status: string; day: number; pop: number; peak: number; charters: number; breakups: number; departures: number; cured: number; errands: number; moodByDay: number[] }
 const results: Result[] = [];
 for (let i = 0; i < runs; i++) {
   const seed = 1000 + i * 7919;
-  const w: World = createWorld(seed, difficulty);
+  const w: World = createWorld(seed);
   let r = seed;
   const rand = () => ((r = (r * 1103515245 + 12345) >>> 0) / 4294967296);
   const moodByDay: number[] = [];

@@ -1,10 +1,9 @@
-// Day-by-day trace of one bot run in any scenario: people, stock, jobs, research and charter progress.
-// Usage: SCENARIO=frontier npx tsx tools/trace.ts [seed=1000] [days=40]
+// Day-by-day trace of one bot run: people, stock, jobs, research and charter progress.
+// Usage: npx tsx tools/trace.ts [seed=1000] [days=40]
 import { createWorld, tick, day, alive, avgMood, TICKS_PER_HOUR, World, built, workersAt, bdef, beds, charterProgress, stockOf, mealTotal, drinkTotal, laborers } from '../src/sim/world';
 import { autoDecide, autoBuild } from '../src/sim/autoplayer';
-import { envScenario } from '../src/sim/scenario';
 const seed = Number(process.argv[2] ?? 1000), days = Number(process.argv[3] ?? 40);
-const w: World = createWorld(seed, 'normal', envScenario());
+const w: World = createWorld(seed);
 let r = seed; const rand = () => ((r = (r * 1103515245 + 12345) >>> 0) / 4294967296);
 let logN = 0;
 while (w.status === 'playing' && day(w) <= days) {

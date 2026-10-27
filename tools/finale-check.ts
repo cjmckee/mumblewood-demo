@@ -1,4 +1,4 @@
-// Forced checks for the frontier start and its finales, without the bot's judgement in the way.
+// Forced checks for the start and the finales, without the bot's judgement in the way.
 // Usage: npx tsx tools/finale-check.ts
 import { createWorld, apply, runHours, findSpot, World, alive, built, desks, workersAt, charterProgress, feastCheck, costOf, laborers, day } from '../src/sim/world';
 import { BUILDING_BY_ID, MEALS } from '../src/sim/content';
@@ -8,9 +8,9 @@ const ok = (cond: boolean, msg: string) => { console.log(`${cond ? 'ok  ' : 'FAI
 const clear = (w: World) => { for (let i = 0; i < 50 && w.decisions.length; i++) apply(w, { type: 'resolve', option: 0 }); };
 const untilHour = (w: World, h: number, each: () => void = () => {}) => { for (let i = 0; i < 48 && Math.round(w.hour) % 24 !== h; i++) { each(); runHours(w, 1); clear(w); } };
 
-// ---- the frontier start ----
+// ---- the start ----
 {
-  const w = createWorld(77, 'normal', 'frontier');
+  const w = createWorld(77);
   ok(alive(w).length === 3, `3 settlers (got ${alive(w).length})`);
   ok(w.decisions.length === 0, 'no decisions at the start: no research offer, charter or draft yet');
   ok(!w.buildings.some(b => b.def === 'desk') && w.owned.includes('desk'), 'there is no research desk yet, but one can be built');
@@ -38,7 +38,7 @@ const untilHour = (w: World, h: number, each: () => void = () => {}) => { for (l
 
 // ---- first charter timing and drafts waiting for it ----
 {
-  const w = createWorld(78, 'normal', 'frontier');
+  const w = createWorld(78);
   let sawBlueprint = false, charterDay = 0, charterHour = 0;
   for (let h = 0; h < 24 * 5 && !charterDay; h++) {
     runHours(w, 1);
@@ -54,20 +54,17 @@ const untilHour = (w: World, h: number, each: () => void = () => {}) => { for (l
 
 // ---- strain grows with population ----
 {
-  const small = createWorld(79, 'normal', 'frontier');
+  const small = createWorld(79);
   for (let h = 0; h < 24 * 10; h++) { clear(small); for (const d of small.decisions) void d; runHours(small, 1); }
   // recruits are offered every other day; option 0 takes one, so the colony grows a little
   ok(day(small) >= 10, `ten days passed (day ${day(small)}, ${alive(small).length} settlers)`);
   const expect = 0.03 * alive(small).length * 10 * 1.1;
   ok(small.strain > 0.5 && small.strain < expect * 1.6, `strain after 10 days follows population, not the calendar (${small.strain.toFixed(2)}, about ${expect.toFixed(1)} expected)`);
-  const classic = createWorld(79, 'normal', 'classic');
-  for (let h = 0; h < 24 * 10; h++) { clear(classic); runHours(classic, 1); }
-  ok(classic.strain > small.strain * 2, `classic strain on day 10 is much higher (${classic.strain.toFixed(1)})`);
 }
 
 // ---- the Crown's Hall ----
 {
-  const w = createWorld(80, 'normal', 'frontier'); clear(w);
+  const w = createWorld(80); clear(w);
   w.charter = 'hall'; w.charterHolds = []; w.owned.push('hall');
   const spot = findSpot(w, 'hall', 16, 16, true)!;
   ok(!apply(w, { type: 'place', def: 'hall', x: spot.x, y: spot.y }), 'the Hall can be placed');
@@ -88,7 +85,7 @@ const untilHour = (w: World, h: number, each: () => void = () => {}) => { for (l
 
 // ---- the Long Table ----
 {
-  const w = createWorld(81, 'normal', 'frontier'); clear(w);
+  const w = createWorld(81); clear(w);
   w.charter = 'longtable';
   ok(apply(w, { type: 'callFeast' }) === null, 'the feast can be called');
   ok(apply(w, { type: 'callFeast' }) !== null, 'calling it twice is refused');
@@ -98,9 +95,9 @@ const untilHour = (w: World, h: number, each: () => void = () => {}) => { for (l
   ok(!w.feast!.done && w.feast!.readyAt > w.hour + 60, `a feast with 3 settlers falls short and waits 3 days (${w.feast!.last})`);
   ok(apply(w, { type: 'callFeast' }) !== null, 'it can’t be called again right away');
   // a full table: 14 settlers, seats, two kinds of meal and drink
-  const w2 = createWorld(82, 'normal', 'frontier'); clear(w2);
+  const w2 = createWorld(82); clear(w2);
   w2.charter = 'longtable';
-  const donor = createWorld(83, 'normal', 'classic');
+  const donor = createWorld(83);
   let n = 0;
   while (alive(w2).length < 14) { const c = { ...structuredClone(donor.colonists[n % donor.colonists.length]), id: 1000 + n, partner: null, job: null, bed: null }; w2.colonists.push(c); n++; }
   for (const id of ['dining', 'dining', 'dining']) { w2.owned.push('dining'); const s = findSpot(w2, id, 16, 16, true)!; apply(w2, { type: 'place', def: id, x: s.x, y: s.y }); }
@@ -115,7 +112,7 @@ const untilHour = (w: World, h: number, each: () => void = () => {}) => { for (l
   ok(!!w2.feast!.done, `the feast succeeds (${w2.feast!.last})`);
   ok(w2.status === 'won' || w2.chartersDone.includes('longtable'), `the Long Table charter completes (status ${w2.status})`);
   // tastes matter: with one drink, the people who dislike it go without
-  const w3 = createWorld(82, 'normal', 'frontier'); clear(w3); w3.charter = 'longtable';
+  const w3 = createWorld(82); clear(w3); w3.charter = 'longtable';
   w3.res.cider = 50; w3.res.stew = 50; w3.res.pie = 50;
   alive(w3)[0].tastes = { loves: ['pie', 'ale'], dislikes: ['stew', 'cider'] };
   for (const c of alive(w3).slice(1)) c.tastes = { loves: ['pie', 'cider'], dislikes: ['stew', 'mead'] };

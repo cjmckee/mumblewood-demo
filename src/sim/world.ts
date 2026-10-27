@@ -1,11 +1,11 @@
 // Deterministic colony simulation. No DOM, no rendering: runs in the browser and in Node.
 import {
-  BUILDING_BY_ID, BuildingDef, CHARTERS, CharterDef, EVENTS, FIRST_NAMES, JOB_NAMES, JobKind,
+  BUILDING_BY_ID, BuildingDef, CHARTERS, CharterDef, EVENTS, FIRST_NAMES, JOB_NAMES, JobKind, JOB_KINDS,
   MEALS, PERKS, RAW_FOODS, ResourceId, SHIRTS, SKINS, SURNAMES, TRAITS, TRAIT_BY_ID, BUILDINGS, buildWork,
   JOB_EVENTS, JobEventDef, ILLNESSES, RESOURCES, Recipe, InputKey, CATEGORIES, isCategory, membersOf, inputName, recipeRate, SITES, SiteId, MEAL_MOOD,
-  ALL_CHARTERS, CharterMetric, RESEARCH_BY_ID,
+  CharterMetric, RESEARCH, RESEARCH_BY_ID,
 } from './content';
-import { scenarioOf, envScenario, SCENARIOS } from './scenario';
+import { START } from './scenario';
 
 // ---------- RNG ----------
 export function nextRand(w: { rngState: number }): number {
@@ -34,8 +34,6 @@ export interface Errand {
   skill?: JobKind; x: number; y: number;
   assignee: number | null; pair?: [number, number];
 }
-export type Difficulty = 'gentle' | 'normal' | 'harsh';
-export const DIFFICULTY_STRAIN: Record<Difficulty, number> = { gentle: 0.65, normal: 1, harsh: 1.5 };
 export type Task =
   | { kind: 'deliver'; site: number; res: ResourceId; amount: number; via?: number }
   | { kind: 'haul'; from: number; res: ResourceId; amount: number; via?: number; /** moving it out of storage that no longer takes it */ restock?: boolean }
@@ -121,15 +119,12 @@ export interface World {
   status: 'playing' | 'won' | 'lost';
   strain: number; nextEventHour: number;
   errands: Errand[]; nextErrandId: number;
-  /** stats when the current charter began, for "since" charters */
-  charterBase: { cured: number; errands: number };
   /** hourly average mood since the charter began (last 24 kept), for the mood charters */
   moodLog: number[];
   /** someone ate without a table this hour */
   ateOffTable: boolean;
   /** foods colonists are not allowed to eat (kept for charters, feasts and trade) */
   forbidden: ResourceId[];
-  difficulty: Difficulty;
   /** the resource sites this map has (an apple grove, a meadow, good soil) */
   sites: SiteId[];
   /** blueprint rerolls used this run; each one costs more */
@@ -142,13 +137,11 @@ export interface World {
   flowLog: Record<string, number>[];
   stats: { peakPop: number; couples: number; breakups: number; departures: number; mealsEaten: number; built: number; cured: number; errands: number; deaths: number };
   version: number; // bumps when buildings change shape or state, for the renderer
-  /** how the run started (see scenario.ts); missing means classic */
-  scenario?: string;
   /** research: projects finished, the one under way and its progress in work-hours */
-  research?: { done: string[]; current: string | null; progress: number };
-  /** the first charter has been offered (scenarios that hold it back) */
+  research: { done: string[]; current: string | null; progress: number };
+  /** the first charter has been offered */
   charterOffered?: boolean;
-  /** the day blueprint drafts started, in scenarios that wait for the first charter */
+  /** the day blueprint drafts started: they wait for the first charter */
   draftsFrom?: number | null;
   /** hours each hold-type condition of an all-at-once charter has held */
   charterHolds?: number[];
@@ -164,9 +157,8 @@ export const BUILD_MIN = 2, BUILD_MAX = MAP_SIZE - 3;
 /** The colony collapses when this many settlers have left. */
 export const MAX_DEPARTURES = 6;
 /** Workshops won't burn the last of the wood. */
-export const WOOD_RESERVE = 20;
-/** this run's reserve: the classic 20, or a smaller one for a small colony's smaller fire */
-export const woodReserve = (w: World) => scenarioOf(w).woodReserve;
+/** wood left in storage for the hearth: workshops and the research desk won't take it */
+export const woodReserve = (_w: World) => START.woodReserve;
 export const CARRY = 15;
 /** a blueprint draft and a recruit draft each come this many days apart */
 export const DRAFT_EVERY = 2;
@@ -609,7 +601,7 @@ function makeColonist(w: World, usedNames: Set<string>): Colonist {
     if (t.group && traits.some(x => TRAIT_BY_ID[x].group === t.group)) continue;
     traits.push(t.id);
   }
-  const jobs = scenarioOf(w).jobs;
+  const jobs = JOB_KINDS;
   const likes = pick(w, jobs);
   let dislikes = pick(w, jobs);
   while (dislikes === likes) dislikes = pick(w, jobs);
@@ -637,8 +629,8 @@ function newBuilding(w: World, def: string, x: number, y: number, isBuilt: boole
   return b;
 }
 
-export function createWorld(seed: number, difficulty: Difficulty = 'normal', scenario: string = envScenario()): World {
-  const sc = SCENARIOS[scenario] ?? SCENARIOS.classic;
+export function createWorld(seed: number): World {
+  const sc = START;
   const w: World = {
     seed, rngState: seed >>> 0, hour: 6,
     colonists: [], buildings: [], terrain: [], paths: [],
@@ -646,16 +638,12 @@ export function createWorld(seed: number, difficulty: Difficulty = 'normal', sce
     owned: [...sc.unlocked], perks: [],
     charterTier: 1, charter: null, charterHours: 0, chartersDone: [],
     decisions: [], log: [], opinions: {}, status: 'playing', strain: 0, nextEventHour: 24 * 1.6, sites: [], rerolls: 0,
-    errands: [], nextErrandId: 1, difficulty, charterBase: { cured: 0, errands: 0 }, moodLog: [], ateOffTable: false, forbidden: [],
+    errands: [], nextErrandId: 1, moodLog: [], ateOffTable: false, forbidden: [],
     nextUid: 1, nextColonistId: 1, autoAssignNew: false,
     flows: {}, flowLog: [],
     stats: { peakPop: sc.colonists, couples: 0, breakups: 0, departures: 0, mealsEaten: 0, built: 0, cured: 0, errands: 0, deaths: 0 },
-    version: 0,
+    version: 0, research: { done: [], current: null, progress: 0 },
   };
-  if (sc.id !== 'classic') {
-    w.scenario = sc.id;
-    if (sc.research.length) w.research = { done: [], current: null, progress: 0 };
-  }
   for (let i = 0; i < 20; i++) nextRand(w);
   genTerrain(w);
   addLog(w, `Scouts report ${w.sites.map(id => SITES.find(x => x.id === id)!.name).join(' and ')} nearby.`, 'good');
@@ -676,8 +664,6 @@ export function createWorld(seed: number, difficulty: Difficulty = 'normal', sce
   autoAssign(w);
   addLog(w, sc.intro[0], 'good');
   if (sc.intro[1]) addLog(w, sc.intro[1], 'neutral');
-  if (sc.firstCharter === 'start') { w.decisions.push(charterDecision(w, 1)); w.charterOffered = sc.id === 'classic' ? undefined : true; }
-  if (!sc.draftsAfterCharter) w.decisions.push(blueprintDecision(w));
   return w;
 }
 
@@ -702,28 +688,19 @@ function assignBeds(w: World) {
   }
 }
 
-/** Buildings that help each charter. A draft always offers one of these if none is owned yet. */
-export const CHARTER_HELPERS: Record<string, string[]> = {
-  pantry: ['pieoven', 'smokehouse', 'dock'], feast: ['brewery', 'ciderpress', 'pieoven', 'smokehouse'],
-  lumber: ['sawmill'], township: ['sawmill', 'dock'], growing: ['cottage', 'cellar'], boomtown: ['cottage', 'cellar'],
-  cheer: ['tavern', 'stage', 'cottage', 'bathhouse', 'pieoven'], harmony: ['tavern', 'stage', 'cottage', 'bathhouse'],
-  lovebirds: ['tavern', 'stage'],
-  woodpile: ['sawmill'], paved: ['sawmill'], tables: ['cottage'], healthy: ['apothecary', 'bathhouse'], menu: ['smokehouse', 'pieoven', 'bakery'], tasting: ['ciderpress', 'apothecary', 'brewery'], handy: ['cottage'],
-  pretty: ['stage', 'sawmill'], masters: ['tavern'], pieday: ['pieoven', 'sawmill'], garden: ['sawmill', 'stage'], calm: ['tavern', 'bathhouse', 'stage'],
-};
-/** blueprints that help a charter: the classic table, or what a frontier charter lists */
-export const charterHelpers = (id: string | null) => (id ? CHARTER_HELPERS[id] ?? ALL_CHARTERS.find(c => c.id === id)?.helpers ?? [] : []);
-export const charterDef = (id: string | null) => (id ? ALL_CHARTERS.find(c => c.id === id) : undefined);
-/** a charter offer: this scenario's charters of the tier, on maps that have the sites they need */
+/** blueprints that help a charter; a draft always offers one while the colony owns fewer than two */
+export const charterHelpers = (id: string | null) => (id ? CHARTERS.find(c => c.id === id)?.helpers ?? [] : []);
+export const charterDef = (id: string | null) => (id ? CHARTERS.find(c => c.id === id) : undefined);
+/** a charter offer: charters of the tier, on maps that have the sites they need */
 function charterDecision(w: World, tier: 1 | 2 | 3): Decision {
-  const pool = scenarioOf(w).charters.filter(c => c.tier === tier && (!c.sites || c.sites.every(x => w.sites.includes(x))));
+  const pool = CHARTERS.filter(c => c.tier === tier && (!c.sites || c.sites.every(x => w.sites.includes(x))));
   return { kind: 'charter', tier, options: shuffle(w, pool).slice(0, 3).map(c => c.id) };
 }
 
 // ---------- Research ----------
 export const desks = (w: World) => built(w).filter(b => b.def === 'desk');
 /** projects not yet done */
-export const researchLeft = (w: World) => scenarioOf(w).research.filter(r => !w.research?.done.includes(r.id));
+export const researchLeft = (w: World) => RESEARCH.filter(r => !w.research.done.includes(r.id));
 function researchDecision(w: World, fixed?: string[]): Decision {
   const left = researchLeft(w).map(r => r.id);
   const options = fixed?.length ? fixed.filter(id => left.includes(id)) : shuffle(w, left).slice(0, 3);
@@ -818,9 +795,9 @@ function blueprintDecision(w: World, avoid: string[] = []): Decision {
   const options = [...shuffle(w, fresh), ...shuffle(w, all.filter(id => avoid.includes(id)))].slice(0, 3);
   const usable = (id: string) => usableHere(w, id);
   const helpers = charterHelpers(w.charter).filter(id => pool.includes(id) && usable(id));
-  // a frontier charter's route usually takes two of its helpers (a dock and a smokehouse), so the guarantee holds until two are owned
+  // a charter's route usually takes two of its helpers (a dock and a smokehouse), so the guarantee holds until two are owned
   const ownedHelpers = charterHelpers(w.charter).filter(id => w.owned.includes(id) && usable(id)).length;
-  const ownsHelper = charterDef(w.charter)?.helpers && !CHARTER_HELPERS[w.charter ?? ''] ? ownedHelpers >= Math.min(2, charterHelpers(w.charter).length) : ownedHelpers > 0;
+  const ownsHelper = ownedHelpers >= Math.min(2, charterHelpers(w.charter).length);
   if (helpers.length && !ownsHelper && !options.some(o => helpers.includes(o))) options[options.length - 1] = pick(w, helpers);
   return { kind: 'blueprint', options };
 }
@@ -971,8 +948,7 @@ function resolveDecision(w: World, option: number): string | null {
     case 'charter': {
       const id = d.options[option] ?? d.options[0];
       w.charter = id; w.charterHours = 0;
-      w.charterBase = { cured: w.stats.cured, errands: w.stats.errands }; w.moodLog = [];
-      if (w.scenario) w.charterHolds = [];
+      w.moodLog = []; w.charterHolds = [];
       const next = w.decisions[0];
       if (next?.kind === 'blueprint') w.decisions[0] = blueprintDecision(w);
       const def = charterDef(id)!;
@@ -980,7 +956,7 @@ function resolveDecision(w: World, option: number): string | null {
       // a monument charter hands over its blueprint
       for (const m of def.metric.kind === 'all' ? def.metric.parts : [def.metric]) if (m.kind === 'monument' && !w.owned.includes(m.def)) { w.owned.push(m.def); addLog(w, `The Crown sends plans for ${BUILDING_BY_ID[m.def].name}. Find it a good spot.`, 'good'); }
       // drafts that wait for the first charter start now, with an offer that knows what the charter needs
-      if (scenarioOf(w).draftsAfterCharter && w.draftsFrom == null) { w.draftsFrom = day(w); w.decisions.push(blueprintDecision(w)); }
+      if (w.draftsFrom == null) { w.draftsFrom = day(w); w.decisions.push(blueprintDecision(w)); }
       break;
     }
     case 'research': {
@@ -1642,7 +1618,7 @@ function completeBuilding(w: World, b: Building) {
   if (def.slots && w.autoAssignNew) fillSlots(w);
   // research starts once there's somewhere to study: the first desk brings the first offer
   if (def.id === 'desk' && w.research && !w.research.current && !w.decisions.some(d => d.kind === 'research') && researchLeft(w).length) {
-    w.decisions.push(researchDecision(w, w.research.done.length ? undefined : scenarioOf(w).firstResearch));
+    w.decisions.push(researchDecision(w, w.research.done.length ? undefined : START.firstResearch));
   }
   // a finished building replaces any planned path under it
   for (let x = b.x; x < b.x + def.w; x++) for (let y = b.y; y < b.y + def.h; y++) if (!def.walkable) w.paths[y * MAP_SIZE + x] = 0;
@@ -1854,14 +1830,13 @@ function hourly(w: World) {
   const h = Math.round(hourOfDay(w)) % 24;
   const pop = alive(w).length;
   const d = day(w) - 1 + (hourOfDay(w) - 6) / 24;
-  const sc = scenarioOf(w);
-  if (sc.strain === 'classic') w.strain = Math.max(0, (d * 0.6 + d * d * 0.02) * DIFFICULTY_STRAIN[w.difficulty] * (hasPerk(w, 'ironWill') ? 0.75 : 1) + Math.max(0, pop - 8) * 0.5);
+  const sc = START;
   // strain builds up with every person the frontier has to wear down, faster as the run goes on; it never goes back down
-  else w.strain += sc.strain.perPerson * pop * (1 + Math.max(0, d) / sc.strain.rampDays) / 24 * DIFFICULTY_STRAIN[w.difficulty] * (hasPerk(w, 'ironWill') ? 0.75 : 1);
+  w.strain += sc.strain.perPerson * pop * (1 + Math.max(0, d) / sc.strain.rampDays) / 24 * (hasPerk(w, 'ironWill') ? 0.75 : 1);
 
   if (h >= 18 || h < 6) {
     const hb = sc.hearth;
-    const burn = (hasPerk(w, 'warmHearth') ? 0.5 : 1) * (hb === 'flat' ? 1 : Math.min(1, hb.base + hb.perPerson * pop));
+    const burn = (hasPerk(w, 'warmHearth') ? 0.5 : 1) * Math.min(1, hb.base + hb.perPerson * pop);
     if (w.res.wood >= burn) { w.res.wood -= burn; flow(w, 'wood:-hearth', burn); }
     else everyone(w, 'cold', 'The hearth went cold', -5, 12);
   }
@@ -1928,8 +1903,8 @@ function hourly(w: World) {
   checkCharter(w);
   w.ateOffTable = false;
   if (h === 6) dawn(w);
-  // scenarios that hold the first charter back offer it once some research is done, or on a set day
-  if (sc.firstCharter !== 'start' && !w.charterOffered && day(w) >= sc.firstCharter.day && h >= 6) {
+  // the first charter comes on the morning of day 2
+  if (!w.charterOffered && day(w) >= sc.firstCharterDay && h >= 6) {
     w.charterOffered = true; w.decisions.push(charterDecision(w, 1));
   }
   if (w.hour >= w.nextEventHour && h >= 8 && h <= 20) triggerEvent(w);
@@ -1971,8 +1946,8 @@ function leave(w: World, c: Colonist, carted = false) {
 
 function dawn(w: World) {
   const d = day(w);
-  if (scenarioOf(w).draftsAfterCharter) { if (w.draftsFrom != null && d > w.draftsFrom && (d - w.draftsFrom) % DRAFT_EVERY === 0) w.decisions.push(blueprintDecision(w)); }
-  else if (d % DRAFT_EVERY === 1 % DRAFT_EVERY && d > 1) w.decisions.push(blueprintDecision(w));
+  // blueprint drafts every other day once the first charter is picked
+  if (w.draftsFrom != null && d > w.draftsFrom && (d - w.draftsFrom) % DRAFT_EVERY === 0) w.decisions.push(blueprintDecision(w));
   if (d % DRAFT_EVERY === 0) {
     const names = new Set(w.colonists.map(c => first(c)));
     const opts = [0, 1, 2].map(() => makeColonist(w, names));
@@ -1983,7 +1958,7 @@ function dawn(w: World) {
 
 function triggerEvent(w: World) {
   const roll = nextRand(w);
-  const ob = scenarioOf(w).outbreakFrom;
+  const ob = START.outbreakFrom;
   if (roll < 0.18 && day(w) >= ob.day && alive(w).length >= ob.pop) outbreak(w);
   else if (roll < 0.6) {
     const jobs = shuffle(w, JOB_EVENTS.filter(j => j.id !== 'remedy'));
@@ -1996,41 +1971,23 @@ function triggerEvent(w: World) {
   w.nextEventHour = w.hour + gap * 24;
 }
 
-function charterValue(w: World, c: CharterDef): { value: number; target: number; label: string } { return metricValue(w, c.metric, -1); }
-/** hours a hold-type condition has held: the charter's own counter, or a part's slot in an all-at-once charter */
-const holdOf = (w: World, slot: number) => (slot < 0 ? w.charterHours : w.charterHolds?.[slot] ?? 0);
+function charterValue(w: World, c: CharterDef): { value: number; target: number; label: string } { return metricValue(w, c.metric, 0); }
+/** hours a hold-type condition (a full day with every meal at a table, a full day with nobody sick) has held */
+const holdOf = (w: World, slot: number) => w.charterHolds?.[Math.max(0, slot)] ?? 0;
 function metricValue(w: World, m: CharterMetric, slot: number): { value: number; target: number; label: string } {
   const held = holdOf(w, slot);
   switch (m.kind) {
     case 'stock': { const v = m.resources.reduce((n, r) => n + w.res[r], 0); return { value: v, target: m.amount, label: `${Math.floor(v)} / ${m.amount} in storage` }; }
     case 'population': { const v = alive(w).length; return { value: v, target: m.amount, label: `${v} / ${m.amount} colonists` }; }
-    case 'buildings': { const v = built(w).filter(b => !bdef(b).decor).length; return { value: v, target: m.amount, label: `${v} / ${m.amount} buildings finished` }; }
-    case 'couples': { const v = couples(w); return { value: v, target: m.amount, label: `${v} / ${m.amount} couples` }; }
-    case 'avgMood': case 'contentPop': {
+    case 'avgMood': {
       // judged on the average over the last full day, so the dip before breakfast doesn't reset everything
-      const target = m.kind === 'avgMood' ? m.amount : m.mood;
       const log = w.moodLog ?? [];
       const avg = log.length ? log.reduce((a, b) => a + b, 0) / log.length : avgMood(w);
       const full = log.length >= m.hours;
-      const pop = m.kind === 'contentPop' ? `${alive(w).length}/${m.pop} colonists · ` : '';
-      const value = full && avg >= target ? 1 : Math.min(0.99, (avg / target) * Math.min(1, log.length / m.hours));
-      return { value, target: 1, label: `${pop}24h average ${Math.round(avg)} / ${target}${full ? '' : ` · ${m.hours - log.length}h to go`}` };
-    }
-    case 'feast': {
-      const meals = mealTotal(w), ale = drinkTotal(w);
-      return { value: Math.min(meals / m.meals, ale / m.ale), target: 1, label: `${Math.floor(meals)}/${m.meals} meals · ${Math.floor(ale)}/${m.ale} drinks` };
-    }
-    case 'paths': { const v = w.paths.filter(p => p === 2).length; return { value: v, target: m.amount, label: `${v} / ${m.amount} path tiles laid` }; }
-    case 'decorPaths': {
-      const d = built(w).filter(b => bdef(b).decor).length, p = w.paths.filter(x => x === 2).length;
-      return { value: Math.min(d / m.decor, p / m.paths), target: 1, label: `${d}/${m.decor} decorations · ${p}/${m.paths} paths` };
+      const value = full && avg >= m.amount ? 1 : Math.min(0.99, (avg / m.amount) * Math.min(1, log.length / m.hours));
+      return { value, target: 1, label: `24h average ${Math.round(avg)} / ${m.amount}${full ? '' : ` · ${m.hours - log.length}h to go`}` };
     }
     case 'allTable': return { value: held, target: m.hours, label: `${held}h / ${m.hours}h with every meal at a table` };
-    case 'curedSince': { const v = w.stats.cured - w.charterBase.cured; return { value: v, target: m.amount, label: `${v} / ${m.amount} recovered` }; }
-    case 'errandsSince': { const v = w.stats.errands - w.charterBase.errands; return { value: v, target: m.amount, label: `${v} / ${m.amount} urgent jobs done` }; }
-    case 'avgBeauty': return { value: held, target: m.hours, label: `beauty ${avgBeauty(w).toFixed(1)} · ${held}h / ${m.hours}h` };
-    case 'skilled': { const v = alive(w).filter(c => Object.values(c.skills).some(x => x >= m.level)).length; return { value: v, target: m.count, label: `${v} / ${m.count} colonists at skill ${m.level}+` }; }
-    case 'calm': return { value: held, target: m.hours, label: `${alive(w).length}/${m.pop} colonists · ${held}h / ${m.hours}h without sulking` };
     case 'variety': {
       // the best `kinds` goods of the category, each counted up to `each`
       const best = CATEGORIES[m.category].members.map(r => Math.min(m.each, Math.floor(w.res[r]))).sort((a, b) => b - a).slice(0, m.kinds);
@@ -2116,22 +2073,13 @@ function checkCharter(w: World) {
   const c = charterDef(w.charter);
   if (!c || w.status !== 'playing') return;
   const m = c.metric;
-  if (m.kind === 'all') {
-    // every part has its own hold counter; the mood log is shared
-    const holds = (w.charterHolds ??= []);
-    m.parts.forEach((p, i) => {
-      if (p.kind === 'avgMood') { (w.moodLog ??= []).push(avgMood(w)); if (w.moodLog.length > p.hours) w.moodLog.shift(); }
-      if (p.kind === 'allTable') holds[i] = w.ateOffTable ? 0 : (holds[i] ?? 0) + 1;
-      if (p.kind === 'healthy') holds[i] = alive(w).some(x => x.illness) ? 0 : (holds[i] ?? 0) + 1;
-    });
-  }
-  if (m.kind === 'avgMood' || m.kind === 'contentPop') {
-    if (m.kind === 'contentPop' && alive(w).length < m.pop) w.moodLog = [];
-    else { (w.moodLog ??= []).push(avgMood(w)); if (w.moodLog.length > m.hours) w.moodLog.shift(); }
-  }
-  if (m.kind === 'allTable') w.charterHours = w.ateOffTable ? 0 : w.charterHours + 1;
-  if (m.kind === 'avgBeauty') w.charterHours = avgBeauty(w) >= m.amount ? w.charterHours + 1 : 0;
-  if (m.kind === 'calm') w.charterHours = alive(w).length >= m.pop && !alive(w).some(c => c.sulking) ? w.charterHours + 1 : 0;
+  // every part has its own hold counter; the mood log is shared
+  const holds = (w.charterHolds ??= []);
+  (m.kind === 'all' ? m.parts : [m]).forEach((p, i) => {
+    if (p.kind === 'avgMood') { (w.moodLog ??= []).push(avgMood(w)); if (w.moodLog.length > p.hours) w.moodLog.shift(); }
+    if (p.kind === 'allTable') holds[i] = w.ateOffTable ? 0 : (holds[i] ?? 0) + 1;
+    if (p.kind === 'healthy') holds[i] = alive(w).some(x => x.illness) ? 0 : (holds[i] ?? 0) + 1;
+  });
   const v = charterValue(w, c);
   if (v.value < v.target) return;
   w.chartersDone.push(c.id); w.charter = null;
@@ -2189,6 +2137,14 @@ export function tick(w: World): void {
 
 export function runHours(w: World, hours: number) { for (let i = 0; i < hours * TICKS_PER_HOUR; i++) tick(w); }
 
+/** testing: skip the research and recruiting a check isn't about — unlock every researched building and add settlers */
+export function debugGrow(w: World, settlers: number) {
+  for (const r of RESEARCH) { if (!w.research.done.includes(r.id)) w.research.done.push(r.id); for (const id of r.unlocks) if (!w.owned.includes(id)) w.owned.push(id); }
+  const names = new Set(w.colonists.map(c => first(c)));
+  while (alive(w).length < settlers) { const c = makeColonist(w, names); c.joinedDay = day(w); w.colonists.push(c); }
+  w.stats.peakPop = Math.max(w.stats.peakPop, alive(w).length);
+  assignBeds(w);
+}
 /** debugging: start a specific event job or an outbreak right now */
 export function debugEvent(w: World, id: string) {
   if (id === 'flu') return outbreak(w);

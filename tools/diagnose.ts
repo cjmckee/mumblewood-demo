@@ -1,10 +1,10 @@
 // Bot diagnostics: plays seeded runs, checks the colony every in-game hour for known problems,
 // and reports how often each one happens, overall and per charter.
 // Usage:
-//   npx tsx tools/diagnose.ts [runs=100] [difficulty=normal]     aggregate report
+//   npx tsx tools/diagnose.ts [runs=100]     aggregate report
 //   npx tsx tools/diagnose.ts trace <seedIndex> [days=20]         day-by-day status of one run
 import {
-  createWorld, tick, day, hourOfDay, alive, TICKS_PER_HOUR, World, Difficulty, built, sites, workersAt, laborers,
+  createWorld, tick, day, hourOfDay, alive, TICKS_PER_HOUR, World, built, sites, workersAt, laborers,
   mealTotal, charterProgress, avgMood, bdef, lost,
 } from '../src/sim/world';
 import { RAW_FOODS } from '../src/sim/content';
@@ -13,7 +13,7 @@ import { autoDecide, autoBuild } from '../src/sim/autoplayer';
 import { ISSUES } from './issues';
 
 function play(w: World, hourHook?: (w: World) => void) {
-  while (w.status === 'playing' && day(w) <= 50) {
+  while (w.status === 'playing' && day(w) <= 90) {
     autoDecide(w);
     for (let t = 0; t < TICKS_PER_HOUR; t++) { tick(w); autoDecide(w); }
     autoBuild(w);
@@ -21,13 +21,13 @@ function play(w: World, hourHook?: (w: World) => void) {
   }
 }
 
-function aggregate(runs: number, difficulty: Difficulty) {
+function aggregate(runs: number) {
   const hours: Record<string, number> = {}; let total = 0;
   const byCharter: Record<string, { hours: number; issues: Record<string, number> }> = {};
   let won = 0;
   const unstaffed: Record<string, [number, number]> = {};
   for (let i = 0; i < runs; i++) {
-    const w = createWorld(1000 + i * 7919, difficulty);
+    const w = createWorld(1000 + i * 7919);
     play(w, w2 => {
       if (hourOfDay(w2) < 6 || hourOfDay(w2) >= 22) return;
       total++;
@@ -38,7 +38,7 @@ function aggregate(runs: number, difficulty: Difficulty) {
     });
     if (w.status === 'won') won++;
   }
-  console.log(`${runs} runs on ${difficulty}, won ${Math.round(won / runs * 100)}%. Share of waking hours each problem was present:`);
+  console.log(`${runs} runs, won ${Math.round(won / runs * 100)}%. Share of waking hours each problem was present:`);
   for (const [k, v] of Object.entries(hours).sort((a, b) => b[1] - a[1])) console.log(`  ${String(Math.round(v / total * 100)).padStart(3)}%  ${k}`);
   console.log('Buildings most often completely unstaffed (share of hours they existed):');
   for (const [k, v] of Object.entries(unstaffed).sort((a, b) => b[1][0] / b[1][1] - a[1][0] / a[1][1]).slice(0, 8)) console.log(`  ${String(Math.round(v[0] / v[1] * 100)).padStart(3)}%  ${k}`);
@@ -50,7 +50,7 @@ function aggregate(runs: number, difficulty: Difficulty) {
 }
 
 function trace(index: number, days: number) {
-  const w = createWorld(1000 + index * 7919, 'normal');
+  const w = createWorld(1000 + index * 7919);
   let lastDay = 0;
   const seen: Record<string, number> = {};
   play(w, w2 => {
@@ -69,4 +69,4 @@ function trace(index: number, days: number) {
 }
 
 if (process.argv[2] === 'trace') trace(Number(process.argv[3] ?? 0), Number(process.argv[4] ?? 20));
-else aggregate(Number(process.argv[2] ?? 100), (process.argv[3] ?? 'normal') as Difficulty);
+else aggregate(Number(process.argv[2] ?? 100));

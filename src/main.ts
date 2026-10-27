@@ -1,5 +1,4 @@
-import { createWorld, tick, apply, runHours, TICKS_PER_HOUR, World, Command, day, Difficulty, debugEvent } from './sim/world';
-import { DEFAULT_SCENARIO, SCENARIOS } from './sim/scenario';
+import { createWorld, tick, apply, runHours, TICKS_PER_HOUR, World, Command, day, debugEvent } from './sim/world';
 import { IsoView } from './render/iso';
 import { UI } from './ui/ui';
 import { autoDecide, autoBuild } from './sim/autoplayer';
@@ -12,24 +11,21 @@ async function boot() {
   const view = new IsoView();
   await view.init(document.getElementById('stage')!);
   // a small profile kept in this browser: run history now, unlocks later
-  const PROFILE_KEY = 'mumblewood.profile.v1';
-  type Profile = { runs: { result: string; day: number; charters: number; difficulty: string; scenario?: string; at: string }[]; unlocks: string[]; lastDifficulty: Difficulty; lastScenario?: string };
-  let profile: Profile = { runs: [], unlocks: [], lastDifficulty: 'normal', lastScenario: DEFAULT_SCENARIO };
+  // v2: runs from the old six-settler start aren't comparable, so the run history starts fresh
+  const PROFILE_KEY = 'mumblewood.profile.v2';
+  type Profile = { runs: { result: string; day: number; charters: number; at: string }[]; unlocks: string[] };
+  let profile: Profile = { runs: [], unlocks: [] };
   try { const raw = localStorage.getItem(PROFILE_KEY); if (raw) profile = { ...profile, ...JSON.parse(raw) }; } catch { /* storage unavailable */ }
   const saveProfile = () => { try { localStorage.setItem(PROFILE_KEY, JSON.stringify(profile)); } catch { /* storage unavailable */ } };
-  // ?scenario=classic in the address picks a start; otherwise the last one played, or the frontier start
-  const urlScenario = new URLSearchParams(location.search).get('scenario');
-  const startScenario = () => (urlScenario && SCENARIOS[urlScenario] ? urlScenario : profile.lastScenario && SCENARIOS[profile.lastScenario] ? profile.lastScenario : DEFAULT_SCENARIO);
-  let world: World = createWorld((Date.now() ^ (Math.random() * 1e9)) >>> 0, profile.lastDifficulty, startScenario());
+  let world: World = createWorld((Date.now() ^ (Math.random() * 1e9)) >>> 0);
   let recorded = false;
   let speed = 1, acc = 0;
   const send = (c: Command) => apply(world, c);
   const ui = new UI(root, () => world, send, view);
   ui.onSpeed = s => (speed = s);
   ui.profile = profile;
-  ui.onRestart = (d: Difficulty, scenario: string) => {
-    profile.lastDifficulty = d; profile.lastScenario = scenario; saveProfile();
-    world = createWorld((Date.now() ^ (Math.random() * 1e9)) >>> 0, d, scenario); recorded = false;
+  ui.onRestart = () => {
+    world = createWorld((Date.now() ^ (Math.random() * 1e9)) >>> 0); recorded = false;
     acc = 0; view.selected = null; view.placing = null; view.pathMode = false; ui.detail = null; ui.render(true);
   };
 
@@ -43,7 +39,7 @@ async function boot() {
     }
     if (world.status !== 'playing' && !recorded) {
       recorded = true;
-      profile.runs.push({ result: world.status, day: day(world), charters: world.chartersDone.length, difficulty: world.difficulty, scenario: world.scenario ?? 'classic', at: new Date().toISOString() });
+      profile.runs.push({ result: world.status, day: day(world), charters: world.chartersDone.length, at: new Date().toISOString() });
       saveProfile();
     }
     view.lastWorld = world;
