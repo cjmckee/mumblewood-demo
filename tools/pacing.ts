@@ -5,10 +5,13 @@ import { createWorld, tick, day, alive, avgMood, TICKS_PER_HOUR, World, charterD
 import { autoDecide, autoBuild, BOT } from '../src/sim/autoplayer';
 import { START } from '../src/sim/scenario';
 // experiment knobs: STRAIN_K, DRAFT_EVERY, RECRUIT_CAP (bot), LABORERS_PER (bot)
-if (process.env.STRAIN_K) START.strain.perPerson = Number(process.env.STRAIN_K);
+if (process.env.STRAIN_K) START.strain.rate = Number(process.env.STRAIN_K);
 if (process.env.DRAFT_EVERY) START.draftEvery = Number(process.env.DRAFT_EVERY);
 if (process.env.RECRUIT_CAP) BOT.recruitCap = Number(process.env.RECRUIT_CAP);
 if (process.env.LABORERS_PER) BOT.laborersPer = Number(process.env.LABORERS_PER);
+if (process.env.RECRUIT_EXTRA) BOT.recruitExtra = Number(process.env.RECRUIT_EXTRA);
+if (process.env.COMFORTS) BOT.comforts = process.env.COMFORTS === '1';
+if (process.env.COMFORTS_FIRST) BOT.comfortsFirst = process.env.COMFORTS_FIRST === '1';
 
 const runs = Number(process.argv[2] ?? 60);
 const maxDays = Number(process.argv[3] ?? 90);

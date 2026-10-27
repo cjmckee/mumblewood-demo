@@ -56,13 +56,14 @@ const FOCUS: Record<string, string[]> = {
 };
 /** research the bot wants first: what fixes today's problems, then the rest in a sensible order */
 const RESEARCH_ORDER = ['cookery', 'messhall', 'physick', 'warehousing', 'gardening', 'masonry'];
-function researchScore(w: World, id: string) {
-  let s = -RESEARCH_ORDER.indexOf(id);
-  if (id === 'physick' && alive(w).some(c => c.illness)) s += 10;
-  if (id === 'warehousing' && storages(w).every(b => (bdef(b).storage ?? 0) - Object.values(b.stock).reduce((n, x) => n + (x ?? 0), 0) < 40)) s += 4;
+function researchParts(w: World, id: string): Record<string, number> {
+  const p: Record<string, number> = { 'usual order': -RESEARCH_ORDER.indexOf(id) };
+  if (id === 'physick' && alive(w).some(c => c.illness)) p['someone is ill'] = 10;
+  if (id === 'warehousing' && storages(w).every(b => (bdef(b).storage ?? 0) - Object.values(b.stock).reduce((n, x) => n + (x ?? 0), 0) < 40)) p['storage nearly full'] = 4;
   void RESEARCH_BY_ID;
-  return s;
+  return p;
 }
+const researchScore = (w: World, id: string) => sumParts(researchParts(w, id));
 // ---------- Charter chains ----------
 /** the goods the current charter is waiting on, by its unfinished parts */
 function charterGoods(w: World): ResourceId[] {
@@ -114,7 +115,23 @@ export function charterChain(w: World): string[] {
  * Experiment switches for the balance tools. `advisor` makes the bot play from what's on screen (the complaint
  * panel) instead of its own rules; it's off by default because, so far, it plays worse (see the project doc).
  */
-export const BOT = { recruitCap: 0, foodDepot: 'food' as false | 'food' | 'meals', laborersPer: 3.5, advisor: false, gate: true, ranked: true, comfort: 'strict' as 'strict' | 'econ' | 'none', rescue: false, rescueAt: 40, moodBlock: false, reroll: true, variety: false, routes: false, off: [] as string[], skip: [] as string[] };
+export const BOT = { comfortsFirst: false, recruitCap: 0, recruitExtra: 4, comforts: true, foodDepot: 'food' as false | 'food' | 'meals', laborersPer: 3.5, advisor: false, gate: true, ranked: true, comfort: 'strict' as 'strict' | 'econ' | 'none', rescue: false, rescueAt: 40, moodBlock: false, reroll: true, variety: false, routes: false, off: [] as string[], skip: [] as string[] };
+
+// ---------- Explaining the bot ----------
+/** one thing the bot decided and why: each option with its score broken into parts, or a staffing or build step */
+export interface BotNote {
+  day: number; hour: number; kind: 'decision' | 'staff' | 'build';
+  title: string;
+  options?: { id: string; score: number; parts: Record<string, number> }[];
+  chosen?: string;
+  /** "higher" or "lower" score wins */
+  better?: 'higher' | 'lower';
+  lines?: string[];
+}
+/** switch on to record why the bot does what it does (tools/explain.ts); off in normal play and the harness */
+export const TRACE = { on: false, notes: [] as BotNote[] };
+function note(w: World, n: Omit<BotNote, 'day' | 'hour'>) { if (TRACE.on) TRACE.notes.push({ ...n, day: Math.floor(w.hour / 24) + 1, hour: Math.round(hourOfDay(w)) }); }
+const sumParts = (p: Record<string, number>) => Object.values(p).reduce((a, b) => a + b, 0);
 const depots = new WeakMap<World, number>();
 /** what the bot read off the screen this hour; it plays from this rather than from hidden state */
 const advice = new WeakMap<World, { hour: number; concerns: Concern[] }>();
@@ -160,40 +177,60 @@ export function autoDecide(w: World, style: 'greedy' | 'random' = 'greedy', rand
       option = style === 'random' && rand() < 0.3 ? 0 : best?.id ?? 0;
     } else if (d.kind === 'research') {
       option = style === 'random' ? Math.floor(rand() * d.options.length) : d.options.map(id => researchScore(w, id)).reduce((b, s, i, arr) => (s > arr[b] ? i : b), 0);
+      if (TRACE.on) note(w, { kind: 'decision', title: 'Research pick', better: 'higher', chosen: d.options[option], options: d.options.map(id => ({ id, parts: researchParts(w, id), score: researchScore(w, id) })) });
     } else if (style === 'random') {
       const n = d.kind === 'event' ? 2 : d.kind === 'recruit' ? 3 : d.options.length;
       option = Math.floor(rand() * n);
     } else if (d.kind === 'charter') {
       // prefer charters we're already close to; long mood holds are a gamble
-      const score = (id: string) => {
+      const scoreParts = (id: string): Record<string, number> => {
         const c = charterDef(id)!;
         // a variety charter is a bad bet until the colony can already make enough different kinds
         const parts = c.metric.kind === 'all' ? c.metric.parts : [c.metric];
         const short = parts.reduce((n, m) => n + (m.kind === 'variety' ? Math.max(0, m.kinds - kindsMakeable(w, CATEGORIES[m.category].members)) * -2 : 0), 0);
-        return progressIf(w, id) * 3 + short;
+        return { 'progress already (×3)': progressIf(w, id) * 3, 'kinds it can\u2019t make yet': short };
       };
+      const score = (id: string) => sumParts(scoreParts(id));
       option = d.options.map(score).reduce((b, s, i, arr) => (s > arr[b] ? i : b), 0);
+      if (TRACE.on) note(w, { kind: 'decision', title: `Charter pick (tier ${d.tier})`, better: 'higher', chosen: d.options[option], options: d.options.map(id => ({ id, parts: scoreParts(id), score: score(id) })) });
     } else if (d.kind === 'blueprint') {
       const helpers = charterHelpers(w.charter);
       const feedable = (id: string) => id !== 'smokehouse' || w.owned.includes('dock');
       // a blueprint that needs planks is dead weight until there's a sawmill; a tavern without a brewery serves nothing
-      const usable = (id: string) => (BUILDING_BY_ID[id].cost.fine && !FINE_MAKERS.some(f => w.owned.includes(f) && usableHere(w, f)) && !FINE_MAKERS.includes(id) ? 6 : 0) + (id === 'tavern' && !DRINK_MAKERS.some(d => w.owned.includes(d)) ? 3 : 0)
+      const usableParts = (id: string): Record<string, number> => ({
+        'needs planks, nothing makes them': BUILDING_BY_ID[id].cost.fine && !FINE_MAKERS.some(f => w.owned.includes(f) && usableHere(w, f)) && !FINE_MAKERS.includes(id) ? 6 : 0,
+        'tavern with no drink maker': id === 'tavern' && !DRINK_MAKERS.some(d => w.owned.includes(d)) ? 3 : 0,
         // a gatherer is worth more once something owned turns its harvest into a drink; a drink maker is worth more when its best recipe can be fed here
-        - (BUILDING_BY_ID[id].needs && (BUILDING_BY_ID[id].recipes ?? []).some(r => w.owned.some(d => (BUILDING_BY_ID[d].recipes ?? []).some(x => Object.keys(x.inputs).includes(r.output)))) ? 6 : 0)
+        'feeds a workshop we own': -(BUILDING_BY_ID[id].needs && (BUILDING_BY_ID[id].recipes ?? []).some(r => w.owned.some(d => (BUILDING_BY_ID[d].recipes ?? []).some(x => Object.keys(x.inputs).includes(r.output)))) ? 6 : 0),
         // a workshop nothing owned can feed yet (a kiln before a clay pit) waits behind the rest
-        + (BUILDING_BY_ID[id].recipes && !usableHere(w, id) ? 5 : 0)
-        - (DRINK_MAKERS.includes(id) && (BUILDING_BY_ID[id].recipes ?? []).filter(r => r.stars >= 2).some(r => Object.keys(r.inputs).every(k => gatherersOf(w, k).length || BUILDINGS.some(d => d.draftable && siteOk(w, d) && (d.recipes ?? []).some(x => x.output === k)))) ? 2 : 0);
+        'nothing owned can feed it': BUILDING_BY_ID[id].recipes && !usableHere(w, id) ? 5 : 0,
+        'drink maker that can be fed': -drinkFed(id),
+      });
+      const drinkFed = (id: string) => (DRINK_MAKERS.includes(id) && (BUILDING_BY_ID[id].recipes ?? []).filter(r => r.stars >= 2).some(r => Object.keys(r.inputs).every(k => gatherersOf(w, k).length || BUILDINGS.some(d => d.draftable && siteOk(w, d) && (d.recipes ?? []).some(x => x.output === k)))) ? 2 : 0);
       const asked = fixesOf(w, 3).filter((f): f is { draft: string } => 'draft' in f).map(f => f.draft);
+      const usable = (id: string) => sumParts(usableParts(id));
+      const rankParts = (id: string): Record<string, number> => ({
+        'helps the charter': helpers.includes(id) && feedable(id) ? -100 + helpers.indexOf(id) : 0,
+        'a note asks for it': asked.includes(id) ? -50 + asked.indexOf(id) : 0,
+        'standing priority': BLUEPRINT_PRIORITY.indexOf(id),
+        ...usableParts(id),
+        ...(BOT.routes ? { 'new kinds it unlocks (×3)': -newKinds(w, id) * 3 } : {}),
+      });
       const rank = (id: string) => (helpers.includes(id) && feedable(id) ? -100 + helpers.indexOf(id) : 0) + (asked.includes(id) ? -50 + asked.indexOf(id) : 0) + BLUEPRINT_PRIORITY.indexOf(id) + usable(id);
       // nothing on offer the colony is missing and wants: pay for a reroll while wood stays comfortable
       const core = ['sawmill', 'tavern', 'cottage', 'pieoven', 'stage', 'bathhouse', 'dock', ...(DRINK_MAKERS.some(x => w.owned.includes(x)) ? [] : DRINK_MAKERS)];
       const wanted = (id: string) => (helpers.includes(id) && feedable(id)) || asked.includes(id) || (core.includes(id) && usable(id) < 6);
-      if (BOT.reroll && !d.options.some(wanted) && w.res.wood >= rerollCost(w) + 40 && !apply(w, { type: 'reroll' })) continue;
+      if (BOT.reroll && !d.options.some(wanted) && w.res.wood >= rerollCost(w) + 40) {
+        const offered = d.options.join(', ');
+        if (!apply(w, { type: 'reroll' })) { note(w, { kind: 'decision', title: 'Blueprint reroll', lines: [`nothing wanted in ${offered}; wood ${Math.floor(w.res.wood)} covers the ${rerollCost(w) - 10} reroll`] }); continue; }
+      }
       // routes: credit for each new kind of meal, drink or fine material the blueprint makes feedable right away
       const rank2 = (id: string) => rank(id) - (BOT.routes ? newKinds(w, id) * 3 : 0);
       option = d.options.map(rank2).reduce((best, p, i, arr) => (p < arr[best] ? i : best), 0);
+      if (TRACE.on) note(w, { kind: 'decision', title: 'Blueprint pick', better: 'lower', chosen: d.options[option], options: d.options.map(id => ({ id, parts: rankParts(id), score: rank2(id) })) });
     } else if (d.kind === 'perk') {
       option = d.options.map(o => PERK_PRIORITY.indexOf(o)).reduce((best, p, i, arr) => (p < arr[best] ? i : best), 0);
+      if (TRACE.on) note(w, { kind: 'decision', title: 'Boon pick', better: 'lower', chosen: d.options[option], options: d.options.map(id => ({ id, parts: { 'standing priority': PERK_PRIORITY.indexOf(id) }, score: PERK_PRIORITY.indexOf(id) })) });
     } else if (d.kind === 'recruit') {
       const score = (c: typeof d.options[number]) => (c.traits.includes('sunny') ? 2 : 0) + (c.traits.includes('diligent') ? 1 : 0)
         - (c.traits.includes('grumbler') ? 2 : 0) - (c.traits.includes('drama') ? 1 : 0) - (c.traits.includes('vain') ? 1 : 0);
@@ -204,15 +241,21 @@ export function autoDecide(w: World, style: 'greedy' | 'random' = 'greedy', rand
       const wantsPeople = kind === 'population' || (popPart > 0 && alive(w).length < popPart + 1);
       // mood charters: every settler past 8 adds strain, so take only as many as the charter needs
       const m = charterDef(w.charter)?.metric as { pop?: number } | undefined;
-      const cap = BOT.recruitCap || (popPart ? Math.max(popPart + 1, 8) : 12);
+      const cap = BOT.recruitCap || (popPart ? Math.max(popPart + BOT.recruitExtra, 8) : 12);
       // only take on mouths the larder can feed
       const raw = rawStock(w) + mealTotal(w);
       const fed = raw > alive(w).length * 3;
       const ok = alive(w).length < cap && alive(w).length < beds(w) + 2 && (wantsPeople || avgMood(w) > 40) && fed;
       option = ok ? bestI : 99;
+      if (TRACE.on) {
+        const tp = (c: typeof d.options[number]) => Object.fromEntries(c.traits.filter(t => ['sunny', 'diligent', 'grumbler', 'drama', 'vain'].includes(t)).map(t => [t, t === 'sunny' ? 2 : t === 'diligent' ? 1 : t === 'grumbler' ? -2 : -1]));
+        const checks = [`colonists ${alive(w).length} < cap ${cap}: ${alive(w).length < cap ? 'yes' : 'no'}`, `beds ${beds(w)} + 2 > colonists: ${alive(w).length < beds(w) + 2 ? 'yes' : 'no'}`, `charter wants people or mood ${Math.round(avgMood(w))} > 40: ${wantsPeople || avgMood(w) > 40 ? 'yes' : 'no'}`, `food ${Math.floor(raw)} > 3 per colonist: ${fed ? 'yes' : 'no'}`];
+        note(w, { kind: 'decision', title: 'Recruit', better: 'higher', chosen: ok ? d.options[bestI].name : 'sent them all away', lines: checks, options: d.options.map(c => ({ id: c.name, parts: tp(c), score: score(c) })) });
+      }
     } else if (d.kind === 'event') {
       const ev = EVENTS.find(e => e.id === d.eventId)!;
       option = canPay(w, ev.options[0].effect) ? 0 : 1;
+      if (TRACE.on) note(w, { kind: 'decision', title: `Event: ${ev.title}`, chosen: ev.options[option].label, lines: [`can pay for "${ev.options[0].label}": ${option === 0 ? 'yes' : 'no'}`] });
     }
     apply(w, { type: 'resolve', option });
   }
@@ -296,26 +339,32 @@ export function autoBuild(w: World) {
     // while the charter's chain is missing a building, wood goes to that chain and to beds and food first
     const missing = charterChain(w).filter(id => count(id) === 0);
     const firstNeeds = ['leanto', 'woodcutter', 'forager', 'dock', ...(count('kitchen') ? [] : ['kitchen']), ...(count('dining') ? [] : ['dining'])];
+    const skipped: string[] = [];
+    const skip = (id: string, why: string) => { if (TRACE.on && !skipped.some(x => x.startsWith(id + ':'))) skipped.push(`${id}: ${why}`); };
     for (const id of want) {
-      if (sites(w).some(b => b.def === id)) continue;
+      if (sites(w).some(b => b.def === id)) { skip(id, 'already under construction'); continue; }
       // blueprints still behind research (or never drafted) can't be placed
-      if (!w.owned.includes(id)) continue;
-      if (missing.length && !missing.includes(id) && !firstNeeds.includes(id) && !(id === 'stockpile' && storageFree(w, 'wood') < 15)) continue;
+      if (!w.owned.includes(id)) { skip(id, 'not unlocked or drafted'); continue; }
+      if (missing.length && !missing.includes(id) && !firstNeeds.includes(id) && !(id === 'stockpile' && storageFree(w, 'wood') < 15)) { skip(id, `waiting: wood goes to the charter's chain first (${missing.join(', ')})`); continue; }
       const def = BUILDING_BY_ID[id];
-      if (id === 'smokehouse' && !w.buildings.some(b => b.def === 'dock')) continue;
-      if (def.recipes && !usableHere(w, id)) continue;
-      if (id === 'pieoven' && !w.buildings.some(b => FINE_MAKERS.includes(b.def)) && stockOf(w, 'fine') < 8) continue;
+      if (id === 'smokehouse' && !w.buildings.some(b => b.def === 'dock')) { skip(id, 'no dock to feed it'); continue; }
+      if (def.recipes && !usableHere(w, id)) { skip(id, 'nothing owned can feed it'); continue; }
+      if (id === 'pieoven' && !w.buildings.some(b => FINE_MAKERS.includes(b.def)) && stockOf(w, 'fine') < 8) { skip(id, 'no planks or plank maker'); continue; }
       // while saving a resource, only spend it on beds and on producers that make more of it
-      const essential = id === 'leanto' || id === 'hall' || (saving.includes('wood') && id === 'woodcutter') || (saving.includes('planks') && ['sawmill', 'kiln', 'claypit'].includes(id));
+      // beds, food, the first kitchen, dining hall and clinic are never held back to save for a charter
+      const essential = id === 'leanto' || id === 'hall' || id === 'woodcutter' || id === 'forager' || (['kitchen', 'dining', 'clinic'].includes(id) && count(id) === 0) || (saving.includes('planks') && ['sawmill', 'kiln', 'claypit'].includes(id));
       const short = !def.stages && Object.entries(def.cost).some(([r, n]) => stockOf(w, r as InputKey) < (n ?? 0) + (r === 'wood' ? 10 : 0) || (saving.some(x => membersOf(r as InputKey).includes(x)) && !essential));
-      if (short) continue;
+      if (short) { skip(id, `can\u2019t afford ${Object.entries(def.cost).map(([r, n]) => `${n} ${r}`).join(', ')}${saving.length ? ` while saving ${saving.join(' and ')}` : ''} (have ${Math.floor(w.res.wood)} wood, ${Math.floor(stockOf(w, 'fine'))} planks or bricks)`); continue; }
       // decorations go by the hearth; storage next to what it serves; everything else near the centre
       const near = storageSpot(w, id);
       const spot = findSpot(w, id, near.x, near.y, !def.decor);
-      if (!spot) continue;
+      if (!spot) { skip(id, 'no room on the map'); continue; }
       apply(w, { type: 'place', def: id, x: spot.x, y: spot.y });
+      if (TRACE.on) note(w, { kind: 'build', title: `Placed a ${BUILDING_BY_ID[id].name.toLowerCase()}`, lines: [`wanted, in order: ${[...new Set(want)].slice(0, 10).join(', ')}`, ...skipped.slice(0, 6).map(x => `skipped ${x}`)] });
+      skipped.length = 0;
       break;
     }
+    if (TRACE.on && skipped.length && Math.round(hourOfDay(w)) === 12) note(w, { kind: 'build', title: 'Nothing placed at noon', lines: [`wanted, in order: ${[...new Set(want)].slice(0, 10).join(', ')}`, ...skipped.slice(0, 8).map(x => `skipped ${x}`)] });
   }
   // lay paths from each doorway towards the hearth: right away for path charters, otherwise once wood is comfortable
   const planned = w.paths.filter(p => p === 1).length;
@@ -395,7 +444,7 @@ function rawFoodWorkers(w: World, pop: number) {
 }
 
 /** How many workers the bot wants in each building right now: essentials first, then the charter, then extras. */
-export function staffPlan(w: World): Map<number, number> {
+export function staffPlan(w: World, explain = false): Map<number, number> {
   const pop = alive(w).filter(c => !bedridden(c)).length;
   const ch = w.charter ?? '';
   const want = staffWants(w);
@@ -409,9 +458,14 @@ export function staffPlan(w: World): Map<number, number> {
   const given: Record<string, number> = {};
   const plan = new Map<number, number>();
   const capacity = (kind: string) => built(w).filter(b => defsOf(kind).includes(b.def) && !blockedReason(w, b)).reduce((n, b) => n + bdef(b).slots, 0);
+  // for explaining: which step handed out each worker
+  let stage = 'essentials'; const steps: string[] = [];
   const give = (kind: string, upTo: number) => {
+    const before = given[kind] ?? 0;
     while (budget > 0 && (given[kind] ?? 0) < Math.min(upTo, want[kind] ?? 0, capacity(kind))) { given[kind] = (given[kind] ?? 0) + 1; budget--; }
+    if (explain && (given[kind] ?? 0) > before) steps.push(`${stage}: ${kind} +${(given[kind] ?? 0) - before}`);
   };
+  const budget0 = budget;
   if (BOT.advisor && BOT.ranked) {
     rankedStaffing(w, want, budget, given, capacity, ch, pop);
   } else {
@@ -421,23 +475,40 @@ export function staffPlan(w: World): Map<number, number> {
   // a small colony studies before it chops, while the woodpile lasts
   if (w.res.wood >= 30) give('desk', 1);
   give('woodcutter', 1); give('desk', 1); give('kitchen', 1);
+  stage = 'food and wood top-ups';
   // then what the complaints call for, biggest first
   const serveFixes = () => { for (const f of fixesOf(w)) if ('staff' in f) { want[f.staff] = Math.max(want[f.staff] ?? 0, f.n); give(f.staff, f.n); } };
+  // comforts already built get a person before the food and wood top-ups take everyone (BOT.comfortsFirst), or after them
+  const comforts = () => {
+    if (BOT.comforts && built(w).some(b => b.def === 'tavern')) {
+      want.drinks = Math.max(want.drinks ?? 0, drinkTotal(w) < 25 ? 1 : 0); want.tavern = Math.max(want.tavern ?? 0, 1);
+      give('drinks', 1);
+      // the gatherer the drink maker's best recipe waits on (an orchard for cider, a field for ale)
+      for (const g of neededGatherers(w)) if (['orchard', 'field', 'apiary'].includes(g)) { want[g] = Math.max(want[g] ?? 0, 1); give(g, 1); }
+      give('tavern', 1);
+    }
+  };
+  if (BOT.comfortsFirst) { stage = 'comforts'; comforts(); stage = 'food and wood top-ups'; }
   if (rawStock(w) < pop * 4) give('rawFood', 99);
   if (w.res.wood < 30) give('woodcutter', Math.max(2, Math.ceil(pop / 4)));
   give('clinic', 1);
   serveFixes();
   // planks unlock every mood building, so the sawmill counts as an essential once there's something to spend them on
   give('sawmill', 1);
+  stage = 'charter chain';
   // one worker along the charter's chain, then a second
   for (const k of chain) give(k, 1);
   for (const k of chain) give(k, 2);
-  // a second meal route, when comfortable: one cook ahead of the extras, or it never gets a person
-  if (BOT.variety) for (const k of ['pieoven', 'smokehouse', 'bakery']) if ((want[k] ?? 0) > 0) { give(k, 1); break; }
+  stage = 'comforts'; if (!BOT.comfortsFirst) comforts();
+  // a second meal route, so the stew-haters have something: one cook on the best second kitchen that can be fed
+  const second = (BOT.variety || BOT.comforts) ? ['pieoven', 'smokehouse', 'bakery'].find(id => built(w).some(b => b.def === id && plannedRecipe(w, b) && MEALS.includes(plannedRecipe(w, b)!.output))) : undefined;
+  if (second) { want[second] = Math.max(want[second] ?? 0, 1); give(second, 1); }
   // 2. whatever the charter leans on
+  stage = 'charter focus';
 
   for (const k of FOCUS[ch] ?? []) give(k, 99);
   // 3. everything else, round-robin so no one kind eats the budget
+  stage = 'round-robin extras';
   for (let round = 2; round <= 6; round++) for (const k of ['woodcutter', 'rawFood', 'kitchen', 'sawmill', 'kiln', 'claypit', 'tavern', 'drinks', 'field', 'apiary', 'pieoven', 'smokehouse', 'bakery', 'mill', 'apothecary', 'herbgarden']) give(k, round);
   }
   // spread each kind's workers over its buildings, best placed first
@@ -448,6 +519,10 @@ export function staffPlan(w: World): Map<number, number> {
     }
   }
   for (const b of built(w)) if (bdef(b).slots && !plan.has(b.uid)) plan.set(b.uid, 0);
+  if (explain) {
+    const unmet = Object.entries(want).filter(([k, n]) => n > (given[k] ?? 0)).map(([k, n]) => `${k} wants ${n}, got ${given[k] ?? 0}${capacity(k) <= (given[k] ?? 0) ? (built(w).some(b => defsOf(k).includes(b.def)) ? ' (no free slot, or it can\u2019t run)' : ' (none built)') : budget <= 0 ? ' (no one left)' : ''}`);
+    note(w, { kind: 'staff', title: `Staffing: ${pop} able-bodied, ${keepFree} kept as laborers, ${budget0} jobs to hand out`, lines: [...steps, ...(budget > 0 ? [`${budget} left unassigned`] : []), ...(unmet.length ? ['wanted but not staffed: ' + unmet.join('; ')] : [])] });
+  }
   return plan;
 }
 
@@ -505,7 +580,7 @@ function fit(w: World, c: Colonist, b: Building) {
 
 /** Move people to match the staffing plan, changing as few assignments as possible. */
 export function autoStaff(w: World) {
-  const plan = staffPlan(w);
+  const plan = staffPlan(w, TRACE.on && Math.round(hourOfDay(w)) === 9);
   // first, release extras
   for (const [uid, n] of plan) {
     const b = w.buildings.find(x => x.uid === uid)!;

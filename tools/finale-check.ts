@@ -2,6 +2,7 @@
 // Usage: npx tsx tools/finale-check.ts
 import { createWorld, apply, runHours, findSpot, World, alive, built, desks, workersAt, charterProgress, feastCheck, costOf, laborers, day } from '../src/sim/world';
 import { BUILDING_BY_ID, MEALS } from '../src/sim/content';
+import { START } from '../src/sim/scenario';
 
 let fails = 0;
 const ok = (cond: boolean, msg: string) => { console.log(`${cond ? 'ok  ' : 'FAIL'} ${msg}`); if (!cond) fails++; };
@@ -58,7 +59,7 @@ const untilHour = (w: World, h: number, each: () => void = () => {}) => { for (l
   for (let h = 0; h < 24 * 10; h++) { clear(small); for (const d of small.decisions) void d; runHours(small, 1); }
   // recruits are offered every other day; option 0 takes one, so the colony grows a little
   ok(day(small) >= 10, `ten days passed (day ${day(small)}, ${alive(small).length} settlers)`);
-  const expect = 0.03 * alive(small).length * 10 * 1.1;
+  const expect = START.strain.rate * Math.sqrt(alive(small).length) * 10 * 1.1;
   ok(small.strain > 0.5 && small.strain < expect * 1.6, `strain after 10 days follows population, not the calendar (${small.strain.toFixed(2)}, about ${expect.toFixed(1)} expected)`);
 }
 

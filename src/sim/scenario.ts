@@ -17,8 +17,11 @@ export interface Start {
   draftEvery: number;
   /** the colony collapses at this many lost, or with this many or fewer left */
   collapse: { lost: number; minAlive: number };
-  /** strain builds up each hour by perPerson × population, faster as the run goes on (1 + day / rampDays) */
-  strain: { perPerson: number; rampDays: number };
+  /**
+   * strain builds up each hour by rate × √population, faster as the run goes on (1 + day / rampDays). The square root
+   * means a bigger colony strains a little faster, not twice as fast: growing is a trade-off, not a trap.
+   */
+  strain: { rate: number; rampDays: number };
   /** wood the hearth burns per night hour: a small fire for a small colony that grows with it, up to 1 */
   hearth: { base: number; perPerson: number };
   /** wood workshops (and the research desk) leave in storage for the hearth */
@@ -37,7 +40,7 @@ export const START: Start = {
   firstCharterDay: 2,
   draftEvery: 3,
   collapse: { lost: 6, minAlive: 0 },
-  strain: { perPerson: 0.03, rampDays: 40 },
+  strain: { rate: 0.07, rampDays: 40 },
   hearth: { base: 0.25, perPerson: 0.06 },
   woodReserve: 10,
   outbreakFrom: { day: 6, pop: 5 },

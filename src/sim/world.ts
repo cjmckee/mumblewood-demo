@@ -1832,7 +1832,7 @@ function hourly(w: World) {
   const d = day(w) - 1 + (hourOfDay(w) - 6) / 24;
   const sc = START;
   // strain builds up with every person the frontier has to wear down, faster as the run goes on; it never goes back down
-  w.strain += sc.strain.perPerson * pop * (1 + Math.max(0, d) / sc.strain.rampDays) / 24 * (hasPerk(w, 'ironWill') ? 0.75 : 1);
+  w.strain += sc.strain.rate * Math.sqrt(pop) * (1 + Math.max(0, d) / sc.strain.rampDays) / 24 * (hasPerk(w, 'ironWill') ? 0.75 : 1);
 
   if (h >= 18 || h < 6) {
     const hb = sc.hearth;
