@@ -160,7 +160,7 @@ export const MAX_DEPARTURES = 6;
 /** wood left in storage for the hearth: workshops and the research desk won't take it */
 export const woodReserve = (_w: World) => START.woodReserve;
 export const CARRY = 15;
-/** a blueprint draft and a recruit draft each come this many days apart */
+/** recruits come this many days apart (blueprint drafts follow START.draftEvery) */
 export const DRAFT_EVERY = 2;
 export const OUTBOX_CAP = 15;
 const WALK_SPEED = 7; // tiles per hour
@@ -1946,8 +1946,8 @@ function leave(w: World, c: Colonist, carted = false) {
 
 function dawn(w: World) {
   const d = day(w);
-  // blueprint drafts every other day once the first charter is picked
-  if (w.draftsFrom != null && d > w.draftsFrom && (d - w.draftsFrom) % DRAFT_EVERY === 0) w.decisions.push(blueprintDecision(w));
+  // blueprint drafts every few days once the first charter is picked
+  if (w.draftsFrom != null && d > w.draftsFrom && (d - w.draftsFrom) % START.draftEvery === 0) w.decisions.push(blueprintDecision(w));
   if (d % DRAFT_EVERY === 0) {
     const names = new Set(w.colonists.map(c => first(c)));
     const opts = [0, 1, 2].map(() => makeColonist(w, names));

@@ -13,6 +13,8 @@ export interface Start {
   firstResearch: string[];
   /** the first charter is offered on the morning of this day; blueprint drafts start once it's picked */
   firstCharterDay: number;
+  /** days between blueprint drafts, once they start */
+  draftEvery: number;
   /** the colony collapses at this many lost, or with this many or fewer left */
   collapse: { lost: number; minAlive: number };
   /** strain builds up each hour by perPerson × population, faster as the run goes on (1 + day / rampDays) */
@@ -33,6 +35,7 @@ export const START: Start = {
   unlocked: ['stockpile', 'leanto', 'woodcutter', 'forager', 'desk'],
   firstResearch: ['cookery', 'messhall', 'physick'],
   firstCharterDay: 2,
+  draftEvery: 3,
   collapse: { lost: 6, minAlive: 0 },
   strain: { perPerson: 0.03, rampDays: 40 },
   hearth: { base: 0.25, perPerson: 0.06 },

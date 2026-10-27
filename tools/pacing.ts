@@ -2,7 +2,13 @@
 // strain grow. Targets: charter 1 by day 10-16, charter 2 by day 28-36, a win by day 50-60.
 // Usage: npx tsx tools/pacing.ts [runs=60] [maxDays=90]   (VERBOSE=1 prints every run)
 import { createWorld, tick, day, alive, avgMood, TICKS_PER_HOUR, World, charterDef } from '../src/sim/world';
-import { autoDecide, autoBuild } from '../src/sim/autoplayer';
+import { autoDecide, autoBuild, BOT } from '../src/sim/autoplayer';
+import { START } from '../src/sim/scenario';
+// experiment knobs: STRAIN_K, DRAFT_EVERY, RECRUIT_CAP (bot), LABORERS_PER (bot)
+if (process.env.STRAIN_K) START.strain.perPerson = Number(process.env.STRAIN_K);
+if (process.env.DRAFT_EVERY) START.draftEvery = Number(process.env.DRAFT_EVERY);
+if (process.env.RECRUIT_CAP) BOT.recruitCap = Number(process.env.RECRUIT_CAP);
+if (process.env.LABORERS_PER) BOT.laborersPer = Number(process.env.LABORERS_PER);
 
 const runs = Number(process.argv[2] ?? 60);
 const maxDays = Number(process.argv[3] ?? 90);

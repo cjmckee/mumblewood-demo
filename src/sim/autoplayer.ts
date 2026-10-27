@@ -114,7 +114,7 @@ export function charterChain(w: World): string[] {
  * Experiment switches for the balance tools. `advisor` makes the bot play from what's on screen (the complaint
  * panel) instead of its own rules; it's off by default because, so far, it plays worse (see the project doc).
  */
-export const BOT = { foodDepot: 'food' as false | 'food' | 'meals', laborersPer: 3.5, advisor: false, gate: true, ranked: true, comfort: 'strict' as 'strict' | 'econ' | 'none', rescue: false, rescueAt: 40, moodBlock: false, reroll: true, variety: false, routes: false, off: [] as string[], skip: [] as string[] };
+export const BOT = { recruitCap: 0, foodDepot: 'food' as false | 'food' | 'meals', laborersPer: 3.5, advisor: false, gate: true, ranked: true, comfort: 'strict' as 'strict' | 'econ' | 'none', rescue: false, rescueAt: 40, moodBlock: false, reroll: true, variety: false, routes: false, off: [] as string[], skip: [] as string[] };
 const depots = new WeakMap<World, number>();
 /** what the bot read off the screen this hour; it plays from this rather than from hidden state */
 const advice = new WeakMap<World, { hour: number; concerns: Concern[] }>();
@@ -204,7 +204,7 @@ export function autoDecide(w: World, style: 'greedy' | 'random' = 'greedy', rand
       const wantsPeople = kind === 'population' || (popPart > 0 && alive(w).length < popPart + 1);
       // mood charters: every settler past 8 adds strain, so take only as many as the charter needs
       const m = charterDef(w.charter)?.metric as { pop?: number } | undefined;
-      const cap = popPart ? Math.max(popPart + 1, 8) : 12;
+      const cap = BOT.recruitCap || (popPart ? Math.max(popPart + 1, 8) : 12);
       // only take on mouths the larder can feed
       const raw = rawStock(w) + mealTotal(w);
       const fed = raw > alive(w).length * 3;
