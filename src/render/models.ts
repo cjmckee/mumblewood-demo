@@ -57,7 +57,7 @@ const flatU = (pts: [number, number][], u: number, col: number, lit = true): Par
 
 // ---------- batch 1: the start and the researched buildings ----------
 export const MODELS: Record<string, (c: ModelCtx) => Model> = {
-  /** an open-fronted shelter: a back wall, a mossy roof sloping to two front posts, a bedroll inside */
+  /** the hut: an open-fronted shelter, a back wall, a mossy roof sloping to two front posts, a bedroll inside */
   leanto: c => {
     const wall = c.def.wall, roof = c.def.roof;
     const sideProf: [number, number][] = [[0.18, 0], [0.82, 0], [0.82, 13], [0.18, 30]];
