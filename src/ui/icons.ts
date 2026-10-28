@@ -426,8 +426,28 @@ const BUILDING_ART: Record<string, () => string> = {
 };
 
 /** an inline icon for a good, a category or a building; size in CSS pixels (the class sets the default) */
+/** things that are neither goods nor buildings: gold, the caravan, a cornerstone */
+const EXTRA_ART: Record<string, () => string> = {
+  gold: () => {
+    const g = '#e2b53e', coin = (x: number, y: number) => el(x, y + 1.2, 5.2, 2.2, sh(g, 0.62)) + re(x - 5.2, y - 0.2, 10.4, 1.4, sh(g, 0.75)) + el(x, y - 0.2, 5.2, 2.2, g) + el(x, y - 0.4, 3.4, 1.3, sh(g, 1.18)) + el(x - 1, y - 0.8, 1.2, 0.45, '#fff6d0', ' opacity=".7"');
+    return shadow(8) + coin(9, 18) + coin(15, 18.4) + coin(10.5, 15.4) + coin(13.5, 12.6) + coin(11.5, 9.8);
+  },
+  caravan: () => {
+    const wood = '#8c6340', cloth = '#d8cfb4';
+    return shadow(9.5) + re(4, 12, 15, 5, wood, 1) + re(4, 16, 15, 1.2, sh(wood, 0.7))
+      + pa('M4.5 12.2C4.5 6 7.5 4.4 11.5 4.4s7 1.6 7 7.8z', cloth) + pa('M4.5 12.2C4.5 6 7.5 4.4 11.5 4.4 9 6 8.2 8.6 8.2 12.2z', sh(cloth, 1.12))
+      + ln('M8.2 12.2C8.2 8 9.5 5.6 11.5 4.6M14.8 12.2c0-4-1.3-6.6-3.3-7.6', sh(cloth, 0.72), 0.8)
+      + ci(7.5, 18.4, 2.6, '#4b3524') + ci(7.5, 18.4, 1.1, '#a7835c') + ci(16.2, 18.4, 2.6, '#4b3524') + ci(16.2, 18.4, 1.1, '#a7835c')
+      + ln('M19 15.5l3 1.4', wood, 1.2);
+  },
+  cornerstone: () => {
+    const st = '#a39d8c';
+    return shadow(8) + pa('M4 11l8-4 8 4v6.5l-8 4-8-4z', sh(st, 0.78)) + pa('M4 11l8 4v6.5l-8-4z', sh(st, 0.95)) + pa('M4 11l8-4 8 4-8 4z', sh(st, 1.15))
+      + pa('M12 8.6l.9 1.8 2 .3-1.45 1.4.35 2-1.8-.95-1.8.95.35-2-1.45-1.4 2-.3z', '#e8a33d', ' transform="matrix(1 0 0 .55 0 5)"');
+  },
+};
 export function icon(id: ResourceId | Category | string, cls = '', title?: string): string {
-  const art = BUILDING_ART[id] ?? ART[(id in ART ? id : CATEGORY_ICON[id as Category]) as ResourceId];
+  const art = EXTRA_ART[id] ?? BUILDING_ART[id] ?? ART[(id in ART ? id : CATEGORY_ICON[id as Category]) as ResourceId];
   if (!art) return '';
   return `<svg class="ico${cls ? ` ${cls}` : ''}" viewBox="0 0 24 24" ${title ? `role="img" aria-label="${title}"` : 'aria-hidden="true"'}>${art()}</svg>`;
 }

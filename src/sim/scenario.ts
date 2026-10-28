@@ -37,11 +37,35 @@ export interface Start {
   hearth: { base: number; perPerson: number };
   /** wood workshops (and the research desk) leave in storage for the hearth */
   woodReserve: number;
+  /** the body: hours of waking work from a full belly to empty, how hungry before someone goes for food, walking speed
+   *  in tiles an hour, and the share of food left out (not in a storehouse) that spoils each day */
+  body: { hungerHours: number; eatBelow: number; walk: number; spoilPerDay: number };
   /** outbreaks wait until this day and this many colonists */
   outbreakFrom: { day: number; pop: number };
   /** the calendar and what each season does; see seasons.ts */
   seasons: SeasonRules;
+  /** gold and the caravan; see the trade section of world.ts */
+  trade: TradeRules;
   intro: string[];
+}
+
+export interface TradeRules {
+  /** gold at the start */
+  gold: number;
+  /** what a trader pays, as a share of what goods cost: for the goods they want; for anything at the autumn fair; the pedlar for anything */
+  sell: number; fair: number; pedlar: number;
+  /** the most of one good the caravan will buy in a visit */
+  sellCap: number;
+  /** rent each housed settler pays on the first day of a season, by home */
+  rent: Record<string, number>;
+  /** the Crown's stipend for finishing charter 1 and charter 2 */
+  stipend: number[];
+  /** the caravan's visits: days of the season it comes, the hour it arrives and how many hours it stays */
+  visits: number[]; arrive: number; stays: number;
+  /** each visit: how many of the trader's goods they carry (from, to), how many of each (from, to), and the chance of a blueprint and its price */
+  kinds: [number, number]; each: [number, number]; blueprintChance: number; blueprint: number;
+  /** the chance a recruit offer includes a skilled settler, and the gold they ask (from, to) */
+  skilledChance: number; skilledFee: [number, number];
 }
 
 export type Season = 'spring' | 'summer' | 'autumn' | 'winter';
@@ -76,8 +100,9 @@ export interface SeasonRules {
   /** chance a night spent cold gives someone a winter chill (warm settlers get a small share of it) */
   chill: { cold: number; warm: number };
   /** what a sensible colony puts by for winter (the bot's and the foreman's target): it starts `from` days before
-   *  winter and is complete `full` days before; `share` of a winter's food and wood, the rest is gathered as it goes */
-  prep: { from: number; full: number; share: number };
+   *  winter and is complete `full` days before. `share` of a winter's eating (foraging and fishing carry on, thinner);
+   *  for wood, `fuel` of what the homes will burn (woodcutters keep chopping, and the hearth burns all year anyway) */
+  prep: { from: number; full: number; share: number; fuel: number };
   /** from this year of the run on, every comfort need asks a little more (0 = never) */
   stricterFromYear: number;
   /** mood when winter comes, for having held a harvest festival in autumn or not */
@@ -91,13 +116,14 @@ export const START: Start = {
   unlocked: ['stockpile', 'leanto', 'woodcutter', 'forager', 'desk'],
   firstResearch: ['cookery', 'messhall', 'physick'],
   firstCharterDay: 2,
-  draftEvery: 3,
+  draftEvery: 5,
   collapse: { lost: 6, minAlive: 0 },
   strain: { rate: 0.15, rampDays: 40 },
   comfortScale: { base: 1.4, slope: 1 },
   relief: { charter: 0.3, festival: { base: 0.15, drinks: 0.05, loved: 0.05, waitDays: 4 } },
-  hearth: { base: 0.25, perPerson: 0.06 },
+  hearth: { base: 0.125, perPerson: 0.03 },
   woodReserve: 10,
+  body: { hungerHours: 34, eatBelow: 45, walk: 7, spoilPerDay: 0.035 },
   outbreakFrom: { day: 6, pop: 5 },
   seasons: {
     days: 10,
@@ -123,9 +149,17 @@ export const START: Start = {
     harsh: 1.25,
     recruitEvery: { spring: 1, summer: 2, autumn: 2, winter: 3 },
     chill: { cold: 0.04, warm: 0.005 },
-    prep: { from: 10, full: 3, share: 0.65 },
+    prep: { from: 10, full: 3, share: 0.3, fuel: 0.6 },
     stricterFromYear: 0,
     harvestHome: { held: 4, missed: -4, hours: 96 },
+  },
+  trade: {
+    gold: 10, sell: 0.7, fair: 0.6, pedlar: 0.4, sellCap: 20,
+    rent: { leanto: 1, cottage: 3 },
+    stipend: [30, 50],
+    visits: [2, 7], arrive: 8, stays: 12,
+    kinds: [3, 4], each: [4, 10], blueprintChance: 0.5, blueprint: 45,
+    skilledChance: 0.5, skilledFee: [25, 40],
   },
   intro: ['Three settlers arrive at the edge of the Mumblewood with a cart, a kettle, a stack of borrowed books and great optimism.', 'Nobody knows how to build a kitchen yet. A research desk would be a start.', 'It\u2019s late summer. Winter comes in about two weeks, and then the fields and orchards sleep.'],
 };

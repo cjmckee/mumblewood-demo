@@ -1,7 +1,7 @@
 // Isometric vector renderer. Reads the world, never changes it.
 import { Application, Container, Graphics, Text } from 'pixi.js';
 import { BUILDING_BY_ID, ResourceId } from '../sim/content';
-import { modelFor, MODELS } from './models';
+import { modelFor, MODELS, caravanModel } from './models';
 import { drawModel } from './draw';
 import { seasonOf } from '../sim/seasons';
 import type { Season } from '../sim/scenario';
@@ -366,6 +366,17 @@ export class IsoView {
       const o = this.drawBuilding(w, b, sel);
       this.bGfx.set(b.uid, o);
       this.objects.addChild(o.c);
+    }
+    // the caravan, parked by the hearth for the day
+    if (w.caravan) {
+      const c = new Container(), g = new Graphics();
+      drawModel(g, caravanModel(), 'hearth', w.caravan.x, w.caravan.y, 0, 1, this.season === 'winter' ? 1 : 0);
+      c.addChild(g);
+      const label = this.makeLabel('Caravan');
+      const lp = iso(w.caravan.x + 1, w.caravan.y + 1.3); label.position.set(lp.sx, lp.sy);
+      c.zIndex = iso(w.caravan.x + 1, w.caravan.y + 0.5).sy;
+      this.bGfx.set(-1, { c, label });
+      this.objects.addChild(c);
     }
     this.declutter(w);
   }
