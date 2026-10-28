@@ -237,7 +237,7 @@ export function charterChain(w: World): string[] {
  * Experiment switches for the balance tools. `advisor` makes the bot play from what's on screen (the complaint
  * panel) instead of its own rules; it's off by default because, so far, it plays worse (see the project doc).
  */
-export const BOT = { trade: true, shopsByStore: false, layout: true, hutPull: 0.3, recipes: true, rateStaffing: false, unlockChain: true, ruleGap: true, hallMood: true, varietyRules: true, bankDrinks: true, bankHall: false, chainBeforeWinter: true, effortPick: true, moodFestival: true, festival: true, festivalAt: 8, comfortsFirst: false, recruitCap: 0, recruitExtra: 4, comforts: true, foodDepot: 'food' as false | 'food' | 'meals', laborersPer: 3.5, advisor: false, gate: true, ranked: true, comfort: 'strict' as 'strict' | 'econ' | 'none', rescue: false, rescueAt: 40, moodBlock: false, reroll: true, variety: false, routes: false, off: [] as string[], skip: [] as string[] };
+export const BOT = { randomize: [] as string[], trade: true, shopsByStore: false, layout: true, hutPull: 0.3, recipes: true, rateStaffing: false, unlockChain: true, ruleGap: true, hallMood: true, varietyRules: true, bankDrinks: true, bankHall: false, chainBeforeWinter: true, effortPick: true, moodFestival: true, festival: true, festivalAt: 8, comfortsFirst: false, recruitCap: 0, recruitExtra: 4, comforts: true, foodDepot: 'food' as false | 'food' | 'meals', laborersPer: 3.5, advisor: false, gate: true, ranked: true, comfort: 'strict' as 'strict' | 'econ' | 'none', rescue: false, rescueAt: 40, moodBlock: false, reroll: true, variety: false, routes: false, off: [] as string[], skip: [] as string[] };
 
 // ---------- Explaining the bot ----------
 /** one thing the bot decided and why: each option with its score broken into parts, or a staffing or build step */
@@ -291,6 +291,8 @@ export function autoDecide(w: World, style: 'greedy' | 'random' = 'greedy', rand
   while (w.decisions.length) {
     const d = w.decisions[0];
     let option = 0;
+    // this kind of choice made at random: the whole control (style 'random'), or one kind at a time (BOT.randomize) to see what it's worth
+    const rnd = style === 'random' || BOT.randomize.includes(d.kind);
     if (d.kind === 'errand') {
       // send a healthy laborer, or the best-skilled person if the job uses a skill
       const e = w.errands.find(x => x.id === d.errandId);
@@ -298,11 +300,11 @@ export function autoDecide(w: World, style: 'greedy' | 'random' = 'greedy', rand
       const best = pool.sort((a, b) => (e?.skill ? b.skills[e.skill] - a.skills[e.skill] : 0) + (Number(a.job != null) - Number(b.job != null)) * 2)[0];
       option = style === 'random' && rand() < 0.3 ? 0 : best?.id ?? 0;
     } else if (d.kind === 'research') {
-      option = style === 'random' ? Math.floor(rand() * d.options.length) : d.options.map(id => researchScore(w, id)).reduce((b, s, i, arr) => (s > arr[b] ? i : b), 0);
+      option = rnd ? Math.floor(rand() * d.options.length) : d.options.map(id => researchScore(w, id)).reduce((b, s, i, arr) => (s > arr[b] ? i : b), 0);
       if (TRACE.on) note(w, { kind: 'decision', title: 'Research pick', better: 'higher', chosen: d.options[option], options: d.options.map(id => ({ id, parts: researchParts(w, id), score: researchScore(w, id) })) });
     } else if (d.kind === 'trade') {
-      if (style === 'random') randomTrade(w, rand); else if (BOT.trade) botTrade(w);
-    } else if (style === 'random') {
+      if (rnd) randomTrade(w, rand); else if (BOT.trade) botTrade(w);
+    } else if (rnd) {
       // the control: any option at random (a recruit offer can be sent away too), never one it can't pay for
       const n = d.kind === 'event' ? 2 : d.kind === 'recruit' ? 4 : d.options.length;
       option = Math.floor(rand() * n);
