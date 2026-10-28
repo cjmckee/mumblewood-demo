@@ -64,6 +64,8 @@ export interface TradeRules {
   visits: number[]; arrive: number; stays: number;
   /** each visit: how many of the trader's goods they carry (from, to), how many of each (from, to), and the chance of a blueprint and its price */
   kinds: [number, number]; each: [number, number]; blueprintChance: number; blueprint: number;
+  /** the chance a recruit offer includes a skilled settler, and the gold they ask (from, to) */
+  skilledChance: number; skilledFee: [number, number];
 }
 
 export type Season = 'spring' | 'summer' | 'autumn' | 'winter';
@@ -153,10 +155,11 @@ export const START: Start = {
   },
   trade: {
     gold: 10, sell: 0.6, fair: 0.8, sellCap: 40,
-    rent: { leanto: 2, cottage: 6 },
+    rent: { leanto: 1, cottage: 3 },
     stipend: [30, 50],
     visits: [2, 7], arrive: 8, stays: 12,
     kinds: [3, 4], each: [4, 10], blueprintChance: 0.5, blueprint: 45,
+    skilledChance: 0.5, skilledFee: [25, 40],
   },
   intro: ['Three settlers arrive at the edge of the Mumblewood with a cart, a kettle, a stack of borrowed books and great optimism.', 'Nobody knows how to build a kitchen yet. A research desk would be a start.', 'It\u2019s late summer. Winter comes in about two weeks, and then the fields and orchards sleep.'],
 };

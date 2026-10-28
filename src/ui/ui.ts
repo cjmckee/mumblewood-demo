@@ -622,7 +622,7 @@ export class UI {
           w.research?.done.length ? 'Pick one project. The ones you pass on can come round again.' : 'Nobody here knows how to build a kitchen, a dining hall or a clinic yet. Pick one project for the research desk. Someone has to sit there, and the goods get carried in.',
           d.options.map(id => { const r = RESEARCH_BY_ID[id]; return { title: r.name, body: `${esc(r.desc)}\nUnlocks: ${r.unlocks.map(u => `<span class="gd">${icon(u)}${esc(BUILDING_BY_ID[u].name)}</span>`).join(', ')}`, tag: `Costs ${costHtml(r.cost)} · about ${r.hours} hours of study` }; })); break;
         case 'blueprint': {
-          const cost = rerollCost(w), can = w.res.wood >= cost;
+          const cost = rerollCost(w), can = w.gold >= cost;
           // each card lists what the building makes, best recipe first, so a reroll is a judgement about routes
           const recipeLines = (id: string) => [...(BUILDING_BY_ID[id].recipes ?? [])].sort((a, z) => z.stars - a.stars)
             .map(r => `<i class="stars">${'★'.repeat(r.stars)}${'☆'.repeat(3 - r.stars)}</i> ${recipeHtml(r)}${Object.keys(r.inputs).length ? ` · ${esc(reachText(w, r, true))}` : ''}`).join('\n');
@@ -636,7 +636,7 @@ export class UI {
           html = this.cards('A new blueprint', 'Pick one building to add to what you can build this run.',
             d.options.map(id => { const b = BUILDING_BY_ID[id]; const rl = recipeLines(id); return { title: b.name, icon: id, body: `${rl ? `${esc(b.blurb)}\n${rl}` : esc(b.blurb)}${notes(id)}`, tag: `Costs ${costHtml(b.cost)}${b.slots ? ` · ${b.slots} worker${b.slots > 1 ? 's' : ''}` : ''}` }; }),
             undefined,
-            `<button type="button" class="ghost skip" data-act="reroll" ${can ? '' : 'disabled'}>Reroll for ${cost} wood${can ? '' : ` (you have ${Math.floor(w.res.wood)})`}</button><p class="muted reroll-note">Each reroll this run costs ${REROLL_STEP} more than the last.</p>`);
+            `<button type="button" class="ghost skip" data-act="reroll" ${can ? '' : 'disabled'}>Reroll for ${cost} gold${can ? '' : ` (you have ${Math.floor(w.gold)})`}</button><p class="muted reroll-note">Each reroll this run costs ${REROLL_STEP} more than the last.</p>`);
           break;
         }
         case 'perk': html = this.cards(d.why === 'season' ? `${SEASON_NAMES[seasonOf(w).season]}: a new cornerstone` : 'The Crown grants a cornerstone',
@@ -644,7 +644,7 @@ export class UI {
           d.options.map(id => ({ title: PERK_BY_ID[id].name, icon: 'cornerstone', body: esc(PERK_BY_ID[id].desc), tag: 'Cornerstone' }))); break;
         case 'trade': html = this.tradeCard(w); break;
         case 'recruit': html = this.cards('Settlers at the edge of camp', `They’d like to join. You have ${beds(w)} beds for ${alive(w).length} colonists.`,
-          d.options.map(c => ({ title: c.name, body: c.traits.map(t => esc(`${TRAIT_BY_ID[t].name}: ${TRAIT_BY_ID[t].desc}`)).join('\n'), tag: `${esc(`Loves ${JOB_NAMES[c.likes]} · hates ${JOB_NAMES[c.dislikes]} · best at ${topSkills(c)}`)}${tasteLine(c, false)}`, color: hex(c.shirt) })),
+          d.options.map(c => ({ title: c.name, body: `${c.fee ? `<em class="fee">A skilled hand · asks ${c.fee}${icon('gold')}${w.gold < c.fee ? ` (you have ${Math.floor(w.gold)})` : ''}</em>\n` : ''}${c.traits.map(t => esc(`${TRAIT_BY_ID[t].name}: ${TRAIT_BY_ID[t].desc}`)).join('\n')}`, tag: `${esc(`Loves ${JOB_NAMES[c.likes]} · hates ${JOB_NAMES[c.dislikes]} · best at ${topSkills(c)}`)}${tasteLine(c, false)}`, color: hex(c.shirt), disabled: (c.fee ?? 0) > w.gold })),
           'Send them all away'); break;
         case 'errand': { const e = w.errands.find(x => x.id === d.errandId); if (e) html = this.errandPicker(w, e, true); break; }
         case 'event': {
@@ -692,9 +692,9 @@ export class UI {
       <button type="button" class="opt" data-act="resolve" data-arg="0"><b>Done trading</b><span>Head back from the cart. While the caravan stays, someone can be sent again.</span></button></div>`;
   }
 
-  private cards(title: string, lede: string, opts: { title: string; body: string; tag: string; color?: string; icon?: string }[], skip?: string, extra = '') {
+  private cards(title: string, lede: string, opts: { title: string; body: string; tag: string; color?: string; icon?: string; disabled?: boolean }[], skip?: string, extra = '') {
     return `<div class="card-wrap"><p class="eyebrow">Choose one</p><h2>${esc(title)}</h2><p class="lede">${esc(lede)}</p>
-      <div class="opts">${opts.map((o, i) => `<button type="button" class="opt" data-act="resolve" data-arg="${i}">
+      <div class="opts">${opts.map((o, i) => `<button type="button" class="opt" data-act="resolve" data-arg="${i}"${o.disabled ? ' disabled' : ''}>
         <b>${o.color ? `<span class="dot" style="background:${o.color}"></span>` : ''}${o.icon ? icon(o.icon, 'cico') : ''}${esc(o.title)}</b>
         ${o.body.split('\n').map(line => `<span>${line}</span>`).join('')}<small>${o.tag}</small></button>`).join('')}</div>
       ${skip ? `<button type="button" class="ghost skip" data-act="resolve" data-arg="99">${esc(skip)}</button>` : ''}${extra}</div>`;

@@ -66,6 +66,22 @@ check(w.log.some(l => l.text.startsWith('Rent day')), 'and the log says so');
 // winter: no caravan
 let winterCaravan = false;
 while (seasonOf(w).season !== 'spring' && day(w) < 60) { clear(false); runHours(w, 1); if (seasonOf(w).season === 'winter' && w.caravan) winterCaravan = true; }
-check(!winterCaravan, 'no caravan in winter');
+const pilgrims = w.perks.includes('pilgrimsRoad');
+check(winterCaravan === pilgrims, pilgrims ? 'with the pilgrims’ road, a caravan in winter too' : 'no caravan in winter');
+// skilled settlers: a recruit offer with a fee; refused without the gold, paid when taken
+let offer: { kind: 'recruit'; options: { fee?: number; id: number }[] } | undefined;
+for (let h = 0; h < 24 * 30 && !offer; h++) {
+  const d = w.decisions[0];
+  if (d?.kind === 'recruit' && d.options.some(c => c.fee)) offer = d as never;
+  else if (d) apply(w, { type: 'resolve', option: d.kind === 'errand' ? -1 : 99 }); else runHours(w, 1);
+}
+check(!!offer, `a skilled settler turns up among the recruits (asks ${offer?.options.find(c => c.fee)?.fee} gold)`);
+if (offer) {
+  const i = offer.options.findIndex(c => c.fee), fee = offer.options[i].fee!, n = alive(w).length;
+  w.gold = fee - 1;
+  check(apply(w, { type: 'resolve', option: i }) !== null && alive(w).length === n, 'without the gold they won’t come');
+  w.gold = fee + 5;
+  check(apply(w, { type: 'resolve', option: i }) === null && alive(w).length === n + 1 && w.gold === 5, 'with it they join, and the fee is paid');
+}
 console.log(failed ? `\n${failed} failed` : '\nall passed');
 process.exit(failed ? 1 : 0);

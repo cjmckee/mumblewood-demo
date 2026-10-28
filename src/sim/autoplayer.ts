@@ -336,12 +336,12 @@ export function autoDecide(w: World, style: 'greedy' | 'random' = 'greedy', rand
         ...(BOT.routes ? { 'new kinds it unlocks (×3)': -newKinds(w, id) * 3 } : {}),
       });
       const rank = (id: string) => (helpers.includes(id) && feedable(id) ? -100 + helpers.indexOf(id) : 0) + (asked.includes(id) ? -50 + asked.indexOf(id) : 0) + BLUEPRINT_PRIORITY.indexOf(id) + usable(id);
-      // nothing on offer the colony is missing and wants: pay for a reroll while wood stays comfortable
+      // nothing on offer the colony is missing and wants: pay for a reroll while gold stays comfortable
       const core = ['sawmill', 'tavern', 'cottage', 'pieoven', 'stage', 'bathhouse', 'dock', ...(DRINK_MAKERS.some(x => w.owned.includes(x)) ? [] : DRINK_MAKERS)];
       const wanted = (id: string) => (helpers.includes(id) && feedable(id)) || asked.includes(id) || (core.includes(id) && usable(id) < 6);
-      if (BOT.reroll && !d.options.some(wanted) && w.res.wood >= rerollCost(w) + 40) {
+      if (BOT.reroll && !d.options.some(wanted) && w.gold >= rerollCost(w) + 20) {
         const offered = d.options.join(', ');
-        if (!apply(w, { type: 'reroll' })) { note(w, { kind: 'decision', title: 'Blueprint reroll', lines: [`nothing wanted in ${offered}; wood ${Math.floor(w.res.wood)} covers the ${rerollCost(w) - 10} reroll`] }); continue; }
+        if (!apply(w, { type: 'reroll' })) { note(w, { kind: 'decision', title: 'Blueprint reroll', lines: [`nothing wanted in ${offered}; ${Math.floor(w.gold)} gold covers the ${rerollCost(w) - 10} reroll`] }); continue; }
       }
       // routes: credit for each new kind of meal, drink or fine material the blueprint makes feedable right away
       const rank2 = (id: string) => rank(id) - (BOT.routes ? newKinds(w, id) * 3 : 0);
@@ -351,7 +351,7 @@ export function autoDecide(w: World, style: 'greedy' | 'random' = 'greedy', rand
       option = d.options.map(o => PERK_PRIORITY.indexOf(o)).reduce((best, p, i, arr) => (p < arr[best] ? i : best), 0);
       if (TRACE.on) note(w, { kind: 'decision', title: 'Boon pick', better: 'lower', chosen: d.options[option], options: d.options.map(id => ({ id, parts: { 'standing priority': PERK_PRIORITY.indexOf(id) }, score: PERK_PRIORITY.indexOf(id) })) });
     } else if (d.kind === 'recruit') {
-      const score = (c: typeof d.options[number]) => (c.traits.includes('sunny') ? 2 : 0) + (c.traits.includes('diligent') ? 1 : 0)
+      const score = (c: typeof d.options[number]) => (c.fee ? (w.gold >= c.fee + 15 ? 3 : -99) : 0) + (c.traits.includes('sunny') ? 2 : 0) + (c.traits.includes('diligent') ? 1 : 0)
         - (c.traits.includes('grumbler') ? 2 : 0) - (c.traits.includes('drama') ? 1 : 0) - (c.traits.includes('vain') ? 1 : 0);
       const bestI = d.options.map(score).reduce((b, s, i, arr) => (s > arr[b] ? i : b), 0);
       const kind = charterKind(w);

@@ -70,6 +70,8 @@ export interface Colonist {
   errand: number | null;
   died: boolean;
   starvingHours: number;
+  /** a skilled settler at the edge of camp asks this much gold to join */
+  fee?: number;
   /** the last thing they ate, for comfort: a cooked meal or raw food, at a table, something they love */
   lastMeal?: { cooked: boolean; table: boolean; loved: boolean };
   /** the last few things they ate and when (for meal variety and fresh food) */
@@ -689,6 +691,19 @@ function makeColonist(w: World, usedNames: Set<string>): Colonist {
   };
 }
 
+/** make a settler a skilled hand: their two best kinds of work at expert level, a good trait, no bad one, and a fee */
+function skilled(w: World, c: Colonist) {
+  const t = START.trade;
+  c.skills[c.likes] = Math.max(c.skills[c.likes], 8 + Math.floor(nextRand(w) * 3));
+  const second = pick(w, JOB_KINDS.filter(j => j !== c.likes && j !== c.dislikes));
+  c.skills[second] = Math.max(c.skills[second], 7 + Math.floor(nextRand(w) * 3));
+  const bad = ['grumbler', 'lazy', 'drama', 'hummer', 'vain', 'picky', 'glutton'];
+  c.traits = c.traits.filter(x => !bad.includes(x));
+  const good = pick(w, ['diligent', 'sunny', 'stoic'].filter(x => TRAIT_BY_ID[x] && !c.traits.includes(x)));
+  if (good && !(TRAIT_BY_ID[good].group && c.traits.some(x => TRAIT_BY_ID[x].group === TRAIT_BY_ID[good].group))) c.traits = [good, ...c.traits].slice(0, 2);
+  c.fee = t.skilledFee[0] + Math.floor(nextRand(w) * (t.skilledFee[1] - t.skilledFee[0] + 1));
+}
+
 function newBuilding(w: World, def: string, x: number, y: number, isBuilt: boolean, rot = 0): Building {
   const b: Building = { uid: w.nextUid++, def, x, y, built: isBuilt, progress: 0, delivered: {}, outbox: {}, inbox: {}, clean: 100, eff: efficiencyAt(w, def, x, y, rot).eff || 1, stock: {}, allow: null, high: false };
   if (rot % 4) b.rot = rot % 4;
@@ -945,11 +960,10 @@ export function apply(w: World, cmd: Command): string | null {
       const d = w.decisions[0];
       if (d?.kind !== 'blueprint') return 'Only a blueprint draft can be rerolled.';
       const cost = rerollCost(w);
-      if (w.res.wood < cost) return `A reroll costs ${cost} wood.`;
-      w.res.wood -= cost; flow(w, 'wood:-reroll', cost); reconcileStock(w);
+      if (!spend(w, cost, 'reroll')) return `A reroll costs ${cost} gold.`;
       w.rerolls = (w.rerolls ?? 0) + 1;
       w.decisions[0] = blueprintDecision(w, d.options);
-      addLog(w, `New blueprints sent for, at a cost of ${cost} wood.`);
+      addLog(w, `New blueprints sent for, at a cost of ${cost} gold.`);
       return null;
     }
     case 'buy': return buy(w, cmd.res, cmd.n);
@@ -1034,6 +1048,7 @@ export function apply(w: World, cmd: Command): string | null {
 function resolveDecision(w: World, option: number): string | null {
   const d = w.decisions[0];
   if (!d) return 'Nothing to decide.';
+  if (d.kind === 'recruit' && (d.options[option]?.fee ?? 0) > w.gold) return `${first(d.options[option])} wants ${d.options[option].fee} gold to join.`;
   w.decisions.shift();
   switch (d.kind) {
     case 'charter': {
@@ -1066,6 +1081,7 @@ function resolveDecision(w: World, option: number): string | null {
     case 'recruit': {
       const c = d.options[option];
       if (c) {
+        if (c.fee) { spend(w, c.fee, 'settler'); addLog(w, `${first(c)} counts the ${c.fee} gold twice and unpacks a very good set of tools.`, 'good'); delete c.fee; }
         c.joinedDay = day(w);
         w.colonists.push(c);
         assignBeds(w);
@@ -2281,6 +2297,8 @@ function dawn(w: World) {
   if (every > 0 && d % every === 0) {
     const names = new Set(w.colonists.map(c => first(c)));
     const opts = [0, 1, 2].map(() => makeColonist(w, names));
+    // now and then one of them is a skilled hand who wants paying
+    if (nextRand(w) < START.trade.skilledChance) skilled(w, opts[2]);
     for (const o of opts) { o.x = 3 + nextRand(w) * 2; o.y = MAP_SIZE - 4; o.px = o.x; o.py = o.y; }
     w.decisions.push({ kind: 'recruit', options: opts });
   }
