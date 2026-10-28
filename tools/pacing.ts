@@ -5,6 +5,8 @@ import { createWorld, tick, day, alive, avgMood, TICKS_PER_HOUR, World, charterD
 import { autoDecide, autoBuild, BOT } from '../src/sim/autoplayer';
 import { START } from '../src/sim/scenario';
 import { BUILDINGS } from '../src/sim/content';
+// STYLE=random: the control, which makes every choice (charters, blueprints, research, cornerstones, recruits, events, trading) at random
+const STYLE = (process.env.STYLE ?? 'greedy') as 'greedy' | 'random';
 // experiment knobs: STRAIN_K, DRAFT_EVERY, RECRUIT_CAP (bot), LABORERS_PER (bot)
 if (process.env.STRAIN_K) START.strain.rate = Number(process.env.STRAIN_K);
 if (process.env.DRAFT_EVERY) START.draftEvery = Number(process.env.DRAFT_EVERY);
@@ -61,8 +63,8 @@ for (let i = 0; i < runs; i++) {
     if (run.offered == null && w.decisions.some(d => d.kind === 'charter')) run.offered = day(w);
   };
   while (w.status === 'playing' && day(w) <= maxDays) {
-    watch(); autoDecide(w, 'greedy', rand); watch();
-    for (let t = 0; t < TICKS_PER_HOUR; t++) { tick(w); if (w.decisions.length) { watch(); autoDecide(w, 'greedy', rand); } watch(); }
+    watch(); autoDecide(w, STYLE, rand); watch();
+    for (let t = 0; t < TICKS_PER_HOUR; t++) { tick(w); if (w.decisions.length) { watch(); autoDecide(w, STYLE, rand); } watch(); }
     autoBuild(w);
     if (Math.round(w.hour) % 24 === 12 && marks.includes(day(w))) { run.pop[day(w)] = alive(w).length; run.strain[day(w)] = Math.round(w.strain); run.mood[day(w)] = Math.round(avgMood(w)); run.comfort[day(w)] = Math.round(colonyComfort(w) * 100); run.gaps[day(w)] = Object.fromEntries(comfortGaps(w).map(g => [g.need, Math.round(g.avg * 100)])); }
   }

@@ -301,10 +301,12 @@ export function autoDecide(w: World, style: 'greedy' | 'random' = 'greedy', rand
       option = style === 'random' ? Math.floor(rand() * d.options.length) : d.options.map(id => researchScore(w, id)).reduce((b, s, i, arr) => (s > arr[b] ? i : b), 0);
       if (TRACE.on) note(w, { kind: 'decision', title: 'Research pick', better: 'higher', chosen: d.options[option], options: d.options.map(id => ({ id, parts: researchParts(w, id), score: researchScore(w, id) })) });
     } else if (d.kind === 'trade') {
-      if (BOT.trade) botTrade(w);
+      if (style === 'random') randomTrade(w, rand); else if (BOT.trade) botTrade(w);
     } else if (style === 'random') {
-      const n = d.kind === 'event' ? 2 : d.kind === 'recruit' ? 3 : d.options.length;
+      // the control: any option at random (a recruit offer can be sent away too), never one it can't pay for
+      const n = d.kind === 'event' ? 2 : d.kind === 'recruit' ? 4 : d.options.length;
       option = Math.floor(rand() * n);
+      if (d.kind === 'recruit' && (option >= 3 || (d.options[option]?.fee ?? 0) > w.gold)) option = 99;
     } else if (d.kind === 'charter') {
       // prefer charters we're already close to; long mood holds are a gamble
       // the charter with the least left to do: each condition's gap, and the buildings and drafts its goods still need
@@ -441,6 +443,16 @@ function botTrade(w: World) {
     if (useful && w.gold >= bp.price && !apply(w, { type: 'buyBlueprint', id: bp.id })) bought.push(bp.id);
   }
   if (TRACE.on) note(w, { kind: 'decision', title: 'Caravan', lines: [`sold ${sold.join(', ') || 'nothing'}; bought ${bought.join(', ') || 'nothing'}; ${Math.floor(w.gold)} gold left`] });
+}
+
+/** the control's trading: a few random sales and purchases, with no thought for what the colony needs */
+function randomTrade(w: World, rand: () => number) {
+  const t = w.caravan; if (!t) return;
+  const have = RESOURCES.filter(r => w.res[r.id] >= 2);
+  for (let i = 0; i < 2 && have.length; i++) { const r = have[Math.floor(rand() * have.length)].id; if (rand() < 0.5) apply(w, { type: 'sell', res: r, n: Math.floor(w.res[r] / 2) }); }
+  const wares = Object.keys(t.stock) as ResourceId[];
+  if (wares.length && rand() < 0.5) apply(w, { type: 'buy', res: wares[Math.floor(rand() * wares.length)], n: 5 });
+  if (t.blueprints.length && rand() < 0.25) apply(w, { type: 'buyBlueprint', id: t.blueprints[0].id });
 }
 
 function canPay(w: World, effect: string) {
