@@ -9,8 +9,11 @@ import { PRICE, TRADER_BY_ID } from '../src/sim/content';
 let failed = 0;
 const check = (ok: boolean, what: string) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}`); if (!ok) failed++; };
 const w: World = createWorld(2024);
+// nobody runs this colony, so keep the larder topped up and it lasts the year the test needs
+const feed = () => { if (w.res.stew < 30) w.res.stew += 30; if (w.res.wood < 60) w.res.wood += 60; };
 // skip every choice except the ones under test, and send the first settler to the caravan
 const clear = (keepTrade = true) => {
+  feed();
   while (w.decisions.length && !(keepTrade && w.decisions[0].kind === 'trade')) {
     const d = w.decisions[0];
     apply(w, { type: 'resolve', option: d.kind === 'errand' ? alive(w)[0].id : 99 });
@@ -63,20 +66,21 @@ check(!w.caravan, 'it leaves at dusk');
 check(!!w.nextTrader && w.log.slice(-6).some(l => l.text.startsWith('Word on the road')), `and word comes of the next (${w.nextTrader})`);
 // rent: the next season's first morning
 const housed = alive(w).filter(c => c.bed != null).length;
-while (seasonOf(w).dayOf !== 1 || Math.round(hourOfDay(w)) < 7) { clear(false); runHours(w, 1); }
+while ((seasonOf(w).dayOf !== 1 || Math.round(hourOfDay(w)) < 7) && w.status === 'playing') { clear(false); runHours(w, 1); }
 check((w.flows['gold:+rent'] ?? 0) > 0, `rent day: ${w.flows['gold:+rent']} gold from about ${housed} housed settlers`);
 check(w.log.some(l => l.text.startsWith('Rent day')), 'and the log says so');
 // winter: no caravan
 let winterCaravan = false;
-while (seasonOf(w).season !== 'spring' && day(w) < 60) { clear(false); runHours(w, 1); if (seasonOf(w).season === 'winter' && w.caravan) winterCaravan = true; }
+while (seasonOf(w).season !== 'spring' && day(w) < 60 && w.status === 'playing') { clear(false); runHours(w, 1); if (seasonOf(w).season === 'winter' && w.caravan) winterCaravan = true; }
 const pilgrims = w.perks.includes('pilgrimsRoad');
 check(winterCaravan === pilgrims, pilgrims ? 'with the pilgrims’ road, a caravan in winter too' : 'no caravan in winter');
 // skilled settlers: a recruit offer with a fee; refused without the gold, paid when taken
 let offer: { kind: 'recruit'; options: { fee?: number; id: number }[] } | undefined;
-for (let h = 0; h < 24 * 30 && !offer; h++) {
+w.perks = w.perks.filter(x => x !== 'closedGates'); // a cornerstone picked along the way could shut the gates
+for (let h = 0; h < 24 * 30 && !offer && w.status === 'playing'; h++) {
   const d = w.decisions[0];
   if (d?.kind === 'recruit' && d.options.some(c => c.fee)) offer = d as never;
-  else if (d) apply(w, { type: 'resolve', option: d.kind === 'errand' ? -1 : 99 }); else runHours(w, 1);
+  else if (d) { apply(w, { type: 'resolve', option: d.kind === 'errand' ? -1 : 99 }); w.perks = w.perks.filter(x => x !== 'closedGates'); } else runHours(w, 1);
 }
 check(!!offer, `a skilled settler turns up among the recruits (asks ${offer?.options.find(c => c.fee)?.fee} gold)`);
 if (offer) {

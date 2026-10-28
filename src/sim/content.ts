@@ -234,13 +234,9 @@ export const TRAIT_BY_ID: Record<string, TraitDef> = Object.fromEntries(TRAITS.m
 export interface PerkDef { id: string; name: string; desc: string }
 export const PERKS: PerkDef[] = [
   { id: 'communalPot', name: 'Communal pot', desc: 'Meals give +5 more mood. Raw food is −3 worse.' },
-  { id: 'matchmaker', name: "Matchmaker's charm", desc: 'Romance is three times as likely, and breakups rare.' },
-  { id: 'earplugs', name: 'Quiet hours', desc: 'Grumblers and hummers bother nobody.' },
   { id: 'ironWill', name: 'Iron constitution', desc: 'Frontier strain grows 35% slower.' },
   { id: 'overtime', name: 'Overtime bell', desc: 'Everyone works 25% faster, and is −3 mood about it.' },
-  { id: 'rations', name: 'Hearty rations', desc: 'Hunger drains 30% slower.' },
   { id: 'saintsDay', name: "Saint Pomfrey's blessing", desc: '+6 mood for everyone, forever.' },
-  { id: 'gossipBan', name: 'Gossip ordinance', desc: 'Nobody insults anybody. Everyone is −1 mood at not being allowed to.' },
   { id: 'warmHearth', name: 'Everburning hearth', desc: 'The hearth burns no wood at all, and evenings there are +2.' },
   { id: 'hearthSongs', name: 'Hearth songs', desc: 'Strain eases by 1 every evening the tavern is open and staffed.' },
   { id: 'postRider', name: 'A post rider', desc: 'Charters and festivals ease 20% more strain.' },
@@ -253,7 +249,20 @@ export const PERKS: PerkDef[] = [
   { id: 'merchantsFavour', name: 'Merchant’s favour', desc: 'The caravan sells for 20% less and pays 20% more.' },
   { id: 'openRoad', name: 'Open road', desc: 'Settlers ask to join every day, all year. Strain grows 10% faster.' },
   { id: 'feastDays', name: 'Feast days', desc: 'Festivals ease 50% more strain.' },
+  // guilds: a big boost to one chain, worth it only if the colony runs on that chain
+  { id: 'brewersGuild', name: 'Brewers\u2019 guild', desc: 'Breweries and cider presses work 75% faster.' },
+  { id: 'fishingRights', name: 'Fishing rights', desc: 'Fishing docks and smokehouses work 75% faster.' },
+  { id: 'masonsLodge', name: 'Masons\u2019 lodge', desc: 'Sawmills, carpenters, kilns and clay pits work 75% faster.' },
+  { id: 'bakersRow', name: 'Bakers\u2019 row', desc: 'Grain fields, mills, bakeries and pie ovens work 75% faster.' },
+  // trade-offs
+  { id: 'crownsFavour', name: 'The Crown\u2019s favour', desc: '60 gold now, and charter stipends are doubled. Strain grows 15% faster.' },
+  { id: 'closedGates', name: 'Closed gates', desc: 'No more settlers will join. Strain grows 30% slower.' },
+  { id: 'barnRaising', name: 'Barn raising', desc: 'Everything is built twice as fast. Everyone is −2 mood from the hammering.' },
 ];
+/** what each guild speeds up */
+export const GUILD_BOOST: Record<string, string[]> = {
+  brewersGuild: ['brewery', 'ciderpress'], fishingRights: ['dock', 'smokehouse'], masonsLodge: ['sawmill', 'carpenter', 'kiln', 'claypit'], bakersRow: ['field', 'mill', 'bakery', 'pieoven'],
+};
 export const PERK_BY_ID: Record<string, PerkDef> = Object.fromEntries(PERKS.map(p => [p.id, p]));
 
 export type CharterMetric =
@@ -381,7 +390,8 @@ export const ILLNESSES: IllnessDef[] = [
 
 // ---------- Research ----------
 /** A project the research desk works through. Finishing it unlocks buildings from the base set. */
-export interface ResearchDef { id: string; name: string; desc: string; unlocks: string[]; cost: Partial<Record<InputKey, number>>; hours: number }
+/** a project either unlocks buildings (the basics) or is lore: a lasting improvement, described by `effect` */
+export interface ResearchDef { id: string; name: string; desc: string; unlocks: string[]; cost: Partial<Record<InputKey, number>>; hours: number; effect?: string }
 export const RESEARCH: ResearchDef[] = [
   { id: 'cookery', name: 'Cookery', desc: 'Raw berries are food, technically. A stew kitchen turns raw food into proper meals.', unlocks: ['kitchen'], cost: { wood: 10, berries: 10 }, hours: 8 },
   { id: 'messhall', name: 'Mess hall', desc: 'Tables, benches, and the radical idea of not eating in the dirt.', unlocks: ['dining'], cost: { wood: 15 }, hours: 8 },
@@ -389,7 +399,28 @@ export const RESEARCH: ResearchDef[] = [
   { id: 'warehousing', name: 'Warehousing', desc: 'A storehouse under a roof, where food doesn\u2019t spoil.', unlocks: ['storehouse'], cost: { wood: 20 }, hours: 10 },
   { id: 'gardening', name: 'Gardening', desc: 'Flower beds and lantern posts. Prettier surroundings, happier settlers, confused moths.', unlocks: ['flowerbed', 'lantern'], cost: { wood: 5, berries: 10 }, hours: 6 },
   { id: 'masonry', name: 'Masonry', desc: 'Benches and a statue of Saint Pomfrey. Paid for in meals, because masons expect lunch.', unlocks: ['bench', 'statue'], cost: { wood: 10, meal: 5 }, hours: 10 },
+  // lore: slower, dearer, and too many to learn in one run, so the scholar's time goes to the chains the colony runs on
+  { id: 'handcarts', name: 'Handcarts', desc: 'Two wheels and a handle. The wheel was a good idea and everyone agrees it should catch on.', effect: 'Carrying no longer slows anyone down, and loaded haulers walk 20% faster.', unlocks: [], cost: { wood: 30, fine: 8 }, hours: 20 },
+  { id: 'roads', name: 'Road-building', desc: 'Packed gravel, a camber, and a ditch either side. Surprisingly exciting, if you are a surveyor.', effect: 'Paths cost no wood to lay, and walking on them is 50% faster instead of 25%.', unlocks: [], cost: { wood: 25 }, hours: 16 },
+  { id: 'preserving', name: 'Preserving', desc: 'Salt, smoke, crocks and a great deal of vinegar.', effect: 'Food spoils half as fast everywhere.', unlocks: [], cost: { wood: 15, rawFood: 20 }, hours: 18 },
+  { id: 'foraging', name: 'Forager\u2019s lore', desc: 'Which mushrooms are food and which are a learning experience.', effect: 'Forager huts and mushroom cellars bring in 35% more.', unlocks: [], cost: { rawFood: 25 }, hours: 16 },
+  { id: 'smoking', name: 'Nets and racks', desc: 'Better nets for the dock and better racks for the smoke.', effect: 'Fishing docks and smokehouses work 40% faster.', unlocks: [], cost: { wood: 15, rawFood: 20 }, hours: 20 },
+  { id: 'joinery', name: 'Joinery', desc: 'Dovetails, mortises, and a strong opinion about glue.', effect: 'Sawmills, carpenters, kilns and clay pits work 40% faster.', unlocks: [], cost: { wood: 35 }, hours: 20 },
+  { id: 'malting', name: 'Malting', desc: 'Sprout the grain, dry it, argue about it, brew it.', effect: 'Breweries and cider presses work 40% faster.', unlocks: [], cost: { wood: 20, rawFood: 15 }, hours: 22 },
+  { id: 'milling', name: 'Milling and baking', desc: 'Finer flour, hotter ovens, fewer burnt bottoms.', effect: 'Mills, bakeries and pie ovens work 40% faster.', unlocks: [], cost: { wood: 25, rawFood: 10 }, hours: 20 },
+  { id: 'rotation', name: 'Crop rotation', desc: 'Beans one year, grain the next, and the bees get the clover.', effect: 'Grain fields, orchards and apiaries bring in 40% more.', unlocks: [], cost: { wood: 20, rawFood: 15 }, hours: 22 },
+  { id: 'herblore', name: 'Herb lore', desc: 'A thick book of which leaf does what, half of it in the margins.', effect: 'Herb gardens and the apothecary work 50% faster.', unlocks: [], cost: { wood: 15, rawFood: 10 }, hours: 18 },
 ];
+/** what each piece of production lore speeds up, and by how much */
+export const LORE_BOOST: Record<string, { defs: string[]; mult: number }> = {
+  foraging: { defs: ['forager', 'cellar'], mult: 1.35 },
+  smoking: { defs: ['dock', 'smokehouse'], mult: 1.4 },
+  joinery: { defs: ['sawmill', 'carpenter', 'kiln', 'claypit'], mult: 1.4 },
+  malting: { defs: ['brewery', 'ciderpress'], mult: 1.4 },
+  milling: { defs: ['mill', 'bakery', 'pieoven'], mult: 1.4 },
+  rotation: { defs: ['field', 'orchard', 'apiary'], mult: 1.4 },
+  herblore: { defs: ['herbgarden', 'apothecary'], mult: 1.5 },
+};
 export const RESEARCH_BY_ID: Record<string, ResearchDef> = Object.fromEntries(RESEARCH.map(r => [r.id, r]));
 
 // ---------- Charters ----------

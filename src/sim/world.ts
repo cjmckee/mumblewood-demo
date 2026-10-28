@@ -3,7 +3,7 @@ import {
   BUILDING_BY_ID, BuildingDef, CHARTERS, CharterDef, EVENTS, FIRST_NAMES, JOB_NAMES, JobKind, JOB_KINDS,
   MEALS, PERKS, RAW_FOODS, ResourceId, SHIRTS, SKINS, SURNAMES, TRAITS, TRAIT_BY_ID, BUILDINGS, buildWork,
   JOB_EVENTS, JobEventDef, ILLNESSES, RESOURCES, Recipe, InputKey, CATEGORIES, isCategory, membersOf, inputName, recipeRate, SITES, SiteId, MEAL_MOOD,
-  CharterMetric, RESEARCH, RESEARCH_BY_ID, PRICE, TRADERS, TRADER_BY_ID,
+  CharterMetric, RESEARCH, RESEARCH_BY_ID, PRICE, TRADERS, TRADER_BY_ID, LORE_BOOST, GUILD_BOOST,
 } from './content';
 import { START } from './scenario';
 import { seasonOf, seasonOn, rule, SEASON_NAMES } from './seasons';
@@ -825,7 +825,7 @@ function researchHourly(w: World, b: Building, c: Colonist, dt: number) {
   }
   r.done.push(cur.id); r.current = null; r.progress = 0;
   for (const id of cur.unlocks) if (!w.owned.includes(id)) w.owned.push(id);
-  addLog(w, `${first(c)} finished studying ${cur.name}. You can now build: ${cur.unlocks.map(id => BUILDING_BY_ID[id].name.toLowerCase()).join(' and ')}.`, 'good');
+  addLog(w, cur.unlocks.length ? `${first(c)} finished studying ${cur.name}. You can now build: ${cur.unlocks.map(id => BUILDING_BY_ID[id].name.toLowerCase()).join(' and ')}.` : `${first(c)} finished studying ${cur.name}. ${cur.effect ?? ''}`, 'good');
   if (researchLeft(w).length) w.decisions.push(researchDecision(w));
   else addLog(w, 'The scholar has read every book in the colony twice and is now reading the labels on jars.');
   void b;
@@ -1095,6 +1095,7 @@ function resolveDecision(w: World, option: number): string | null {
       const id = d.options[option] ?? d.options[0];
       w.perks.push(id);
       addLog(w, `A new cornerstone: ${PERKS.find(p => p.id === id)!.name}.`, 'good');
+      if (id === 'crownsFavour') { earn(w, 60, 'favour'); addLog(w, 'The Crown sends 60 gold and a portrait of itself.', 'good'); }
       break;
     }
     case 'trade': {
@@ -1686,6 +1687,15 @@ function arrive(w: World, c: Colonist) {
   }
 }
 
+/** lore the scholar has learned, and guilds among the cornerstones, that speed up this building's work */
+export function craftBoost(w: World, defId: string) {
+  let m = 1;
+  for (const [id, l] of Object.entries(LORE_BOOST)) if (l.defs.includes(defId) && w.research?.done.includes(id)) m *= l.mult;
+  for (const [id, defs] of Object.entries(GUILD_BOOST)) if (defs.includes(defId) && hasPerk(w, id)) m *= 1.75;
+  return m;
+}
+export const knows = (w: World, id: string) => !!w.research?.done.includes(id);
+
 function workSpeed(w: World, c: Colonist, skill?: JobKind) {
   let s = skill ? 0.6 + c.skills[skill] * 0.08 : 1;
   if (has(c, 'lazy')) s *= 0.7;
@@ -1705,7 +1715,7 @@ function produce(w: World, dt: number) {
     for (const c of workersAt(w, b.uid)) {
       if (c.activity !== 'working' || !c.goalReached) continue;
       if (sum(b.outbox) >= OUTBOX_CAP) continue;
-      let amount = recipeRate(rec) * workSpeed(w, c, def.job) * dt * b.eff * seasonYield(w, def.id) * (def.id === 'woodcutter' && hasPerk(w, 'lumberGuild') ? 1.5 : 1) * (Object.keys(rec.inputs).length ? rule(START.seasons.indoor, seasonOf(w).season, 1) : 1);
+      let amount = recipeRate(rec) * workSpeed(w, c, def.job) * dt * b.eff * seasonYield(w, def.id) * (def.id === 'woodcutter' && hasPerk(w, 'lumberGuild') ? 1.5 : 1) * craftBoost(w, def.id) * (Object.keys(rec.inputs).length ? rule(START.seasons.indoor, seasonOf(w).season, 1) : 1);
       for (const [r, per] of Object.entries(rec.inputs)) amount = Math.min(amount, inInbox(b, r as InputKey) / (per as number));
       if (amount <= 0) continue;
       for (const [r, per] of Object.entries(rec.inputs)) {
@@ -1743,13 +1753,14 @@ function produce(w: World, dt: number) {
       if (w.paths[i] !== 1) { c.task = null; continue; }
       t.progress += workSpeed(w, c) * dt;
       if (t.progress >= 0.4) {
-        if (w.res.wood >= 1) { w.res.wood -= 1; flow(w, 'wood:-paths', 1); w.paths[i] = 2; w.version++; }
+        if (knows(w, 'roads')) { w.paths[i] = 2; w.version++; }
+        else if (w.res.wood >= 1) { w.res.wood -= 1; flow(w, 'wood:-paths', 1); w.paths[i] = 2; w.version++; }
         c.task = null;
       }
     } else if (c.activity === 'building' && c.task?.kind === 'build') {
       const b = buildingByUid(w, c.task.site);
       if (!b) { c.task = null; continue; }
-      b.progress += workSpeed(w, c) * dt * rule(START.seasons.build, seasonOf(w).season, 1);
+      b.progress += workSpeed(w, c) * dt * rule(START.seasons.build, seasonOf(w).season, 1) * (hasPerk(w, 'barnRaising') ? 2 : 1);
       if (b.progress >= siteWork(b)) completeBuilding(w, b);
     } else if (c.activity === 'cleaning' && c.task?.kind === 'clean') {
       const b = buildingByUid(w, c.task.building);
@@ -1986,6 +1997,7 @@ function computeThoughts(w: World, c: Colonist): Thought[] {
   if (hasPerk(w, 'overtime')) add('The overtime bell', -3);
   if (hasPerk(w, 'gossipBan')) add('Not allowed to gossip', -1);
   if (hasPerk(w, 'rentCollector')) add('The rent collector', -2);
+  if (hasPerk(w, 'barnRaising')) add('All that hammering', -2);
   if (c.beauty >= 5) add('Beautiful surroundings', 5);
   else if (c.beauty >= 2) add('Pleasant surroundings', 2);
   else if (c.beauty <= -1.2) add('Ugly surroundings', -3);
@@ -2071,7 +2083,7 @@ export const comfortFactor = (w: World) => Math.max(0.2, START.comfortScale.base
 /** strain rise per day at the colony's current size, day and comfort (before boons) */
 export function strainPerDay(w: World) {
   const d = day(w) - 1 + (hourOfDay(w) - 6) / 24;
-  return START.strain.rate * Math.sqrt(alive(w).length) * (1 + Math.max(0, d) / START.strain.rampDays) * comfortFactor(w) * (hasPerk(w, 'ironWill') ? 0.65 : 1) * (hasPerk(w, 'openRoad') ? 1.1 : 1);
+  return START.strain.rate * Math.sqrt(alive(w).length) * (1 + Math.max(0, d) / START.strain.rampDays) * comfortFactor(w) * (hasPerk(w, 'ironWill') ? 0.65 : 1) * (hasPerk(w, 'openRoad') ? 1.1 : 1) * (hasPerk(w, 'crownsFavour') ? 1.15 : 1) * (hasPerk(w, 'closedGates') ? 0.7 : 1);
 }
 
 /** what happened in the last 24 hours, from the running flow totals */
@@ -2184,7 +2196,7 @@ function hourly(w: World) {
   }
   if (hasBuilt(w, 'bathhouse') && h >= 6 && h < 18) { flow(w, 'wood:-bathhouse', Math.min(0.4, w.res.wood)); w.res.wood = Math.max(0, w.res.wood - 0.4); }
   // food spoils unless it sits somewhere that keeps it fresh (a storehouse)
-  const rot = (START.body.spoilPerDay / 24) * rule(sc.seasons.spoil, seasonOf(w).season, 1) * (hasPerk(w, 'rootCellars') && seasonOf(w).season === 'winter' ? 0 : 1);
+  const rot = (START.body.spoilPerDay / 24) * rule(sc.seasons.spoil, seasonOf(w).season, 1) * (hasPerk(w, 'rootCellars') && seasonOf(w).season === 'winter' ? 0 : 1) * (knows(w, 'preserving') ? 0.5 : 1);
   for (const r of FOODS) {
     let fresh = 0;
     for (const b of storages(w)) if (bdef(b).keepsFresh) fresh += b.stock[r] ?? 0;
@@ -2296,7 +2308,7 @@ function dawn(w: World) {
   // blueprint drafts every few days once the first charter is picked
   if (w.draftsFrom != null && d > w.draftsFrom && (d - w.draftsFrom) % START.draftEvery === 0) w.decisions.push(blueprintDecision(w));
   const every = hasPerk(w, 'openRoad') ? 1 : START.seasons.recruitEvery[seasonOf(w).season];
-  if (every > 0 && d % every === 0) {
+  if (every > 0 && d % every === 0 && !hasPerk(w, 'closedGates')) {
     const names = new Set(w.colonists.map(c => first(c)));
     const opts = [0, 1, 2].map(() => makeColonist(w, names));
     // now and then one of them is a skilled hand who wants paying
@@ -2488,7 +2500,7 @@ function checkCharter(w: World) {
   const eased = ease(w, START.relief.charter);
   if (eased) addLog(w, `Word of the charter spreads around the hearth. Strain eases by ${eased}.`, 'good');
   if (c.tier === 3) { w.status = 'won'; addLog(w, 'The Crown declares the colony a proper town. Someone makes a banner. It is spelled wrong.', 'good'); return; }
-  const stipend = START.trade.stipend[c.tier - 1] ?? 0;
+  const stipend = (START.trade.stipend[c.tier - 1] ?? 0) * (hasPerk(w, 'crownsFavour') ? 2 : 1);
   if (stipend) { earn(w, stipend, 'stipend'); addLog(w, `The Crown's courier brings a stipend: ${stipend} gold, and a receipt to sign in triplicate.`, 'good'); }
   offerCornerstone(w, 'charter');
   w.charterTier = c.tier + 1;
@@ -2633,7 +2645,7 @@ function move(w: World, c: Colonist, grid: Uint8Array, dt: number) {
     c.path = findPath(w, grid, c.x, c.y, goal.x, goal.y) ?? [];
     c.goalReached = false;
   }
-  let step = START.body.walk * dt * (c.carrying ? 0.85 : 1) * (pathAt(w, Math.floor(c.x), Math.floor(c.y)) === 2 ? PATH_SPEED : rule(START.seasons.offPath, seasonOf(w).season, 1));
+  let step = START.body.walk * dt * (c.carrying ? (knows(w, 'handcarts') ? 1.2 : 0.85) : 1) * (pathAt(w, Math.floor(c.x), Math.floor(c.y)) === 2 ? (knows(w, 'roads') ? 1.5 : PATH_SPEED) : rule(START.seasons.offPath, seasonOf(w).season, 1));
   const pts = [...c.path, { x: goal.x, y: goal.y }];
   while (step > 0 && pts.length) {
     const p = pts[0];

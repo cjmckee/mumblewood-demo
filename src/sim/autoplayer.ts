@@ -1,6 +1,6 @@
 // A heuristic player, used by the balance harness to play thousands of runs headlessly.
 // It reads the active charter and plays towards it, the way a person would.
-import { BUILDING_BY_ID, BUILDINGS, CATEGORIES, CharterMetric, RESEARCH_BY_ID, EVENTS, ResourceId, MEALS, RAW_FOODS, RESOURCES, Recipe, InputKey, membersOf, recipeRate } from './content';
+import { BUILDING_BY_ID, BUILDINGS, CATEGORIES, CharterMetric, RESEARCH_BY_ID, EVENTS, ResourceId, MEALS, RAW_FOODS, RESOURCES, Recipe, InputKey, membersOf, recipeRate, LORE_BOOST, GUILD_BOOST } from './content';
 import { assess, Concern, defsOf, KIND_DEFS } from './advisor';
 import { World, apply, alive, beds, mealTotal, sites, findSpot, CENTER, avgMood, built, MAP_SIZE, pathAt, terrainAt, T_WATER, bdef, workersAt, blockedReason, opinion, Building, Colonist, hourOfDay, charterProgress, buildingByUid, storageFree, storages, FOODS, GOODS, bedridden, foodTotal, currentRecipe, drinkTotal, siteOk, enabledRecipes, recipesOf, rerollCost, stockOf, usableHere, charterDef, charterHelpers, feastCheck, desks, researchLeft, festivalPreview, edibleTotal, doorTile, centerOf, winterStores, storageCap, stored, lastDay, lastDayHours, remainingCost, seasonYield, recipeOn, spotOf, canPlace, coversPath, efficiencyAt, footprint, BUILD_MIN, BUILD_MAX, blockedGrid } from './world';
 import { seasonOf } from './seasons';
@@ -41,7 +41,6 @@ function newKinds(w: World, id: string) {
   return goods.filter(r => !can(r, w.owned) && can(r, [...w.owned, id])).length;
 }
 const plannedUses = (w: World, input: ResourceId) => built(w).some(b => { const r = plannedRecipe(w, b); return !!r && Object.keys(r.inputs).some(k => membersOf(k as InputKey).includes(input)); });
-const PERK_PRIORITY = ['homesteaders', 'ironWill', 'postRider', 'saintsDay', 'warmHearth', 'lumberGuild', 'feastDays', 'hearthkeepers', 'overtime', 'hearthSongs', 'communalPot', 'rations', 'rootCellars', 'merchantsFavour', 'earplugs', 'pilgrimsRoad', 'gossipBan', 'openRoad', 'matchmaker', 'rentCollector'];
 const MOOD_BUILDINGS = ['tavern', 'brewery', 'ciderpress', 'pieoven', 'bathhouse', 'cottage', 'stage'];
 /**
  * Which recipes each workshop runs. A workshop makes the first recipe it can, so left alone the apothecary makes
@@ -82,7 +81,19 @@ const FOCUS: Record<string, string[]> = {
 /** research the bot wants first: what fixes today's problems, then the rest in a sensible order */
 const RESEARCH_ORDER = ['cookery', 'messhall', 'physick', 'warehousing', 'gardening', 'masonry'];
 function researchParts(w: World, id: string): Record<string, number> {
-  const p: Record<string, number> = { 'usual order': -RESEARCH_ORDER.indexOf(id) };
+  const basic = RESEARCH_ORDER.includes(id);
+  const p: Record<string, number> = basic ? { 'usual order': [10, 9, 8, 7, 3, 2][RESEARCH_ORDER.indexOf(id)] } : {};
+  // lore: worth it for the chains the colony runs on or is building toward
+  const lore = LORE_BOOST[id];
+  if (lore) {
+    const chain = w.charter ? charterChain(w) : [];
+    const n = lore.defs.filter(d => chain.includes(d)).length, b = lore.defs.filter(d => built(w).some(x => x.def === d && workersAt(w, x.uid).length)).length;
+    if (n) p['speeds up the charter\u2019s chain'] = 4 + n;
+    if (b) p['speeds up buildings at work now'] = 2 * b;
+  }
+  if (id === 'handcarts') p['laborers haul all day'] = 5;
+  if (id === 'roads') p['paths everywhere'] = 3;
+  if (id === 'preserving') p['food spoils'] = 2 + (built(w).some(b => b.def === 'storehouse') ? 0 : 2);
   if (id === 'physick' && alive(w).some(c => c.illness)) p['someone is ill'] = 10;
   if (id === 'warehousing' && storages(w).every(b => (bdef(b).storage ?? 0) - Object.values(b.stock).reduce((n, x) => n + (x ?? 0), 0) < 40)) p['storage nearly full'] = 4;
   void RESEARCH_BY_ID;
@@ -352,8 +363,9 @@ export function autoDecide(w: World, style: 'greedy' | 'random' = 'greedy', rand
       option = d.options.map(rank2).reduce((best, p, i, arr) => (p < arr[best] ? i : best), 0);
       if (TRACE.on) note(w, { kind: 'decision', title: 'Blueprint pick', better: 'lower', chosen: d.options[option], options: d.options.map(id => ({ id, parts: rankParts(id), score: rank2(id) })) });
     } else if (d.kind === 'perk') {
-      option = d.options.map(o => PERK_PRIORITY.indexOf(o)).reduce((best, p, i, arr) => (p < arr[best] ? i : best), 0);
-      if (TRACE.on) note(w, { kind: 'decision', title: 'Boon pick', better: 'lower', chosen: d.options[option], options: d.options.map(id => ({ id, parts: { 'standing priority': PERK_PRIORITY.indexOf(id) }, score: PERK_PRIORITY.indexOf(id) })) });
+      const score = (id: string) => sumParts(perkParts(w, id));
+      option = d.options.map(score).reduce((best, v, i, arr) => (v > arr[best] ? i : best), 0);
+      if (TRACE.on) note(w, { kind: 'decision', title: 'Cornerstone pick', better: 'higher', chosen: d.options[option], options: d.options.map(id => ({ id, parts: perkParts(w, id), score: score(id) })) });
     } else if (d.kind === 'recruit') {
       const score = (c: typeof d.options[number]) => (c.fee ? (w.gold >= c.fee + 15 ? 3 : -99) : 0) + (c.traits.includes('sunny') ? 2 : 0) + (c.traits.includes('diligent') ? 1 : 0)
         - (c.traits.includes('grumbler') ? 2 : 0) - (c.traits.includes('drama') ? 1 : 0) - (c.traits.includes('vain') ? 1 : 0);
@@ -455,6 +467,27 @@ function randomTrade(w: World, rand: () => number) {
   const wares = Object.keys(t.stock) as ResourceId[];
   if (wares.length && rand() < 0.5) apply(w, { type: 'buy', res: wares[Math.floor(rand() * wares.length)], n: 5 });
   if (t.blueprints.length && rand() < 0.25) apply(w, { type: 'buyBlueprint', id: t.blueprints[0].id });
+}
+
+/** what a cornerstone is worth to this colony now: a standing value, and the run's own circumstances for the ones that depend on them */
+const PERK_BASE: Record<string, number> = {
+  homesteaders: 18, ironWill: 18, postRider: 16, saintsDay: 16, warmHearth: 14, lumberGuild: 14, barnRaising: 13, overtime: 13,
+  feastDays: 12, hearthkeepers: 8, communalPot: 6, hearthSongs: 2, crownsFavour: 6, merchantsFavour: 8, rootCellars: 7,
+  pilgrimsRoad: 5, closedGates: -10, openRoad: 3, rentCollector: 2, brewersGuild: 0, fishingRights: 0, masonsLodge: 0, bakersRow: 0,
+};
+function perkParts(w: World, id: string): Record<string, number> {
+  const p: Record<string, number> = { 'standing value': PERK_BASE[id] ?? 0 };
+  const chain = w.charter ? charterChain(w) : [];
+  const working = (ds: string[]) => ds.filter(d => built(w).some(b => b.def === d && workersAt(w, b.uid).length)).length;
+  const guild = GUILD_BOOST[id];
+  if (guild) { const n = guild.filter(d => chain.includes(d)).length; if (n) p['the charter runs on it'] = 18 + 2 * n; if (working(guild)) p['already at work'] = 6 * working(guild); }
+  if (id === 'hearthSongs' && built(w).some(b => b.def === 'tavern')) p['there is a tavern'] = 13;
+  if (id === 'communalPot' && built(w).some(b => b.def === 'kitchen')) p['meals are cooked'] = 6;
+  if (id === 'hearthkeepers' && seasonOf(w).toWinter <= 12) p['winter is close'] = 6;
+  if (id === 'crownsFavour' && w.chartersDone.length < 2) p['stipends still to come'] = 8;
+  // closed gates: only once the colony has everyone the remaining charters ask for
+  if (id === 'closedGates') { const need = Math.max(...partsOf(w).map(x => (x.kind === 'population' ? x.amount : x.kind === 'longTable' ? x.pop : 0)), w.charterTier >= 3 ? 14 : 12); if (alive(w).length >= need + 1) p['enough people already'] = 30; }
+  return p;
 }
 
 function canPay(w: World, effect: string) {
