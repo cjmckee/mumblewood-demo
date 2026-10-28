@@ -2500,7 +2500,9 @@ export function earn(w: World, n: number, why: string) { if (n <= 0) return; w.g
 export function spend(w: World, n: number, why: string) { if (w.gold < n) return false; w.gold -= n; flow(w, `gold:-${why}`, n); return true; }
 /** what the caravan pays for one, to a tenth of a gold: a share of its price, more at the autumn fair. A sale pays whole gold, rounded down */
 export function sellPrice(w: World, r: ResourceId) {
-  const t = START.trade, share = seasonOf(w).season === 'autumn' || (w.caravan && TRADER_BY_ID[w.caravan.trader]?.wants.includes(r)) ? t.fair : t.sell;
+  const t = START.trade, tr = w.caravan ? TRADER_BY_ID[w.caravan.trader] : undefined;
+  // a trader buys only the goods they want; at the autumn fair anything sells, a little cheaper; the pedlar takes anything, cheaply
+  const share = tr?.wants.includes(r) ? t.sell : seasonOf(w).season === 'autumn' ? t.fair : tr && !tr.sells.length ? t.pedlar : 0;
   return Math.round(PRICE[r] * share * (hasPerk(w, 'merchantsFavour') ? 1.2 : 1) * 10) / 10;
 }
 const favour = (w: World, price: number) => Math.max(1, Math.round(price * (hasPerk(w, 'merchantsFavour') ? 0.8 : 1)));
@@ -2606,6 +2608,7 @@ function buy(w: World, r: ResourceId, n: number): string | null {
 function sell(w: World, r: ResourceId, n: number): string | null {
   const t = w.caravan;
   if (!t || !w.decisions.some(d => d.kind === 'trade')) return 'Nobody is at the caravan.';
+  if (!sellPrice(w, r)) return `${TRADER_BY_ID[t.trader].name.replace(/^./, x => x.toUpperCase())} isn’t buying ${RESOURCES.find(x => x.id === r)!.name.toLowerCase()}.`;
   const k = Math.min(Math.floor(n), Math.floor(w.res[r]), START.trade.sellCap - (t.sold[r] ?? 0));
   if (k < 1) return (t.sold[r] ?? 0) >= START.trade.sellCap ? 'The trader has bought all of that she wants.' : 'Nothing to sell.';
   w.res[r] -= k; flow(w, `${r}:-sold`, k); reconcileStock(w);

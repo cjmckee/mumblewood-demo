@@ -52,8 +52,8 @@ export interface Start {
 export interface TradeRules {
   /** gold at the start */
   gold: number;
-  /** what the caravan pays for a good, as a share of what it charges; more at the autumn fair */
-  sell: number; fair: number;
+  /** what a trader pays, as a share of what goods cost: for the goods they want; for anything at the autumn fair; the pedlar for anything */
+  sell: number; fair: number; pedlar: number;
   /** the most of one good the caravan will buy in a visit */
   sellCap: number;
   /** rent each housed settler pays on the first day of a season, by home */
@@ -154,7 +154,7 @@ export const START: Start = {
     harvestHome: { held: 4, missed: -4, hours: 96 },
   },
   trade: {
-    gold: 10, sell: 0.6, fair: 0.8, sellCap: 40,
+    gold: 10, sell: 0.7, fair: 0.6, pedlar: 0.4, sellCap: 20,
     rent: { leanto: 1, cottage: 3 },
     stipend: [30, 50],
     visits: [2, 7], arrive: 8, stays: 12,

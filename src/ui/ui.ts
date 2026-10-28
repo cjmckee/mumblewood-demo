@@ -679,16 +679,16 @@ export class UI {
     }).join('');
     const cap = START.trade.sellCap;
     const counted = new Set(charterCounted(w));
-    const mine = RESOURCES.filter(x => w.res[x.id] >= 1).sort((a, b) => w.res[b.id] - w.res[a.id]).map(x => {
+    const mine = RESOURCES.filter(x => w.res[x.id] >= 1 && sellPrice(w, x.id) > 0).sort((a, b) => w.res[b.id] - w.res[a.id]).map(x => {
       const p = sellPrice(w, x.id), sold = t.sold[x.id] ?? 0, room = cap - sold, have = Math.floor(w.res[x.id]);
       return `<div class="trow"><span class="tname">${icon(x.id)}<span><b>${esc(x.name)}</b><small>you have ${have}${sold ? ` · sold ${sold}/${cap}` : ''}${counted.has(x.id) ? ' · your charter counts these' : ''}</small></span></span><span class="tprice">${Number.isInteger(p) ? p : p.toFixed(1)}${icon('gold')}</span>${btn('trade-sell', `${x.id}:5`, '−5', room >= 1 && have >= 1)}${btn('trade-sell', `${x.id}:20`, '−20', room >= 1 && have >= 6)}</div>`;
     }).join('');
     const name = tr.name.charAt(0).toUpperCase() + tr.name.slice(1);
     return `<div class="card-wrap trade"><p class="eyebrow">${icon('caravan')} The caravan · leaves in ${left}h</p><h2>${esc(name)}</h2>
-      <p class="lede">${esc(tr.who)} You have <b class="goldnum">${gold} gold</b>.${autumn ? ' It\u2019s the harvest fair: everything sells well.' : wants.length ? ` Pays well for ${esc(wants.slice(0, -1).join(', '))} and ${esc(wants[wants.length - 1])}.` : ''}</p>
+      <p class="lede">${esc(tr.who)} You have <b class="goldnum">${gold} gold</b>.${wants.length ? ` Buys ${esc(wants.slice(0, -1).join(', '))} and ${esc(wants[wants.length - 1])}${autumn ? ', and at the harvest fair anything else, a little cheaper' : ' and nothing else'}.` : ' Buys anything, cheaply.'}</p>
       ${bps ? `<h3 class="first">Blueprints</h3><div class="tlist">${bps}</div>` : ''}
       <h3>The trader sells</h3><div class="tlist">${wares || '<p class="muted">Nothing left.</p>'}</div>
-      <h3>The trader buys <span class="muted">· up to ${cap} of each</span></h3><div class="tlist">${mine || '<p class="muted">You have nothing to sell.</p>'}</div>
+      <h3>The trader buys <span class="muted">· up to ${cap} of each</span></h3><div class="tlist">${mine || '<p class="muted">You have nothing this trader wants.</p>'}</div>
       <button type="button" class="opt" data-act="resolve" data-arg="0"><b>Done trading</b><span>Head back from the cart. While the caravan stays, someone can be sent again.</span></button></div>`;
   }
 

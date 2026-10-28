@@ -34,12 +34,15 @@ check(Object.values(w.caravan!.stock).every(it => it!.n >= START.trade.each[0] &
 let open = false;
 for (let h = 0; h < 6 && !open; h++) { clear(); open = w.decisions[0]?.kind === 'trade'; if (!open) runHours(w, 1); }
 check(open, 'trading opens when they get there');
-// selling
-w.res.wood = 200; const g0 = w.gold;
-check(apply(w, { type: 'sell', res: 'wood', n: 10 }) === null && w.res.wood === 190 && w.gold === g0 + Math.floor(10 * sellPrice(w, 'wood') + 1e-9), `selling 10 wood pays ${Math.floor(10 * sellPrice(w, 'wood') + 1e-9)} gold (${sellPrice(w, 'wood')} each, list price ${PRICE.wood})`);
-apply(w, { type: 'sell', res: 'wood', n: 999 });
-check(w.caravan!.sold.wood === START.trade.sellCap, `the trader buys at most ${START.trade.sellCap} of one good a visit`);
-check(apply(w, { type: 'sell', res: 'wood', n: 1 }) !== null, 'and refuses more');
+// selling: only what this trader wants (anything at the autumn fair, anything cheaply to the pedlar)
+const wantsR = (tr.wants[0] ?? 'wood') as keyof typeof PRICE;
+const notWanted = (Object.keys(PRICE) as (keyof typeof PRICE)[]).find(r => !tr.wants.includes(r));
+if (tr.sells.length && seasonOf(w).season !== 'autumn' && notWanted) { w.res[notWanted] = 50; check(apply(w, { type: 'sell', res: notWanted, n: 5 }) !== null, `${tr.name} won’t buy ${notWanted}`); }
+w.res[wantsR] = 200; const g0 = w.gold, p0 = sellPrice(w, wantsR);
+check(apply(w, { type: 'sell', res: wantsR, n: 10 }) === null && w.res[wantsR] === 190 && w.gold === g0 + Math.floor(10 * p0 + 1e-9), `selling 10 ${wantsR} pays ${Math.floor(10 * p0 + 1e-9)} gold (${p0} each, list price ${PRICE[wantsR]})`);
+apply(w, { type: 'sell', res: wantsR, n: 999 });
+check(w.caravan!.sold[wantsR] === START.trade.sellCap, `the trader buys at most ${START.trade.sellCap} of one good a visit`);
+check(apply(w, { type: 'sell', res: wantsR, n: 1 }) !== null, 'and refuses more');
 // buying
 const [r, item] = Object.entries(w.caravan!.stock)[0] as [keyof typeof PRICE, { n: number; price: number }];
 w.gold = item.price * 2; const have = w.res[r];
@@ -52,7 +55,7 @@ const bp = w.caravan!.blueprints[0];
 check(!!bp, `a blueprint on the cart (${bp?.id}, ${bp?.price} gold)`);
 if (bp) { w.gold = bp.price; check(apply(w, { type: 'buyBlueprint', id: bp.id }) === null && w.owned.includes(bp.id) && w.gold === 0, 'buying it adds it to what can be built'); }
 apply(w, { type: 'resolve', option: 0 });
-check(apply(w, { type: 'sell', res: 'wood', n: 1 }) !== null, 'trading closes when they leave the cart');
+check(apply(w, { type: 'sell', res: wantsR, n: 1 }) !== null, 'trading closes when they leave the cart');
 check(apply(w, { type: 'visitCaravan' }) === null && w.errands.some(e => e.def === 'caravan'), 'someone can be sent back while it stays');
 // it leaves at dusk
 for (let h = 0; h < 14; h++) { clear(false); runHours(w, 1); }
