@@ -288,63 +288,96 @@ export interface CharterDef {
 }
 
 export interface EventOption { label: string; detail: string; effect: string }
+/**
+ * How the storyteller treats an event. Threat builds up every day (see scenario.ts, story); minor events cost little or
+ * nothing and come often, moderate and major ones wait until the budget can pay for them, and a major one buys a quiet
+ * spell after it. Seasonal events only happen in their seasons.
+ */
+export type Tier = 'minor' | 'moderate' | 'major';
+export interface StoryTag { tier: Tier; cost: number; seasons?: ('spring' | 'summer' | 'autumn' | 'winter')[] }
 /** requires: 'couple' needs a couple; 'strain' needs strain of 6 or more (the event is about the frontier wearing on people) */
-export interface EventDef { id: string; title: string; text: string; options: EventOption[]; requires?: 'couple' | 'strain' }
+export interface EventDef extends StoryTag { id: string; title: string; text: string; options: EventOption[]; requires?: 'couple' | 'strain' }
 export const EVENTS: EventDef[] = [
-  { id: 'bard', title: 'A travelling bard', text: 'A bard offers to play "The Ballad of Your Colony" for a modest fee. He has not yet written it.',
+  { id: 'bard', tier: 'minor', cost: 0, title: 'A travelling bard', text: 'A bard offers to play "The Ballad of Your Colony" for a modest fee. He has not yet written it.',
     options: [
       { label: 'Pay 6 drinks', detail: 'Everyone +6 mood for a day, and strain eases by 8%.', effect: 'bardPlay' },
       { label: 'Shoo him away', detail: 'Nothing happens. He writes a mean song anyway.', effect: 'none' },
     ] },
-  { id: 'wedding', title: 'A wedding is proposed', text: 'A couple wants to make it official. Everyone is invited, whether they like it or not.', requires: 'couple',
+  { id: 'wedding', tier: 'minor', cost: 0, title: 'A wedding is proposed', text: 'A couple wants to make it official. Everyone is invited, whether they like it or not.', requires: 'couple',
     options: [
       { label: 'Host it (8 meals, 5 drinks)', detail: 'Everyone +7 mood for 2 days, and strain eases by 10%.', effect: 'wedding' },
       { label: 'Elope quietly', detail: 'The couple is −8 mood for 2 days.', effect: 'elope' },
     ] },
-  { id: 'frogs', title: 'It is raining frogs', text: 'Small, confused frogs. Some colonists find it delightful. Others are holding umbrellas very tightly.',
+  { id: 'frogs', tier: 'minor', cost: 2, title: 'It is raining frogs', text: 'Small, confused frogs. Some colonists find it delightful. Others are holding umbrellas very tightly.',
     options: [
       { label: 'Collect them', detail: '+15 fish (close enough). Grumblers −5 for a day.', effect: 'frogFish' },
       { label: 'Stay indoors', detail: 'Everyone −2 mood for a day.', effect: 'frogHide' },
     ] },
-  { id: 'outhouse', title: 'The outhouse is haunted', text: 'Witnesses describe moaning, rattling, and "a judgmental presence".',
+  { id: 'outhouse', tier: 'minor', cost: 3, title: 'The outhouse is haunted', text: 'Witnesses describe moaning, rattling, and "a judgmental presence".',
     options: [
       { label: 'Rebuild it (10 planks)', detail: 'Lose 10 planks.', effect: 'outhouseFix' },
       { label: 'Live with the ghost', detail: 'Everyone −3 mood for 3 days.', effect: 'ghost' },
     ] },
-  { id: 'letters', title: 'Letters from home', text: 'A courier staggers out of the woods with a sack of letters, most of them from aunts. He would like feeding before the walk back.', requires: 'strain',
+  { id: 'letters', tier: 'minor', cost: 0, title: 'Letters from home', text: 'A courier staggers out of the woods with a sack of letters, most of them from aunts. He would like feeding before the walk back.', requires: 'strain',
     options: [
       { label: 'Feed him (15 food)', detail: 'Strain eases by 10%, or 15% if nobody is sulking. Everyone +3 mood for a day.', effect: 'lettersRead' },
       { label: 'Send him on his way', detail: 'The letters go back. Everyone −2 mood for a day.', effect: 'lettersLost' },
     ] },
-  { id: 'homesick', title: 'A cold wind from the east', text: 'The wind smells like somewhere else. People are talking about home, and not fondly about here.', requires: 'strain',
+  { id: 'homesick', tier: 'moderate', cost: 6, title: 'A cold wind from the east', text: 'The wind smells like somewhere else. People are talking about home, and not fondly about here.', requires: 'strain',
     options: [
       { label: 'Light a bonfire (20 wood)', detail: 'Strain doesn’t rise from this, and everyone +2 mood for a day.', effect: 'bonfire' },
       { label: 'Tough it out', detail: 'Strain rises by 3.', effect: 'homesick' },
     ] },
-  { id: 'moon', title: 'A harvest moon', text: 'The moon is enormous and orange. Someone suggests a dance. Someone else suggests the dance needs food.',
+  { id: 'moon', tier: 'minor', cost: 0, title: 'A harvest moon', text: 'The moon is enormous and orange. Someone suggests a dance. Someone else suggests the dance needs food.',
     options: [
       { label: 'Dance under it (a meal each)', detail: 'Strain eases by 10%, more if people get a meal they love. Everyone +4 mood for a day.', effect: 'moonDance' },
       { label: 'Early night', detail: 'Nothing happens. The moon is unbothered.', effect: 'none' },
     ] },
-  { id: 'peddler', title: 'A peddler with a cart', text: 'She is selling "authentic" relics and also, more usefully, planks.',
+  { id: 'peddler', tier: 'minor', cost: 0, title: 'A peddler with a cart', text: 'She is selling "authentic" relics and also, more usefully, planks.',
     options: [
       { label: 'Trade 30 wood for 12 planks', detail: 'A decent deal.', effect: 'peddlerPlanks' },
       { label: 'Buy the relic (8 gold)', detail: 'Everyone +3 mood for 3 days. It is a spoon.', effect: 'relic' },
     ] },
-  { id: 'purse', title: 'A purse in the mud', text: 'Someone found a purse on the road. It is heavy, embroidered "NOT YOURS", and smells faintly of cheese.',
+  { id: 'purse', tier: 'minor', cost: 0, title: 'A purse in the mud', text: 'Someone found a purse on the road. It is heavy, embroidered "NOT YOURS", and smells faintly of cheese.',
     options: [
       { label: 'Keep it', detail: '+15 gold. The finder feels a bit guilty (−3 mood for 2 days).', effect: 'purseKeep' },
       { label: 'Leave it at the waystone', detail: 'Everyone +2 mood for 2 days. Honesty is its own reward, apparently.', effect: 'purseReturn' },
     ] },
-  { id: 'taxman', title: 'The Crown’s tax collector', text: 'A man in a very tall hat has come to count things. He has a ledger, a quill, and no sense of humour.',
+  { id: 'taxman', tier: 'moderate', cost: 8, title: 'The Crown’s tax collector', text: 'A man in a very tall hat has come to count things. He has a ledger, a quill, and no sense of humour.',
     options: [
       { label: 'Pay the levy (12 gold)', detail: 'He tips the hat and leaves.', effect: 'taxPay' },
       { label: 'Hide the valuables', detail: 'He takes 20 food instead, and everyone is −3 mood for 2 days.', effect: 'taxHide' },
     ] },
-  { id: 'busker', title: 'Buskers at the hearth', text: 'Two fiddlers and a man with a spoon are playing for coins. The spoon man is surprisingly good.',
+  { id: 'busker', tier: 'minor', cost: 0, title: 'Buskers at the hearth', text: 'Two fiddlers and a man with a spoon are playing for coins. The spoon man is surprisingly good.',
     options: [
       { label: 'Toss them 6 gold', detail: 'Everyone +4 mood for a day, and strain eases by 5%.', effect: 'buskerPay' },
       { label: 'Applaud politely', detail: 'Nothing happens. The spoon man looks hurt.', effect: 'none' },
+    ] },
+  // ---- bigger trouble and the seasons' own events ----
+  { id: 'tollGang', tier: 'major', cost: 25, title: 'A goblin toll gang', text: 'Six goblins with a barrier pole have set up across the road. They insist the road is theirs. One of them has a very small crown.',
+    options: [
+      { label: 'Pay the toll (30 gold)', detail: 'They lift the pole and wave you through, smugly.', effect: 'tollPay' },
+      { label: 'Bar the gates', detail: 'They smash up a workshop before they get bored, and everyone is −3 mood for 2 days.', effect: 'tollRefuse' },
+    ] },
+  { id: 'inspector', tier: 'major', cost: 20, seasons: ['autumn'], title: 'The Crown\u2019s inspector', text: 'An inspector with a clipboard has come to see whether the colony is "worth the paperwork". He is hungry and corruptible, in that order.',
+    options: [
+      { label: 'Feed his retinue (15 meals)', detail: 'He writes something positive, probably. Strain eases by 5%.', effect: 'inspectorMeals' },
+      { label: 'Slip him 25 gold', detail: 'The clipboard is put away.', effect: 'inspectorGold' },
+    ] },
+  { id: 'blight', tier: 'moderate', cost: 12, seasons: ['autumn'], title: 'Blight in the rows', text: 'Black spots on the leaves of the fields and the orchard. The old-timers say burn it. The young ones say it looks fine.',
+    options: [
+      { label: 'Burn the blighted rows', detail: 'Lose 20 grain and apples now.', effect: 'blightBurn' },
+      { label: 'Hope it passes', detail: 'Fields and orchards bring in half for 5 days.', effect: 'blightWait' },
+    ] },
+  { id: 'deserter', tier: 'moderate', cost: 8, title: 'A deserter at the gate', text: 'A soldier who has "retired early" from the Crown\u2019s army asks to stay. There is a bounty on his head, and he is very good with a saw.',
+    options: [
+      { label: 'Take him in', detail: 'A skilled settler joins for free. Strain rises by 3: people talk.', effect: 'deserterTake' },
+      { label: 'Turn him in', detail: '+20 gold bounty. Everyone is −2 mood for a day.', effect: 'deserterTurn' },
+    ] },
+  { id: 'author', tier: 'minor', cost: 0, title: 'A travelling author', text: 'A famous author is writing a book about the frontier and would like to stay a night. She asks a great many questions about the toilets.',
+    options: [
+      { label: 'Host her (5 meals)', detail: 'Everyone +3 mood for a day, and strain eases by 8%.', effect: 'authorHost' },
+      { label: 'No room at the inn', detail: 'Nothing happens. You will not be in the book.', effect: 'none' },
     ] },
 ];
 
@@ -354,7 +387,7 @@ export const SHIRTS = [0xc8553d, 0x3d7b9a, 0x6a8d3a, 0xd6a33c, 0x8d5ba8, 0x2f8f7
 export const SKINS = [0xf1c9a5, 0xd9a27e, 0xb27b56, 0x8a5a3c, 0xf5d7b8, 0x6b4430];
 
 /** Events that create a short job someone has to be sent to do. {a} and {b} are filled with colonist names. */
-export interface JobEventDef {
+export interface JobEventDef extends Partial<StoryTag> {
   id: string; title: string; text: string;
   /** in-game hours of work */
   hours: number;
@@ -369,12 +402,18 @@ export interface JobEventDef {
 }
 export const JOB_EVENTS: JobEventDef[] = [
   { id: 'caravan', title: 'The caravan is here', text: 'A trader\u2019s caravan is parked by the hearth until dusk. Someone has to walk over and haggle.', hours: 0.5, deadline: 11, at: 'hearth', reward: 'Trade: buy what the charter needs, sell what you have spare, maybe a blueprint.', penalty: 'The caravan leaves without trading.' },
-  { id: 'badger', title: 'A badger in the stores', text: 'A badger has moved into the storage. It is eating everything and it has opinions about it.', hours: 3, deadline: 12, at: 'storage', reward: 'Chase it off and nothing is lost.', penalty: 'Lose a quarter of all food.' },
-  { id: 'cat', title: 'The cat is up a tree', text: 'The colony cat climbed the tallest tree on the frontier and is now yowling about it.', hours: 2, deadline: 8, at: 'edge', skill: 'chopping', reward: 'Everyone +3 mood for a day.', penalty: 'Everyone −3 mood for a day, from the yowling.' },
-  { id: 'feud', title: 'A feud is brewing', text: '{a} and {b} are not speaking, except to say very loud things about each other. Someone should mediate.', hours: 3, deadline: 16, at: 'pair', reward: 'They patch things up a bit (+25 opinion each way).', penalty: 'Both −6 mood for two days, and they like each other even less.', requires: 'rivals' },
-  { id: 'bog', title: 'Someone is stuck in the bog', text: 'A traveller has wandered into the bog at the edge of the woods and is sinking at a dignified pace.', hours: 4, deadline: 10, at: 'edge', reward: 'They join the colony out of gratitude.', penalty: 'They get out on their own and tell everyone how rude you were (−2 mood for a day).' },
-  { id: 'goblin', title: 'The goblin tax collector', text: 'A goblin in a very official hat is demanding a "frontier levy" and refuses to leave. Someone should politely walk him to the edge of the woods.', hours: 2, deadline: 6, at: 'hearth', reward: 'He leaves with nothing but a stamped form.', penalty: 'He takes 20 food and graffitis every wall on the way out.' },
-  { id: 'pigeons', title: 'The pigeons have unionised', text: 'The pigeons are picketing the food stores. Their demands are berries. Someone needs to negotiate, loudly, with a broom.', hours: 3, deadline: 8, at: 'storage', reward: 'The pigeons disperse, grumbling.', penalty: 'They riot. Lose 40% of the berries.' },
+  { id: 'badger', tier: 'moderate', cost: 10, title: 'A badger in the stores', text: 'A badger has moved into the storage. It is eating everything and it has opinions about it.', hours: 3, deadline: 12, at: 'storage', reward: 'Chase it off and nothing is lost.', penalty: 'Lose a quarter of all food.' },
+  { id: 'cat', tier: 'minor', cost: 2, title: 'The cat is up a tree', text: 'The colony cat climbed the tallest tree on the frontier and is now yowling about it.', hours: 2, deadline: 8, at: 'edge', skill: 'chopping', reward: 'Everyone +3 mood for a day.', penalty: 'Everyone −3 mood for a day, from the yowling.' },
+  { id: 'feud', tier: 'minor', cost: 3, title: 'A feud is brewing', text: '{a} and {b} are not speaking, except to say very loud things about each other. Someone should mediate.', hours: 3, deadline: 16, at: 'pair', reward: 'They patch things up a bit (+25 opinion each way).', penalty: 'Both −6 mood for two days, and they like each other even less.', requires: 'rivals' },
+  { id: 'bog', tier: 'minor', cost: 0, title: 'Someone is stuck in the bog', text: 'A traveller has wandered into the bog at the edge of the woods and is sinking at a dignified pace.', hours: 4, deadline: 10, at: 'edge', reward: 'They join the colony out of gratitude.', penalty: 'They get out on their own and tell everyone how rude you were (−2 mood for a day).' },
+  { id: 'goblin', tier: 'moderate', cost: 6, title: 'The goblin tax collector', text: 'A goblin in a very official hat is demanding a "frontier levy" and refuses to leave. Someone should politely walk him to the edge of the woods.', hours: 2, deadline: 6, at: 'hearth', reward: 'He leaves with nothing but a stamped form.', penalty: 'He takes 20 food and graffitis every wall on the way out.' },
+  { id: 'pigeons', tier: 'moderate', cost: 6, title: 'The pigeons have unionised', text: 'The pigeons are picketing the food stores. Their demands are berries. Someone needs to negotiate, loudly, with a broom.', hours: 3, deadline: 8, at: 'storage', reward: 'The pigeons disperse, grumbling.', penalty: 'They riot. Lose 40% of the berries.' },
+  { id: 'flood', tier: 'major', cost: 25, seasons: ['spring'], title: 'The river is rising', text: 'The thaw has swollen the water and it is coming for the workshops. Someone needs to dig a ditch, fast.', hours: 6, deadline: 10, at: 'edge', reward: 'The water goes round.', penalty: 'A workshop is wrecked and needs rebuilding, and a fifth of the raw food is lost.' },
+  { id: 'wildfire', tier: 'major', cost: 25, seasons: ['summer'], title: 'Smoke at the forest edge', text: 'A wildfire is creeping through the dry undergrowth towards the huts. A firebreak would stop it.', hours: 6, deadline: 12, at: 'edge', skill: 'chopping', reward: 'The fire stops at the break, and the felled trees are 15 wood.', penalty: 'A hut at the edge burns and needs rebuilding, and 30 wood goes up with it.' },
+  { id: 'storeFire', tier: 'major', cost: 30, title: 'Fire in the stores!', text: 'Someone left a lantern in the stores. Someone else is now shouting "FIRE" in a high, clear voice.', hours: 2, deadline: 3, at: 'storage', reward: 'Only a little is lost.', penalty: 'A third of what that store holds burns.' },
+  { id: 'wolves', tier: 'major', cost: 25, seasons: ['winter'], title: 'Wolves at the huts', text: 'A pack of thin, determined wolves is circling the gatherers\u2019 huts. Someone should go and make a lot of noise.', hours: 4, deadline: 8, at: 'edge', reward: 'The wolves slink off.', penalty: 'A gatherer is bitten, and the wolves take 15 raw food.' },
+  { id: 'drought', tier: 'moderate', cost: 12, seasons: ['summer'], title: 'A dry spell', text: 'No rain for a week. The berries are shrivelling and the fields are dust. Someone could haul water from the river.', hours: 8, deadline: 14, at: 'edge', reward: 'The plants hang on.', penalty: 'Foragers, fields, orchards and herb gardens bring in 40% less for 4 days.' },
+  { id: 'frozenWell', tier: 'moderate', cost: 10, seasons: ['winter'], title: 'The well has frozen', text: 'The well is a solid block of ice. Everyone is melting snow in pots and complaining about the taste.', hours: 3, deadline: 10, at: 'hearth', reward: 'Water flows, after a fashion.', penalty: 'Everyone is −4 mood for 2 days, and the kitchens work 25% slower.' },
   { id: 'remedy', title: 'Brew a remedy', text: 'The frontier flu is going around. Someone handy with medicine could brew a remedy.', hours: 4, deadline: 18, at: 'clinic', skill: 'medicine', reward: 'Everyone who is sick feels much better.', penalty: 'The flu runs its course.' },
 ];
 
@@ -386,6 +425,7 @@ export const ILLNESSES: IllnessDef[] = [
   { id: 'ankle', name: 'Sprained ankle', start: 26, worsen: 0.2 },
   { id: 'splinter', name: 'Heroic splinter', start: 16, worsen: 0.15 },
   { id: 'chill', name: 'Winter chill', start: 18, worsen: 0.35 },
+  { id: 'bitten', name: 'Wolf bite', start: 28, worsen: 0.2 },
 ];
 
 // ---------- Research ----------

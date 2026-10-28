@@ -44,7 +44,7 @@ const marks = [5, 10, 20, 30, 40, 50, 60];
 interface Run {
   seed: number; status: string; day: number; peak: number; lost: number; deaths: number;
   offered: number | null; picks: { id: string; day: number }[]; dones: { id: string; day: number }[];
-  research: { id: string; day: number }[]; owned: number; builtShare: number; gold: Record<string, number>; caravanGoods: number; caravanBps: number; pop: Record<number, number>; strain: Record<number, number>; mood: Record<number, number>; comfort: Record<number, number>; gaps: Record<number, Record<string, number>>;
+  research: { id: string; day: number }[]; owned: number; builtShare: number; story: Record<string, number>; gold: Record<string, number>; caravanGoods: number; caravanBps: number; pop: Record<number, number>; strain: Record<number, number>; mood: Record<number, number>; comfort: Record<number, number>; gaps: Record<number, Record<string, number>>;
 }
 const out: Run[] = [];
 for (let i = 0; i < runs; i++) {
@@ -52,7 +52,7 @@ for (let i = 0; i < runs; i++) {
   const w: World = createWorld(seed);
   let r = seed;
   const rand = () => ((r = (r * 1103515245 + 12345) >>> 0) / 4294967296);
-  const run: Run = { seed, status: 'timeout', day: 0, peak: 0, lost: 0, deaths: 0, offered: null, picks: [], dones: [], research: [], owned: 0, builtShare: 0, gold: {}, caravanGoods: 0, caravanBps: 0, pop: {}, strain: {}, mood: {}, comfort: {}, gaps: {} };
+  const run: Run = { seed, status: 'timeout', day: 0, peak: 0, lost: 0, deaths: 0, offered: null, picks: [], dones: [], research: [], owned: 0, builtShare: 0, story: {}, gold: {}, caravanGoods: 0, caravanBps: 0, pop: {}, strain: {}, mood: {}, comfort: {}, gaps: {} };
   let lastCharter: string | null = null, doneN = 0, resN = 0;
   const watch = () => {
     if (w.charter && w.charter !== lastCharter) run.picks.push({ id: w.charter, day: day(w) });
@@ -76,6 +76,7 @@ for (let i = 0; i < runs; i++) {
   run.owned = mine.length / pool.length; run.builtShare = mine.length ? mine.filter(b => w.buildings.some(x => x.def === b.id && x.built)).length / mine.length : 1;
   for (const [k, v] of Object.entries(w.flows)) if (k.startsWith('gold:')) run.gold[k.slice(5)] = v;
   run.caravanGoods = Object.entries(w.flows).filter(([k]) => k.endsWith(':+caravan')).reduce((n, [, v]) => n + v, 0);
+  run.story = { ...(w.story?.counts ?? {}) };
   run.caravanBps = w.log.filter(l => l.text.startsWith('Blueprint bought from the caravan')).length;
   out.push(run);
   if (process.env.VERBOSE) console.log(`${seed} ${run.status} d${run.day} peak ${run.peak} · research ${run.research.map(x => `${x.id}@${x.day}`).join(' ')} · charters ${run.picks.map(p => `${p.id}@${p.day}${run.dones.find(d => d.id === p.id) ? `→${run.dones.find(d => d.id === p.id)!.day}` : ''}`).join(' ')} · lost ${run.lost}+${run.deaths}`);
@@ -112,4 +113,5 @@ for (const need of ['shelter', 'meals', 'evenings', 'health', 'surroundings']) c
 const golds = [...new Set(out.flatMap(x => Object.keys(x.gold)))].sort();
 console.log(`blueprints: own ${pct(avg(out.map(x => x.owned)) * out.length)} of the draftable pool (wins ${pct(avg(out.filter(x => x.status === 'won').map(x => x.owned)) * out.length)}), built ${pct(avg(out.map(x => x.builtShare)) * out.length)} of what they own; ${f1(avg(out.map(x => x.caravanBps)))} bought from the caravan a run`);
 console.log(`gold a run: ${golds.map(k => `${k} ${f1(avg(out.map(x => x.gold[k] ?? 0)))}`).join(' · ')}; ${f1(avg(out.map(x => x.caravanGoods)))} goods bought`);
+console.log(`events a run: ${['minor', 'moderate', 'major'].map(t => `${t} ${f1(avg(out.map(x => x.story[t] ?? 0)))}`).join(' · ')}`);
 console.log(`lost settlers: left ${f1(avg(out.map(x => x.lost)))} · died ${f1(avg(out.map(x => x.deaths)))}`);

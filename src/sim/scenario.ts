@@ -46,6 +46,12 @@ export interface Start {
   seasons: SeasonRules;
   /** gold and the caravan; see the trade section of world.ts */
   trade: TradeRules;
+  /**
+   * the storyteller: threat builds up each day (base, plus more as the run goes on and the colony grows), at half rate
+   * while the colony is struggling; moderate and major events spend it, and a major one buys a quiet spell. No major
+   * event before majorFrom (a grace period to settle in), and no event again within repeatDays of the last time
+   */
+  story: { base: number; perDay: number; perPop: number; majorGap: number; majorChance: number; moderateChance: number; majorFrom: number; repeatDays: number };
   intro: string[];
 }
 
@@ -153,6 +159,7 @@ export const START: Start = {
     stricterFromYear: 0,
     harvestHome: { held: 4, missed: -4, hours: 96 },
   },
+  story: { base: 3, perDay: 0.15, perPop: 0.4, majorGap: 6, majorChance: 0.6, moderateChance: 0.55, majorFrom: 12, repeatDays: 10 },
   trade: {
     gold: 10, sell: 0.7, fair: 0.6, pedlar: 0.4, sellCap: 20,
     rent: { leanto: 1, cottage: 3 },
