@@ -502,6 +502,11 @@ function canPay(w: World, effect: string) {
     case 'relic': return w.gold >= 30;
     case 'taxPay': return w.gold >= 12;
     case 'buskerPay': return w.gold >= 25 && w.strain >= 5;
+    case 'tollPay': return w.gold >= 30;
+    case 'inspectorMeals': return mealTotal(w) >= 15 + alive(w).length;
+    case 'blightBurn': return ['field', 'orchard'].some(id => built(w).some(b => b.def === id && workersAt(w, b.uid).length));
+    case 'deserterTake': return beds(w) > alive(w).length && w.strain < 10;
+    case 'authorHost': return mealTotal(w) >= alive(w).length * 2;
     // strain trades: worth it once strain bites, if the larder or woodpile can spare it
     case 'lettersRead': return edibleTotal(w) >= 15 + alive(w).length * 2;
     case 'bonfire': return w.res.wood >= 40;

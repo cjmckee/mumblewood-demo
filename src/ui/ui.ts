@@ -258,7 +258,7 @@ export class UI {
           <div class="leavers" title="If ${sc.collapse.lost} settlers leave or die${sc.collapse.minAlive ? `, or only ${sc.collapse.minAlive} remain` : ''}, the colony collapses"><span>Lost</span><div class="pips">${pips}</div></div>
         </div>
       </div>
-      ${w.errands.length || this.caravanChip(w) ? `<div class="errands">${this.caravanChip(w)}${w.errands.map(e => this.errandChip(w, e)).join('')}</div>` : ''}`;
+      ${w.errands.length || this.caravanChip(w) || this.effectChips(w) ? `<div class="errands">${this.caravanChip(w)}${w.errands.map(e => this.errandChip(w, e)).join('')}${this.effectChips(w)}</div>` : ''}`;
     if (force || html !== this.lastHud) {
       (this.root.querySelector('#hud') as HTMLElement).innerHTML = html; this.lastHud = html;
       // fade the row's right edge while there are more goods to scroll to
@@ -319,6 +319,11 @@ export class UI {
       <p class="terms">${pct(r.base)} if everyone eats, ${pct(r.drinks)} more if most have a drink, ${pct(r.loved)} more if most get a favourite. Then ${r.waitDays} days before the next one.${short}</p>
       <div class="opts"><button type="button" class="opt" data-act="festival-call" ${can ? '' : 'disabled'}><b>Call it for dusk</b><span>${can ? (p.relief >= 0.5 ? `Eases strain by about ${Math.round(p.relief)}` : 'Strain is low, so it would ease very little') : mealTotal(w) < 1 ? 'There are no meals to share' : 'Not ready yet'}</span></button></div>
       <button type="button" class="ghost skip" data-act="festival-close">Not now</button></div>`;
+  }
+
+  /** passing troubles from events (a drought, a blight, a frozen well), with how long they have left */
+  private effectChips(w: World) {
+    return (w.effects ?? []).filter(e => w.hour < e.until).map(e => `<span class="errand effect"><b>${esc(e.label)}</b><small>${Math.round((1 - e.mult) * 100)}% slower · ${Math.ceil((e.until - w.hour) / 24)}d left</small></span>`).join('');
   }
 
   /** the caravan at the hearth once nobody is on the way: a way to send someone (back) over */
@@ -649,7 +654,7 @@ export class UI {
         case 'errand': { const e = w.errands.find(x => x.id === d.errandId); if (e) html = this.errandPicker(w, e, true); break; }
         case 'event': {
           const ev = EVENTS.find(e => e.id === d.eventId)!;
-          html = `<div class="card-wrap event"><p class="eyebrow">Something has happened</p><h2>${esc(ev.title)}</h2><p class="lede">${esc(ev.text)}</p>
+          html = `<div class="card-wrap event ${ev.tier}"><p class="eyebrow">${ev.tier === 'major' ? 'Trouble' : 'Something has happened'}</p><h2>${esc(ev.title)}</h2><p class="lede">${esc(ev.text)}</p>
             <div class="opts">${ev.options.map((o, i) => `<button type="button" class="opt" data-act="resolve" data-arg="${i}"><b>${esc(o.label)}</b><span>${esc(o.detail)}</span></button>`).join('')}</div></div>`;
           break;
         }

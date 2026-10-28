@@ -3,7 +3,7 @@ import {
   BUILDING_BY_ID, BuildingDef, CHARTERS, CharterDef, EVENTS, FIRST_NAMES, JOB_NAMES, JobKind, JOB_KINDS,
   MEALS, PERKS, RAW_FOODS, ResourceId, SHIRTS, SKINS, SURNAMES, TRAITS, TRAIT_BY_ID, BUILDINGS, buildWork,
   JOB_EVENTS, JobEventDef, ILLNESSES, RESOURCES, Recipe, InputKey, CATEGORIES, isCategory, membersOf, inputName, recipeRate, SITES, SiteId, MEAL_MOOD,
-  CharterMetric, RESEARCH, RESEARCH_BY_ID, PRICE, TRADERS, TRADER_BY_ID, LORE_BOOST, GUILD_BOOST,
+  CharterMetric, RESEARCH, RESEARCH_BY_ID, PRICE, TRADERS, TRADER_BY_ID, LORE_BOOST, GUILD_BOOST, Tier, EventDef,
 } from './content';
 import { START } from './scenario';
 import { seasonOf, seasonOn, rule, SEASON_NAMES } from './seasons';
@@ -146,6 +146,12 @@ export interface World {
   caravan: Caravan | null;
   /** the trader due with the next caravan, announced when the last one leaves */
   nextTrader?: string;
+  /** the storyteller: threat built up and not yet spent, when the last major event came, and how many of each tier */
+  story?: { threat: number; lastMajor: number; counts: Record<Tier, number>; last?: Record<string, number> };
+  /** passing effects from events: these buildings work at `mult` until the hour `until` */
+  effects?: { id: string; label: string; defs: string[]; mult: number; until: number }[];
+  /** the hour someone last died or left */
+  lastLoss?: number;
   charterTier: number; charter: string | null; charterHours: number; chartersDone: string[];
   decisions: Decision[]; log: LogEntry[];
   opinions: Record<string, number>;
@@ -1137,12 +1143,68 @@ function spawnErrand(w: World, def: JobEventDef): boolean {
   return true;
 }
 
+/** an event wrecks a building: it goes back to being a site, half its materials still there and part of the work done */
+function wreck(w: World, b: Building) {
+  for (const c of alive(w)) if (c.job === b.uid) c.job = null;
+  b.built = false; b.progress = siteWork(b) * 0.4; b.delivered = {};
+  for (const [k, n] of Object.entries(costOf(b)) as [InputKey, number][]) b.delivered[membersOf(k)[0]] = Math.floor((n ?? 0) / 2);
+  b.outbox = {}; b.inbox = {}; w.version++;
+}
+/** a workshop or gatherer's hut an event can wreck (never homes, storage, the hearth or the Hall), preferring these kinds */
+function wreckable(w: World, prefer: string[] = []) {
+  const ok = built(w).filter(b => bdef(b).slots && !bdef(b).storage && !bdef(b).beds && !['hearth', 'hall', 'desk', 'clinic'].includes(b.def));
+  const first = ok.filter(b => prefer.includes(b.def));
+  return first.length ? pick(w, first) : ok.length ? pick(w, ok) : undefined;
+}
+const GATHERERS = ['forager', 'field', 'orchard', 'herbgarden', 'cellar', 'apiary'];
+const COOKS = ['kitchen', 'pieoven', 'smokehouse', 'bakery'];
+
 function finishErrand(w: World, e: Errand, success: boolean) {
   w.errands = w.errands.filter(x => x !== e);
   const c = colonistById(w, e.assignee); if (c) { c.errand = null; c.goalKey = ''; }
   const who = c ? first(c) : 'Somebody';
   if (success) w.stats.errands++;
   switch (e.def) {
+    case 'flood': {
+      if (success) { addLog(w, `${who} dug a ditch in the nick of time. The water goes round, grumbling.`, 'good'); break; }
+      const b = wreckable(w, ['dock', 'smokehouse', 'sawmill']);
+      for (const r of RAW_FOODS) w.res[r] *= 0.8;
+      reconcileStock(w);
+      addLog(w, `The river comes through${b ? ` and wrecks the ${bdef(b).name.toLowerCase()}` : ''}. A fifth of the raw food floats away.`, 'bad');
+      if (b) wreck(w, b);
+      break;
+    }
+    case 'wildfire': {
+      if (success) { w.res.wood += 15; reconcileStock(w); addLog(w, `${who}'s firebreak holds. The felled trees make 15 wood.`, 'good'); break; }
+      const b = wreckable(w, ['woodcutter', 'forager', 'cellar', 'orchard']);
+      w.res.wood = Math.max(0, w.res.wood - 30); reconcileStock(w);
+      addLog(w, `The fire reaches the huts${b ? `: the ${bdef(b).name.toLowerCase()} burns` : ''}, and 30 wood with it.`, 'bad');
+      if (b) wreck(w, b);
+      break;
+    }
+    case 'storeFire': {
+      const st = storages(w).sort((a, b) => Object.values(b.stock).reduce((n, x) => n + (x ?? 0), 0) - Object.values(a.stock).reduce((n, x) => n + (x ?? 0), 0))[0];
+      const share = success ? 0.05 : 0.33;
+      if (st) for (const [r, n] of Object.entries(st.stock) as [ResourceId, number][]) { const lost = (n ?? 0) * share; st.stock[r] = (n ?? 0) - lost; w.res[r] -= lost; flow(w, `${r}:-fire`, lost); }
+      addLog(w, success ? `${who} got a bucket line going. Only a little was lost.` : `Nobody got there in time. A third of what was in the ${st ? bdef(st).name.toLowerCase() : 'stores'} is ash.`, success ? 'good' : 'bad');
+      break;
+    }
+    case 'wolves': {
+      if (success) { addLog(w, `${who} banged a pot until the wolves left in disgust.`, 'good'); break; }
+      const victim = pick(w, alive(w).filter(c => !c.illness && GATHERERS.includes(buildingByUid(w, c.job)?.def ?? '')).concat(alive(w).filter(c => !c.illness)).slice(0, 6));
+      if (victim) fallIll(w, victim, 'bitten');
+      takeFood(w, 15); reconcileStock(w);
+      addLog(w, `The wolves came in the night${victim ? `. ${first(victim)} was bitten` : ''}, and 15 food is gone.`, 'bad');
+      break;
+    }
+    case 'drought':
+      if (success) addLog(w, `${who} hauled water all day. The plants hang on.`, 'good');
+      else { addEffect(w, 'drought', 'A dry spell', ['forager', 'field', 'orchard', 'herbgarden'], 0.6, 4); addLog(w, 'The dry spell bites: foragers, fields, orchards and herb gardens bring in 40% less for 4 days.', 'bad'); }
+      break;
+    case 'frozenWell':
+      if (success) addLog(w, `${who} chipped the well free. The water tastes of iron and victory.`, 'good');
+      else { everyone(w, 'well', 'Melting snow for tea', -4, 48); addEffect(w, 'well', 'The well is frozen', COOKS, 0.75, 2); addLog(w, 'Everyone melts snow in pots for two days. The kitchens are slow and the tea is worse.', 'bad'); }
+      break;
     case 'caravan':
       if (success && w.caravan) { w.caravan.visited = true; w.decisions.unshift({ kind: 'trade' }); addLog(w, `${who} reaches the caravan. The trader rubs her hands together.`); }
       else if (!success) addLog(w, 'Nobody got to the caravan in time.', 'bad');
@@ -1342,6 +1404,41 @@ function applyEventEffect(w: World, effect: string) {
       else { addLog(w, 'There aren’t 12 gold in the whole colony. The tax collector helps himself to the larder instead.', 'bad'); applyEventEffect(w, 'taxHide'); }
       break;
     case 'taxHide': takeFood(w, 20); everyone(w, 'taxman', 'The tax collector went through our things', -3, 48); addLog(w, 'The tax collector finds the food, if not the valuables, and takes 20 of it.', 'bad'); break;
+    case 'tollPay':
+      if (spend(w, 30, 'toll')) addLog(w, 'The goblins lift the pole with a flourish and a bow. One of them gives you a receipt.');
+      else { addLog(w, 'There isn\u2019t 30 gold. The goblins take it personally.', 'bad'); applyEventEffect(w, 'tollRefuse'); }
+      break;
+    case 'tollRefuse': {
+      const b = wreckable(w);
+      everyone(w, 'goblins', 'Goblins wrecked the place', -3, 48);
+      addLog(w, `The goblins storm the colony${b ? ` and smash up the ${bdef(b).name.toLowerCase()}` : ''}, then leave, singing.`, 'bad');
+      if (b) wreck(w, b);
+      break;
+    }
+    case 'inspectorMeals':
+      if (mealTotal(w) >= 15) { let n = 15; for (const r of MEALS) { const t = Math.min(w.res[r], n); w.res[r] -= t; flow(w, `${r}:-inspector`, t); n -= t; } reconcileStock(w); const e = ease(w, 0.05); addLog(w, `The inspector eats well and writes "promising".${e ? ` Strain eases by ${e}.` : ''}`, 'good'); }
+      else applyEventEffect(w, 'inspectorFail');
+      break;
+    case 'inspectorGold':
+      if (spend(w, 25, 'inspector')) addLog(w, 'The inspector pockets the gold and admires the view for a while.');
+      else applyEventEffect(w, 'inspectorFail');
+      break;
+    case 'inspectorFail': w.strain += 6; everyone(w, 'inspector', 'The inspector was rude about us', -3, 24); addLog(w, 'The inspector leaves unimpressed and says so loudly. Strain rises by 6.', 'bad'); break;
+    case 'blightBurn': for (const r of ['grain', 'apples'] as ResourceId[]) w.res[r] = Math.max(0, w.res[r] - 20); reconcileStock(w); addLog(w, 'The blighted rows are burned. The smoke smells of regret and slightly of toast.'); break;
+    case 'blightWait': addEffect(w, 'blight', 'Blight', ['field', 'orchard'], 0.5, 5); addLog(w, 'The blight spreads. Fields and orchards bring in half for 5 days.', 'bad'); break;
+    case 'deserterTake': {
+      const names = new Set(w.colonists.map(x => first(x)));
+      const n = makeColonist(w, names); skilled(w, n); delete n.fee; n.joinedDay = day(w);
+      w.colonists.push(n); assignBeds(w); if (w.autoAssignNew) fillSlots(w);
+      w.stats.peakPop = Math.max(w.stats.peakPop, alive(w).length);
+      w.strain += 3; addLog(w, `${n.name} unpacks a saw and a false name. People talk. Strain rises by 3.`);
+      break;
+    }
+    case 'deserterTurn': earn(w, 20, 'bounty'); everyone(w, 'deserter', 'We turned a man in', -2, 24); addLog(w, 'The deserter is handed over. The bounty is 20 gold. Nobody feels great about it.'); break;
+    case 'authorHost':
+      if (mealTotal(w) >= 5) { let n = 5; for (const r of MEALS) { const t = Math.min(w.res[r], n); w.res[r] -= t; n -= t; } reconcileStock(w); everyone(w, 'author', 'A famous author stayed', 3, 24); const e = ease(w, 0.08); addLog(w, `The author reads a chapter aloud by the hearth. It is mostly about the toilets.${e ? ` Strain eases by ${e}.` : ''}`, 'good'); }
+      else addLog(w, 'There aren\u2019t 5 meals to spare. The author moves on to a better-stocked chapter.');
+      break;
     case 'buskerPay':
       if (spend(w, 6, 'buskers')) { everyone(w, 'buskers', 'Danced to the buskers', 4, 24); const e = ease(w, 0.05); addLog(w, `The spoon solo brings the house down.${e ? ` Strain eases by ${e}.` : ''}`, 'good'); }
       else addLog(w, 'Nobody has 6 gold. The buskers play one more song out of pity.');
@@ -1695,6 +1792,9 @@ export function craftBoost(w: World, defId: string) {
   return m;
 }
 export const knows = (w: World, id: string) => !!w.research?.done.includes(id);
+/** passing event effects on this building's work (a drought, a frozen well) */
+export function passing(w: World, defId: string) { let m = 1; for (const e of w.effects ?? []) if (w.hour < e.until && e.defs.includes(defId)) m *= e.mult; return m; }
+function addEffect(w: World, id: string, label: string, defs: string[], mult: number, days: number) { (w.effects ??= []).push({ id, label, defs, mult, until: w.hour + days * 24 }); }
 
 function workSpeed(w: World, c: Colonist, skill?: JobKind) {
   let s = skill ? 0.6 + c.skills[skill] * 0.08 : 1;
@@ -1715,7 +1815,7 @@ function produce(w: World, dt: number) {
     for (const c of workersAt(w, b.uid)) {
       if (c.activity !== 'working' || !c.goalReached) continue;
       if (sum(b.outbox) >= OUTBOX_CAP) continue;
-      let amount = recipeRate(rec) * workSpeed(w, c, def.job) * dt * b.eff * seasonYield(w, def.id) * (def.id === 'woodcutter' && hasPerk(w, 'lumberGuild') ? 1.5 : 1) * craftBoost(w, def.id) * (Object.keys(rec.inputs).length ? rule(START.seasons.indoor, seasonOf(w).season, 1) : 1);
+      let amount = recipeRate(rec) * workSpeed(w, c, def.job) * dt * b.eff * seasonYield(w, def.id) * (def.id === 'woodcutter' && hasPerk(w, 'lumberGuild') ? 1.5 : 1) * craftBoost(w, def.id) * passing(w, def.id) * (Object.keys(rec.inputs).length ? rule(START.seasons.indoor, seasonOf(w).season, 1) : 1);
       for (const [r, per] of Object.entries(rec.inputs)) amount = Math.min(amount, inInbox(b, r as InputKey) / (per as number));
       if (amount <= 0) continue;
       for (const [r, per] of Object.entries(rec.inputs)) {
@@ -2178,6 +2278,7 @@ function seasonDawn(w: World) {
 function hourly(w: World) {
   (w.flowLog ??= []).push({ ...w.flows }); if (w.flowLog.length > 24) w.flowLog.shift();
   caravanHour(w);
+  storyHour(w);
   const h = Math.round(hourOfDay(w)) % 24;
   const pop = alive(w).length;
   const d = day(w) - 1 + (hourOfDay(w) - 6) / 24;
@@ -2276,7 +2377,7 @@ const EULOGIES = ['They will be missed, mostly.', 'Someone carves a very small h
 function die(w: World, c: Colonist, cause: string) {
   dropTask(w, c);
   const e = w.errands.find(x => x.assignee === c.id); if (e) e.assignee = null;
-  c.left = true; c.died = true; c.job = null; c.meal = null; c.illness = null; c.errand = null; w.stats.deaths++;
+  c.left = true; c.died = true; c.job = null; c.meal = null; c.illness = null; c.errand = null; w.stats.deaths++; w.lastLoss = w.hour;
   addLog(w, `${c.name} has died of ${cause}. ${pick(w, EULOGIES)}`, 'bad');
   const p = colonistById(w, c.partner);
   if (p) { p.partner = null; addMemory(w, p, 'widowed', `${first(c)} died`, -20, 96); }
@@ -2291,7 +2392,7 @@ function die(w: World, c: Colonist, cause: string) {
 
 function leave(w: World, c: Colonist, carted = false) {
   dropTask(w, c);
-  c.left = true; c.job = null; c.meal = null; c.illness = null; w.stats.departures++;
+  c.left = true; c.job = null; c.meal = null; c.illness = null; w.stats.departures++; w.lastLoss = w.hour;
   const e = w.errands.find(x => x.assignee === c.id); if (e) e.assignee = null;
   c.errand = null;
   if (!carted) addLog(w, `${c.name} packed a sack and wandered off into the woods, muttering.`, 'bad');
@@ -2320,16 +2421,46 @@ function dawn(w: World) {
 
 /** an event's condition: a couple for a wedding, strain of 6+ for the ones about the frontier wearing on people */
 const eventFits = (w: World, req?: 'couple' | 'strain') => !req || (req === 'couple' ? couples(w) > 0 : w.strain >= 6);
+/** the colony is having a bad time: low mood, a recent death or departure, or nearly out of food */
+export function struggling(w: World) {
+  const pop = alive(w).length;
+  return avgMood(w) < 40 || (w.lastLoss != null && w.hour - w.lastLoss < 72) || edibleTotal(w) < pop * 2;
+}
+/** threat built up each hour: a base, more as the run goes on and as the colony grows, half while it struggles */
+function storyHour(w: World) {
+  const st = (w.story ??= { threat: 0, lastMajor: -1e9, counts: { minor: 0, moderate: 0, major: 0 } }), sc = START.story;
+  st.threat += (sc.base + sc.perDay * day(w) + sc.perPop * alive(w).length) / 24 * (struggling(w) ? 0.5 : 1);
+  if (w.effects?.length) w.effects = w.effects.filter(e => w.hour < e.until);
+}
+type StoryPick = { kind: 'choice'; def: EventDef } | { kind: 'job'; def: JobEventDef } | { kind: 'outbreak' };
+const OUTBREAK = { tier: 'moderate' as Tier, cost: 12 };
+/**
+ * The storyteller: when an event is due it picks a tier, then an event of that tier that fits the season and the
+ * colony. A major event needs the budget, a quiet spell since the last one and a colony that isn't already down; a
+ * moderate one needs the budget; otherwise something minor happens. The event's cost comes off the budget.
+ */
 function triggerEvent(w: World) {
-  const roll = nextRand(w);
-  const ob = START.outbreakFrom;
-  if (roll < 0.18 && day(w) >= ob.day && alive(w).length >= ob.pop) outbreak(w);
-  else if (roll < 0.6) {
-    const jobs = shuffle(w, JOB_EVENTS.filter(j => j.id !== 'remedy' && j.id !== 'caravan'));
-    if (!jobs.some(j => spawnErrand(w, j))) w.decisions.push({ kind: 'event', eventId: pick(w, EVENTS.filter(e => eventFits(w, e.requires))).id });
-  } else {
-    const pool = EVENTS.filter(e => eventFits(w, e.requires));
-    w.decisions.push({ kind: 'event', eventId: pick(w, pool).id });
+  const st = (w.story ??= { threat: 0, lastMajor: -1e9, counts: { minor: 0, moderate: 0, major: 0 } }), sc = START.story;
+  const season = seasonOf(w).season, ob = START.outbreakFrom;
+  const last = (st.last ??= {});
+  const fits = (t: { id: string; seasons?: string[] }) => (!t.seasons || t.seasons.includes(season)) && w.hour - (last[t.id] ?? -1e9) >= sc.repeatDays * 24;
+  const pool = (tier: Tier): (StoryPick & { cost: number })[] => [
+    ...EVENTS.filter(e => e.tier === tier && fits(e) && eventFits(w, e.requires) && e.cost <= st.threat).map(def => ({ kind: 'choice' as const, def, cost: def.cost })),
+    ...JOB_EVENTS.filter(j => j.tier === tier && fits(j) && (j.cost ?? 0) <= st.threat).map(def => ({ kind: 'job' as const, def, cost: def.cost ?? 0 })),
+    ...(OUTBREAK.tier === tier && OUTBREAK.cost <= st.threat && day(w) >= ob.day && alive(w).length >= ob.pop && fits({ id: 'flu' }) ? [{ kind: 'outbreak' as const, cost: OUTBREAK.cost }] : []),
+  ];
+  const quiet = w.hour - st.lastMajor >= sc.majorGap * 24 && day(w) >= sc.majorFrom;
+  let tier: Tier = 'minor';
+  if (quiet && !struggling(w) && pool('major').length && nextRand(w) < sc.majorChance) tier = 'major';
+  else if (pool('moderate').length && nextRand(w) < sc.moderateChance) tier = 'moderate';
+  // try the tier's events in a random order: a job that can't happen (a feud with no rivals) gives way to the next
+  for (const p of shuffle(w, pool(tier))) {
+    if (p.kind === 'job' && !spawnErrand(w, p.def)) continue;
+    if (p.kind === 'choice') w.decisions.push({ kind: 'event', eventId: p.def.id });
+    if (p.kind === 'outbreak') outbreak(w);
+    st.threat -= p.cost; st.counts[tier]++; last[p.kind === 'outbreak' ? 'flu' : p.def.id] = w.hour;
+    if (tier === 'major') st.lastMajor = w.hour;
+    break;
   }
   const gap = Math.max(0.8, 1.8 - w.strain * 0.03) + nextRand(w) * 0.8;
   w.nextEventHour = w.hour + gap * 24;
@@ -2701,6 +2832,7 @@ export function debugGrow(w: World, settlers: number) {
 /** debugging: start a specific event job or an outbreak right now */
 export function debugEvent(w: World, id: string) {
   if (id === 'flu') return outbreak(w);
+  if (EVENTS.some(e => e.id === id)) { w.decisions.push({ kind: 'event', eventId: id }); return; }
   const def = JOB_EVENTS.find(j => j.id === id);
   if (def) spawnErrand(w, def);
 }
