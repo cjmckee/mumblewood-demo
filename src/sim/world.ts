@@ -1690,7 +1690,7 @@ function workSpeed(w: World, c: Colonist, skill?: JobKind) {
   let s = skill ? 0.6 + c.skills[skill] * 0.08 : 1;
   if (has(c, 'lazy')) s *= 0.7;
   if (has(c, 'diligent')) s *= 1.3;
-  if (hasPerk(w, 'overtime')) s *= 1.15;
+  if (hasPerk(w, 'overtime')) s *= 1.25;
   if (c.mood > 70) s *= 1.1;
   return s;
 }
@@ -1842,7 +1842,7 @@ function finishMeal(w: World, c: Colonist) {
   const meal = MEALS.includes(got) ? got : undefined;
   c.lastMeal = { cooked: !!meal, table: !!(hall && bdef(hall).seats) && !bedridden(c), loved: !!meal && taste(c, meal) > 0 };
   (c.ate ??= []).push({ r: got, h: w.hour }); if (c.ate.length > 10) c.ate.shift();
-  const bonus = (has(c, 'glutton') ? 4 : 0) + (hasPerk(w, 'communalPot') ? 3 : 0);
+  const bonus = (has(c, 'glutton') ? 4 : 0) + (hasPerk(w, 'communalPot') ? 5 : 0);
   if (meal) {
     c.hunger = 100; w.stats.mealsEaten++;
     const v = (MEAL_MOOD[meal] ?? 5) + bonus;
@@ -1853,7 +1853,7 @@ function finishMeal(w: World, c: Colonist) {
     const raw = got;
     c.hunger = 85;
     if (seasonOf(w).season === 'spring' && FRESH.includes(raw)) addMemory(w, c, 'meal', `Fresh spring ${raw}`, has(c, 'picky') ? -2 : 1, 14);
-    else addMemory(w, c, 'meal', `Ate raw ${raw}`, has(c, 'picky') ? -8 : -3, 14);
+    else addMemory(w, c, 'meal', `Ate raw ${raw}`, (has(c, 'picky') ? -8 : -3) - (hasPerk(w, 'communalPot') ? 3 : 0), 14);
     w.ateRaw = true;
     if (nextRand(w) < 0.02) { fallIll(w, c, 'tummy'); addLog(w, `${first(c)} ate some questionable ${raw} and now has a bad tummy.`, 'bad'); }
   }
@@ -1897,13 +1897,13 @@ function socialHour(w: World) {
       let roll = nextRand(w) * others.reduce((n, o) => n + weight(o), 0), other = others[others.length - 1];
       for (const o of others) { roll -= weight(o); if (roll <= 0) { other = o; break; } }
       if (!evening) {
-        if (has(other, 'grumbler')) changeOpinion(w, c, other, hasPerk(w, 'earplugs') ? -0.7 : -1.5);
+        if (has(other, 'grumbler')) { if (!hasPerk(w, 'earplugs')) changeOpinion(w, c, other, -1.5); }
         else changeOpinion(w, c, other, 0.6);
         continue;
       }
-      if (has(other, 'hummer')) changeOpinion(w, c, other, hasPerk(w, 'earplugs') ? -0.6 : -1.2);
+      if (has(other, 'hummer') && !hasPerk(w, 'earplugs')) changeOpinion(w, c, other, -1.2);
       let insultChance = 0.05 + (has(c, 'grumbler') ? 0.12 : 0) + (opinion(w, c.id, other.id) < -20 ? 0.1 : 0);
-      if (hasPerk(w, 'gossipBan')) insultChance *= 0.5;
+      if (hasPerk(w, 'gossipBan')) insultChance = 0;
       if (nextRand(w) < insultChance) {
         changeOpinion(w, other, c, -rint(w, 8, 14));
         changeOpinion(w, c, other, -2);
@@ -1917,7 +1917,7 @@ function socialHour(w: World) {
       }
       if (c.partner == null && other.partner == null && c.id < other.id
         && opinion(w, c.id, other.id) > ROMANCE_AT && opinion(w, other.id, c.id) > ROMANCE_AT) {
-        const chance = 0.12 * (has(c, 'romantic') ? 2.5 : 1) * (has(other, 'romantic') ? 2.5 : 1) * (hasPerk(w, 'matchmaker') ? 2 : 1);
+        const chance = 0.12 * (has(c, 'romantic') ? 2.5 : 1) * (has(other, 'romantic') ? 2.5 : 1) * (hasPerk(w, 'matchmaker') ? 3 : 1);
         if (nextRand(w) < chance) {
           c.partner = other.id; other.partner = c.id; w.stats.couples++;
           addMemory(w, c, 'love', `Fell for ${first(other)}`, 10, 72);
@@ -1937,7 +1937,7 @@ function dailyRelationships(w: World) {
     const minOp = Math.min(opinion(w, c.id, p.id), opinion(w, p.id, c.id));
     let chance = minOp < 15 ? 0.5 : 0.03;
     if (has(c, 'drama') || has(p, 'drama')) chance *= 2;
-    if (hasPerk(w, 'matchmaker')) chance *= 0.5;
+    if (hasPerk(w, 'matchmaker')) chance *= 0.3;
     if (nextRand(w) < chance) {
       c.partner = null; p.partner = null; w.stats.breakups++;
       for (const [x, y] of [[c, p], [p, c]] as const) {
@@ -1968,7 +1968,7 @@ function computeThoughts(w: World, c: Colonist): Thought[] {
     if (kind === c.dislikes) add(`Hates ${JOB_NAMES[kind]}`, -6);
     const co = workersAt(w, job.uid).filter(o => o.id !== c.id);
     for (const o of co) {
-      if (has(o, 'grumbler')) add(`${first(o)} won’t stop complaining`, hasPerk(w, 'earplugs') ? -1.5 : -3);
+      if (has(o, 'grumbler') && !hasPerk(w, 'earplugs')) add(`${first(o)} won’t stop complaining`, -3);
       if (has(o, 'sunny')) add(`${first(o)} is a ray of sunshine`, 2);
       if (opinion(w, c.id, o.id) < -30) add(`Has to work with ${first(o)}`, -6);
     }
@@ -1982,7 +1982,9 @@ function computeThoughts(w: World, c: Colonist): Thought[] {
   if (has(c, 'lazy')) add('Doesn’t work too hard', 3);
   if (has(c, 'tippler') && drinkTotal(w) < 1) add('Nothing to drink in the stores', -4);
   if (hasBuilt(w, 'bathhouse') && w.res.wood > 0) add('Feeling fresh from the bathhouse', has(c, 'grumbler') ? 5 : 3);
-  if (hasPerk(w, 'saintsDay')) add("Saint Pomfrey's blessing", 4);
+  if (hasPerk(w, 'saintsDay')) add("Saint Pomfrey's blessing", 6);
+  if (hasPerk(w, 'overtime')) add('The overtime bell', -3);
+  if (hasPerk(w, 'gossipBan')) add('Not allowed to gossip', -1);
   if (hasPerk(w, 'rentCollector')) add('The rent collector', -2);
   if (c.beauty >= 5) add('Beautiful surroundings', 5);
   else if (c.beauty >= 2) add('Pleasant surroundings', 2);
@@ -2065,11 +2067,11 @@ export function comfortGaps(w: World, standing = standingOf(w)) {
   return keys.map(k => ({ need: k, avg: sums[k] / a.length })).sort((x, y) => x.avg - y.avg);
 }
 /** how much the colony's comfort scales the strain rise right now */
-export const comfortFactor = (w: World) => Math.max(0.2, START.comfortScale.base - Math.min(1, (w.comfort ?? colonyComfort(w)) * (hasPerk(w, 'homesteaders') ? 1.2 : 1)) * START.comfortScale.slope);
+export const comfortFactor = (w: World) => Math.max(0.2, START.comfortScale.base - Math.min(1, (w.comfort ?? colonyComfort(w)) * (hasPerk(w, 'homesteaders') ? 1.3 : 1)) * START.comfortScale.slope);
 /** strain rise per day at the colony's current size, day and comfort (before boons) */
 export function strainPerDay(w: World) {
   const d = day(w) - 1 + (hourOfDay(w) - 6) / 24;
-  return START.strain.rate * Math.sqrt(alive(w).length) * (1 + Math.max(0, d) / START.strain.rampDays) * comfortFactor(w) * (hasPerk(w, 'ironWill') ? 0.75 : 1) * (hasPerk(w, 'openRoad') ? 1.1 : 1);
+  return START.strain.rate * Math.sqrt(alive(w).length) * (1 + Math.max(0, d) / START.strain.rampDays) * comfortFactor(w) * (hasPerk(w, 'ironWill') ? 0.65 : 1) * (hasPerk(w, 'openRoad') ? 1.1 : 1);
 }
 
 /** what happened in the last 24 hours, from the running flow totals */
@@ -2117,7 +2119,7 @@ export function homeFuelPerDay(w: World, harsh = seasonOf(w).winter >= 1) {
 export function winterFuelPerDay(w: World, harsh = seasonOf(w).winter >= 1) {
   const homes = built(w).filter(b => bdef(b).beds && alive(w).some(c => c.bed === b.uid));
   const hb = START.hearth, pop = alive(w).length;
-  const hearth = 12 * Math.min(1, hb.base + hb.perPerson * pop) * (START.seasons.hearth.winter ?? 1) * (hasPerk(w, 'warmHearth') ? 0.5 : 1);
+  const hearth = 12 * Math.min(1, hb.base + hb.perPerson * pop) * (START.seasons.hearth.winter ?? 1) * (hasPerk(w, 'warmHearth') ? 0 : 1);
   return homes.reduce((n, b) => n + (START.seasons.homeFuel[b.def] ?? 0), 0) * (harsh ? START.seasons.harsh : 1) + hearth;
 }
 /** in winter, homes burn wood; anyone without a bed, or in a home whose fire is out, is cold */
@@ -2176,7 +2178,7 @@ function hourly(w: World) {
 
   if (h >= 18 || h < 6) {
     const hb = sc.hearth;
-    const burn = (hasPerk(w, 'warmHearth') ? 0.5 : 1) * Math.min(1, hb.base + hb.perPerson * pop) * rule(sc.seasons.hearth, seasonOf(w).season, 1);
+    const burn = (hasPerk(w, 'warmHearth') ? 0 : 1) * Math.min(1, hb.base + hb.perPerson * pop) * rule(sc.seasons.hearth, seasonOf(w).season, 1);
     if (w.res.wood >= burn) { w.res.wood -= burn; flow(w, 'wood:-hearth', burn); w.hearthCold = false; }
     else { everyone(w, 'cold', 'The hearth went cold', -5, 12); w.hearthCold = true; }
   }
@@ -2197,7 +2199,7 @@ function hourly(w: World) {
 
   for (const c of alive(w)) {
     if (c.activity !== 'sleeping') {
-      c.hunger -= (100 / START.body.hungerHours) * (has(c, 'glutton') ? 1.6 : 1) * (hasPerk(w, 'rations') ? 0.8 : 1);
+      c.hunger -= (100 / START.body.hungerHours) * (has(c, 'glutton') ? 1.6 : 1) * (hasPerk(w, 'rations') ? 0.7 : 1);
       c.fun -= 2;
       // a job you love is a little fun in itself; the real lifting still happens at the tavern and the stage
       const jb = c.activity === 'working' ? buildingByUid(w, c.job) : undefined;
@@ -2243,7 +2245,7 @@ function hourly(w: World) {
   if (h === 18 && w.feast?.called) runFeast(w);
   if (h === 18 && w.festival?.called) runFestival(w);
   // the Hearth songs boon: an open, staffed tavern eases strain each evening
-  if (h === 21 && hasPerk(w, 'hearthSongs') && built(w).some(b => b.def === 'tavern' && workersAt(w, b.uid).length > 0)) w.strain = Math.max(0, w.strain - 0.5);
+  if (h === 21 && hasPerk(w, 'hearthSongs') && built(w).some(b => b.def === 'tavern' && workersAt(w, b.uid).length > 0)) w.strain = Math.max(0, w.strain - 1);
   checkCharter(w);
   w.ateOffTable = false; w.ateRaw = false;
   if (h === 6) dawn(w);
@@ -2386,7 +2388,7 @@ export function festivalPreview(w: World) {
     if (taste(c, meal) > 0 || (drink && taste(c, drink) > 0)) loved++;
   }
   const n = Math.max(1, guests.length), r = START.relief.festival;
-  const share = (r.base * (fed / n) + (drank >= n / 2 ? r.drinks : 0) + (loved >= n / 2 ? r.loved : 0) + (hasPerk(w, 'postRider') && fed ? 0.1 : 0)) * (hasPerk(w, 'feastDays') ? 1.5 : 1);
+  const share = (r.base * (fed / n) + (drank >= n / 2 ? r.drinks : 0) + (loved >= n / 2 ? r.loved : 0) + (hasPerk(w, 'postRider') && fed ? 0.2 : 0)) * (hasPerk(w, 'feastDays') ? 1.5 : 1);
   return { guests: guests.length, fed, drank, loved, meals: fed, drinks: drank, share, relief: w.strain * share, wait: Math.max(0, Math.ceil((w.festival?.readyAt ?? 0) - w.hour)) };
 }
 function runFestival(w: World) {
@@ -2667,7 +2669,7 @@ export function runHours(w: World, hours: number) { for (let i = 0; i < hours * 
 
 /** ease strain by a share of what it is now (boons can add to the share); returns the amount, rounded, for the log */
 function ease(w: World, share: number): number {
-  const s = Math.min(0.9, share + (hasPerk(w, 'postRider') ? 0.1 : 0));
+  const s = Math.min(0.9, share + (hasPerk(w, 'postRider') ? 0.2 : 0));
   const amount = w.strain * s;
   w.strain = Math.max(0, w.strain - amount);
   return Math.round(amount);

@@ -214,9 +214,9 @@ const untilHour = (w: World, h: number, each: () => void = () => {}) => { for (l
   ok(w.strain < 18.1 && w.strain > 15, `a harvest moon dance with a meal each: strain eases about 10% (${w.strain.toFixed(1)})`);
   w.strain = 20; w.res.ale = 10; ev(w, 'bard', 0);
   ok(Math.abs(w.strain - 18.4) < 0.01, `the bard: strain eases 8% (${w.strain.toFixed(1)})`);
-  // boons
+  // cornerstones
   w.perks.push('postRider'); w.strain = 20; w.res.ale = 10; ev(w, 'bard', 0);
-  ok(Math.abs(w.strain - 16.4) < 0.01, `a post rider adds 10%: the bard eases 18% (${w.strain.toFixed(1)})`);
+  ok(Math.abs(w.strain - 14.4) < 0.01, `a post rider adds 20%: the bard eases 28% (${w.strain.toFixed(1)})`);
   w.comfort = 0.5; const before = comfortFactor(w); w.perks.push('homesteaders');
   ok(comfortFactor(w) < before - 0.09, `homesteaders: comfort 50% counts as 60% (${before.toFixed(2)}× → ${comfortFactor(w).toFixed(2)}×)`);
   // strain events only come when strain bites

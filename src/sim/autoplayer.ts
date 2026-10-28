@@ -41,7 +41,7 @@ function newKinds(w: World, id: string) {
   return goods.filter(r => !can(r, w.owned) && can(r, [...w.owned, id])).length;
 }
 const plannedUses = (w: World, input: ResourceId) => built(w).some(b => { const r = plannedRecipe(w, b); return !!r && Object.keys(r.inputs).some(k => membersOf(k as InputKey).includes(input)); });
-const PERK_PRIORITY = ['homesteaders', 'postRider', 'saintsDay', 'ironWill', 'feastDays', 'lumberGuild', 'hearthkeepers', 'overtime', 'hearthSongs', 'communalPot', 'rootCellars', 'merchantsFavour', 'rations', 'pilgrimsRoad', 'earplugs', 'warmHearth', 'gossipBan', 'openRoad', 'matchmaker', 'rentCollector'];
+const PERK_PRIORITY = ['homesteaders', 'ironWill', 'postRider', 'saintsDay', 'warmHearth', 'lumberGuild', 'feastDays', 'hearthkeepers', 'overtime', 'hearthSongs', 'communalPot', 'rations', 'rootCellars', 'merchantsFavour', 'earplugs', 'pilgrimsRoad', 'gossipBan', 'openRoad', 'matchmaker', 'rentCollector'];
 const MOOD_BUILDINGS = ['tavern', 'brewery', 'ciderpress', 'pieoven', 'bathhouse', 'cottage', 'stage'];
 /**
  * Which recipes each workshop runs. A workshop makes the first recipe it can, so left alone the apothecary makes
