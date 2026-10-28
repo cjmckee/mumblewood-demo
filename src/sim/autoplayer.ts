@@ -94,6 +94,9 @@ function researchParts(w: World, id: string): Record<string, number> {
   if (id === 'handcarts') p['laborers haul all day'] = 5;
   if (id === 'roads') p['paths everywhere'] = 3;
   if (id === 'preserving') p['food spoils'] = 2 + (built(w).some(b => b.def === 'storehouse') ? 0 : 2);
+  if (id === 'salting' && built(w).some(b => b.def === 'dock' || b.def === 'smokehouse')) p['fish to keep'] = 3;
+  if (id === 'cellaring' && built(w).some(b => b.def === 'tavern')) p['a tavern pours'] = 4;
+  if (id === 'quarantine') p['flu goes round'] = 2 + (alive(w).some(c => c.illness?.contagious) ? 3 : 0);
   if (id === 'physick' && alive(w).some(c => c.illness)) p['someone is ill'] = 10;
   if (id === 'warehousing' && storages(w).every(b => (bdef(b).storage ?? 0) - Object.values(b.stock).reduce((n, x) => n + (x ?? 0), 0) < 40)) p['storage nearly full'] = 4;
   void RESEARCH_BY_ID;
@@ -473,7 +476,7 @@ function randomTrade(w: World, rand: () => number) {
 const PERK_BASE: Record<string, number> = {
   homesteaders: 18, ironWill: 18, postRider: 16, saintsDay: 16, warmHearth: 14, lumberGuild: 14, barnRaising: 13, overtime: 13,
   feastDays: 12, hearthkeepers: 8, communalPot: 6, hearthSongs: 2, crownsFavour: 6, merchantsFavour: 8, rootCellars: 7,
-  pilgrimsRoad: 5, closedGates: -10, openRoad: 3, rentCollector: 2, brewersGuild: 0, fishingRights: 0, masonsLodge: 0, bakersRow: 0,
+  pilgrimsRoad: 5, openRoad: 3, rentCollector: 2, brewersGuild: 0, fishingRights: 0, masonsLodge: 0, bakersRow: 0,
 };
 function perkParts(w: World, id: string): Record<string, number> {
   const p: Record<string, number> = { 'standing value': PERK_BASE[id] ?? 0 };
@@ -485,8 +488,6 @@ function perkParts(w: World, id: string): Record<string, number> {
   if (id === 'communalPot' && built(w).some(b => b.def === 'kitchen')) p['meals are cooked'] = 6;
   if (id === 'hearthkeepers' && seasonOf(w).toWinter <= 12) p['winter is close'] = 6;
   if (id === 'crownsFavour' && w.chartersDone.length < 2) p['stipends still to come'] = 8;
-  // closed gates: only once the colony has everyone the remaining charters ask for
-  if (id === 'closedGates') { const need = Math.max(...partsOf(w).map(x => (x.kind === 'population' ? x.amount : x.kind === 'longTable' ? x.pop : 0)), w.charterTier >= 3 ? 14 : 12); if (alive(w).length >= need + 1) p['enough people already'] = 30; }
   return p;
 }
 

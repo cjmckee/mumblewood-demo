@@ -3,7 +3,7 @@ import {
   BUILDING_BY_ID, BuildingDef, CHARTERS, CharterDef, EVENTS, FIRST_NAMES, JOB_NAMES, JobKind, JOB_KINDS,
   MEALS, PERKS, RAW_FOODS, ResourceId, SHIRTS, SKINS, SURNAMES, TRAITS, TRAIT_BY_ID, BUILDINGS, buildWork,
   JOB_EVENTS, JobEventDef, ILLNESSES, RESOURCES, Recipe, InputKey, CATEGORIES, isCategory, membersOf, inputName, recipeRate, SITES, SiteId, MEAL_MOOD,
-  CharterMetric, RESEARCH, RESEARCH_BY_ID, PRICE, TRADERS, TRADER_BY_ID, LORE_BOOST, GUILD_BOOST, Tier, EventDef,
+  CharterMetric, RESEARCH, RESEARCH_BY_ID, BRANCHES_AFTER, PRICE, TRADERS, TRADER_BY_ID, LORE_BOOST, GUILD_BOOST, Tier, EventDef,
 } from './content';
 import { START } from './scenario';
 import { seasonOf, seasonOn, rule, SEASON_NAMES } from './seasons';
@@ -789,9 +789,14 @@ function charterDecision(w: World, tier: 1 | 2 | 3): Decision {
 export const desks = (w: World) => built(w).filter(b => b.def === 'desk');
 /** projects not yet done */
 export const researchLeft = (w: World) => RESEARCH.filter(r => !w.research.done.includes(r.id));
+/** basics the scholar has learned; the specialization branches open after BRANCHES_AFTER of them */
+export const basicsDone = (w: World) => RESEARCH.filter(r => !r.branch && w.research.done.includes(r.id)).length;
+/** what can be studied now: any basic left, and in each branch the next project once the branches are open */
+export const researchOpen = (w: World) => researchLeft(w).filter(r => !r.branch || (basicsDone(w) >= BRANCHES_AFTER && (!r.after || w.research.done.includes(r.after))));
 function researchDecision(w: World, fixed?: string[]): Decision {
-  const left = researchLeft(w).map(r => r.id);
-  const options = fixed?.length ? fixed.filter(id => left.includes(id)) : shuffle(w, left).slice(0, 3);
+  // basics first, then the branches
+  const open = researchOpen(w).sort((a, b) => Number(!!a.branch) - Number(!!b.branch)).map(r => r.id);
+  const options = fixed?.length ? fixed.filter(id => open.includes(id)) : open;
   return { kind: 'research', options };
 }
 /** goods the current project still needs at the desks, by cost key */
@@ -832,7 +837,8 @@ function researchHourly(w: World, b: Building, c: Colonist, dt: number) {
   r.done.push(cur.id); r.current = null; r.progress = 0;
   for (const id of cur.unlocks) if (!w.owned.includes(id)) w.owned.push(id);
   addLog(w, cur.unlocks.length ? `${first(c)} finished studying ${cur.name}. You can now build: ${cur.unlocks.map(id => BUILDING_BY_ID[id].name.toLowerCase()).join(' and ')}.` : `${first(c)} finished studying ${cur.name}. ${cur.effect ?? ''}`, 'good');
-  if (researchLeft(w).length) w.decisions.push(researchDecision(w));
+  if (basicsDone(w) === BRANCHES_AFTER && !cur.branch) addLog(w, 'The scholar has the basics down. Specializations are open: fishing, farming, brewing, building, foraging and healing.', 'good');
+  if (researchOpen(w).length) w.decisions.push(researchDecision(w));
   else addLog(w, 'The scholar has read every book in the colony twice and is now reading the labels on jars.');
   void b;
 }
@@ -1302,7 +1308,7 @@ function illnessHourly(w: World) {
     if (doctor && nextRand(w) < 0.1) doctor.skills.medicine = Math.min(10, doctor.skills.medicine + 0.1);
     // contagion among people in the same place
     if (ill.contagious && c.place != null && c.activity !== 'sick') {
-      for (const o of alive(w)) if (o !== c && !o.illness && o.place === c.place && nextRand(w) < 0.02) { fallIll(w, o, ill.id); addLog(w, `${first(o)} caught the ${ill.name.toLowerCase()} from ${first(c)}.`, 'bad'); }
+      for (const o of alive(w)) if (o !== c && !o.illness && o.place === c.place && nextRand(w) < (knows(w, 'quarantine') ? 0.008 : 0.02)) { fallIll(w, o, ill.id); addLog(w, `${first(o)} caught the ${ill.name.toLowerCase()} from ${first(c)}.`, 'bad'); }
     }
     if (ill.severity <= 0) {
       c.illness = null; c.goalKey = ''; w.stats.cured++;
@@ -1317,7 +1323,7 @@ function illnessHourly(w: World) {
 }
 function outbreak(w: World) {
   const healthy = shuffle(w, alive(w).filter(c => !c.illness));
-  const n = Math.min(healthy.length, 2 + Math.floor(nextRand(w) * 2));
+  const n = Math.min(healthy.length, 2 + Math.floor(nextRand(w) * 2) - (knows(w, 'quarantine') ? 1 : 0));
   for (const c of healthy.slice(0, n)) fallIll(w, c, 'flu');
   addLog(w, `Frontier flu! ${healthy.slice(0, n).map(first).join(', ')} came down with it.`, 'bad');
   spawnErrand(w, JOB_EVENTS.find(j => j.id === 'remedy')!);
@@ -2183,7 +2189,7 @@ export const comfortFactor = (w: World) => Math.max(0.2, START.comfortScale.base
 /** strain rise per day at the colony's current size, day and comfort (before boons) */
 export function strainPerDay(w: World) {
   const d = day(w) - 1 + (hourOfDay(w) - 6) / 24;
-  return START.strain.rate * Math.sqrt(alive(w).length) * (1 + Math.max(0, d) / START.strain.rampDays) * comfortFactor(w) * (hasPerk(w, 'ironWill') ? 0.65 : 1) * (hasPerk(w, 'openRoad') ? 1.1 : 1) * (hasPerk(w, 'crownsFavour') ? 1.15 : 1) * (hasPerk(w, 'closedGates') ? 0.7 : 1);
+  return START.strain.rate * Math.sqrt(alive(w).length) * (1 + Math.max(0, d) / START.strain.rampDays) * comfortFactor(w) * (hasPerk(w, 'ironWill') ? 0.65 : 1) * (hasPerk(w, 'openRoad') ? 1.1 : 1) * (hasPerk(w, 'crownsFavour') ? 1.15 : 1);
 }
 
 /** what happened in the last 24 hours, from the running flow totals */
@@ -2299,9 +2305,10 @@ function hourly(w: World) {
   // food spoils unless it sits somewhere that keeps it fresh (a storehouse)
   const rot = (START.body.spoilPerDay / 24) * rule(sc.seasons.spoil, seasonOf(w).season, 1) * (hasPerk(w, 'rootCellars') && seasonOf(w).season === 'winter' ? 0 : 1) * (knows(w, 'preserving') ? 0.5 : 1);
   for (const r of FOODS) {
+    if (r === 'smokedFish' && knows(w, 'salting')) continue;
     let fresh = 0;
     for (const b of storages(w)) if (bdef(b).keepsFresh) fresh += b.stock[r] ?? 0;
-    const loss = Math.max(0, w.res[r] - fresh) * rot;
+    const loss = Math.max(0, w.res[r] - fresh) * rot * (r === 'fish' && knows(w, 'salting') ? 1 / 3 : 1);
     if (loss > 0) { w.res[r] -= loss; flow(w, `${r}:-spoiled`, loss); for (const b of storages(w)) if (!bdef(b).keepsFresh && b.stock[r]) b.stock[r]! *= 1 - rot; }
   }
   heatHomes(w);
@@ -2326,10 +2333,10 @@ function hourly(w: World) {
     if (c.activity === 'leisure' || c.activity === 'sulking' || c.activity === 'idle') {
       const atTavern = tavern && c.place === tavern.uid;
       if (atTavern && drinkTotal(w) >= 0.3) {
-        const r = takeDrink(w, 0.3, 'drunk', c); c.fun += 18;
+        const r = takeDrink(w, knows(w, 'cellaring') ? 0.2 : 0.3, 'drunk', c); c.fun += 18;
         if (!c.drankTonight && r) {
           c.drankTonight = true;
-          addMemory(w, c, 'ale', `Drank ${goodName(r)} at the tavern`, (DRINK_MOOD[r] ?? 6) + (has(c, 'tippler') ? 4 : 0), 14);
+          addMemory(w, c, 'ale', `Drank ${goodName(r)} at the tavern`, (DRINK_MOOD[r] ?? 6) + (has(c, 'tippler') ? 4 : 0) + (knows(w, 'cellaring') ? 2 : 0), 14);
           tasteMemory(w, c, r, 'tasteDrink');
         }
       } else c.fun += (c.activity === 'idle' ? 3 : 9) + (stage && h >= 18 ? 5 : 0) + (hasPerk(w, 'warmHearth') ? 1 : 0);
@@ -2409,7 +2416,7 @@ function dawn(w: World) {
   // blueprint drafts every few days once the first charter is picked
   if (w.draftsFrom != null && d > w.draftsFrom && (d - w.draftsFrom) % START.draftEvery === 0) w.decisions.push(blueprintDecision(w));
   const every = hasPerk(w, 'openRoad') ? 1 : START.seasons.recruitEvery[seasonOf(w).season];
-  if (every > 0 && d % every === 0 && !hasPerk(w, 'closedGates')) {
+  if (every > 0 && d % every === 0) {
     const names = new Set(w.colonists.map(c => first(c)));
     const opts = [0, 1, 2].map(() => makeColonist(w, names));
     // now and then one of them is a skilled hand who wants paying

@@ -1,5 +1,5 @@
 // DOM overlay: HUD, bottom sheet, decision modals. Talks to the sim only through commands.
-import { BUILDINGS, membersOf, BUILDING_BY_ID, EVENTS, RESEARCH_BY_ID, JOB_NAMES, PERK_BY_ID, TRADER_BY_ID, RESOURCES, TRAIT_BY_ID, ResourceId, SKILL_NAMES, JOB_KINDS, JobKind, Recipe, InputKey, inputName, recipeRate, Stars } from '../sim/content';
+import { BUILDINGS, membersOf, BUILDING_BY_ID, EVENTS, RESEARCH, RESEARCH_BY_ID, BRANCHES_AFTER, JOB_NAMES, PERK_BY_ID, TRADER_BY_ID, RESOURCES, TRAIT_BY_ID, ResourceId, SKILL_NAMES, JOB_KINDS, JobKind, Recipe, InputKey, inputName, recipeRate, Stars } from '../sim/content';
 import {
   World, Command, Colonist, alive, avgMood, beds, buildingByUid, charterProgress, colonistById,
   day, hourOfDay, opinion, workersAt, MAX_DEPARTURES, sites, siteWork, remainingCost, storageCap, stored,
@@ -7,7 +7,7 @@ import {
   recipesOf, recipeOn, currentRecipe, siteOk, rerollCost, REROLL_STEP, stockOf, recipeReach, charterHelpers, charterDef,
   costOf, researchLeft, researchStillNeeds, desks, feastCheck, festivalPreview, mealTotal, drinkTotal,
   comfortParts, comfortOf, colonyComfort, comfortGaps, strainPerDay, footprint, activeNeeds, standingOf, STANDINGS, NeedKey, winterFuelPerDay,
-  sellPrice, charterCounted,
+  sellPrice, charterCounted, basicsDone, researchOpen,
 } from '../sim/world';
 import { START } from '../sim/scenario';
 import { assess } from '../sim/advisor';
@@ -585,12 +585,24 @@ export class UI {
     const r = w.research; if (!r) return '';
     const cur = r.current ? RESEARCH_BY_ID[r.current] : undefined;
     const done = r.done.map(id => RESEARCH_BY_ID[id].name).join(', ');
-    if (!cur) return `<p class="prefs">${done ? `Learned: ${esc(done)}.` : ''}</p>`;
+    if (!cur) return `<p class="prefs">${done ? `Learned: ${esc(done)}.` : ''}</p>${this.researchTree(w)}`;
     const need = researchStillNeeds(w);
     const goods = Object.entries(cur.cost).map(([k, n]) => { const left = need[k as InputKey] ?? 0; const nm = inputName(k as InputKey); return `<li><span>${icon(k)}${esc(nm.charAt(0).toUpperCase() + nm.slice(1))}</span><b>${Math.floor((n ?? 0) - left)} / ${n}</b></li>`; }).join('');
     return `<h3>Studying ${esc(cur.name)}</h3><p class="prefs">${esc(cur.desc)} ${cur.unlocks.length ? `Unlocks <b>${esc(cur.unlocks.map(u => BUILDING_BY_ID[u].name.toLowerCase()).join(' and '))}</b>.` : `<b>${esc(cur.effect ?? '')}</b>`}</p>
       <ul class="thoughts">${goods}<li><span>Study</span><b>${Math.floor(r.progress)} / ${cur.hours} hours</b></li></ul>
-      <p class="muted">${Object.keys(need).length ? 'The scholar fetches the goods; laborers help when they can.' : 'Everything is here. Study goes faster with a better Studying skill.'}${done ? ` Learned so far: ${esc(done)}.` : ''}</p>`;
+      <p class="muted">${Object.keys(need).length ? 'The scholar fetches the goods; laborers help when they can.' : 'Everything is here. Study goes faster with a better Studying skill.'}</p>${this.researchTree(w)}`;
+  }
+
+  /** the research tree: the basics, then each specialization branch in order, learned / open / not yet */
+  private researchTree(w: World) {
+    const r = w.research; if (!r) return '';
+    const open = new Set(researchOpen(w).map(x => x.id));
+    const node = (id: string) => { const x = RESEARCH_BY_ID[id]; const st = r.done.includes(id) ? 'done' : r.current === id ? 'now' : open.has(id) ? 'open' : 'locked';
+      return `<span class="rnode ${st}" title="${esc(x.effect ?? x.desc)}">${st === 'done' ? '✓ ' : ''}${esc(x.name)}</span>`; };
+    const branches = [...new Set(RESEARCH.filter(x => x.branch).map(x => x.branch!))];
+    const rows = [`<div class="rrow"><b>Basics</b><span>${RESEARCH.filter(x => !x.branch).map(x => node(x.id)).join('')}</span></div>`,
+      ...branches.map(b => `<div class="rrow"><b>${esc(b)}</b><span>${RESEARCH.filter(x => x.branch === b).map(x => node(x.id)).join('<i>→</i>')}</span></div>`)];
+    return `<h3>Research${basicsDone(w) < BRANCHES_AFTER ? ` <span class="muted">· specializations open after ${BRANCHES_AFTER} basics</span>` : ''}</h3><div class="rtree">${rows.join('')}</div>`;
   }
 
   private resumeCard(w: World) {
@@ -623,9 +635,15 @@ export class UI {
         case 'charter': html = this.cards(d.tier === 1 ? 'Your first charter' : `Charter ${d.tier} of 3`,
           d.tier === 1 ? 'The Crown wants proof this colony is worth the paperwork. Complete three charters before the frontier wears everyone down.' : 'The Crown has another demand. Choose one.',
           d.options.map(id => { const c = charterDef(id)!; return { title: c.name, body: esc(c.desc), tag: `Tier ${c.tier}` }; })); break;
-        case 'research': html = this.cards(w.research?.done.length ? 'What next for the scholar?' : 'What should your scholar study first?',
-          w.research?.done.length ? 'Pick one project. The ones you pass on can come round again.' : 'Nobody here knows how to build a kitchen, a dining hall or a clinic yet. Pick one project for the research desk. Someone has to sit there, and the goods get carried in.',
-          d.options.map(id => { const r = RESEARCH_BY_ID[id]; return { title: r.name, body: `${esc(r.desc)}\n${r.unlocks.length ? `Unlocks: ${r.unlocks.map(u => `<span class="gd">${icon(u)}${esc(BUILDING_BY_ID[u].name)}</span>`).join(', ')}` : `<b>${esc(r.effect ?? '')}</b>`}`, tag: `Costs ${costHtml(r.cost)} · about ${r.hours} hours of study` }; })); break;
+        case 'research': {
+          const open = basicsDone(w) >= BRANCHES_AFTER;
+          html = this.cards(w.research?.done.length ? 'What next for the scholar?' : 'What should your scholar study first?',
+          !w.research?.done.length ? 'Nobody here knows how to build a kitchen, a dining hall or a clinic yet. Pick one project for the research desk. Someone has to sit there, and the goods get carried in.'
+            : open ? 'Pick one. Specializations are slow, so a run only gets through two or three branches: study the ones your chains run on.'
+            : `Pick one. After ${BRANCHES_AFTER} basics, specializations open: fishing, farming, brewing, building, foraging and healing.`,
+          d.options.map(id => { const r = RESEARCH_BY_ID[id]; return { title: r.name, body: `${esc(r.desc)}\n${r.unlocks.length ? `Unlocks: ${r.unlocks.map(u => `<span class="gd">${icon(u)}${esc(BUILDING_BY_ID[u].name)}</span>`).join(', ')}` : `<b>${esc(r.effect ?? '')}</b>`}`, tag: `${r.branch ? `${esc(r.branch)} · ` : 'Basics · '}costs ${costHtml(r.cost)} · about ${r.hours} hours` }; }));
+          break;
+        }
         case 'blueprint': {
           const cost = rerollCost(w), can = w.gold >= cost;
           // each card lists what the building makes, best recipe first, so a reroll is a judgement about routes

@@ -256,7 +256,6 @@ export const PERKS: PerkDef[] = [
   { id: 'bakersRow', name: 'Bakers\u2019 row', desc: 'Grain fields, mills, bakeries and pie ovens work 75% faster.' },
   // trade-offs
   { id: 'crownsFavour', name: 'The Crown\u2019s favour', desc: '60 gold now, and charter stipends are doubled. Strain grows 15% faster.' },
-  { id: 'closedGates', name: 'Closed gates', desc: 'No more settlers will join. Strain grows 30% slower.' },
   { id: 'barnRaising', name: 'Barn raising', desc: 'Everything is built twice as fast. Everyone is −2 mood from the hammering.' },
 ];
 /** what each guild speeds up */
@@ -431,7 +430,15 @@ export const ILLNESSES: IllnessDef[] = [
 // ---------- Research ----------
 /** A project the research desk works through. Finishing it unlocks buildings from the base set. */
 /** a project either unlocks buildings (the basics) or is lore: a lasting improvement, described by `effect` */
-export interface ResearchDef { id: string; name: string; desc: string; unlocks: string[]; cost: Partial<Record<InputKey, number>>; hours: number; effect?: string }
+export interface ResearchDef {
+  id: string; name: string; desc: string; unlocks: string[]; cost: Partial<Record<InputKey, number>>; hours: number; effect?: string;
+  /** a specialization's branch; branches open once BRANCHES_AFTER basics are learned */
+  branch?: string;
+  /** the project in its branch that has to be learned first */
+  after?: string;
+}
+/** basics learned before the specialization branches open */
+export const BRANCHES_AFTER = 3;
 export const RESEARCH: ResearchDef[] = [
   { id: 'cookery', name: 'Cookery', desc: 'Raw berries are food, technically. A stew kitchen turns raw food into proper meals.', unlocks: ['kitchen'], cost: { wood: 10, berries: 10 }, hours: 8 },
   { id: 'messhall', name: 'Mess hall', desc: 'Tables, benches, and the radical idea of not eating in the dirt.', unlocks: ['dining'], cost: { wood: 15 }, hours: 8 },
@@ -439,17 +446,20 @@ export const RESEARCH: ResearchDef[] = [
   { id: 'warehousing', name: 'Warehousing', desc: 'A storehouse under a roof, where food doesn\u2019t spoil.', unlocks: ['storehouse'], cost: { wood: 20 }, hours: 10 },
   { id: 'gardening', name: 'Gardening', desc: 'Flower beds and lantern posts. Prettier surroundings, happier settlers, confused moths.', unlocks: ['flowerbed', 'lantern'], cost: { wood: 5, berries: 10 }, hours: 6 },
   { id: 'masonry', name: 'Masonry', desc: 'Benches and a statue of Saint Pomfrey. Paid for in meals, because masons expect lunch.', unlocks: ['bench', 'statue'], cost: { wood: 10, meal: 5 }, hours: 10 },
-  // lore: slower, dearer, and too many to learn in one run, so the scholar's time goes to the chains the colony runs on
-  { id: 'handcarts', name: 'Handcarts', desc: 'Two wheels and a handle. The wheel was a good idea and everyone agrees it should catch on.', effect: 'Carrying no longer slows anyone down, and loaded haulers walk 20% faster.', unlocks: [], cost: { wood: 30, fine: 8 }, hours: 20 },
-  { id: 'roads', name: 'Road-building', desc: 'Packed gravel, a camber, and a ditch either side. Surprisingly exciting, if you are a surveyor.', effect: 'Paths cost no wood to lay, and walking on them is 50% faster instead of 25%.', unlocks: [], cost: { wood: 25 }, hours: 16 },
-  { id: 'preserving', name: 'Preserving', desc: 'Salt, smoke, crocks and a great deal of vinegar.', effect: 'Food spoils half as fast everywhere.', unlocks: [], cost: { wood: 15, rawFood: 20 }, hours: 18 },
-  { id: 'foraging', name: 'Forager\u2019s lore', desc: 'Which mushrooms are food and which are a learning experience.', effect: 'Forager huts and mushroom cellars bring in 35% more.', unlocks: [], cost: { rawFood: 25 }, hours: 16 },
-  { id: 'smoking', name: 'Nets and racks', desc: 'Better nets for the dock and better racks for the smoke.', effect: 'Fishing docks and smokehouses work 40% faster.', unlocks: [], cost: { wood: 15, rawFood: 20 }, hours: 20 },
-  { id: 'joinery', name: 'Joinery', desc: 'Dovetails, mortises, and a strong opinion about glue.', effect: 'Sawmills, carpenters, kilns and clay pits work 40% faster.', unlocks: [], cost: { wood: 35 }, hours: 20 },
-  { id: 'malting', name: 'Malting', desc: 'Sprout the grain, dry it, argue about it, brew it.', effect: 'Breweries and cider presses work 40% faster.', unlocks: [], cost: { wood: 20, rawFood: 15 }, hours: 22 },
-  { id: 'milling', name: 'Milling and baking', desc: 'Finer flour, hotter ovens, fewer burnt bottoms.', effect: 'Mills, bakeries and pie ovens work 40% faster.', unlocks: [], cost: { wood: 25, rawFood: 10 }, hours: 20 },
-  { id: 'rotation', name: 'Crop rotation', desc: 'Beans one year, grain the next, and the bees get the clover.', effect: 'Grain fields, orchards and apiaries bring in 40% more.', unlocks: [], cost: { wood: 20, rawFood: 15 }, hours: 22 },
-  { id: 'herblore', name: 'Herb lore', desc: 'A thick book of which leaf does what, half of it in the margins.', effect: 'Herb gardens and the apothecary work 50% faster.', unlocks: [], cost: { wood: 15, rawFood: 10 }, hours: 18 },
+  // specializations: a branch each, one project leading to the next, slow enough that a run gets through two or three
+  { id: 'smoking', branch: 'Fishing', name: 'Nets and racks', desc: 'Better nets for the dock and better racks for the smoke.', effect: 'Fishing docks and smokehouses work 40% faster.', unlocks: [], cost: { wood: 20, rawFood: 15 }, hours: 64 },
+  { id: 'salting', branch: 'Fishing', after: 'smoking', name: 'Salting', desc: 'Barrels, brine, and an argument about how much salt is too much.', effect: 'Smoked fish never spoils, and fresh fish keeps three times as long.', unlocks: [], cost: { wood: 25, fish: 20 }, hours: 84 },
+  { id: 'rotation', branch: 'Farming', name: 'Crop rotation', desc: 'Beans one year, grain the next, and the bees get the clover.', effect: 'Grain fields, orchards and apiaries bring in 40% more.', unlocks: [], cost: { wood: 20, rawFood: 15 }, hours: 64 },
+  { id: 'milling', branch: 'Farming', after: 'rotation', name: 'Milling and baking', desc: 'Finer flour, hotter ovens, fewer burnt bottoms.', effect: 'Mills, bakeries and pie ovens work 40% faster.', unlocks: [], cost: { wood: 30, rawFood: 15 }, hours: 84 },
+  { id: 'malting', branch: 'Brewing', name: 'Malting', desc: 'Sprout the grain, dry it, argue about it, brew it.', effect: 'Breweries and cider presses work 40% faster.', unlocks: [], cost: { wood: 20, rawFood: 15 }, hours: 64 },
+  { id: 'cellaring', branch: 'Brewing', after: 'malting', name: 'Cellaring', desc: 'Cool cellars, oak casks, and a tasting schedule that is mostly an excuse.', effect: 'A drink at the tavern gives +2 more mood, and each evening\u2019s round uses a third less.', unlocks: [], cost: { wood: 30, drink: 10 }, hours: 84 },
+  { id: 'joinery', branch: 'Building', name: 'Joinery', desc: 'Dovetails, mortises, and a strong opinion about glue.', effect: 'Sawmills, carpenters, kilns and clay pits work 40% faster.', unlocks: [], cost: { wood: 35 }, hours: 64 },
+  { id: 'roads', branch: 'Building', after: 'joinery', name: 'Road-building', desc: 'Packed gravel, a camber, and a ditch either side. Surprisingly exciting, if you are a surveyor.', effect: 'Paths cost no wood to lay, and walking on them is 50% faster instead of 25%.', unlocks: [], cost: { wood: 30, fine: 10 }, hours: 84 },
+  { id: 'handcarts', branch: 'Building', after: 'roads', name: 'Handcarts', desc: 'Two wheels and a handle. The wheel was a good idea and everyone agrees it should catch on.', effect: 'Carrying no longer slows anyone down, and loaded haulers walk 20% faster.', unlocks: [], cost: { wood: 30, fine: 15 }, hours: 100 },
+  { id: 'foraging', branch: 'Foraging', name: 'Forager\u2019s lore', desc: 'Which mushrooms are food and which are a learning experience.', effect: 'Forager huts and mushroom cellars bring in 35% more.', unlocks: [], cost: { rawFood: 25 }, hours: 64 },
+  { id: 'preserving', branch: 'Foraging', after: 'foraging', name: 'Preserving', desc: 'Salt, smoke, crocks and a great deal of vinegar.', effect: 'Food spoils half as fast everywhere.', unlocks: [], cost: { wood: 20, rawFood: 25 }, hours: 84 },
+  { id: 'herblore', branch: 'Healing', name: 'Herb lore', desc: 'A thick book of which leaf does what, half of it in the margins.', effect: 'Herb gardens and the apothecary work 50% faster.', unlocks: [], cost: { wood: 15, rawFood: 10 }, hours: 64 },
+  { id: 'quarantine', branch: 'Healing', after: 'herblore', name: 'Quarantine', desc: 'A separate hut, a stern sign, and a rule about sharing spoons.', effect: 'Flu spreads less than half as easily, and an outbreak catches one fewer person.', unlocks: [], cost: { wood: 25, remedy: 4 }, hours: 84 },
 ];
 /** what each piece of production lore speeds up, and by how much */
 export const LORE_BOOST: Record<string, { defs: string[]; mult: number }> = {
