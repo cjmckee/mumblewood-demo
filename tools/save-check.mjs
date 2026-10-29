@@ -6,14 +6,14 @@ const { chromium } = createRequire(import.meta.url)('playwright');
 const page_ = fileURLToPath(new URL('../dist/mumblewood.html', import.meta.url));
 const out = process.argv[2] ?? 'dist';
 let fails = 0; const ok = (c, m) => { console.log(`${c ? 'ok  ' : 'FAIL'} ${m}`); if (!c) fails++; };
-const browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader'] });
+const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined, args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader'] });
 const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
 const p = await ctx.newPage();
 const errors = []; p.on('pageerror', e => errors.push(e.message));
 const ready = () => p.waitForFunction(() => window.__game?.world, null, { timeout: 20000 });
 const state = () => p.evaluate(() => { const w = window.__game.world; return { hour: w.hour, day: window.__game.day(), pop: w.colonists.filter(c => !c.left).length, rng: w.rngState, json: JSON.stringify(w), modal: !document.getElementById('modal').hidden, text: document.getElementById('modal').innerText.toLowerCase() }; });
 
-await p.goto('file://' + page_); await ready();
+await p.goto(process.env.GAME_URL || 'file://' + page_); await ready();
 let s = await state();
 ok(s.day === 1 && !s.text.includes('welcome back'), 'a first visit starts a new colony, no welcome card');
 await p.evaluate(() => { const g = window.__game; g.autoplay(24 * 6.4); g.setSpeed(0); });

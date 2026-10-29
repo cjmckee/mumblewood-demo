@@ -1,5 +1,6 @@
 // Save and resume: the whole world is plain data (the sim has no DOM, no classes, no functions in it), so a JSON
 // snapshot resumes exactly where it left off, random numbers included. Kept in this browser's localStorage.
+import { RESOURCES } from './sim/content';
 import type { World } from './sim/world';
 
 const SAVE_KEY = 'mumblewood.save.v1';
@@ -23,9 +24,12 @@ export function loadSave(): SaveInfo | null {
     const s = JSON.parse(raw);
     const w = s?.world as World | undefined;
     if (s?.v !== SAVE_VERSION || !w || w.status !== 'playing') return null;
+    w.recipeBatching ??= true;
+    w.startDate ??= { season: 'summer', day: 6 }; // Preserve the calendar of existing saves.
     w.gold ??= 0; w.caravan ??= null;
     // the fields every world has; anything missing means the save is from somewhere it shouldn't be
     if (!Array.isArray(w.colonists) || !Array.isArray(w.buildings) || !Array.isArray(w.terrain) || typeof w.hour !== 'number' || typeof w.rngState !== 'number' || !w.res || !w.research) return null;
+    for (const r of RESOURCES) w.res[r.id] ??= 0;
     return { world: w, savedAt: String(s.savedAt ?? '') };
   } catch { return null; }
 }

@@ -1,0 +1,104 @@
+{
+  "note": "Final defaults, ordinary recruitment; cellar case grants only a blueprint. Three diagnostic cases, not a win-rate estimate.",
+  "runs": [
+    {
+      "mode": "current",
+      "seed": 8919,
+      "extraBlueprints": [
+        "cellar"
+      ],
+      "status": "won",
+      "day": 79.58333333333333,
+      "population": 16,
+      "peak": 16,
+      "deaths": 1,
+      "departures": 0,
+      "coatsMade": 0,
+      "coatsEquipped": 0,
+      "charters": [
+        {
+          "day": 42.458333333333336,
+          "completed": [
+            "firstplanks"
+          ]
+        },
+        {
+          "day": 57.375,
+          "completed": [
+            "menu"
+          ]
+        },
+        {
+          "day": 79.58333333333333,
+          "completed": [
+            "hall"
+          ]
+        }
+      ]
+    },
+    {
+      "mode": "current",
+      "seed": 1000,
+      "status": "won",
+      "day": 35.333333333333336,
+      "population": 16,
+      "peak": 16,
+      "deaths": 0,
+      "departures": 0,
+      "coatsMade": 0,
+      "coatsEquipped": 0,
+      "charters": [
+        {
+          "day": 9.75,
+          "completed": [
+            "settled"
+          ]
+        },
+        {
+          "day": 21.75,
+          "completed": [
+            "twokitchens"
+          ]
+        },
+        {
+          "day": 35.333333333333336,
+          "completed": [
+            "hall"
+          ]
+        }
+      ]
+    },
+    {
+      "mode": "current",
+      "seed": 24757,
+      "status": "won",
+      "day": 48.458333333333336,
+      "population": 16,
+      "peak": 16,
+      "deaths": 0,
+      "departures": 0,
+      "coatsMade": 0,
+      "coatsEquipped": 0,
+      "charters": [
+        {
+          "day": 13.166666666666666,
+          "completed": [
+            "settled"
+          ]
+        },
+        {
+          "day": 14.333333333333334,
+          "completed": [
+            "twokitchens"
+          ]
+        },
+        {
+          "day": 48.458333333333336,
+          "completed": [
+            "hall"
+          ]
+        }
+      ]
+    }
+  ]
+}

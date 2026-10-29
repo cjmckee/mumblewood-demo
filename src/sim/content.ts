@@ -1,8 +1,13 @@
 // All game content lives here as plain data. The sim reads it; nothing here knows about rendering.
 
-export type ResourceId = 'wood' | 'berries' | 'fish' | 'mushrooms' | 'apples' | 'grain' | 'honey' | 'clay' | 'reeds' | 'herbs' | 'flour' | 'stew' | 'pie' | 'smokedFish' | 'bread' | 'skewers' | 'poultice' | 'tonic' | 'tea' | 'planks' | 'bricks' | 'wicker' | 'ale' | 'cider' | 'mead';
+export type ResourceId = 'flax' | 'cloth' | 'hides' | 'leather' | 'coats' | 'wood' | 'berries' | 'fish' | 'mushrooms' | 'apples' | 'grain' | 'honey' | 'clay' | 'reeds' | 'herbs' | 'flour' | 'stew' | 'pie' | 'smokedFish' | 'bread' | 'skewers' | 'poultice' | 'tonic' | 'tea' | 'planks' | 'bricks' | 'wicker' | 'ale' | 'cider' | 'mead';
 /** raw: edible as is; ingredient: needs processing (grain, honey); luxury: drinks; remedy: used by the clinic */
 export const RESOURCES: { id: ResourceId; name: string; kind: 'raw' | 'ingredient' | 'meal' | 'material' | 'luxury' | 'remedy' }[] = [
+  { id: 'flax', name: 'Flax', kind: 'ingredient' },
+  { id: 'cloth', name: 'Cloth', kind: 'material' },
+  { id: 'hides', name: 'Hides', kind: 'ingredient' },
+  { id: 'leather', name: 'Leather', kind: 'material' },
+  { id: 'coats', name: 'Warm clothes', kind: 'material' },
   { id: 'wood', name: 'Wood', kind: 'material' },
   { id: 'planks', name: 'Planks', kind: 'material' },
   { id: 'bricks', name: 'Bricks', kind: 'material' },
@@ -29,6 +34,9 @@ export const RESOURCES: { id: ResourceId; name: string; kind: 'raw' | 'ingredien
   { id: 'poultice', name: 'Poultice', kind: 'remedy' },
   { id: 'tonic', name: 'Tonic', kind: 'remedy' },
 ];
+/** Initial clothing balance, to be measured against both production routes. Wear occurs only while worn; personal coats are stored outside winter. */
+export const CLOTHING = { lifetimeHours: 40 * 24, coldMoodMultiplier: 0.5, chillRiskMultiplier: 0.5 };
+
 export const RAW_FOODS: ResourceId[] = ['berries', 'fish', 'mushrooms', 'apples'];
 export const MEALS: ResourceId[] = ['pie', 'skewers', 'smokedFish', 'bread', 'stew'];
 /**
@@ -36,6 +44,7 @@ export const MEALS: ResourceId[] = ['pie', 'skewers', 'smokedFish', 'bread', 'st
  * more at the autumn fair: raw goods are cheap, and the more work a good holds the more it's worth.
  */
 export const PRICE: Record<ResourceId, number> = {
+  flax: 2, hides: 3, cloth: 6, leather: 6, coats: 14,
   wood: 2, berries: 2, fish: 2, mushrooms: 2, apples: 2, grain: 2, clay: 2, reeds: 2, herbs: 2, honey: 4, flour: 4,
   planks: 5, bricks: 5, wicker: 4, stew: 5, smokedFish: 5, bread: 6, skewers: 6, pie: 7,
   ale: 7, cider: 7, tea: 6, mead: 9, poultice: 10, tonic: 14,
@@ -52,6 +61,7 @@ export const TRADERS: TraderDef[] = [
   { id: 'grocer', name: 'the fishwife', who: 'Loud, cheerful, and smells powerfully of yesterday’s catch.', sells: ['fish', 'smokedFish', 'berries', 'mushrooms', 'apples', 'stew'], blueprints: ['dock', 'smokehouse', 'cellar'], wants: ['wood', 'reeds', 'herbs'], markup: 1.1 },
   { id: 'baker', name: 'the baker’s cart', who: 'Two flour-dusted siblings who finish each other’s sentences, badly.', sells: ['flour', 'bread', 'pie', 'grain', 'berries', 'honey'], blueprints: ['mill', 'bakery', 'pieoven', 'field'], wants: ['wood', 'apples', 'berries'], markup: 1.1 },
   { id: 'herbalist', name: 'the herbalist', who: 'She talks to her jars. Some of them, she says, talk back.', sells: ['herbs', 'poultice', 'tonic', 'tea', 'honey'], blueprints: ['apothecary', 'herbgarden', 'apiary'], wants: ['honey', 'herbs', 'mushrooms'], markup: 1.15 },
+  { id: 'clothier', name: 'the clothier', who: 'A travelling tailor with a wagon of suspiciously fashionable winter layers.', sells: ['flax', 'cloth', 'hides', 'leather', 'coats'], blueprints: ['flaxfield', 'weaver', 'trapper', 'tanner', 'tailor'], wants: ['bread', 'pie', 'ale', 'herbs'], markup: 1.2 },
   { id: 'pedlar', name: 'a pedlar', who: 'He sells a bit of everything and none of it is quite what you wanted.', sells: [], blueprints: [], wants: [], markup: 1.25 },
 ];
 export const TRADER_BY_ID: Record<string, TraderDef> = Object.fromEntries(TRADERS.map(t => [t.id, t]));
@@ -61,12 +71,12 @@ export const MEAL_MOOD: Partial<Record<ResourceId, number>> = { pie: 8, skewers:
 export type JobKind = 'chopping' | 'foraging' | 'fishing' | 'cooking' | 'crafting' | 'brewing' | 'serving' | 'medicine' | 'studying';
 export const JOB_NAMES: Record<JobKind, string> = {
   chopping: 'chopping wood', foraging: 'foraging', fishing: 'fishing', cooking: 'cooking',
-  crafting: 'carpentry', brewing: 'brewing', serving: 'tavern work', medicine: 'doctoring', studying: 'studying',
+  crafting: 'crafting', brewing: 'brewing', serving: 'tavern work', medicine: 'doctoring', studying: 'studying',
 };
 /** short labels for skill bars */
 export const SKILL_NAMES: Record<JobKind, string> = {
   chopping: 'Chopping', foraging: 'Foraging', fishing: 'Fishing', cooking: 'Cooking',
-  crafting: 'Carpentry', brewing: 'Brewing', serving: 'Serving', medicine: 'Medicine', studying: 'Studying',
+  crafting: 'Crafting', brewing: 'Brewing', serving: 'Serving', medicine: 'Medicine', studying: 'Studying',
 };
 export const JOB_KINDS = Object.keys(JOB_NAMES) as JobKind[];
 
@@ -87,6 +97,7 @@ export const inputName = (k: InputKey) => (isCategory(k) ? CATEGORIES[k].name : 
 
 /** output units per worker-hour at work speed 1, for a ★★★ recipe */
 export const BASE_RATE: Record<ResourceId, number> = {
+  flax: 1.2, hides: 0.8, cloth: 0.6, leather: 0.6, coats: 0.25,
   wood: 1.6, berries: 1.3, fish: 1.5, mushrooms: 1.5, apples: 1.4, grain: 1.6, honey: 1.0, clay: 1.5, reeds: 1.4, herbs: 1.3, flour: 1.4,
   stew: 1.2, pie: 0.9, smokedFish: 1.2, bread: 1.1, skewers: 1.0, poultice: 0.8, tonic: 0.6, tea: 0.9, planks: 1.0, bricks: 0.9, wicker: 1.0, ale: 0.8, cider: 0.9, mead: 0.7,
 };
@@ -106,6 +117,7 @@ export interface Recipe {
   stars: Stars;
 }
 /** output units per worker-hour at work speed 1 */
+export const ROUGH_PLANK_RECIPE: Recipe = { inputs: { wood: 3 }, output: 'planks', stars: 1 };
 export const recipeRate = (r: Recipe) => BASE_RATE[r.output] * STAR_MULT[r.stars];
 export const stars = (n: Stars) => '★'.repeat(n) + '☆'.repeat(3 - n);
 
@@ -153,7 +165,7 @@ export const BUILDINGS: BuildingDef[] = [
   { id: 'hearth', name: 'Hearth', blurb: 'Where everyone gathers in the evening to gossip. Burns wood at night.', cost: {}, w: 2, h: 2, slots: 0, wall: 0x6b5a4a, roof: 0xe07a2e, height: 0.3 },
   { id: 'stockpile', name: 'Stockpile', blurb: 'An open patch of ground for goods. Holds 150. Food left out here spoils.', cost: {}, w: 2, h: 2, slots: 0, storage: 150, walkable: true, wall: 0x8a7a5a, roof: 0x8a7a5a, height: 0 },
   { id: 'leanto', name: 'Shack', blurb: 'Sleeps 2. Drafty, but it counts as a roof.', cost: { wood: 8 }, w: 1, h: 1, slots: 0, beds: 2, bedQuality: 'basic', wall: 0x8a6e4f, roof: 0x7d8f55, height: 0.6 },
-  { id: 'woodcutter', name: 'Woodcutter', blurb: 'Fells trees. Works best with lots of trees close by.', cost: { wood: 8 }, w: 1, h: 1, slots: 2, job: 'chopping', needs: 'trees', recipes: [{ inputs: {}, output: 'wood', stars: 3 }], wall: 0x7a5a3c, roof: 0x5c7a3e, height: 0.7 },
+  { id: 'woodcutter', name: 'Woodcutter', blurb: 'Fells trees. Can instead rough-saw planks slowly at 3 wood each; a sawmill is faster and uses less wood. Works best near trees.', cost: { wood: 8 }, w: 1, h: 1, slots: 2, job: 'chopping', needs: 'trees', recipes: [{ inputs: {}, output: 'wood', stars: 3 }, ROUGH_PLANK_RECIPE], wall: 0x7a5a3c, roof: 0x5c7a3e, height: 0.7 },
   { id: 'forager', name: 'Forager hut', blurb: 'Picks berries. Works best right next to berry bushes.', cost: { wood: 8 }, w: 1, h: 1, slots: 2, job: 'foraging', needs: 'bushes', recipes: [{ inputs: {}, output: 'berries', stars: 3 }, { inputs: {}, output: 'herbs', stars: 1 }], wall: 0x8c6b4a, roof: 0xa0465a, height: 0.7 },
   { id: 'dining', name: 'Dining hall', blurb: 'Tables and benches for 6. Eating here beats eating in the dirt, as long as someone keeps it clean.', cost: { wood: 20 }, w: 2, h: 2, slots: 0, seats: 6, wall: 0x9a7a58, roof: 0x8a4a3a, height: 0.9 },
   { id: 'storehouse', name: 'Storehouse', blurb: 'Holds 250 goods under a roof. Food stored here doesn\u2019t spoil.', cost: { wood: 25 }, w: 2, h: 2, slots: 0, storage: 250, keepsFresh: true, wall: 0x7a6a58, roof: 0x5a6a7a, height: 1.0 },
@@ -183,10 +195,15 @@ export const BUILDINGS: BuildingDef[] = [
   { id: 'orchard', name: 'Orchard hut', blurb: 'Picks apples. Needs an apple grove close by. Apples are food, or cider.', cost: { wood: 10 }, w: 1, h: 1, slots: 2, job: 'foraging', needs: 'apples', recipes: [{ inputs: {}, output: 'apples', stars: 3 }], wall: 0x8c6b4a, roof: 0xb8452f, height: 0.7, draftable: true },
   { id: 'apiary', name: 'Apiary', blurb: 'Bees make honey from wildflowers. Flower beds nearby count as extra meadow.', cost: { wood: 12 }, w: 1, h: 1, slots: 2, job: 'foraging', needs: 'flowers', recipes: [{ inputs: {}, output: 'honey', stars: 3 }], wall: 0xc8a050, roof: 0x7a5a2a, height: 0.6, draftable: true },
   { id: 'field', name: 'Grain field', blurb: 'Rows of barley. Has to sit on good soil, and the better the soil the better the harvest.', cost: { wood: 10 }, w: 2, h: 2, slots: 2, job: 'foraging', needs: 'soil', recipes: [{ inputs: {}, output: 'grain', stars: 3 }], wall: 0x8a7a40, roof: 0xd8c060, height: 0.15, draftable: true },
-  { id: 'tavern', name: 'Tavern', blurb: 'Evenings here use drinks (ale, cider or mead) and give big fun. Gossip travels twice as fast.', cost: { wood: 20, fine: 12 }, w: 2, h: 2, slots: 1, job: 'serving', wall: 0x8e5f3c, roof: 0x7a2f2f, height: 1.1, draftable: true },
+  { id: 'tavern', name: 'Tavern', blurb: 'Guests have one small drink each evening, then keep socializing. Gossip travels twice as fast.', cost: { wood: 20, fine: 12 }, w: 2, h: 2, slots: 1, job: 'serving', wall: 0x8e5f3c, roof: 0x7a2f2f, height: 1.1, draftable: true },
   { id: 'cottage', name: 'Cottage', blurb: 'Sleeps 2, cozily. Waking up here is a +5 mood.', cost: { wood: 6, fine: 10 }, w: 1, h: 1, slots: 0, beds: 2, bedQuality: 'cozy', wall: 0xc7a983, roof: 0x4f6f9a, height: 0.9, draftable: true },
   { id: 'bathhouse', name: 'Bathhouse', blurb: 'Uses wood. Everyone feels fresher, and grumblers grumble less.', cost: { wood: 15, fine: 8 }, w: 2, h: 1, slots: 0, wall: 0xb8b0a0, roof: 0x4f8f8a, height: 0.7, draftable: true },
   { id: 'stage', name: "Bard's stage", blurb: 'Evening music at the hearth. Fun builds faster for everyone. Beauty 3.', cost: { wood: 12, fine: 5 }, w: 1, h: 1, slots: 0, beauty: 3, wall: 0x8a5f7a, roof: 0xc25c8a, height: 0.4, draftable: true },
+  { id: 'flaxfield', name: 'Flax field', blurb: 'Flax for cloth. Needs good soil; rests in winter.', cost: { wood: 10 }, w: 2, h: 2, slots: 2, job: 'foraging', needs: 'soil', recipes: [{ inputs: {}, output: 'flax', stars: 3 }], wall: 0x6a8550, roof: 0x8e9dce, height: 0.15, draftable: true },
+  { id: 'weaver', name: 'Weaver', blurb: 'Weaves flax into cloth for warm clothes.', cost: { wood: 14, fine: 4 }, w: 2, h: 1, slots: 2, job: 'crafting', recipes: [{ inputs: { flax: 2 }, output: 'cloth', stars: 3 }], wall: 0xa08a68, roof: 0x7589a6, height: 0.8, draftable: true },
+  { id: 'trapper', name: 'Trapper hut', blurb: 'Brings in hides. Works best near trees, including in winter.', cost: { wood: 12 }, w: 1, h: 1, slots: 2, job: 'foraging', needs: 'trees', recipes: [{ inputs: {}, output: 'hides', stars: 3 }], wall: 0x806447, roof: 0x78664b, height: 0.7, draftable: true },
+  { id: 'tanner', name: 'Tannery', blurb: 'Turns hides into leather. The smell is a professional achievement.', cost: { wood: 14, fine: 4 }, w: 2, h: 1, slots: 2, job: 'crafting', recipes: [{ inputs: { hides: 2 }, output: 'leather', stars: 3 }], wall: 0x9a7658, roof: 0x7b6354, height: 0.8, draftable: true },
+  { id: 'tailor', name: 'Tailor', blurb: 'Makes the same warm clothes from cloth or leather. Each settler collects a coat from storage; it lasts 40 days of wear and is stored outside winter. Coats soften cold and reduce winter chills, but homes still need wood.', cost: { wood: 16, fine: 6 }, w: 2, h: 1, slots: 2, job: 'crafting', recipes: [{ inputs: { cloth: 2 }, output: 'coats', stars: 3 }, { inputs: { leather: 2 }, output: 'coats', stars: 3 }], wall: 0xc0aa8a, roof: 0x705c8a, height: 0.9, draftable: true },
   // research and the finale (never drafted)
   { id: 'desk', name: 'Research desk', blurb: 'A wobbly table, a candle and a stack of borrowed books. A scholar here works out how to build the things a colony takes for granted.', cost: { wood: 8 }, w: 1, h: 1, slots: 1, job: 'studying', wall: 0x7a5a3a, roof: 0x5a6f8a, height: 0.45 },
   { id: 'hall', name: 'The Crown\u2019s Hall', blurb: 'The building that makes Mumblewood a town. Built in three stages. Nobody grumpy lays a stone for the Crown: only colonists at mood 55 or more will haul for it or build it.', cost: { fine: 60 }, w: 3, h: 3, slots: 0, beauty: 6, moodGate: 55,
@@ -256,7 +273,6 @@ export const PERKS: PerkDef[] = [
   { id: 'bakersRow', name: 'Bakers\u2019 row', desc: 'Grain fields, mills, bakeries and pie ovens work 75% faster.' },
   // trade-offs
   { id: 'crownsFavour', name: 'The Crown\u2019s favour', desc: '60 gold now, and charter stipends are doubled. Strain grows 15% faster.' },
-  { id: 'closedGates', name: 'Closed gates', desc: 'No more settlers will join. Strain grows 30% slower.' },
   { id: 'barnRaising', name: 'Barn raising', desc: 'Everything is built twice as fast. Everyone is −2 mood from the hammering.' },
 ];
 /** what each guild speeds up */
@@ -295,8 +311,8 @@ export interface EventOption { label: string; detail: string; effect: string }
  */
 export type Tier = 'minor' | 'moderate' | 'major';
 export interface StoryTag { tier: Tier; cost: number; seasons?: ('spring' | 'summer' | 'autumn' | 'winter')[] }
-/** requires: 'couple' needs a couple; 'strain' needs strain of 6 or more (the event is about the frontier wearing on people) */
-export interface EventDef extends StoryTag { id: string; title: string; text: string; options: EventOption[]; requires?: 'couple' | 'strain' }
+/** Event requirements: a couple, strain of 6+, or a built field/orchard that blight can affect. */
+export interface EventDef extends StoryTag { id: string; title: string; text: string; options: EventOption[]; requires?: 'couple' | 'strain' | 'crops' }
 export const EVENTS: EventDef[] = [
   { id: 'bard', tier: 'minor', cost: 0, title: 'A travelling bard', text: 'A bard offers to play "The Ballad of Your Colony" for a modest fee. He has not yet written it.',
     options: [
@@ -364,7 +380,7 @@ export const EVENTS: EventDef[] = [
       { label: 'Feed his retinue (15 meals)', detail: 'He writes something positive, probably. Strain eases by 5%.', effect: 'inspectorMeals' },
       { label: 'Slip him 25 gold', detail: 'The clipboard is put away.', effect: 'inspectorGold' },
     ] },
-  { id: 'blight', tier: 'moderate', cost: 12, seasons: ['autumn'], title: 'Blight in the rows', text: 'Black spots on the leaves of the fields and the orchard. The old-timers say burn it. The young ones say it looks fine.',
+  { id: 'blight', tier: 'moderate', cost: 12, seasons: ['autumn'], requires: 'crops', title: 'Blight in the rows', text: 'Black spots on the leaves of the fields and the orchard. The old-timers say burn it. The young ones say it looks fine.',
     options: [
       { label: 'Burn the blighted rows', detail: 'Lose 20 grain and apples now.', effect: 'blightBurn' },
       { label: 'Hope it passes', detail: 'Fields and orchards bring in half for 5 days.', effect: 'blightWait' },
@@ -431,7 +447,15 @@ export const ILLNESSES: IllnessDef[] = [
 // ---------- Research ----------
 /** A project the research desk works through. Finishing it unlocks buildings from the base set. */
 /** a project either unlocks buildings (the basics) or is lore: a lasting improvement, described by `effect` */
-export interface ResearchDef { id: string; name: string; desc: string; unlocks: string[]; cost: Partial<Record<InputKey, number>>; hours: number; effect?: string }
+export interface ResearchDef {
+  id: string; name: string; desc: string; unlocks: string[]; cost: Partial<Record<InputKey, number>>; hours: number; effect?: string;
+  /** a specialization's branch; branches open once BRANCHES_AFTER basics are learned */
+  branch?: string;
+  /** the project in its branch that has to be learned first */
+  after?: string;
+}
+/** basics learned before the specialization branches open */
+export const BRANCHES_AFTER = 3;
 export const RESEARCH: ResearchDef[] = [
   { id: 'cookery', name: 'Cookery', desc: 'Raw berries are food, technically. A stew kitchen turns raw food into proper meals.', unlocks: ['kitchen'], cost: { wood: 10, berries: 10 }, hours: 8 },
   { id: 'messhall', name: 'Mess hall', desc: 'Tables, benches, and the radical idea of not eating in the dirt.', unlocks: ['dining'], cost: { wood: 15 }, hours: 8 },
@@ -439,17 +463,20 @@ export const RESEARCH: ResearchDef[] = [
   { id: 'warehousing', name: 'Warehousing', desc: 'A storehouse under a roof, where food doesn\u2019t spoil.', unlocks: ['storehouse'], cost: { wood: 20 }, hours: 10 },
   { id: 'gardening', name: 'Gardening', desc: 'Flower beds and lantern posts. Prettier surroundings, happier settlers, confused moths.', unlocks: ['flowerbed', 'lantern'], cost: { wood: 5, berries: 10 }, hours: 6 },
   { id: 'masonry', name: 'Masonry', desc: 'Benches and a statue of Saint Pomfrey. Paid for in meals, because masons expect lunch.', unlocks: ['bench', 'statue'], cost: { wood: 10, meal: 5 }, hours: 10 },
-  // lore: slower, dearer, and too many to learn in one run, so the scholar's time goes to the chains the colony runs on
-  { id: 'handcarts', name: 'Handcarts', desc: 'Two wheels and a handle. The wheel was a good idea and everyone agrees it should catch on.', effect: 'Carrying no longer slows anyone down, and loaded haulers walk 20% faster.', unlocks: [], cost: { wood: 30, fine: 8 }, hours: 20 },
-  { id: 'roads', name: 'Road-building', desc: 'Packed gravel, a camber, and a ditch either side. Surprisingly exciting, if you are a surveyor.', effect: 'Paths cost no wood to lay, and walking on them is 50% faster instead of 25%.', unlocks: [], cost: { wood: 25 }, hours: 16 },
-  { id: 'preserving', name: 'Preserving', desc: 'Salt, smoke, crocks and a great deal of vinegar.', effect: 'Food spoils half as fast everywhere.', unlocks: [], cost: { wood: 15, rawFood: 20 }, hours: 18 },
-  { id: 'foraging', name: 'Forager\u2019s lore', desc: 'Which mushrooms are food and which are a learning experience.', effect: 'Forager huts and mushroom cellars bring in 35% more.', unlocks: [], cost: { rawFood: 25 }, hours: 16 },
-  { id: 'smoking', name: 'Nets and racks', desc: 'Better nets for the dock and better racks for the smoke.', effect: 'Fishing docks and smokehouses work 40% faster.', unlocks: [], cost: { wood: 15, rawFood: 20 }, hours: 20 },
-  { id: 'joinery', name: 'Joinery', desc: 'Dovetails, mortises, and a strong opinion about glue.', effect: 'Sawmills, carpenters, kilns and clay pits work 40% faster.', unlocks: [], cost: { wood: 35 }, hours: 20 },
-  { id: 'malting', name: 'Malting', desc: 'Sprout the grain, dry it, argue about it, brew it.', effect: 'Breweries and cider presses work 40% faster.', unlocks: [], cost: { wood: 20, rawFood: 15 }, hours: 22 },
-  { id: 'milling', name: 'Milling and baking', desc: 'Finer flour, hotter ovens, fewer burnt bottoms.', effect: 'Mills, bakeries and pie ovens work 40% faster.', unlocks: [], cost: { wood: 25, rawFood: 10 }, hours: 20 },
-  { id: 'rotation', name: 'Crop rotation', desc: 'Beans one year, grain the next, and the bees get the clover.', effect: 'Grain fields, orchards and apiaries bring in 40% more.', unlocks: [], cost: { wood: 20, rawFood: 15 }, hours: 22 },
-  { id: 'herblore', name: 'Herb lore', desc: 'A thick book of which leaf does what, half of it in the margins.', effect: 'Herb gardens and the apothecary work 50% faster.', unlocks: [], cost: { wood: 15, rawFood: 10 }, hours: 18 },
+  // specializations: a branch each, one project leading to the next, slow enough that a run gets through two or three
+  { id: 'smoking', branch: 'Fishing', name: 'Nets and racks', desc: 'Better nets for the dock and better racks for the smoke.', effect: 'Fishing docks and smokehouses work 40% faster.', unlocks: [], cost: { wood: 20, rawFood: 15 }, hours: 64 },
+  { id: 'salting', branch: 'Fishing', after: 'smoking', name: 'Salting', desc: 'Barrels, brine, and an argument about how much salt is too much.', effect: 'Smoked fish never spoils, and fresh fish keeps three times as long.', unlocks: [], cost: { wood: 25, fish: 20 }, hours: 84 },
+  { id: 'rotation', branch: 'Farming', name: 'Crop rotation', desc: 'Beans one year, grain the next, and the bees get the clover.', effect: 'Grain fields, orchards and apiaries bring in 40% more.', unlocks: [], cost: { wood: 20, rawFood: 15 }, hours: 64 },
+  { id: 'milling', branch: 'Farming', after: 'rotation', name: 'Milling and baking', desc: 'Finer flour, hotter ovens, fewer burnt bottoms.', effect: 'Mills, bakeries and pie ovens work 40% faster.', unlocks: [], cost: { wood: 30, rawFood: 15 }, hours: 84 },
+  { id: 'malting', branch: 'Brewing', name: 'Malting', desc: 'Sprout the grain, dry it, argue about it, brew it.', effect: 'Breweries and cider presses work 40% faster.', unlocks: [], cost: { wood: 20, rawFood: 15 }, hours: 64 },
+  { id: 'cellaring', branch: 'Brewing', after: 'malting', name: 'Cellaring', desc: 'Cool cellars, oak casks, and a tasting schedule that is mostly an excuse.', effect: 'A drink at the tavern gives +2 more mood, and each evening\u2019s round uses a third less.', unlocks: [], cost: { wood: 30, drink: 10 }, hours: 84 },
+  { id: 'joinery', branch: 'Building', name: 'Joinery', desc: 'Dovetails, mortises, and a strong opinion about glue.', effect: 'Sawmills, carpenters, kilns and clay pits work 40% faster.', unlocks: [], cost: { wood: 35 }, hours: 64 },
+  { id: 'roads', branch: 'Building', after: 'joinery', name: 'Road-building', desc: 'Packed gravel, a camber, and a ditch either side. Surprisingly exciting, if you are a surveyor.', effect: 'Paths cost no wood to lay, and walking on them is 50% faster instead of 25%.', unlocks: [], cost: { wood: 30, fine: 10 }, hours: 84 },
+  { id: 'handcarts', branch: 'Building', after: 'roads', name: 'Handcarts', desc: 'Two wheels and a handle. The wheel was a good idea and everyone agrees it should catch on.', effect: 'Carrying no longer slows anyone down, and loaded haulers walk 20% faster.', unlocks: [], cost: { wood: 30, fine: 15 }, hours: 100 },
+  { id: 'foraging', branch: 'Foraging', name: 'Forager\u2019s lore', desc: 'Which mushrooms are food and which are a learning experience.', effect: 'Forager huts and mushroom cellars bring in 35% more.', unlocks: [], cost: { rawFood: 25 }, hours: 64 },
+  { id: 'preserving', branch: 'Foraging', after: 'foraging', name: 'Preserving', desc: 'Salt, smoke, crocks and a great deal of vinegar.', effect: 'Food spoils half as fast everywhere.', unlocks: [], cost: { wood: 20, rawFood: 25 }, hours: 84 },
+  { id: 'herblore', branch: 'Healing', name: 'Herb lore', desc: 'A thick book of which leaf does what, half of it in the margins.', effect: 'Herb gardens and the apothecary work 50% faster.', unlocks: [], cost: { wood: 15, rawFood: 10 }, hours: 64 },
+  { id: 'quarantine', branch: 'Healing', after: 'herblore', name: 'Quarantine', desc: 'A separate hut, a stern sign, and a rule about sharing spoons.', effect: 'Flu spreads less than half as easily, and an outbreak catches one fewer person.', unlocks: [], cost: { wood: 25, remedy: 4 }, hours: 84 },
 ];
 /** what each piece of production lore speeds up, and by how much */
 export const LORE_BOOST: Record<string, { defs: string[]; mult: number }> = {

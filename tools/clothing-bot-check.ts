@@ -1,0 +1,20 @@
+// npx tsx tools/clothing-bot-check.ts
+import assert from 'node:assert/strict';
+import {createWorld,debugGrow,findSpot,apply,alive} from '../src/sim/world';
+import {clothingJob,BOT} from '../src/sim/autoplayer';
+const saved=BOT.clothingBatch;BOT.clothingBatch=true;
+const w=createWorld(42);debugGrow(w,10);w.hour=10*24+12;w.res.stew=100;w.owned.push('trapper','tanner','tailor');
+const put=(id:string)=>{const s=findSpot(w,id);assert(s);assert.equal(apply(w,{type:'place',def:id,...s}),null);const b=w.buildings.at(-1)!;b.built=true;return b;};
+put('trapper');assert.equal(clothingJob(w),'trapper','prime one coat while processors are being built');
+w.res.hides=4;assert.equal(clothingJob(w),undefined,'four hides are enough until processing exists');
+put('tanner');assert.equal(clothingJob(w),'tanner','process the one-coat buffer');
+w.res.leather=2;assert.equal(clothingJob(w),undefined,'stop intermediate stockpiling before tailor exists');
+w.res.hides=0;w.res.leather=0;
+const tailor=put('tailor');assert.equal(clothingJob(w),'trapper','complete empty chain starts with raw material');
+w.res.hides=40;assert.equal(clothingJob(w),'tanner','process existing hides before gathering more');
+w.res.leather=20;assert.equal(clothingJob(w),'tailor','finish coats before making more intermediate material');
+w.res.leather=0;tailor.inbox.leather=20;assert.equal(clothingJob(w),'tailor','count delivered materials, not just stock');
+w.res.coats=alive(w).length;assert.equal(clothingJob(w),undefined,'stop when all uncoated settlers are covered');
+w.res.coats=0;tailor.outbox.coats=alive(w).length;assert.equal(clothingJob(w),undefined,'finished coats awaiting hauling also satisfy demand');
+BOT.clothingBatch=saved;
+console.log('clothing bot: 10 checks passed');
