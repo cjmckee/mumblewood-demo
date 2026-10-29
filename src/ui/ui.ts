@@ -14,6 +14,7 @@ import { assess } from '../sim/advisor';
 import { economy, Account } from '../sim/economy';
 import type { IsoView, Picked } from '../render/iso';
 import { icon } from './icons';
+import { buildingStatus, saleQuantity } from './status';
 import { seasonOf, SEASON_NAMES } from '../sim/seasons';
 
 const esc = (s: string) => s.replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]!));
@@ -150,7 +151,7 @@ export class UI {
         const err = this.send({ type: 'place', def: pl.def, x: pl.x, y: pl.y, rot: pl.rot ?? 0 });
         if (err) { this.toast(err); break; }
         this.view.placing = null;
-        this.toast(laborers(w).length ? 'Blueprint placed. Laborers will haul materials and build it.' : 'Blueprint placed, but nobody is free to build. Take someone off a job.');
+        this.toast(laborers(w).length ? 'Construction queued.' : 'Construction queued · no free laborers.');
         break;
       }
       case 'place-cancel': this.view.placing = null; break;
@@ -396,9 +397,9 @@ export class UI {
       <button type="button" class="ghost" data-act="auto">Auto-assign jobs</button></div>
       <p class="muted hint">${laborers(w).length} laborers. Anyone without a job builds, hauls and cleans.</p>${concernCards(w)}<div class="rows">${rows}</div>
       <h3>Food rules</h3><p class="muted hint">Turn a food off to keep it in storage for a charter or a feast. Nobody will touch it.</p>
-      <div class="foodrules">${(['stew', 'pie', 'smokedFish', 'berries', 'fish', 'mushrooms'] as ResourceId[]).map(f => {
+      <div class="foodrules">${FOODS.map(f => {
         const on = !w.forbidden.includes(f);
-        return `<button type="button" class="rule${on ? ' on' : ''}" data-act="food" data-arg="${f}" aria-pressed="${on}">${icon(f)}${RESOURCES.find(r => r.id === f)!.name}<small>${on ? 'eaten' : 'kept'} · ${Math.floor(w.res[f])}</small></button>`;
+        return `<button type="button" class="rule${on ? ' on' : ''}" data-act="food" data-arg="${f}" aria-pressed="${on}">${icon(f)}${RESOURCES.find(r => r.id === f)!.name}<small>${on ? '✓ Eat' : '◇ Reserved'} · ${Math.floor(w.res[f])}</small></button>`;
       }).join('')}</div>`;
   }
 
@@ -456,7 +457,7 @@ export class UI {
     const queue = sites(w).map(b => this.siteRow(w, b)).join('');
     const done = built(w).filter(b => !BUILDING_BY_ID[b.def].decor).map(b => {
       const def = BUILDING_BY_ID[b.def];
-      const info = blockedReason(w, b) ? 'idle: no ingredients' : def.slots ? `${workersAt(w, b.uid).length}/${def.slots} workers` : def.beds ? `${def.beds} beds` : def.seats ? `${def.seats} seats · ${Math.round(b.clean)}% clean` : def.storage ? `${Math.round(Object.values(b.stock).reduce((n, x) => n + (x ?? 0), 0))}/${def.storage} · ${storeLabel(b)}${b.high ? ' · high priority' : ''}` : def.id === 'hearth' ? 'gathering place' : 'passive';
+      const info = buildingStatus(w, b).label;
       return `<button type="button" class="row compact" data-act="building" data-arg="${b.uid}"><span class="who"><b>${icon(def.id)} ${esc(def.name)}</b></span><small>${info}</small></button>`;
     }).join('');
     return `${queue ? `<h3 class="first">Under construction</h3><div class="rows">${queue}</div>` : ''}
@@ -677,16 +678,18 @@ export class UI {
     const gold = Math.floor(w.gold);
     const btn = (act: string, arg: string, label: string, ok: boolean) => `<button type="button" class="tbtn" data-act="${act}" data-arg="${arg}" ${ok ? '' : 'disabled'}>${label}</button>`;
     const bps = t.blueprints.map(b => { const def = BUILDING_BY_ID[b.id]; const helps = charterHelpers(w.charter ?? '').includes(b.id);
-      return `<div class="trow"><span class="tname">${icon(b.id)}<span><b>${esc(def.name)}</b><small>${helps ? 'Helps your charter · ' : ''}blueprint</small></span></span><span class="tprice">${b.price}${icon('gold')}</span>${btn('trade-bp', b.id, 'Buy', gold >= b.price)}</div>`; }).join('');
+      return `<div class="trow"><span class="tname">${icon(b.id)}<span><b>${esc(def.name)}</b><small>${helps ? 'Helps your charter · ' : ''}blueprint</small></span></span><span class="tprice">${b.price}${icon('gold')}</span>${btn('trade-bp', b.id, `Buy · ${b.price} gold`, gold >= b.price)}</div>`; }).join('');
     const wares = (Object.entries(t.stock) as [ResourceId, { n: number; price: number }][]).filter(([, it]) => it.n > 0).sort((a, b) => Number(charterGoods.has(b[0])) - Number(charterGoods.has(a[0]))).map(([r, it]) => {
       const name = RESOURCES.find(x => x.id === r)!.name;
-      return `<div class="trow"><span class="tname">${icon(r)}<span><b>${esc(name)}</b><small>${charterGoods.has(r) ? 'For your charter · ' : ''}${it.n} left · you have ${Math.floor(w.res[r])}</small></span></span><span class="tprice">${it.price}${icon('gold')}</span>${btn('trade-buy', `${r}:1`, '+1', gold >= it.price)}${btn('trade-buy', `${r}:5`, '+5', gold >= it.price * Math.min(5, it.n) && it.n >= 5)}</div>`;
+      return `<div class="trow"><span class="tname">${icon(r)}<span><b>${esc(name)}</b><small>${charterGoods.has(r) ? 'For your charter · ' : ''}${it.n} left · you have ${Math.floor(w.res[r])}</small></span></span><span class="tprice">${it.price}${icon('gold')}</span>${btn('trade-buy', `${r}:1`, `Buy 1 · ${it.price}g`, gold >= it.price)}${btn('trade-buy', `${r}:5`, `Buy 5 · ${it.price * 5}g`, gold >= it.price * Math.min(5, it.n) && it.n >= 5)}</div>`;
     }).join('');
     const cap = START.trade.sellCap;
     const counted = new Set(charterCounted(w));
     const mine = RESOURCES.filter(x => w.res[x.id] >= 1 && sellPrice(w, x.id) > 0).sort((a, b) => w.res[b.id] - w.res[a.id]).map(x => {
       const p = sellPrice(w, x.id), sold = t.sold[x.id] ?? 0, room = cap - sold, have = Math.floor(w.res[x.id]);
-      return `<div class="trow"><span class="tname">${icon(x.id)}<span><b>${esc(x.name)}</b><small>you have ${have}${sold ? ` · sold ${sold}/${cap}` : ''}${counted.has(x.id) ? ' · your charter counts these' : ''}</small></span></span><span class="tprice">${Number.isInteger(p) ? p : p.toFixed(1)}${icon('gold')}</span>${btn('trade-sell', `${x.id}:5`, '−5', room >= 1 && have >= 1)}${btn('trade-sell', `${x.id}:20`, '−20', room >= 1 && have >= 6)}</div>`;
+      const small = saleQuantity(5, have, room), large = saleQuantity(20, have, room);
+      const sellButton = (n: number) => btn('trade-sell', `${x.id}:${n}`, `Sell ${n} · ${Math.floor(n * p + 1e-9)}g`, n > 0);
+      return `<div class="trow"><span class="tname">${icon(x.id)}<span><b>${esc(x.name)}</b><small>you have ${have}${sold ? ` · sold ${sold}/${cap}` : ''}${counted.has(x.id) ? ' · your charter counts these' : ''}</small></span></span><span class="tprice">${Number.isInteger(p) ? p : p.toFixed(1)}${icon('gold')}</span>${sellButton(small)}${large > small ? sellButton(large) : ''}</div>`;
     }).join('');
     const name = tr.name.charAt(0).toUpperCase() + tr.name.slice(1);
     return `<div class="card-wrap trade"><p class="eyebrow">${icon('caravan')} The caravan · leaves in ${left}h</p><h2>${esc(name)}</h2>
@@ -710,7 +713,7 @@ export class UI {
     const s = w.stats;
     return `<div class="card-wrap end ${won ? 'won' : 'lost'}"><p class="eyebrow">${won ? 'Victory' : 'The colony collapsed'}</p>
       <h2>${won ? 'Mumblewood is a town' : 'The kettle remains'}</h2>
-      <p class="lede">${won ? 'All three charters complete.' : `Too many settlers were lost.`} You lasted ${day(w)} day${day(w) === 1 ? '' : 's'}.</p>
+      <p class="lede">${won ? 'All three charters complete.' : alive(w).length <= START.collapse.minAlive ? 'Too few settlers remain.' : 'Too many settlers were lost.'} You lasted ${day(w)} day${day(w) === 1 ? '' : 's'}.</p>
       <dl class="stats"><div><dt>Charters</dt><dd>${w.chartersDone.length} / 3</dd></div><div><dt>Peak population</dt><dd>${s.peakPop}</dd></div>
       <div><dt>Couples formed</dt><dd>${s.couples}</dd></div><div><dt>Breakups</dt><dd>${s.breakups}</dd></div>
       <div><dt>Left the colony</dt><dd>${s.departures}</dd></div><div><dt>Died</dt><dd>${s.deaths}</dd></div><div><dt>Meals eaten</dt><dd>${s.mealsEaten}</dd></div>
