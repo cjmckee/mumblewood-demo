@@ -357,6 +357,50 @@ button.rel { background:#252d26; border:1px solid var(--line); font:inherit; fon
 .who-big h2 { overflow-wrap:anywhere; }
 .who-big { align-items:start; }
 .sheet-body .segs { margin-bottom:12px; }
+/* Compact states and accessible controls */
+body { margin:0; }
+button, summary, select { touch-action:manipulation; }
+button { min-height:36px; }
+summary { min-height:36px; }
+button.season, button.leavers { background:none; border:0; text-align:left; font:inherit; color:inherit; padding:2px 0; }
+.clock button.season { font-size:12px; min-height:28px; }
+button.leavers { width:100%; }
+.requirements { display:grid; gap:2px; margin:4px 0; }
+.requirement { display:grid; grid-template-columns:minmax(0,1fr) 40px auto; align-items:center; gap:8px; background:none; border:0; color:var(--muted); font-size:12px; text-align:left; padding:4px 0; width:100%; }
+.requirement .mini { width:40px; }
+.status .research { display:grid; border-radius:8px; width:100%; }
+.research meter { height:6px; }
+.recipe-wrap { border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+.recipe-wrap .recipe { width:100%; border:0; border-radius:0; }
+.inputs { margin:0; padding:0 10px; gap:10px; }
+.inputs .text-link { font-size:12px; }
+.recruit { border:1px solid var(--line); border-radius:12px; overflow:hidden; background:#232a24; }
+.recruit .opt { width:100%; border:0; border-radius:0; }
+.recruit details { padding:0 14px 4px; }
+.recruit summary { font-size:12px; }
+.recruit details p { font-size:12px; margin:4px 0; }
+#modal { align-content:start; padding-top:max(16px,env(safe-area-inset-top,0px)); }
+@media (min-height:900px) { #modal { align-content:safe center; } }
+.trow { grid-template-columns:minmax(0,1fr) auto; }
+.trow .tbtn { justify-self:stretch; }
+.tname { min-height:40px; }
+button.strain { min-height:44px; }
+@media (max-width:600px) {
+  button, summary, select { min-height:44px; }
+  .tabs button { padding-inline:7px; font-size:12px; }
+  .tabs .x { min-width:40px; }
+  .res button.chip { min-height:36px; }
+  .clock button.season { min-height:32px; }
+  .speeds button { min-width:36px; padding-inline:7px; }
+  .status { padding:8px 10px; gap:8px; }
+  .requirements .requirement { min-height:32px; }
+  .fest { padding:5px 8px; min-height:36px; }
+  .issue-summary { font-size:12px; }
+  .skill { grid-template-columns:62px 1fr 16px; gap:5px; }
+  .foodrules, .rules { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .who-big { gap:8px; }
+  .mood-big b { font-size:24px; }
+}
 </style>
 <div id="game">
   <div id="stage"></div>

@@ -434,10 +434,20 @@ export class IsoView {
     const def = BUILDING_BY_ID[this.placing.def];
     const { x, y } = this.placing, rot = this.placing.rot ?? 0, f = footprint(def.id, rot);
     const ok = canPlace(w, def.id, x, y, rot).ok;
+    const radius = def.needs === 'trees' ? 4 : ['bushes','apples'].includes(def.needs ?? '') ? 2.6 : def.needs === 'flowers' ? 3 : def.needs === 'clay' ? 2.2 : 0;
+    if (radius) {
+      const ring = Array.from({length:40},(_,i)=>iso(x + f.w/2 + Math.cos(i/40*Math.PI*2)*radius, y + f.h/2 + Math.sin(i/40*Math.PI*2)*radius));
+      g.poly(ring.flatMap(p=>[p.sx,p.sy])).fill({color:0x8ccf6f,alpha:0.06}).stroke({width:1.5,color:0x8ccf6f,alpha:0.7});
+    }
     const col = ok ? 0x8ccf6f : 0xe0694a;
     for (let tx = x; tx < x + f.w; tx++) for (let ty = y; ty < y + f.h; ty++) this.tile(g, tx, ty, col, 0.38, 0.03);
     g.poly(flat(iso(x, y), iso(x + f.w, y), iso(x + f.w, y + f.h), iso(x, y + f.h))).stroke({ width: 2.5, color: col });
-    if (!def.walkable && !def.decor) { const d = doorTile(def.id, x, y, rot); this.tile(g, d.x, d.y, 0xf1e9d8, 0.3, 0.18); }
+    if (!def.walkable && !def.decor) {
+      const d = doorTile(def.id, x, y, rot); this.tile(g, d.x, d.y, 0xa8e2ef, 0.5, 0.18);
+      const p = iso(d.x + 0.5, d.y + 0.5), ctr = iso(x + f.w/2,y + f.h/2);
+      const len = Math.max(1,Math.hypot(ctr.sx-p.sx,ctr.sy-p.sy)), dx=(ctr.sx-p.sx)/len, dy=(ctr.sy-p.sy)/len;
+      g.poly([p.sx+dx*9,p.sy+dy*9,p.sx-dx*6-dy*6,p.sy-dy*6+dx*6,p.sx-dx*6+dy*6,p.sy-dy*6-dx*6]).fill(0xa8e2ef).stroke({width:1,color:0x1b292b});
+    }
     if (!def.walkable && !def.decor && def.id !== 'hearth') drawModel(this.ghostModel, modelFor({ def, W: def.w, H: def.h, night: false, busy: false, stage: 3 }), def.id, x, y, rot, 0.62);
     // the other doorways, so the player can see what not to block
     for (const b of w.buildings) if (!bdef(b).walkable) { const s = spotOf(b); this.tile(g, Math.floor(s.x), Math.floor(s.y), 0xf1e9d8, 0.12, 0.25); }

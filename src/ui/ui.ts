@@ -7,7 +7,7 @@ import {
   recipesOf, recipeOn, currentRecipe, siteOk, rerollCost, REROLL_STEP, stockOf, recipeReach, charterHelpers, charterDef,
   costOf, researchLeft, researchStillNeeds, desks, feastCheck, festivalPreview, mealTotal, drinkTotal,
   comfortParts, comfortOf, colonyComfort, comfortGaps, strainPerDay, footprint, activeNeeds, standingOf, STANDINGS, NeedKey, winterFuelPerDay,
-  sellPrice, charterCounted,
+  sellPrice, charterCounted, charterRequirements,
 } from '../sim/world';
 import { START } from '../sim/scenario';
 import { assess } from '../sim/advisor';
@@ -71,6 +71,20 @@ function matchesPerson(c: Colonist, filter: string) { return filter === 'ill' ? 
 function personState(c: Colonist) { return [c.illness ? `✚ ${c.illness.name}` : '', c.hunger < 25 ? '⚠ Hungry' : '', c.bed == null ? '⌂ No bed' : '', c.sulking ? '☁ Sulking' : ''].filter(Boolean).join(' · '); }
 function buildingGroup(id: string) { const d = BUILDING_BY_ID[id]; return d.storage ? 'storage' : d.beds || d.seats || d.decor || d.patients || ['hearth','tavern','stage','bathhouse'].includes(id) ? 'comfort' : d.job === 'cooking' || d.job === 'brewing' || d.job === 'foraging' || d.job === 'fishing' ? 'food' : 'work'; }
 
+function logText(w: World, text: string) {
+  const entities = [...w.colonists.map(c=>({name:c.name,act:'colonist',arg:String(c.id)})), ...BUILDINGS.map(b=>({name:b.name,act:'workplaces',arg:b.id}))].sort((a,b)=>b.name.length-a.name.length);
+  let html = '', cursor = 0;
+  while (cursor < text.length) {
+    let found: typeof entities[number] | undefined, at = text.length;
+    for (const e of entities) { const i = text.indexOf(e.name,cursor); if (i >= 0 && i < at) { found = e; at = i; } }
+    html += esc(text.slice(cursor,at));
+    if (!found) break;
+    html += `<button type="button" class="text-link" data-act="${found.act}" data-arg="${found.arg}">${esc(found.name)}</button>`;
+    cursor = at + found.name.length;
+  }
+  return html;
+}
+
 type Tab = 'colonists' | 'build' | 'ledger' | 'issues' | 'log';
 type Detail = { kind: 'colonist' | 'building'; id: number } | null;
 
@@ -110,6 +124,7 @@ export class UI {
   /** "start a new colony" asks once before throwing away the run in progress */
   private confirmNew = false;
   private strainOpen = false;
+  private help: string | null = null;
   private colonistFilter = 'all';
   private colonistSort = 'mood';
   private buildingFilter = 'all';
@@ -122,11 +137,11 @@ export class UI {
   private sheetKey = '';
   private sheetScroll = new Map<string, number>();
   private returnFocus: { act: string; arg: string } | null = null;
-  get blocksSimulation() { return this.festivalOpen || this.strainOpen || this.picking != null; }
+  get blocksSimulation() { return this.festivalOpen || this.strainOpen || this.picking != null || this.help != null; }
 
   private dismissDialog() {
     if (this.getWorld().decisions.length || this.resumeOpen || this.getWorld().status !== 'playing') return;
-    this.festivalOpen = false; this.strainOpen = false; this.picking = null;
+    this.festivalOpen = false; this.strainOpen = false; this.picking = null; this.help = null;
     this.render(true);
   }
 
@@ -161,9 +176,10 @@ export class UI {
   }
 
   private panel(tab: Tab) {
+    if (tab === 'colonists') this.colonistFilter = 'all';
     this.tab = tab; this.open = true; this.detail = null; this.view.selected = null;
     this.destination = null; this.peopleFilter = null; this.resource = null;
-    this.festivalOpen = false; this.strainOpen = false; this.picking = null;
+    this.festivalOpen = false; this.strainOpen = false; this.picking = null; this.help = null;
   }
 
   private navigate(d: Destination) {
@@ -216,6 +232,8 @@ export class UI {
     const act = el.dataset.act!, arg = el instanceof HTMLSelectElement ? el.value : el.dataset.arg ?? '';
     const w = this.getWorld();
     switch (act) {
+      case 'help': this.help = arg; break;
+      case 'help-close': this.help = null; break;
       case 'colonist-filter': this.colonistFilter = arg; break;
       case 'colonist-sort': this.colonistSort = arg; break;
       case 'building-filter': this.buildingFilter = arg; break;
@@ -225,7 +243,7 @@ export class UI {
       case 'review-jobs': this.panel('colonists'); break;
       case 'speed': this.speed = Number(arg); this.onSpeed(this.speed); break;
       case 'tab':
-        if (this.tab === arg && this.open && !this.detail) this.open = false; else { this.tab = arg as Tab; this.open = true; }
+        if (this.tab === arg && this.open && !this.detail && !this.destination && !this.peopleFilter) this.open = false; else { this.tab = arg as Tab; this.open = true; }
         this.detail = null; this.destination = null; this.peopleFilter = null; this.view.selected = null; break;
       case 'close': this.open = false; this.detail = null; this.view.selected = null; break;
       case 'back': this.detail = null; this.view.selected = null; break;
@@ -244,7 +262,7 @@ export class UI {
       case 'resource': this.panel('ledger'); this.resource = arg as InputKey | 'gold'; this.anchor = `account-${arg}`; break;
       case 'storage-help': this.navigate(buildingDestination(w, 'storehouse', true)); break;
       case 'food-rules': this.navigate({ kind: 'food', label: 'Food rules' }); break;
-      case 'need': { const def = NEED_BUILD[arg as NeedKey]; this.navigate(buildingDestination(w, def, !['shelter', 'surroundings', 'warmth'].includes(arg))); break; }
+      case 'need': { const def = arg === 'table' ? 'dining' : NEED_BUILD[arg as NeedKey]; this.navigate(buildingDestination(w, def, !['shelter', 'surroundings', 'warmth'].includes(arg))); break; }
       case 'build': this.startPlacing(arg); break;
       case 'place-confirm': {
         const pl = this.view.placing; if (!pl) break;
@@ -321,7 +339,7 @@ export class UI {
     const pips = Array.from({ length: sc.collapse.lost }, (_, i) => `<i class="pip${i < lost(w) ? ' on' : ''}"></i>`).join('');
     const r = w.research, cur = r?.current ? RESEARCH_BY_ID[r.current] : undefined;
     const studying = cur ? (Object.keys(researchStillNeeds(w)).length ? 'waiting on goods' : desks(w).some(b => workersAt(w, b.uid).length) ? `${Math.floor((r!.progress / cur.hours) * 100)}%` : 'nobody at the desk') : '';
-    const researchChip = !r ? '' : cur ? `<button type="button" class="chip research" data-act="desk"><span><b>Studying</b> ${esc(cur.name)} · ${esc(studying)}</span></button>`
+    const researchChip = !r ? '' : cur ? `<button type="button" class="chip research" data-act="desk"><span><b>Studying</b> ${esc(cur.name)} · ${esc(studying)}</span>${meter((r!.progress / cur.hours) * 100,'Research progress')}</button>`
       : researchLeft(w).length ? '' : '';
     const ch = charterDef(w.charter);
     const feastBtn = ch?.metric.kind === 'longTable' && !w.feast?.done ? (() => {
@@ -341,7 +359,7 @@ export class UI {
       .map(r => `<button type="button" data-act="resource" data-arg="${r.id}" class="chip" title="${r.name}" aria-label="${Math.floor(w.res[r.id])} ${r.name}">${icon(r.id)}<b>${Math.floor(w.res[r.id])}</b><span class="nm"> ${r.name}</span></button>`).join('');
     const html = `
       <div class="bar">
-        <div class="clock"><span class="day">Day ${day(w)}</span><span class="when"><span class="time">${hh}:00<span class="phase"> · ${timeOfDay(h)}</span></span><span class="season s-${sea.season}" title="${SEASON_NAMES[sea.season]}, day ${sea.dayOf} of ${START.seasons.days}${sea.season !== 'winter' ? `; winter in ${sea.toWinter} days` : ''}">${sea.season === 'autumn' ? `Winter in ${sea.toWinter}d` : `${SEASON_NAMES[sea.season]} ${sea.dayOf}/${START.seasons.days}`}</span></span></div>
+        <div class="clock"><span class="day">Day ${day(w)}</span><span class="when"><span class="time">${hh}:00<span class="phase"> · ${timeOfDay(h)}</span></span><button type="button" data-act="help" data-arg="season" class="season s-${sea.season}" title="${SEASON_NAMES[sea.season]}, day ${sea.dayOf} of ${START.seasons.days}${sea.season !== 'winter' ? `; winter in ${sea.toWinter} days` : ''}">${sea.season === 'autumn' ? `Winter in ${sea.toWinter}d` : `${SEASON_NAMES[sea.season]} ${sea.dayOf}/${START.seasons.days}`}</button></span></div>
         <div class="speeds" role="group" aria-label="Game speed">
           ${[['0', 'Pause'], ['1', '1×'], ['2', '2×'], ['3', '3×']].map(([s, l]) => `<button type="button" data-act="speed" data-arg="${s}" class="${this.speed === Number(s) ? 'on' : ''}" aria-pressed="${this.speed === Number(s)}">${l}</button>`).join('')}
         </div>
@@ -351,12 +369,12 @@ export class UI {
         <div class="charter">
           ${prog ? `<div class="ch-top"><span class="ch-name">${esc(prog.charter.name)}</span><span class="ch-tier">Charter ${w.chartersDone.length + 1} of 3</span></div>
           <div class="meter"><i style="width:${(prog.ratio * 100).toFixed(1)}%"></i></div>
-          <div class="ch-label">${esc(prog.label)}</div>${feastBtn}` : `<div class="ch-top"><span class="ch-name">${w.status === 'won' ? 'Town charter granted' : w.research && !w.charterOffered ? 'The Crown is watching' : 'Awaiting a charter'}</span></div>${w.research && !w.charterOffered ? `<div class="ch-label">The first charter arrives on the morning of day ${sc.firstCharterDay}.</div>` : ''}`}
+          <div class="requirements">${charterRequirements(w).map(r => { const m = r.metric; const act = m.kind === 'stock' || m.kind === 'variety' ? 'resource' : m.kind === 'built' || m.kind === 'monument' ? 'catalog-help' : m.kind === 'everyoneBed' || m.kind === 'healthy' || m.kind === 'allTable' || m.kind === 'longTable' ? 'need' : 'tab'; const arg = m.kind === 'stock' ? m.resources[0] : m.kind === 'variety' ? m.category : m.kind === 'built' || m.kind === 'monument' ? m.def : m.kind === 'everyoneBed' ? 'shelter' : m.kind === 'healthy' ? 'health' : m.kind === 'allTable' || m.kind === 'longTable' ? 'table' : 'colonists'; return `<button type="button" class="requirement" data-act="${act}" data-arg="${arg}"><span>${r.ratio >= 1 ? '✓' : '○'} ${esc(r.label)}</span><span class="mini"><i style="width:${r.ratio * 100}%"></i></span><span>→</span></button>`; }).join('')}</div>${feastBtn}` : `<div class="ch-top"><span class="ch-name">${w.status === 'won' ? 'Town charter granted' : w.research && !w.charterOffered ? 'The Crown is watching' : 'Awaiting a charter'}</span></div>${w.research && !w.charterOffered ? `<div class="ch-label">The first charter arrives on the morning of day ${sc.firstCharterDay}.</div>` : ''}`}
           ${researchChip}${concernCards(w)}
         </div>
         <div class="threats">
           <button type="button" class="strain" data-act="strain-open" title="Frontier strain: a mood penalty that rises every day, faster when people's needs go unmet. Tap for why."><span>Strain</span><b>${strain ? '−' : ''}${strain}</b><small class="rate">+${strainPerDay(w).toFixed(1)}/day</small></button>${this.festivalChip(w)}
-          <div class="leavers" title="If ${sc.collapse.lost} settlers leave or die${sc.collapse.minAlive ? `, or only ${sc.collapse.minAlive} remain` : ''}, the colony collapses"><span>Lost</span><div class="pips">${pips}</div></div>
+          <button type="button" data-act="help" data-arg="loss" class="leavers" title="If ${sc.collapse.lost} settlers leave or die${sc.collapse.minAlive ? `, or only ${sc.collapse.minAlive} remain` : ''}, the colony collapses"><span>Lost</span><div class="pips">${pips}</div></button>
         </div>
       </div>
       ${w.errands.length || this.caravanChip(w) || this.effectChips(w) ? `<div class="errands">${this.caravanChip(w)}${w.errands.map(e => this.errandChip(w, e)).join('')}${this.effectChips(w)}</div>` : ''}`;
@@ -371,6 +389,21 @@ export class UI {
     }
   }
 
+  private helpCard(w: World) {
+    const sea = seasonOf(w);
+    let title = 'Colony help', body = '';
+    if (this.help === 'season') {
+      title = `${SEASON_NAMES[sea.season]} · day ${sea.dayOf}/${START.seasons.days}`;
+      body = `<p class="lede">${sea.season === 'winter' ? `Heating needs about ${Math.round(winterFuelPerDay(w))} wood/day.` : `Winter in ${sea.toWinter} days · heating will need about ${Math.round(winterFuelPerDay(w,true))} wood/day.`}</p><div class="actions"><button type="button" class="ghost" data-act="need" data-arg="warmth">Warm homes →</button><button type="button" class="ghost" data-act="need" data-arg="fresh">Fresh food →</button><button type="button" class="ghost" data-act="need" data-arg="drink">Drinks →</button></div><p class="terms">Spring: fresh food. Summer: drinks. Autumn: harvest festival. Winter: warm homes. Expectations grow with town standing.</p>`;
+    } else if (this.help === 'loss') {
+      title = `${lost(w)}/${START.collapse.lost} settlers lost`;
+      body = `<p class="lede">The colony collapses at ${START.collapse.lost} lost settlers or ${START.collapse.minAlive} survivors.</p><ul class="thoughts">${w.colonists.filter(c => c.left).map(c=>`<li><span>${esc(c.name)}</span><b>${c.died ? 'Died' : 'Left'}</b></li>`).join('') || '<li>No settlers lost.</li>'}</ul>`;
+    } else {
+      title = 'Recipes'; body = '<p class="lede">Workers choose the best enabled recipe with available ingredients. ★★★ is fastest. Switch a recipe off to reserve its ingredients.</p>';
+    }
+    return `<div class="card-wrap"><p class="eyebrow">Game paused</p><h2>${title}</h2>${body}<button type="button" class="ghost skip" data-act="help-close">Close</button></div>`;
+  }
+
   private strainCard(w: World) {
     const comfort = colonyComfort(w);
     const gaps = comfortGaps(w);
@@ -383,15 +416,15 @@ export class UI {
       : sea.season === 'summer' && st >= 1 ? 'Summer: people want a drink each day in the heat.' : '';
     const pct = (x: number) => `${Math.round(x * 100)}%`;
     const factor = Math.max(0.2, START.comfortScale.base - comfort * START.comfortScale.slope);
-    const rows = gaps.map(g => `<div class="lg-row ${g.avg >= 0.7 ? 'lg-good' : 'lg-bad'}"><span>${NEED_NAMES[g.need]}</span><i><b style="width:${Math.round(g.avg * 100)}%"></b></i><em>${pct(g.avg)}</em></div>`).join('');
+    const rows = gaps.map(g => `<button type="button" data-act="need" data-arg="${g.need}" class="lg-row ${g.avg >= 0.7 ? 'lg-good' : 'lg-bad'}"><span>${NEED_NAMES[g.need]}</span><i><b style="width:${Math.round(g.avg * 100)}%"></b></i><em>${pct(g.avg)} →</em></button>`).join('');
     const worst = gaps.filter(g => g.avg < 0.7).slice(0, 2).map(g => NEED_FIX[g.need]);
     return `<div class="card-wrap event"><p class="eyebrow">Frontier strain</p><h2>Strain ${Math.round(w.strain)}, rising ${strainPerDay(w).toFixed(1)} a day</h2>
-      <p class="lede">The frontier wears on everyone, more as the colony grows and as the weeks go by. How comfortable people are sets how fast: a comfortable colony strains far slower.</p>
-      <p class="prefs">Comfort <b>${pct(comfort)}</b>, so strain rises at <b>${factor.toFixed(2)}×</b>. A fully comfortable colony would rise at ${Math.max(0.2, START.comfortScale.base - START.comfortScale.slope).toFixed(1)}×.</p>
-      <p class="prefs">Your town is a <b>${STANDINGS[st].toLowerCase()}</b>. Its comfort counts:</p>
+      <p class="lede">Comfort ${pct(comfort)} · improve the weakest needs to slow strain.</p>
+      <details data-key="strain-math"><summary>How strain works</summary><p class="prefs">Comfort <b>${pct(comfort)}</b>, so strain rises at <b>${factor.toFixed(2)}×</b>. A fully comfortable colony would rise at ${Math.max(0.2, START.comfortScale.base - START.comfortScale.slope).toFixed(1)}×.</p>
+      </details><p class="terms">${STANDINGS[st]} needs</p>
       <div class="ledger">${rows}</div>
-      ${seasonLine ? `<p class="terms">${esc(seasonLine)}</p>` : ''}${nextLine}
-      ${worst.length ? `<p class="terms">Biggest gaps: ${worst.join('; ')}.</p>` : ''}
+      <details data-key="strain-future"><summary>Season & next charter</summary>${seasonLine ? `<p class="terms">${esc(seasonLine)}</p>` : ''}${nextLine}</details>
+      
       <p class="terms">It eases when a charter is finished (by ${pct(START.relief.charter)}) or when you hold a festival.</p>
       <div class="opts">${!w.festival?.called && !festivalPreview(w).wait ? `<button type="button" class="opt" data-act="strain-festival"><b>Plan a festival</b><span>${festivalPreview(w).relief >= 0.5 ? `Eases strain by about ${Math.round(festivalPreview(w).relief)}` : 'Strain is low, so it would ease very little'}</span></button>` : ''}</div>
       <button type="button" class="ghost skip" data-act="strain-close">Close</button></div>`;
@@ -412,16 +445,16 @@ export class UI {
     const can = !w.festival?.called && !p.wait && mealTotal(w) >= 1;
     const short = p.fed < p.guests ? ` ${p.guests - p.fed} would go without, which eases less.` : '';
     return `<div class="card-wrap event"><p class="eyebrow">At the hearth, at dusk</p><h2>Call a festival?</h2>
-      <p class="lede">Everyone who isn’t bedridden comes, sulkers included. Each takes a meal, and a drink if there is one, reaching for their favourites first. Strain eases by a share of what it is now, so the deeper the colony is in, the more it helps.</p>
+      <p class="lede">At dusk · ${p.guests} guests · strain −${Math.round(p.relief)}</p>${short ? `<p class="warnline">⚠ ${p.guests - p.fed} guests without a meal</p>` : ''}
       <ul class="thoughts">
         <li><span>Settlers coming</span><b>${p.guests}</b></li>
-        <li><span>${icon('meal')}Meals it will use (of ${Math.floor(mealTotal(w))} in storage)</span><b>${p.fed}</b></li>
-        <li><span>${icon('drink')}Drinks it will use (of ${Math.floor(drinkTotal(w))})</span><b>${p.drank}</b></li>
+        <li><span>${icon('meal')}Meals · ${Math.floor(mealTotal(w))} stored</span><b>${p.fed}</b></li>
+        <li><span>${icon('drink')}Drinks · ${Math.floor(drinkTotal(w))} stored</span><b>${p.drank}</b></li>
         <li><span>Getting a favourite</span><b>${p.loved}</b></li>
         <li><span>Strain eased</span><b>${Math.round(p.relief)} (${pct(p.share)})</b></li>
       </ul>
-      <p class="terms">${pct(r.base)} if everyone eats, ${pct(r.drinks)} more if most have a drink, ${pct(r.loved)} more if most get a favourite. Then ${r.waitDays} days before the next one.${short}</p>
-      <div class="opts"><button type="button" class="opt" data-act="festival-call" ${can ? '' : 'disabled'}><b>Call it for dusk</b><span>${can ? (p.relief >= 0.5 ? `Eases strain by about ${Math.round(p.relief)}` : 'Strain is low, so it would ease very little') : mealTotal(w) < 1 ? 'There are no meals to share' : 'Not ready yet'}</span></button></div>
+      <details data-key="festival-math"><summary>How relief works</summary><p class="terms">${pct(r.base)} if everyone eats, ${pct(r.drinks)} more if most have a drink, ${pct(r.loved)} more if most get a favourite. Then ${r.waitDays} days before the next one. Everyone except bedridden settlers attends; favourites are chosen first.</p></details>
+      <div class="opts"><button type="button" class="opt" data-act="festival-call" ${can ? '' : 'disabled'}><b>Call festival</b><span>${can ? (p.relief >= 0.5 ? `Eases strain by about ${Math.round(p.relief)}` : 'Strain is low, so it would ease very little') : mealTotal(w) < 1 ? 'There are no meals to share' : 'Not ready yet'}</span></button></div>
       <button type="button" class="ghost skip" data-act="festival-close">Not now</button></div>`;
   }
 
@@ -442,7 +475,7 @@ export class UI {
   private errandChip(w: World, e: Errand) {
     const c = colonistById(w, e.assignee);
     const left = Math.max(0, Math.ceil(e.deadline - w.hour));
-    return `<button type="button" class="errand${c ? '' : ' unassigned'}" data-act="errand-open" data-arg="${e.id}"><b>${esc(e.title)}</b><small>${c ? `${esc(first(c))} · ${Math.round((e.done / e.hours) * 100)}%` : 'Nobody assigned'} · ${left}h left</small></button>`;
+    return `<button type="button" class="errand${c ? '' : ' unassigned'}" data-act="errand-open" data-arg="${e.id}"><b>${esc(e.title)}</b><small>${c ? `${esc(first(c))} · ${Math.round((e.done / e.hours) * 100)}%` : 'Nobody assigned'} · ${left}h left</small>${c ? meter(e.done / e.hours * 100,'Errand progress') : '<span class="warn">⚠ Assign</span>'}</button>`;
   }
 
   private errandPicker(w: World, e: Errand, fromDecision: boolean) {
@@ -505,7 +538,7 @@ export class UI {
       <details data-key="food-rules"><summary id="food-rules">Food rules · ${w.forbidden.length} reserved</summary><p class="muted hint">Reserved food stays available for charters and feasts.</p>
       <div class="foodrules">${FOODS.map(f => {
         const on = !w.forbidden.includes(f);
-        return `<button type="button" class="rule${on ? ' on' : ''}" data-act="food" data-arg="${f}" aria-pressed="${on}">${icon(f)}${RESOURCES.find(r => r.id === f)!.name}<small>${on ? '✓ Eat' : '◇ Reserved'} · ${Math.floor(w.res[f])}</small></button>`;
+        return `<button type="button" class="rule${on ? ' on' : ''}" data-act="food" data-arg="${f}" aria-label="${on ? 'Reserve' : 'Allow eating'} ${RESOURCES.find(r=>r.id === f)!.name}" aria-pressed="${on}">${icon(f)}${RESOURCES.find(r => r.id === f)!.name}<small>${on ? '✓ Eat' : '◇ Reserved'} · ${Math.floor(w.res[f])}</small></button>`;
       }).join('')}</div></details>`;
   }
 
@@ -608,7 +641,7 @@ export class UI {
     const el = this.root.querySelector('#placebar') as HTMLElement;
     if (this.view.pathMode) {
       const planned = w.paths.filter(p => p === 1).length;
-      const html = `<div class="pb-text"><b>Planning paths</b><small>Tap tiles to plan, tap again to remove. ${planned} planned${planned > w.res.wood ? `, but only ${Math.floor(w.res.wood)} wood` : ''}.</small></div>
+      const html = `<div class="pb-text"><b>Planning paths</b><small>Tap to add/remove · 1 wood/tile. ${planned} planned${planned > w.res.wood ? `, but only ${Math.floor(w.res.wood)} wood` : ''}.</small></div>
         <button type="button" class="act" data-act="paths-done">Done</button>`;
       if (el.innerHTML !== html) el.innerHTML = html;
       el.classList.add('two'); el.hidden = false; return;
@@ -620,7 +653,7 @@ export class UI {
     const chk = canPlace(w, pl.def, pl.x, pl.y, pl.rot ?? 0);
     const eff = def.needs ? efficiencyAt(w, pl.def, pl.x, pl.y, pl.rot ?? 0) : null;
     const effText = eff && chk.ok ? `${eff.label} · works at ${Math.round(eff.eff * 100)}%` : '';
-    const html = `<div class="pb-text"><b>Placing ${esc(def.name)}</b><small${eff && chk.ok && eff.eff < 0.6 ? ' class="low"' : ''}>${chk.ok ? (effText ? esc(effText) : def.decor ? 'Tap the ground to move it. It brightens the tiles around it.' : 'Tap the ground to move it. The light square is its door.') : esc(chk.reason)}</small></div>
+    const html = `<div class="pb-text"><b>${icon(def.id)} ${esc(def.name)}</b><small class="cost">${costHtml(def.cost,w)}</small><small${eff && chk.ok && eff.eff < 0.6 ? ' class="low"' : ''}>${chk.ok ? (effText ? esc(effText) : def.decor ? 'Tap to move · improves nearby beauty' : 'Tap to move · arrow marks door') : esc(chk.reason)}</small>${eff ? meter(eff.eff * 100, 'Site efficiency') : ''}</div>
       <button type="button" class="ghost rotate" data-act="place-rotate" aria-label="Rotate" title="Rotate (R)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12a7 7 0 1 1-2.05-4.95" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M18.6 3.6v4.6H14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>Rotate</button>
       <button type="button" class="ghost" data-act="place-cancel">Cancel</button>
       <button type="button" class="act" data-act="place-confirm" ${chk.ok ? '' : 'disabled'}>Place here</button>`;
@@ -637,7 +670,7 @@ export class UI {
         const ms = membersOf(r as InputKey), got = ms.reduce((m, x) => m + (b.delivered[x] ?? 0), 0);
         const mix = ms.length > 1 ? ms.filter(x => (b.delivered[x] ?? 0) >= 0.5).map(x => `${Math.floor(b.delivered[x] ?? 0)} ${goodName(x)}`).join(', ') : '';
         const label = inputName(r as InputKey);
-        return `<li><span>${icon(r)}${label.charAt(0).toUpperCase() + label.slice(1)}${mix ? ` (${mix})` : ''}</span><b>${Math.floor(got)} / ${n}</b></li>`;
+        return `<li><button type="button" class="text-link" data-act="source" data-arg="${r}">${icon(r)}${label.charAt(0).toUpperCase() + label.slice(1)}${mix ? ` (${mix})` : ''} →</button><b>${Math.floor(got)} / ${n}</b></li>`;
       }).join('');
       return `<div class="detail"><div class="d-head"><button type="button" class="ghost back" data-act="back">All buildings</button></div>
         <h2 class="bh">${icon(def.id, 'hico')}${esc(def.name)}</h2><p class="blurb">${def.stages ? `${esc(def.blurb)}</p><p class="prefs">Stage <b>${(b.stage ?? 0) + 1} of ${def.stages.length}</b>: ${esc(def.stages[b.stage ?? 0].label)}. Then: ${esc(def.stages.slice((b.stage ?? 0) + 1).map(x => x.label.toLowerCase()).join(', ') || 'done')}.` : 'Under construction.'}</p>
@@ -650,16 +683,14 @@ export class UI {
     const recs = recipesOf(b), cur = currentRecipe(w, b);
     // whether a recipe's ingredients can come from anywhere: a building owned now, one that could be drafted, or nowhere on this map
     const reach = (r: Recipe) => reachText(w, r, false);
-    const recipe = !recs.length ? '' : recs.length === 1 && recipeOn(b, 0)
-      ? `<p class="prefs">${starHtml(recs[0].stars)} ${Object.keys(recs[0].inputs).length ? 'Makes' : 'Gathers'} ${recipeHtml(recs[0])} · ${+recipeRate(recs[0]).toFixed(2)} per worker-hour</p>`
-      : `<h3>Recipes</h3><p class="muted">Workers make the best switched-on recipe they can get ingredients for. Tap to switch one on or off.</p><div class="recipes">${recs.map((r, i) => {
+    const recipe = !recs.length ? '' : `<h3>Recipes <button type="button" class="ghost" data-act="help" data-arg="recipes" aria-label="Recipe help">?</button></h3><div class="recipes">${recs.map((r, i) => {
           const on = recipeOn(b, i), now = on && r === cur;
-          return `<button type="button" class="recipe${on ? ' on' : ''}" data-act="recipe-toggle" data-arg="${b.uid}:${i}" aria-pressed="${on}">${starHtml(r.stars)}<span><span class="rline">${recipeHtml(r)}</span><small>${+recipeRate(r).toFixed(2)} per worker-hour${now ? ' · making now' : on ? '' : ' · switched off'}${reach(r) ? ` · ${reach(r)}` : ''}</small></span></button>`;
+          return `<div class="recipe-wrap"><button type="button" class="recipe${on ? ' on' : ''}" data-act="recipe-toggle" data-arg="${b.uid}:${i}" aria-pressed="${on}">${starHtml(r.stars)}<span><span class="rline">${recipeHtml(r)}</span><small>${+recipeRate(r).toFixed(2)} per worker-hour${now ? ' · ▶ Current' : on ? ' · ✓ Enabled' : ' · × Off'}${reach(r) ? ` · ${reach(r)}` : ''}</small></span></button><div class="actions inputs">${Object.keys(r.inputs).map(k => `<button type="button" class="text-link" data-act="source" data-arg="${k}">${goodHtml(k as InputKey)} →</button>`).join('')}</div></div>`;
         }).join('')}</div>`;
-    const effLine = def.needs ? `<p class="prefs">${esc(efficiencyAt(w, b.def, b.x, b.y, b.rot).label)} · works at <b>${Math.round(b.eff * 100)}%</b></p>` : '';
-    const inboxLine = recs.some(r => Object.keys(r.inputs).length) ? `<p class="prefs">Ingredients on hand: ${Object.entries(b.inbox).filter(([, n]) => (n ?? 0) >= 0.5).map(([r, n]) => goodHtml(r as ResourceId, Math.floor(n ?? 0))).join(', ') || '<b>none</b>. Laborers carry them in from storage.'}</p>` : '';
+    const effLine = def.needs ? `<p class="prefs">Site ${Math.round(b.eff * 100)}% · ${esc(efficiencyAt(w, b.def, b.x, b.y, b.rot).label)}</p>${meter(b.eff * 100, 'Site efficiency')}` : '';
+    const inboxLine = recs.some(r => Object.keys(r.inputs).length) ? `<p class="prefs">Ingredients on hand: ${Object.entries(b.inbox).filter(([, n]) => (n ?? 0) >= 0.5).map(([r, n]) => goodHtml(r as ResourceId, Math.floor(n ?? 0))).join(', ') || '<b>none</b> · awaiting haulers'}</p>` : '';
     const blocked = blockedReason(w, b);
-    const remedyLine = def.patients ? `<p class="prefs">Remedies in storage: ${w.res.tonic >= 0.5 || w.res.poultice >= 0.5 ? `${Math.floor(w.res.tonic)} tonic, ${Math.floor(w.res.poultice)} poultice. The doctor uses one up every few hours of treatment: a poultice heals faster and halves botched treatments, a tonic heals faster still and never botches.` : '<b>none</b>. An apothecary makes poultices and tonics that help the doctor.'}</p>` : '';
+    const remedyLine = def.patients ? `<details data-key="clinic-remedies"><summary>Remedies · ${Math.floor(w.res.tonic + w.res.poultice)} stored</summary><p class="prefs">Remedies in storage: ${w.res.tonic >= 0.5 || w.res.poultice >= 0.5 ? `${Math.floor(w.res.tonic)} tonic, ${Math.floor(w.res.poultice)} poultice. The doctor uses one up every few hours of treatment: a poultice heals faster and halves botched treatments, a tonic heals faster still and never botches.` : '<b>none</b>. An apothecary makes poultices and tonics that help the doctor.'}</p><button type="button" class="text-link" data-act="source" data-arg="remedy">Remedy sources →</button></details>` : '';
     const patients = def.patients ? `<p class="prefs">Patients: ${patientsAt(w, b).map(c => `${personLink(c)} · ${esc(c.illness!.name.toLowerCase())} ${Math.round(c.illness!.severity)}`).join(', ') || 'none right now. The doctor helps out as a laborer until someone is ill.'}</p>` : '';
     let staff = (blocked ? `<p class="warnline">${esc(blocked)}</p>` : '') + effLine + inboxLine + patients + remedyLine + (b.def === 'desk' ? this.deskLines(w) : '');
     if (def.slots) {
@@ -674,13 +705,13 @@ export class UI {
       const contents = RESOURCES.filter(r => (b.stock[r.id] ?? 0) >= 0.5).map(r => goodHtml(r.id, Math.floor(b.stock[r.id] ?? 0))).join(', ');
       const mode = !b.allow ? 'all' : b.allow.length === FOODS.length && FOODS.every(f => b.allow!.includes(f)) ? 'food' : b.allow.length === GOODS.length && GOODS.every(f => b.allow!.includes(f)) ? 'goods' : 'custom';
       const preset = (id: string, label: string) => `<button type="button" class="seg${mode === id ? ' on' : ''}" data-act="store-preset" data-arg="${b.uid}:${id}" aria-pressed="${mode === id}">${label}</button>`;
-      const items = RESOURCES.map(r => { const on = accepts(b, r.id); return `<button type="button" class="rule${on ? ' on' : ''}" data-act="store-item" data-arg="${b.uid}:${r.id}" aria-pressed="${on}">${icon(r.id)}${r.name}<small>${on ? 'stored here' : 'not here'}</small></button>`; }).join('');
-      staff += `<p class="prefs">Holding <b>${Math.round(held)} / ${def.storage}</b>${contents ? `: ${contents}` : ''}.${def.keepsFresh ? ' Food here stays fresh.' : ' Food left here slowly spoils.'}</p>
-        <h3>Priority</h3><p class="muted">Haulers fill high-priority storage first and top it up from low-priority storage.</p>
+      const items = RESOURCES.map(r => { const on = accepts(b, r.id); return `<button type="button" class="rule${on ? ' on' : ''}" data-act="store-item" data-arg="${b.uid}:${r.id}" aria-pressed="${on}">${icon(r.id)}${r.name}<small>${on ? '✓ Accept' : '× Exclude'}</small></button>`; }).join('');
+      staff += `<p class="prefs">${Math.round(held)}/${def.storage} · ${def.keepsFresh ? '✓ Fresh food' : '⚠ Food spoils'}</p>${meter(held / def.storage * 100,'Storage capacity')}<details data-key="contents-${b.uid}"><summary>Contents</summary><p>${contents || 'Empty'}</p></details>
+        <h3>Priority</h3><p class="muted">High priority fills first.</p>
         <div class="segs two"><button type="button" class="seg${b.high ? '' : ' on'}" data-act="store-prio" data-arg="${b.uid}:low" aria-pressed="${!b.high}">Low</button><button type="button" class="seg${b.high ? ' on' : ''}" data-act="store-prio" data-arg="${b.uid}:high" aria-pressed="${b.high}">High</button></div>
-        <h3>What goes here</h3><p class="muted">Haulers take each good to the nearest storage that accepts it, and fetch from the nearest one that has it.</p>
+        <h3>Accepts</h3>
         <div class="segs">${preset('all', 'Everything')}${preset('food', 'Food only')}${preset('goods', 'Goods only')}</div>
-        <div class="rules">${items}</div>`;
+        <details data-key="storage-items-${b.uid}"><summary>Customize items</summary><div class="rules">${items}</div></details>`;
     } else if (def.beds) {
       const sleepers = alive(w).filter(c => c.bed === b.uid).map(c => personLink(c)).join(', ');
       staff += `<p class="prefs">Sleeps ${def.beds}${sleepers ? `: ${sleepers}` : ''}.</p>`;
@@ -695,7 +726,7 @@ export class UI {
     const done = r.done.map(id => RESEARCH_BY_ID[id].name).join(', ');
     if (!cur) return `<p class="prefs">${done ? `Learned: ${esc(done)}.` : ''}</p>`;
     const need = researchStillNeeds(w);
-    const goods = Object.entries(cur.cost).map(([k, n]) => { const left = need[k as InputKey] ?? 0; const nm = inputName(k as InputKey); return `<li><span>${icon(k)}${esc(nm.charAt(0).toUpperCase() + nm.slice(1))}</span><b>${Math.floor((n ?? 0) - left)} / ${n}</b></li>`; }).join('');
+    const goods = Object.entries(cur.cost).map(([k, n]) => { const left = need[k as InputKey] ?? 0; const nm = inputName(k as InputKey); return `<li><button type="button" class="text-link" data-act="source" data-arg="${k}">${icon(k)}${esc(nm.charAt(0).toUpperCase() + nm.slice(1))} →</button><b>${Math.floor((n ?? 0) - left)} / ${n}</b></li>`; }).join('');
     return `<h3>Studying ${esc(cur.name)}</h3><p class="prefs">${esc(cur.desc)} ${cur.unlocks.length ? `Unlocks <b>${esc(cur.unlocks.map(u => BUILDING_BY_ID[u].name.toLowerCase()).join(' and '))}</b>.` : `<b>${esc(cur.effect ?? '')}</b>`}</p>
       <ul class="thoughts">${goods}<li><span>Study</span><b>${Math.floor(r.progress)} / ${cur.hours} hours</b></li></ul>
       <p class="muted">${Object.keys(need).length ? 'The scholar fetches the goods; laborers help when they can.' : 'Everything is here. Study goes faster with a better Studying skill.'}${done ? ` Learned so far: ${esc(done)}.` : ''}</p>`;
@@ -707,8 +738,8 @@ export class UI {
     const lines = [`Day ${day(w)} · ${alive(w).length} settlers · mood ${Math.round(avgMood(w))} · strain ${Math.round(w.strain)}`, prog ? `Charter ${w.chartersDone.length + 1} of 3: ${prog.charter.name}, ${prog.label}` : w.chartersDone.length ? `${w.chartersDone.length} charter${w.chartersDone.length > 1 ? 's' : ''} done` : 'No charter yet'];
     return `<div class="card-wrap"><p class="eyebrow">Welcome back${when ? ` · saved ${when}` : ''}</p><h2>Your colony is waiting</h2>
       <p class="lede">${lines.map(esc).join('<br>')}</p>
-      <div class="opts"><button type="button" class="opt" data-act="resume"><b>Continue</b><span>Pick up where you left off.</span></button>
-      ${this.confirmNew ? `<button type="button" class="opt danger" data-act="restart"><b>Yes, start over</b><span>This colony will be lost for good.</span></button>` : `<button type="button" class="opt" data-act="restart"><b>Start a new colony</b><span>Three settlers, a cart, a kettle and a fresh patch of the Mumblewood.</span></button>`}</div>
+      <div class="opts"><button type="button" class="opt" data-act="resume"><b>Continue</b></button>
+      ${this.confirmNew ? `<button type="button" class="opt danger" data-act="restart"><b>Yes, start over</b><span>This colony will be lost for good.</span></button>` : `<button type="button" class="opt" data-act="restart"><b>Start a new colony</b></button>`}</div>
       ${this.confirmNew ? '<button type="button" class="ghost skip" data-act="restart-cancel">Keep this colony</button>' : ''}</div>`;
   }
 
@@ -716,7 +747,7 @@ export class UI {
     const restart = this.confirmNew
       ? `<div class="restart-row"><span>Start a new colony? This one will be lost for good.</span><button type="button" class="ghost danger" data-act="restart">Yes, start over</button><button type="button" class="ghost" data-act="restart-cancel">Keep playing</button></div>`
       : `<div class="restart-row"><span class="muted">Your colony saves automatically in this browser.</span><button type="button" class="ghost" data-act="restart">Start over</button></div>`;
-    return restart + `<ol class="log">${w.log.slice(-60).reverse().map(l => `<li class="t-${l.tone}"><time>Day ${l.day}, ${String(l.hour).padStart(2, '0')}:00</time><span>${esc(l.text)}</span></li>`).join('')}</ol>`;
+    return restart + `<ol class="log">${w.log.slice(-60).reverse().map(l => `<li class="t-${l.tone}"><time>${l.tone === 'bad' ? '⚠' : l.tone === 'good' ? '✓' : l.tone === 'love' ? '♥' : '•'} Day ${l.day}, ${String(l.hour).padStart(2, '0')}:00</time><span>${logText(w,l.text)}</span></li>`).join('')}</ol>`;
   }
 
   // ---------- Decisions ----------
@@ -729,11 +760,11 @@ export class UI {
     else if (d) {
       switch (d.kind) {
         case 'charter': html = this.cards(d.tier === 1 ? 'Your first charter' : `Charter ${d.tier} of 3`,
-          d.tier === 1 ? 'The Crown wants proof this colony is worth the paperwork. Complete three charters before the frontier wears everyone down.' : 'The Crown has another demand. Choose one.',
+          d.tier === 1 ? 'Complete three charters to establish your town.' : 'Choose the next goal.',
           d.options.map(id => { const c = charterDef(id)!; return { title: c.name, body: esc(c.desc), tag: `Tier ${c.tier}` }; })); break;
-        case 'research': html = this.cards(w.research?.done.length ? 'What next for the scholar?' : 'What should your scholar study first?',
-          w.research?.done.length ? 'Pick one project. The ones you pass on can come round again.' : 'Nobody here knows how to build a kitchen, a dining hall or a clinic yet. Pick one project for the research desk. Someone has to sit there, and the goods get carried in.',
-          d.options.map(id => { const r = RESEARCH_BY_ID[id]; return { title: r.name, body: `${esc(r.desc)}\n${r.unlocks.length ? `Unlocks: ${r.unlocks.map(u => `<span class="gd">${icon(u)}${esc(BUILDING_BY_ID[u].name)}</span>`).join(', ')}` : `<b>${esc(r.effect ?? '')}</b>`}`, tag: `Costs ${costHtml(r.cost)} · about ${r.hours} hours of study` }; })); break;
+        case 'research': html = this.cards(w.research?.done.length ? 'What next for the scholar?' : 'Choose research',
+          w.research?.done.length ? 'Choose one project.' : 'Staff the research desk to study.',
+          d.options.map(id => { const r = RESEARCH_BY_ID[id]; return { title: r.name, body: `${esc(r.desc)}\n${r.unlocks.length ? `Unlocks: ${r.unlocks.map(u => `<span class="gd">${icon(u)}${esc(BUILDING_BY_ID[u].name)}</span>`).join(', ')}` : `<b>${esc(r.effect ?? '')}</b>`}`, tag: `${costHtml(r.cost)} · ${r.hours}h study` }; })); break;
         case 'blueprint': {
           const cost = rerollCost(w), can = w.gold >= cost;
           // each card lists what the building makes, best recipe first, so a reroll is a judgement about routes
@@ -742,23 +773,21 @@ export class UI {
           const charter = charterDef(w.charter);
           const notes = (id: string) => {
             const def = BUILDING_BY_ID[id], out: string[] = [];
-            if (charter && charterHelpers(charter.id).includes(id)) out.push(`Helps your charter: ${charter.name}`);
-            if (def.cost.fine && stockOf(w, 'fine') < def.cost.fine && !['sawmill', 'kiln', 'carpenter'].some(m => w.owned.includes(m))) out.push('Needs planks or bricks, and nothing here makes them yet');
+            if (charter && charterHelpers(charter.id).includes(id)) out.push(`◆ Charter: ${charter.name}`);
+            if (def.cost.fine && stockOf(w, 'fine') < def.cost.fine && !['sawmill', 'kiln', 'carpenter'].some(m => w.owned.includes(m))) out.push('⚠ Needs a materials producer');
             return out.length ? `\n${out.map(esc).join('\n')}` : '';
           };
-          html = this.cards('A new blueprint', 'Pick one building to add to what you can build this run.',
-            d.options.map(id => { const b = BUILDING_BY_ID[id]; const rl = recipeLines(id); return { title: b.name, icon: id, body: `${rl ? `${esc(b.blurb)}\n${rl}` : esc(b.blurb)}${notes(id)}`, tag: `Costs ${costHtml(b.cost)}${b.slots ? ` · ${b.slots} worker${b.slots > 1 ? 's' : ''}` : ''}` }; }),
+          html = this.cards('A new blueprint', 'Unlock one building.',
+            d.options.map(id => { const b = BUILDING_BY_ID[id]; const rl = recipeLines(id); return { title: b.name, icon: id, body: `${rl || esc(b.blurb)}${notes(id)}`, tag: `Costs ${costHtml(b.cost)}${b.slots ? ` · ${b.slots} worker${b.slots > 1 ? 's' : ''}` : ''}` }; }),
             undefined,
-            `<button type="button" class="ghost skip" data-act="reroll" ${can ? '' : 'disabled'}>Reroll for ${cost} gold${can ? '' : ` (you have ${Math.floor(w.gold)})`}</button><p class="muted reroll-note">Each reroll this run costs ${REROLL_STEP} more than the last.</p>`);
+            `<button type="button" class="ghost skip" data-act="reroll" ${can ? '' : 'disabled'}>Reroll for ${cost} gold${can ? '' : ` (you have ${Math.floor(w.gold)})`}</button><p class="muted reroll-note">+${REROLL_STEP} gold per reroll.</p>`);
           break;
         }
         case 'perk': html = this.cards(d.why === 'season' ? `${SEASON_NAMES[seasonOf(w).season]}: a new cornerstone` : 'The Crown grants a cornerstone',
-          `${d.why === 'season' ? 'A new season, a new way of doing things.' : 'For the charter just finished.'} Choose one. It lasts the rest of the run.${w.perks.length ? ` You have ${w.perks.length}: ${w.perks.map(p => PERK_BY_ID[p].name).join(', ')}.` : ''}`,
+          'Choose one permanent bonus.',
           d.options.map(id => ({ title: PERK_BY_ID[id].name, icon: 'cornerstone', body: esc(PERK_BY_ID[id].desc), tag: 'Cornerstone' }))); break;
         case 'trade': html = this.tradeCard(w); break;
-        case 'recruit': html = this.cards('Settlers at the edge of camp', `They’d like to join. You have ${beds(w)} beds for ${alive(w).length} colonists.`,
-          d.options.map(c => ({ title: c.name, body: `${c.fee ? `<em class="fee">A skilled hand · asks ${c.fee}${icon('gold')}${w.gold < c.fee ? ` (you have ${Math.floor(w.gold)})` : ''}</em>\n` : ''}${c.traits.map(t => esc(`${TRAIT_BY_ID[t].name}: ${TRAIT_BY_ID[t].desc}`)).join('\n')}`, tag: `${esc(`Loves ${JOB_NAMES[c.likes]} · hates ${JOB_NAMES[c.dislikes]} · best at ${topSkills(c)}`)}${tasteLine(c, false)}`, color: hex(c.shirt), disabled: (c.fee ?? 0) > w.gold })),
-          'Send them all away'); break;
+        case 'recruit': html = `<div class="card-wrap"><p class="eyebrow">Choose one</p><h2>New settlers</h2><p class="lede">⌂ ${beds(w)} beds · ${alive(w).length} settlers${beds(w) <= alive(w).length ? ' · ⚠ Another bed needed' : ''}</p><div class="opts">${d.options.map((c,i) => `<article class="recruit"><button type="button" class="opt" data-act="resolve" data-arg="${i}" ${(c.fee ?? 0) > w.gold ? 'disabled' : ''}><b><span class="dot" style="background:${hex(c.shirt)}"></span>${esc(c.name)}</b><span>★ ${esc(topSkills(c))}</span><small>♥ ${esc(SKILL_NAMES[c.likes])} · × ${esc(SKILL_NAMES[c.dislikes])} · ${c.fee ? `${c.fee} gold${w.gold < c.fee ? ' · insufficient gold' : ''}` : 'Free'}</small></button><details data-key="recruit-${c.id}"><summary>Traits & tastes</summary>${c.traits.map(t => `<p><b>${esc(TRAIT_BY_ID[t].name)}</b> · ${esc(TRAIT_BY_ID[t].desc)}</p>`).join('')}<p>${tasteLine(c,false)}</p></details></article>`).join('')}</div><button type="button" class="ghost skip" data-act="resolve" data-arg="99">Send all away</button></div>`; break;
         case 'errand': { const e = w.errands.find(x => x.id === d.errandId); if (e) html = this.errandPicker(w, e, true); break; }
         case 'event': {
           const ev = EVENTS.find(e => e.id === d.eventId)!;
@@ -768,6 +797,7 @@ export class UI {
         }
       }
     }
+    if (!html && this.help) html = this.helpCard(w);
     if (!html && this.festivalOpen) html = this.festivalCard(w);
     if (!html && this.strainOpen) html = this.strainCard(w);
     if (!html && this.picking != null) { const e = w.errands.find(x => x.id === this.picking); if (e) html = this.errandPicker(w, e, false); else this.picking = null; }
@@ -816,11 +846,11 @@ export class UI {
     }).join('');
     const name = tr.name.charAt(0).toUpperCase() + tr.name.slice(1);
     return `<div class="card-wrap trade"><p class="eyebrow">${icon('caravan')} The caravan · leaves in ${left}h</p><h2>${esc(name)}</h2>
-      <p class="lede">${esc(tr.who)} You have <b class="goldnum">${gold} gold</b>.${wants.length ? ` Buys ${esc(wants.slice(0, -1).join(', '))} and ${esc(wants[wants.length - 1])}${autumn ? ', and at the harvest fair anything else, a little cheaper' : ' and nothing else'}.` : ' Buys anything, cheaply.'}</p>
-      ${bps ? `<h3 class="first">Blueprints</h3><div class="tlist">${bps}</div>` : ''}
+      <p class="lede"><b class="goldnum">${gold} gold</b>.${wants.length ? ` Buys ${esc(wants.slice(0, -1).join(', '))} and ${esc(wants[wants.length - 1])}${autumn ? ', and at the harvest fair anything else, a little cheaper' : ' and nothing else'}.` : ' Buys anything, cheaply.'}</p>
+      <details data-key="trader-lore"><summary>About this trader</summary><p>${esc(tr.who)}</p></details>${bps ? `<h3 class="first">Blueprints</h3><div class="tlist">${bps}</div>` : ''}
       <h3>The trader sells</h3><div class="tlist">${wares || '<p class="muted">Nothing left.</p>'}</div>
       <h3>The trader buys <span class="muted">· up to ${cap} of each</span></h3><div class="tlist">${mine || '<p class="muted">You have nothing this trader wants.</p>'}</div>
-      <button type="button" class="opt" data-act="resolve" data-arg="0"><b>Done trading</b><span>Head back from the cart. While the caravan stays, someone can be sent again.</span></button></div>`;
+      <button type="button" class="opt" data-act="resolve" data-arg="0"><b>Done trading</b></button></div>`;
   }
 
   private cards(title: string, lede: string, opts: { title: string; body: string; tag: string; color?: string; icon?: string; disabled?: boolean }[], skip?: string, extra = '') {
@@ -837,12 +867,12 @@ export class UI {
     return `<div class="card-wrap end ${won ? 'won' : 'lost'}"><p class="eyebrow">${won ? 'Victory' : 'The colony collapsed'}</p>
       <h2>${won ? 'Mumblewood is a town' : 'The kettle remains'}</h2>
       <p class="lede">${won ? 'All three charters complete.' : alive(w).length <= START.collapse.minAlive ? 'Too few settlers remain.' : 'Too many settlers were lost.'} You lasted ${day(w)} day${day(w) === 1 ? '' : 's'}.</p>
-      <dl class="stats"><div><dt>Charters</dt><dd>${w.chartersDone.length} / 3</dd></div><div><dt>Peak population</dt><dd>${s.peakPop}</dd></div>
+      ${!won ? `<p class="terms">${[...w.log].reverse().filter(l=>l.tone === 'bad').slice(0,3).map(l=>esc(l.text)).join('<br>')}</p>` : ''}<dl class="stats"><div><dt>Charters</dt><dd>${w.chartersDone.length} / 3</dd></div><div><dt>Peak population</dt><dd>${s.peakPop}</dd></div>
       <div><dt>Couples formed</dt><dd>${s.couples}</dd></div><div><dt>Breakups</dt><dd>${s.breakups}</dd></div>
       <div><dt>Left the colony</dt><dd>${s.departures}</dd></div><div><dt>Died</dt><dd>${s.deaths}</dd></div><div><dt>Meals eaten</dt><dd>${s.mealsEaten}</dd></div>
       <div><dt>Errands done</dt><dd>${s.errands}</dd></div><div><dt>Recoveries</dt><dd>${s.cured}</dd></div></dl>
       ${this.ledger()}
-      <button type="button" class="opt restart" data-act="restart"><b>Start a new colony</b><span>Three settlers, a cart, a kettle and a fresh patch of the Mumblewood.</span></button>
+      <button type="button" class="opt restart" data-act="restart"><b>Start a new colony</b></button>
     </div>`;
   }
 
@@ -925,6 +955,7 @@ function accountCard(a: Account, ico: InputKey, selected: boolean) {
 function ledger(w: World, selected: InputKey | 'gold' | null = null) {
   const e = economy(w);
   const selectedGood = selected && selected !== 'gold' ? RESOURCES.find(r => r.id === selected) : null;
+  const categoryDetail = selected && selected !== 'gold' && !selectedGood ? `<div id="account-${selected}" class="acct"><h3>${icon(selected)} ${esc(inputName(selected))}</h3><div class="actions">${membersOf(selected).map(r=>`<button type="button" class="ghost" data-act="resource" data-arg="${r}">${goodHtml(r,Math.floor(w.res[r]))} →</button>`).join('')}</div></div>` : '';
   const resourceDetail = selectedGood ? `<div id="account-${selectedGood.id}" class="acct"><h3>${icon(selectedGood.id)} ${selectedGood.name} · ${Math.floor(w.res[selectedGood.id])}</h3><div class="actions"><button type="button" class="ghost" data-act="source" data-arg="${selectedGood.id}">Sources →</button><button type="button" class="ghost" data-act="workplaces" data-arg="stockpile,storehouse">Storage →</button>${FOODS.includes(selectedGood.id) ? '<button type="button" class="ghost" data-act="food-rules">Food rules →</button>' : ''}</div></div>` : '';
   const show = (a: Account) => a.lines.length > 0 || a.stock >= 1;
   const accounts: [Account, InputKey][] = [[e.food, 'meal'], [e.wood, 'wood'], ...([[e.planks, 'planks'], [e.drinks, 'drink'], [e.remedies, 'remedy']] as [Account, InputKey][]).filter(([a]) => show(a))];
@@ -946,7 +977,7 @@ function ledger(w: World, selected: InputKey | 'gold' | null = null) {
   return `<p class="muted hint">The last 24 hours, scaled to a full day.</p>
     <div id="account-gold" class="acct gold-acct"><div class="acct-head"><b>${icon('gold')}Gold</b><span>${Math.floor(w.gold)} · this run: ${goldLine} · spent ${Math.round(goldOut)}</span></div></div>
     ${w.perks.length ? `<h3>Cornerstones</h3><ul class="stones">${w.perks.map(p => `<li>${icon('cornerstone')}<span><b>${esc(PERK_BY_ID[p].name)}</b><small>${esc(PERK_BY_ID[p].desc)}</small></span></li>`).join('')}</ul>` : ''}
-    ${resourceDetail}${accounts.map(([a, k]) => accountCard(a, k, selected === k || !!selected && membersOf(k).includes(selected as ResourceId))).join('')}
+    <details data-key="gold-help"><summary>Gold sources</summary><p>Seasonal rent · Crown stipends · events · caravan sales</p></details>${categoryDetail}${resourceDetail}${accounts.map(([a, k]) => accountCard(a, k, selected === k || !!selected && membersOf(k).includes(selected as ResourceId))).join('')}
     <h3>Jobs</h3><div class="joblist">${jobs || '<p class="muted">No workplaces yet.</p>'}</div>
     <h3>Laborers <span class="muted">· ${e.laborers.length}</span></h3>
     <div class="lt-bar">${segs}</div>
