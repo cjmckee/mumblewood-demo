@@ -200,7 +200,7 @@ export class UI {
   private destinationList(w: World) {
     const d = this.destination;
     if (!d) return '';
-    if (d.kind === 'workplaces') return `<button type="button" class="ghost" data-act="tab" data-arg="build">All buildings</button><h3>${esc(d.label)}</h3><div class="rows">${w.buildings.filter(b => d.defs.includes(b.def)).map(b => `<button type="button" class="row compact" data-act="building" data-arg="${b.uid}"><span class="who"><b>${icon(b.def)} ${esc(BUILDING_BY_ID[b.def].name)}</b><small>Map ${b.x}, ${b.y} · ${esc(buildingStatus(w, b).label)}</small></span><span>→</span></button>`).join('')}</div>`;
+    if (d.kind === 'workplaces') return `<button type="button" class="ghost" data-act="tab" data-arg="build">All buildings</button><h3>${esc(d.label)}</h3><div class="rows">${w.buildings.filter(b => d.defs.includes(b.def)).map(b => `<button type="button" class="row compact" data-act="building" data-arg="${b.uid}"><span class="who"><b>${icon(b.def)} ${esc(BUILDING_BY_ID[b.def].name)}</b><small>Map ${b.x}, ${b.y} · ${esc(buildingStatus(w, b).label)}</small></span><span>→</span></button>`).join('') || `<p class="empty">No buildings here yet.</p><button type="button" class="ghost" data-act="catalog-help" data-arg="${d.defs[0]}">Find blueprint →</button>`}</div>`;
     if (d.kind === 'catalog') {
       const def = BUILDING_BY_ID[d.def];
       const available = w.owned.includes(d.def);
@@ -547,7 +547,7 @@ export class UI {
     const c = colonistById(w, id);
     if (!c || c.left) return `<p class="empty">This colonist has left.</p><button type="button" class="ghost" data-act="back">Back to colonists</button>`;
     const traits = c.traits.map(t => `<div class="trait"><b>${TRAIT_BY_ID[t].name}</b><span>${esc(TRAIT_BY_ID[t].desc)}</span></div>`).join('');
-    const thoughts = c.thoughts.map(t => `<li class="${t.value >= 0 ? 'pos' : 'neg'}${t.label.startsWith('The frontier') ? ' wear' : ''}"><span>${esc(t.label)}</span><b>${t.value > 0 ? '+' : '−'}${Math.abs(Math.round(t.value))}</b></li>`).join('');
+    const thoughts = c.thoughts.map(t => `<li class="${t.value >= 0 ? 'pos' : 'neg'}${t.label.startsWith('The frontier') ? ' wear' : ''}"><span>${logText(w,t.label)}</span><b>${t.value > 0 ? '+' : '−'}${Math.abs(Math.round(t.value))}</b></li>`).join('');
     const others = alive(w).filter(o => o.id !== c.id).map(o => ({ o, v: opinion(w, c.id, o.id) }));
     const friends = others.filter(x => x.v > 25).sort((a, b) => b.v - a.v).slice(0, 3);
     const rivals = others.filter(x => x.v < -25).sort((a, b) => a.v - b.v).slice(0, 3);
@@ -571,7 +571,7 @@ export class UI {
       <div class="who-big"><span class="dot big" style="background:${hex(c.shirt)}"></span><div><h2>${esc(c.name)}</h2><p>${esc(activityText(w, c))}</p></div>
         <div class="mood-big ${moodClass(c.mood, c.sulking)}"><b>${moodDirection(c)} ${Math.round(c.mood)}</b><small>→ ${Math.round(c.moodTarget)}</small></div></div>
       ${c.sulking ? '<p class="warnline">☁ Sulking · works again above mood 32</p>' : c.mood < 15 ? '<p class="warnline">⚠ May leave</p>' : ''}${illness}
-      ${worst ? `<p class="warnline">${esc(worst.label)} <b>−${Math.abs(Math.round(worst.value))}</b></p>` : ''}
+      ${worst ? `<p class="warnline">${logText(w,worst.label)} <b>−${Math.abs(Math.round(worst.value))}</b></p>` : ''}
       <div class="actions">${job ? `<button type="button" class="ghost" data-act="building" data-arg="${job.uid}">${icon(job.def)} ${esc(BUILDING_BY_ID[job.def].name)} →</button>` : ''}${c.bed != null ? `<button type="button" class="ghost" data-act="building" data-arg="${c.bed}">⌂ Home →</button>` : '<button type="button" class="ghost" data-act="need" data-arg="shelter">⌂ Find a bed →</button>'}<button type="button" class="ghost" data-act="jobs">⚒ Change job ↓</button></div>
       <h3>Needs · ${Math.round(comfortOf(w, c) * 100)}%</h3>${comfortRows(w, c)}
       <details data-key="person-jobs"><summary id="person-jobs">⚒ Job · ${job ? esc(BUILDING_BY_ID[job.def].name) : 'Laborer'}</summary><p class="muted">${laborers(w).length} laborers free · assigning one slows hauling and building.</p><div class="jobs">${jobs}<button type="button" class="job${c.job == null ? ' on' : ''}" data-act="assign" data-arg="${c.id}:none">Laborer<small>Build · haul · clean</small></button></div></details>
@@ -842,7 +842,7 @@ export class UI {
     const mine = RESOURCES.filter(x => w.res[x.id] >= 1 && sellPrice(w, x.id) > 0).sort((a, b) => w.res[b.id] - w.res[a.id]).map(x => {
       const p = sellPrice(w, x.id), sold = t.sold[x.id] ?? 0, room = cap - sold, have = Math.floor(w.res[x.id]);
       const small = saleQuantity(5, have, room), large = saleQuantity(20, have, room);
-      const sellButton = (n: number) => btn('trade-sell', `${x.id}:${n}`, `Sell ${n} · ${Math.floor(n * p + 1e-9)}g`, n > 0);
+      const sellButton = (n: number) => btn('trade-sell', `${x.id}:${n}`, n ? `Sell ${n} · ${Math.floor(n * p + 1e-9)}g` : 'Limit reached', n > 0);
       return `<div class="trow"><span class="tname">${icon(x.id)}<span><b>${esc(x.name)}</b><small>you have ${have}${sold ? ` · sold ${sold}/${cap}` : ''}${counted.has(x.id) ? ' · your charter counts these' : ''}</small></span></span><span class="tprice">${Number.isInteger(p) ? p : p.toFixed(1)}${icon('gold')}</span>${sellButton(small)}${large > small ? sellButton(large) : ''}</div>`;
     }).join('');
     const name = tr.name.charAt(0).toUpperCase() + tr.name.slice(1);
@@ -925,7 +925,7 @@ function comfortRows(w: World, c: Colonist) {
     drink: v('drink') >= 1 ? 'had a drink today' : 'parched',
     warmth: v('warmth') >= 1 ? 'warm at home' : c.bed == null ? 'out in the cold' : 'no wood for the fire',
   };
-  return `<div class="ledger">${activeNeeds(w).map(k => `<button type="button" data-act="need" data-arg="${k}" class="lg-row need ${v(k) >= 0.7 ? 'lg-good' : 'lg-bad'}"><span>${NEED_NAMES[k]}<small>${esc(why[k])}</small></span><i><b style="width:${Math.round(v(k) * 100)}%"></b></i><em>${Math.round(v(k) * 100)}%</em><span class="sr-only">Open remedy</span></button>`).join('')}</div>`;
+  return `<div class="ledger">${activeNeeds(w).map(k => `<button type="button" data-act="need" data-arg="${k}" class="lg-row need ${v(k) >= 0.7 ? 'lg-good' : 'lg-bad'}"><span>${icon(NEED_BUILD[k])} ${NEED_NAMES[k]}<small>${esc(why[k])}</small></span><i><b style="width:${Math.round(v(k) * 100)}%"></b></i><em>${Math.round(v(k) * 100)}%</em><span class="sr-only">Open remedy</span></button>`).join('')}</div>`;
 }
 
 /** base 50, plus the good, minus the gripes, minus this colonist's share of frontier wear */
