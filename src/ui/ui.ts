@@ -15,6 +15,7 @@ import { economy, Account } from '../sim/economy';
 import type { IsoView, Picked } from '../render/iso';
 import { icon } from './icons';
 import { buildingStatus, saleQuantity } from './status';
+import { replaceMarkup } from './dom';
 import { seasonOf, SEASON_NAMES } from '../sim/seasons';
 
 const esc = (s: string) => s.replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]!));
@@ -100,9 +101,35 @@ export class UI {
   /** "start a new colony" asks once before throwing away the run in progress */
   private confirmNew = false;
   private strainOpen = false;
+  private sheetKey = '';
+  private sheetScroll = new Map<string, number>();
+  private returnFocus: { act: string; arg: string } | null = null;
+  get blocksSimulation() { return this.festivalOpen || this.strainOpen || this.picking != null; }
+
+  private dismissDialog() {
+    if (this.getWorld().decisions.length || this.resumeOpen || this.getWorld().status !== 'playing') return;
+    this.festivalOpen = false; this.strainOpen = false; this.picking = null;
+    this.render(true);
+  }
+
+  private keyboard(e: KeyboardEvent) {
+    const modal = this.root.querySelector<HTMLElement>('#modal')!;
+    if (modal.hidden) {
+      if (e.key === 'Escape') { this.view.placing = null; this.view.pathMode = false; this.open = false; this.detail = null; this.render(true); }
+      return;
+    }
+    if (e.key === 'Escape') { e.preventDefault(); this.dismissDialog(); }
+    if (e.key !== 'Tab') return;
+    const controls = [...modal.querySelectorAll<HTMLElement>('button:not(:disabled), summary, select, [tabindex="0"]')].filter(el => el.getClientRects().length);
+    const at = controls.indexOf(document.activeElement as HTMLElement);
+    if (!controls.length) { e.preventDefault(); modal.focus(); }
+    else if (e.shiftKey && at <= 0) { e.preventDefault(); controls[controls.length - 1].focus(); }
+    else if (!e.shiftKey && (at === controls.length - 1 || at < 0)) { e.preventDefault(); controls[0].focus(); }
+  }
 
   constructor(private root: HTMLElement, private getWorld: () => World, private send: (c: Command) => string | null, private view: IsoView) {
     root.addEventListener('click', e => this.click(e));
+    root.addEventListener('keydown', e => this.keyboard(e));
     view.onPick = p => this.picked(p);
     view.onPathTap = (x, y) => {
       const w = this.getWorld();
@@ -261,7 +288,10 @@ export class UI {
       </div>
       ${w.errands.length || this.caravanChip(w) || this.effectChips(w) ? `<div class="errands">${this.caravanChip(w)}${w.errands.map(e => this.errandChip(w, e)).join('')}${this.effectChips(w)}</div>` : ''}`;
     if (force || html !== this.lastHud) {
-      (this.root.querySelector('#hud') as HTMLElement).innerHTML = html; this.lastHud = html;
+      const hud = this.root.querySelector<HTMLElement>('#hud')!;
+      const scroll = hud.querySelector('.res')?.scrollLeft ?? 0;
+      replaceMarkup(hud, html); this.lastHud = html;
+      hud.querySelector('.res')!.scrollLeft = scroll;
       // fade the row's right edge while there are more goods to scroll to
       const row = this.root.querySelector('#hud .res') as HTMLElement | null;
       if (row) { const more = () => row.classList.toggle('more', row.scrollLeft + row.clientWidth < row.scrollWidth - 2); more(); row.addEventListener('scroll', more, { passive: true }); }
@@ -377,9 +407,10 @@ export class UI {
     const el = this.root.querySelector('#sheet') as HTMLElement;
     if (force || html !== this.lastSheet) {
       const scroller = el.querySelector('.sheet-body');
-      const top = scroller?.scrollTop ?? 0;
-      el.innerHTML = html; this.lastSheet = html;
-      const s2 = el.querySelector('.sheet-body'); if (s2) s2.scrollTop = top;
+      if (this.sheetKey) this.sheetScroll.set(this.sheetKey, scroller?.scrollTop ?? 0);
+      const key = this.detail ? `${this.detail.kind}:${this.detail.id}` : this.tab;
+      replaceMarkup(el, html); this.lastSheet = html; this.sheetKey = key;
+      const s2 = el.querySelector('.sheet-body'); if (s2) s2.scrollTop = this.sheetScroll.get(key) ?? 0;
     }
     el.classList.toggle('open', this.open);
   }
@@ -664,8 +695,24 @@ export class UI {
     if (!html && this.festivalOpen) html = this.festivalCard(w);
     if (!html && this.strainOpen) html = this.strainCard(w);
     if (!html && this.picking != null) { const e = w.errands.find(x => x.id === this.picking); if (e) html = this.errandPicker(w, e, false); else this.picking = null; }
-    if (force || html !== this.lastModal) { el.innerHTML = html; this.lastModal = html; }
+    const wasOpen = !el.hidden;
+    if (html && !wasOpen) {
+      const a = document.activeElement as HTMLElement;
+      this.returnFocus = a?.dataset.act ? { act: a.dataset.act, arg: a.dataset.arg ?? '' } : null;
+    }
+    if (force || html !== this.lastModal) { replaceMarkup(el, html); this.lastModal = html; }
     el.hidden = !html;
+    el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); el.tabIndex = -1;
+    const heading = el.querySelector('h2');
+    if (heading) { heading.id = 'dialog-title'; el.setAttribute('aria-labelledby', 'dialog-title'); }
+    for (const id of ['hud', 'sheet', 'placebar', 'stage']) (this.root.querySelector(`#${id}`) as HTMLElement).inert = !!html;
+    if (html && (!wasOpen || !el.contains(document.activeElement))) (el.querySelector<HTMLElement>('button:not(:disabled), summary') ?? el).focus({ preventScroll: true });
+    if (!html && wasOpen) {
+      const t = this.returnFocus;
+      const target = t && [...this.root.querySelectorAll<HTMLElement>('[data-act]')].find(e => e.dataset.act === t.act && (e.dataset.arg ?? '') === t.arg);
+      (target || this.root.querySelector<HTMLElement>('[data-act=tab]'))?.focus({ preventScroll: true });
+      this.returnFocus = null;
+    }
   }
 
   private tradeCard(w: World) {

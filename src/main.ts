@@ -48,7 +48,7 @@ async function boot() {
   view.app.ticker.add(() => {
     const now = performance.now();
     const dt = Math.min(0.25, (now - last) / 1000); last = now;
-    if (!world.decisions.length && world.status === 'playing' && !ui.resumeOpen) {
+    if (!world.decisions.length && world.status === 'playing' && !ui.resumeOpen && !ui.blocksSimulation) {
       acc += dt * SPEEDS[speed] * TICKS_PER_HOUR;
       while (acc >= 1) { tick(world); acc -= 1; if (world.decisions.length) { acc = 0; break; } }
     }
