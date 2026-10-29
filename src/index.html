@@ -321,6 +321,27 @@ small.fest.on { color: var(--accent); }
 }
 @media (max-width: 430px) { .phase { display: none; } }
 @media (prefers-reduced-motion: reduce) { .meter i { transition: none; } }
+/* Actionable information */
+.sr-only { position:absolute; width:1px; height:1px; padding:0; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; }
+.actions { display:flex; flex-wrap:wrap; gap:6px; margin:8px 0; }
+.issue-summary { width:100%; display:flex; flex-wrap:wrap; gap:4px 10px; text-align:left; border:1px solid var(--line); border-radius:8px; background:#292d22; color:var(--warn); padding:8px 10px; margin:8px 0; font-size:12px; }
+.issue-summary span { color:var(--text); }
+.status .issue-summary { margin-bottom:0; }
+button.job-row, button.lg-row { width:100%; color:inherit; background:none; border:0; text-align:left; font:inherit; cursor:pointer; }
+button.job-row { border-bottom:1px solid var(--line); }
+button.lg-row { border-radius:6px; padding:6px 0; }
+button.lg-row:hover, button.job-row:hover { background:#293126; }
+.acct summary { cursor:pointer; list-style:none; }
+.acct summary::after { content:'＋'; color:var(--accent); }
+.acct[open] summary::after { content:'−'; }
+details > summary { cursor:pointer; color:var(--accent); font-size:13px; padding:8px 0; }
+details > p { font-size:13px; color:var(--muted); }
+.tabs { gap:0; padding-inline:8px; }
+.tabs button { padding-inline:9px; font-size:13px; }
+.tabs .x { font-size:22px; padding-inline:10px; }
+.res button.chip { background:var(--panel); border:1px solid var(--line); }
+.trow { flex-wrap:wrap; }
+.tbtn { font-size:11px; }
 </style>
 <div id="game">
   <div id="stage"></div>

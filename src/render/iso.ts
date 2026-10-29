@@ -3,6 +3,7 @@ import { Application, Container, Graphics, Text } from 'pixi.js';
 import { BUILDING_BY_ID, ResourceId } from '../sim/content';
 import { modelFor, MODELS, caravanModel } from './models';
 import { drawModel } from './draw';
+import { buildingStatus } from '../ui/status';
 import { seasonOf } from '../sim/seasons';
 import type { Season } from '../sim/scenario';
 import { World, Building, MAP_SIZE, BUILD_MIN, BUILD_MAX, CENTER, alive, hourOfDay, workersAt, bdef, siteWork, canPlace, spotOf, built, footprint, doorTile, dims, turnPoint, terrainAt, T_TREE, T_BUSH, T_WATER, T_APPLE, T_FLOWERS, T_SOIL, T_CLAY } from '../sim/world';
@@ -364,6 +365,14 @@ export class IsoView {
     for (const b of w.buildings) {
       const sel = this.selected?.kind === 'building' && this.selected.id === b.uid;
       const o = this.drawBuilding(w, b, sel);
+      if (buildingStatus(w, b).warning) {
+        const p = iso(b.x + dims(b).w / 2, b.y + dims(b).h / 2);
+        const y = p.sy - 30 - bdef(b).height * 22;
+        const badge = new Graphics();
+        badge.circle(p.sx, y, 9).fill(0xe8c547).stroke({ width: 2, color: 0x292b20 });
+        badge.moveTo(p.sx, y - 4).lineTo(p.sx, y + 1).stroke({ width: 2, color: 0x292b20 });
+        badge.circle(p.sx, y + 4, 1.1).fill(0x292b20); o.c.addChild(badge);
+      }
       this.bGfx.set(b.uid, o);
       this.objects.addChild(o.c);
     }
@@ -535,6 +544,10 @@ export class IsoView {
       this.placing = { ...this.placing, x: Math.round(p.x - f.w / 2), y: Math.round(p.y - f.h / 2) };
       this.onPlaceMove(this.placing);
       return;
+    }
+    for (const b of [...w.buildings].reverse()) if (buildingStatus(w, b).warning) {
+      const at = iso(b.x + dims(b).w / 2, b.y + dims(b).h / 2);
+      if (Math.hypot(p.sx - at.sx, p.sy - (at.sy - 30 - bdef(b).height * 22)) < 16) { this.onPick({ kind: 'building', id: b.uid }); return; }
     }
     let best: Picked | null = null, bestD = 1e9;
     for (const c of alive(w)) {
