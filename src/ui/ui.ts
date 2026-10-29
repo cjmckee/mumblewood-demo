@@ -26,8 +26,8 @@ const hex = (n: number) => `#${n.toString(16).padStart(6, '0')}`;
 const goodLabel = (k: InputKey) => (k === 'fine' ? 'planks or bricks' : inputName(k));
 /** a good or a category with its icon, optionally with a count in front: "[icon]3 planks"; returns HTML */
 const goodHtml = (k: InputKey, n?: number | string, label = goodLabel(k)) => `<span class="gd">${icon(k)}${n != null ? `${n} ` : ''}${esc(label)}</span>`;
-const costHtml = (cost: Partial<Record<InputKey, number>>) =>
-  Object.entries(cost).map(([r, n]) => goodHtml(r as InputKey, n)).join(', ') || 'free';
+const costHtml = (cost: Partial<Record<InputKey, number>>, w?: World) =>
+  Object.entries(cost).map(([r, n]) => `<span class="${w && stockOf(w,r as InputKey) < n! ? 'cost-short' : ''}">${goodHtml(r as InputKey, n)}${w && stockOf(w,r as InputKey) < n! ? ' !' : ''}</span>`).join(', ') || 'free';
 /** "2 [wood] + 1 [clay] → [bricks]" as HTML */
 const recipeHtml = (r: Recipe) => `${Object.keys(r.inputs).length ? `${Object.entries(r.inputs).map(([k, n]) => goodHtml(k as InputKey, n)).join(' + ')} → ` : ''}${goodHtml(r.output)}`;
 
@@ -62,6 +62,14 @@ function activityText(w: World, c: Colonist) {
 const skillKinds = (c: Colonist) => (Object.keys(c.skills) as JobKind[]);
 function topSkills(c: Colonist) { return [...skillKinds(c)].sort((a, b) => c.skills[b] - c.skills[a]).slice(0, 2).map(k => `${SKILL_NAMES[k].toLowerCase()} ${Math.floor(c.skills[k])}`).join(', '); }
 function moodClass(m: number, sulking: boolean) { return sulking ? 'sulk' : m >= 60 ? 'good' : m >= 35 ? 'warn' : 'bad'; }
+
+const personLink = (c: Colonist) => `<button type="button" class="text-link" data-act="colonist" data-arg="${c.id}">${esc(c.name)} →</button>`;
+const moodDirection = (c: Colonist) => c.moodTarget > c.mood + 1 ? '↑' : c.moodTarget < c.mood - 1 ? '↓' : '↔';
+const meter = (value: number, label: string) => `<meter min="0" max="100" value="${Math.max(0,Math.min(100,value))}" aria-label="${esc(label)}">${Math.round(value)}%</meter>`;
+function selectHtml(action: string, label: string, value: string, options: string[][]) { return `<label class="select-label"><span class="sr-only">${label}</span><select data-act="${action}" aria-label="${label}">${options.map(([v,l]) => `<option value="${v}" ${v === value ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`; }
+function matchesPerson(c: Colonist, filter: string) { return filter === 'ill' ? !!c.illness : filter === 'hungry' ? c.hunger < 25 : filter === 'unhoused' ? c.bed == null : filter === 'sulking' ? c.sulking : filter === 'free' ? c.job == null : true; }
+function personState(c: Colonist) { return [c.illness ? `✚ ${c.illness.name}` : '', c.hunger < 25 ? '⚠ Hungry' : '', c.bed == null ? '⌂ No bed' : '', c.sulking ? '☁ Sulking' : ''].filter(Boolean).join(' · '); }
+function buildingGroup(id: string) { const d = BUILDING_BY_ID[id]; return d.storage ? 'storage' : d.beds || d.seats || d.decor || d.patients || ['hearth','tavern','stage','bathhouse'].includes(id) ? 'comfort' : d.job === 'cooking' || d.job === 'brewing' || d.job === 'foraging' || d.job === 'fishing' ? 'food' : 'work'; }
 
 type Tab = 'colonists' | 'build' | 'ledger' | 'issues' | 'log';
 type Detail = { kind: 'colonist' | 'building'; id: number } | null;
@@ -102,6 +110,11 @@ export class UI {
   /** "start a new colony" asks once before throwing away the run in progress */
   private confirmNew = false;
   private strainOpen = false;
+  private colonistFilter = 'all';
+  private colonistSort = 'mood';
+  private buildingFilter = 'all';
+  private buildMode = 'manage';
+  private catalogGroup = 'all';
   private destination: Destination | null = null;
   private peopleFilter: number[] | null = null;
   private resource: InputKey | 'gold' | null = null;
@@ -133,7 +146,8 @@ export class UI {
   }
 
   constructor(private root: HTMLElement, private getWorld: () => World, private send: (c: Command) => string | null, private view: IsoView) {
-    root.addEventListener('click', e => this.click(e));
+    root.addEventListener('click', e => { if (!(e.target instanceof HTMLSelectElement)) this.click(e); });
+    root.addEventListener('change', e => this.click(e));
     root.addEventListener('keydown', e => this.keyboard(e));
     view.onPick = p => this.picked(p);
     view.onPathTap = (x, y) => {
@@ -199,9 +213,16 @@ export class UI {
   private click(e: Event) {
     const el = (e.target as HTMLElement).closest('[data-act]') as HTMLElement | null;
     if (!el) return;
-    const act = el.dataset.act!, arg = el.dataset.arg ?? '';
+    const act = el.dataset.act!, arg = el instanceof HTMLSelectElement ? el.value : el.dataset.arg ?? '';
     const w = this.getWorld();
     switch (act) {
+      case 'colonist-filter': this.colonistFilter = arg; break;
+      case 'colonist-sort': this.colonistSort = arg; break;
+      case 'building-filter': this.buildingFilter = arg; break;
+      case 'build-mode': this.buildMode = arg; this.destination = null; break;
+      case 'catalog-group': this.catalogGroup = arg; break;
+      case 'jobs': this.anchor = 'person-jobs'; break;
+      case 'review-jobs': this.panel('colonists'); break;
       case 'speed': this.speed = Number(arg); this.onSpeed(this.speed); break;
       case 'tab':
         if (this.tab === arg && this.open && !this.detail) this.open = false; else { this.tab = arg as Tab; this.open = true; }
@@ -213,6 +234,7 @@ export class UI {
       case 'fix': { const [id, index] = arg.split(':'); const fix = assess(w).find(c => c.id === id)?.fixes[Number(index)]; if (fix) this.navigate(fixDestination(w, fix)); break; }
       case 'issue-people': { const people = assess(w).find(c => c.id === arg)?.personIds ?? []; this.panel('colonists'); this.peopleFilter = people; break; }
       case 'workplaces': this.navigate({ kind: 'workplaces', defs: arg.split(','), label: 'Workplaces' }); break;
+      case 'catalog-help': this.navigate(buildingDestination(w, arg)); break;
       case 'source': {
         const defs = producers(arg as InputKey), existing = w.buildings.filter(b => defs.includes(b.def));
         if (existing.length) this.navigate({ kind: 'workplaces', defs, label: `Sources of ${inputName(arg as InputKey)}` });
@@ -460,7 +482,7 @@ export class UI {
     if (force || html !== this.lastSheet) {
       const scroller = el.querySelector('.sheet-body');
       if (this.sheetKey) this.sheetScroll.set(this.sheetKey, scroller?.scrollTop ?? 0);
-      const key = this.detail ? `${this.detail.kind}:${this.detail.id}` : `${this.tab}:${JSON.stringify(this.destination)}:${this.peopleFilter?.join(',') ?? ''}`;
+      const key = this.detail ? `${this.detail.kind}:${this.detail.id}` : `${this.tab}:${JSON.stringify(this.destination)}:${this.peopleFilter?.join(',') ?? ''}:${this.colonistFilter}:${this.colonistSort}:${this.buildMode}:${this.buildingFilter}:${this.catalogGroup}`;
       replaceMarkup(el, html); this.lastSheet = html; this.sheetKey = key;
       const s2 = el.querySelector('.sheet-body'); if (s2) s2.scrollTop = this.sheetScroll.get(key) ?? 0;
     }
@@ -469,22 +491,22 @@ export class UI {
   }
 
   private colonistList(w: World) {
-    const rows = alive(w).filter(c => !this.peopleFilter || this.peopleFilter.includes(c.id)).sort((a, b) => a.mood - b.mood).map(c => {
+    const rows = alive(w).filter(c => (!this.peopleFilter || this.peopleFilter.includes(c.id)) && matchesPerson(c, this.colonistFilter)).sort((a, b) => this.colonistSort === 'name' ? a.name.localeCompare(b.name) : a.mood - b.mood || a.id - b.id).map(c => {
       const partner = colonistById(w, c.partner);
       return `<button type="button" class="row" data-act="colonist" data-arg="${c.id}">
         <span class="dot" style="background:${hex(c.shirt)}"></span>
-        <span class="who"><b>${esc(c.name)}</b><small>${esc(activityText(w, c))}${partner ? ` · with ${esc(first(partner))}` : ''}</small></span>
-        <span class="mood ${moodClass(c.mood, c.sulking)}"><b>${Math.round(c.mood)}</b><i style="width:${c.mood}%"></i></span>
+        <span class="who"><b>${esc(c.name)}</b><small>${esc(personState(c) || activityText(w, c))}${partner ? ` · with ${esc(first(partner))}` : ''}</small></span>
+        <span class="mood ${moodClass(c.mood, c.sulking)}"><b>${moodDirection(c)} ${Math.round(c.mood)}</b><i style="width:${c.mood}%"></i></span>
       </button>`;
     }).join('');
     return `<div class="list-head"><span>${alive(w).length} colonists · ${beds(w)} beds · average mood ${Math.round(avgMood(w))}</span>
       <button type="button" class="ghost" data-act="auto">Auto-assign jobs</button></div>
-      <p class="muted hint">${laborers(w).length} laborers. Anyone without a job builds, hauls and cleans.</p>${concernCards(w)}${this.peopleFilter ? '<button type="button" class="ghost" data-act="tab" data-arg="colonists">Show everyone</button>' : ''}<div class="rows">${rows}</div>
-      <h3 id="food-rules">Food rules</h3><p class="muted hint">Turn a food off to keep it in storage for a charter or a feast. Nobody will touch it.</p>
+      <p class="muted hint">⚒ ${laborers(w).length} laborers · builds, hauls, cleans</p><div class="filters">${selectHtml('colonist-filter', 'Show colonists', this.colonistFilter, [['all','Everyone'],['ill','Ill'],['hungry','Hungry'],['unhoused','No bed'],['sulking','Sulking'],['free','No job']])}${selectHtml('colonist-sort', 'Sort colonists', this.colonistSort, [['mood','Lowest mood'],['name','Name']])}</div>${concernCards(w)}${this.peopleFilter ? '<button type="button" class="ghost" data-act="tab" data-arg="colonists">Show everyone</button>' : ''}<div class="rows">${rows || '<p class="empty">No matching colonists.</p>'}</div>
+      <details data-key="food-rules"><summary id="food-rules">Food rules · ${w.forbidden.length} reserved</summary><p class="muted hint">Reserved food stays available for charters and feasts.</p>
       <div class="foodrules">${FOODS.map(f => {
         const on = !w.forbidden.includes(f);
         return `<button type="button" class="rule${on ? ' on' : ''}" data-act="food" data-arg="${f}" aria-pressed="${on}">${icon(f)}${RESOURCES.find(r => r.id === f)!.name}<small>${on ? '✓ Eat' : '◇ Reserved'} · ${Math.floor(w.res[f])}</small></button>`;
-      }).join('')}</div>`;
+      }).join('')}</div></details>`;
   }
 
   private colonistDetail(w: World, id: number) {
@@ -497,59 +519,60 @@ export class UI {
     const rivals = others.filter(x => x.v < -25).sort((a, b) => a.v - b.v).slice(0, 3);
     const partner = colonistById(w, c.partner);
     const rel = [
-      partner ? `<span class="rel love">Partner: ${esc(first(partner))}</span>` : '',
-      ...friends.map(x => `<span class="rel friend">Likes ${esc(first(x.o))}</span>`),
-      ...rivals.map(x => `<span class="rel rival">Can’t stand ${esc(first(x.o))}</span>`),
+      partner ? `<button type="button" class="rel love" data-act="colonist" data-arg="${partner.id}">♥ ${esc(first(partner))} →</button>` : '',
+      ...friends.map(x => `<button type="button" class="rel friend" data-act="colonist" data-arg="${x.o.id}">♥ ${esc(first(x.o))} →</button>`),
+      ...rivals.map(x => `<button type="button" class="rel rival" data-act="colonist" data-arg="${x.o.id}">× ${esc(first(x.o))} →</button>`),
     ].join('') || '<span class="muted">No strong feelings about anyone yet.</span>';
     const job = buildingByUid(w, c.job);
     const jobs = built(w).filter(b => BUILDING_BY_ID[b.def].slots > 0).map(b => {
       const def = BUILDING_BY_ID[b.def];
       const n = workersAt(w, b.uid).length, full = n >= def.slots && c.job !== b.uid;
       const fit = def.job === c.likes ? ' likes' : def.job === c.dislikes ? ' dislikes' : '';
-      return `<button type="button" class="job${c.job === b.uid ? ' on' : ''}${fit}" data-act="assign" data-arg="${c.id}:${b.uid}" ${full ? 'disabled' : ''}><span class="jn">${icon(def.id)}${esc(def.name)}</span><small>${n}/${def.slots}${fit === ' likes' ? ' · loves this' : fit === ' dislikes' ? ' · hates this' : ''}</small></button>`;
+      return `<button type="button" class="job${c.job === b.uid ? ' on' : ''}${fit}" data-act="assign" data-arg="${c.id}:${b.uid}" ${full ? 'disabled' : ''}><span class="jn">${icon(def.id)}${esc(def.name)}</span><small>${def.job ? `${SKILL_NAMES[def.job]} ${Math.floor(c.skills[def.job])} · ` : ''}${n}/${def.slots}${fit === ' likes' ? ' · loves this' : fit === ' dislikes' ? ' · hates this' : ''}</small></button>`;
     }).join('');
+    const illness = c.illness ? `<section class="urgent"><b>✚ ${esc(c.illness.name)} · ${Math.round(c.illness.severity)}/100</b>${meter(c.illness.severity, 'Illness severity')}<div class="actions"><button type="button" class="ghost" data-act="need" data-arg="health">${esc(buildingDestination(w, 'clinic', true).label)} →</button></div><small>At 100, leaves for treatment.</small></section>` : '';
+    const worst = [...c.thoughts].filter(t => t.value < 0 && !t.label.startsWith('The frontier')).sort((a,b) => a.value - b.value)[0];
     return `<div class="detail">
-      <div class="d-head"><button type="button" class="ghost back" data-act="back">All colonists</button></div>
-      <div class="who-big"><span class="dot big" style="background:${hex(c.shirt)}"></span><div><h2>${esc(c.name)}</h2><p>${esc(activityText(w, c))} · joined day ${c.joinedDay}</p></div>
-        <div class="mood-big ${moodClass(c.mood, c.sulking)}"><b>${Math.round(c.mood)}</b><small>heading to ${Math.round(c.moodTarget)}</small></div></div>
-      ${c.sulking ? '<p class="warnline">Sulking. Won’t work until mood climbs above 32.</p>' : c.mood < 15 ? '<p class="warnline">Thinking about leaving the colony.</p>' : ''}
-      <div class="traits">${traits}</div>
-      ${c.illness ? `<p class="warnline">${esc(c.illness.name)} · severity ${Math.round(c.illness.severity)} of 100. ${built(w).some(b => b.def === 'clinic') ? 'A clinic with a doctor speeds recovery.' : 'Build a clinic and assign a doctor to speed recovery.'} At 100 they leave for a city physician.</p>` : ''}
-      <p class="prefs">Loves <b>${JOB_NAMES[c.likes]}</b> · hates <b>${JOB_NAMES[c.dislikes]}</b>${tasteLine(c)} · hunger ${Math.round(c.hunger)} · fun ${Math.round(c.fun)}</p>
-      <h3>Skills</h3><div class="skills">${skillKinds(c).map(k => `<div class="skill${k === c.likes ? ' fav' : ''}"><span>${SKILL_NAMES[k]}</span><i><b style="width:${c.skills[k] * 10}%"></b></i><em>${Math.floor(c.skills[k])}</em></div>`).join('')}</div>
-      <h3>Comfort <span class="muted">· ${Math.round(comfortOf(w, c) * 100)}%, how well their needs are met</span></h3>${comfortRows(w, c)}
-      <h3>Why they feel this way</h3>${moodLedger(c)}<ul class="thoughts">${thoughts}</ul>
-      <h3>Relationships</h3><div class="rels">${rel}</div>
-      <h3>Job ${job ? '' : '<span class="muted">· none</span>'}</h3>
-      <div class="jobs">${jobs}<button type="button" class="job${c.job == null ? ' on' : ''}" data-act="assign" data-arg="${c.id}:none">Laborer<small>builds, hauls and cleans</small></button></div>
+      <div class="d-head"><button type="button" class="ghost back" data-act="back">← Colonists</button></div>
+      <div class="who-big"><span class="dot big" style="background:${hex(c.shirt)}"></span><div><h2>${esc(c.name)}</h2><p>${esc(activityText(w, c))}</p></div>
+        <div class="mood-big ${moodClass(c.mood, c.sulking)}"><b>${moodDirection(c)} ${Math.round(c.mood)}</b><small>→ ${Math.round(c.moodTarget)}</small></div></div>
+      ${c.sulking ? '<p class="warnline">☁ Sulking · works again above mood 32</p>' : c.mood < 15 ? '<p class="warnline">⚠ May leave</p>' : ''}${illness}
+      ${worst ? `<p class="warnline">${esc(worst.label)} <b>−${Math.abs(Math.round(worst.value))}</b></p>` : ''}
+      <div class="actions">${job ? `<button type="button" class="ghost" data-act="building" data-arg="${job.uid}">${icon(job.def)} ${esc(BUILDING_BY_ID[job.def].name)} →</button>` : ''}${c.bed != null ? `<button type="button" class="ghost" data-act="building" data-arg="${c.bed}">⌂ Home →</button>` : '<button type="button" class="ghost" data-act="need" data-arg="shelter">⌂ Find a bed →</button>'}<button type="button" class="ghost" data-act="jobs">⚒ Change job ↓</button></div>
+      <h3>Needs · ${Math.round(comfortOf(w, c) * 100)}%</h3>${comfortRows(w, c)}
+      <details data-key="person-jobs"><summary id="person-jobs">⚒ Job · ${job ? esc(BUILDING_BY_ID[job.def].name) : 'Laborer'}</summary><p class="muted">${laborers(w).length} laborers free · assigning one slows hauling and building.</p><div class="jobs">${jobs}<button type="button" class="job${c.job == null ? ' on' : ''}" data-act="assign" data-arg="${c.id}:none">Laborer<small>Build · haul · clean</small></button></div></details>
+      <details data-key="thoughts"><summary>Mood breakdown</summary>${moodLedger(c)}<ul class="thoughts">${thoughts}</ul></details>
+      <details data-key="skills"><summary>Skills & preferences</summary><p class="prefs">♥ ${JOB_NAMES[c.likes]} · × ${JOB_NAMES[c.dislikes]}${tasteLine(c)} · hunger ${Math.round(c.hunger)} · fun ${Math.round(c.fun)}</p><div class="skills">${skillKinds(c).map(k => `<div class="skill${k === c.likes ? ' fav' : ''}"><span>${SKILL_NAMES[k]}</span><i><b style="width:${c.skills[k] * 10}%"></b></i><em>${Math.floor(c.skills[k])}</em></div>`).join('')}</div></details>
+      <details data-key="traits"><summary>Traits · joined day ${c.joinedDay}</summary><div class="traits">${traits}</div></details>
+      <details data-key="relationships"><summary>Relationships</summary><div class="rels">${rel}</div></details>
     </div>`;
   }
 
   private buildList(w: World) {
-    const short = (cost: Partial<Record<InputKey, number>>) => Object.entries(cost).filter(([r, n]) => stockOf(w, r as InputKey) < (n ?? 0)).map(([r]) => inputName(r as InputKey));
-    const card = (def: typeof BUILDING_BY_ID[string]) => {
-      const miss = short(def.cost);
-      return `<div class="bp has-ico"><span class="bp-ico">${icon(def.id, 'bico')}</span><div><b>${esc(def.name)}</b><small>${esc(def.blurb)}</small><small class="cost">${Object.keys(def.cost).length ? `Needs ${costHtml(def.cost)}` : 'Free'} · ${def.w}×${def.h}${miss.length ? ` · short on ${esc(miss.join(', '))}` : ''}</small></div>
-        <button type="button" class="act" data-act="build" data-arg="${def.id}">Place</button></div>`;
-    };
-    const defs = w.owned.map(id => BUILDING_BY_ID[id]);
-    const owned = defs.filter(d => !d.decor).map(card).join('');
-    const decor = defs.filter(d => d.decor).map(card).join('');
-    // buildings still behind research, so the player can see what each study is for
-    const locked = researchLeft(w).flatMap(r => r.unlocks.filter(id => !w.owned.includes(id)).map(id => `<div class="bp has-ico locked"><span class="bp-ico">${icon(id, 'bico')}</span><div><b>${esc(BUILDING_BY_ID[id].name)}</b><small>${esc(BUILDING_BY_ID[id].blurb)}</small><small class="cost">${desks(w).length ? `Research ${esc(r.name)} to build it` : `Build a research desk, then study ${esc(r.name)}`}${w.research?.current === r.id ? ' · being studied now' : ''}</small></div></div>`)).join('');
-    const planned = w.paths.filter(p => p === 1).length, laid = w.paths.filter(p => p === 2).length;
-    const queue = sites(w).map(b => this.siteRow(w, b)).join('');
-    const done = built(w).filter(b => !BUILDING_BY_ID[b.def].decor).map(b => {
-      const def = BUILDING_BY_ID[b.def];
-      const info = buildingStatus(w, b).label;
-      return `<button type="button" class="row compact" data-act="building" data-arg="${b.uid}"><span class="who"><b>${icon(def.id)} ${esc(def.name)}</b></span><small>${info}</small></button>`;
+    const mode = `<div class="segs two">${['manage','catalog'].map(m => `<button type="button" class="seg${this.buildMode === m ? ' on' : ''}" data-act="build-mode" data-arg="${m}" aria-pressed="${this.buildMode === m}">${m === 'manage' ? 'In colony' : 'Build new'}</button>`).join('')}</div>`;
+    if (this.buildMode === 'manage') {
+      const buildings = w.buildings.filter(b => {
+        const d = BUILDING_BY_ID[b.def];
+        if (this.buildingFilter === 'sites') return !b.built;
+        if (!b.built) return this.buildingFilter === 'all';
+        if (this.buildingFilter === 'unstaffed') return d.slots > workersAt(w,b.uid).length;
+        if (this.buildingFilter === 'blocked') return !!blockedReason(w,b);
+        if (this.buildingFilter === 'inefficient') return !!d.needs && b.eff < 0.6;
+        return true;
+      }).sort((a,b) => Number(buildingStatus(w,b).warning) - Number(buildingStatus(w,a).warning));
+      return mode + `<div class="filters">${selectHtml('building-filter','Show buildings',this.buildingFilter,[['all','All buildings'],['unstaffed','Open jobs'],['blocked','Blocked'],['inefficient','Low efficiency'],['sites','Construction']])}</div><div class="rows">${buildings.map(b => {
+        if (!b.built) return this.siteRow(w,b);
+        const status = buildingStatus(w,b);
+        return `<button type="button" class="row compact" data-act="building" data-arg="${b.uid}"><span class="who"><b>${icon(b.def)} ${esc(BUILDING_BY_ID[b.def].name)}</b><small>${b.x}, ${b.y} · ${status.warning ? '⚠ ' : '✓ '}${esc(status.label)}</small></span><span>→</span></button>`;
+      }).join('') || '<p class="empty">No matching buildings.</p>'}</div>`;
+    }
+    const matches = (d: typeof BUILDING_BY_ID[string]) => this.catalogGroup === 'all' || buildingGroup(d.id) === this.catalogGroup;
+    const card = (def: typeof BUILDING_BY_ID[string]) => `<div class="bp has-ico"><span class="bp-ico">${icon(def.id,'bico')}</span><div><b>${esc(def.name)}</b><small class="cost">${costHtml(def.cost,w)} · ${def.w}×${def.h}</small><details data-key="catalog-${def.id}"><summary>Details</summary><p>${esc(def.blurb)}</p></details></div><button type="button" class="act" data-act="build" data-arg="${def.id}">Place</button></div>`;
+    const missing = BUILDINGS.filter(d => !w.owned.includes(d.id) && matches(d)).map(d => {
+      const r = researchLeft(w).find(r => r.unlocks.includes(d.id));
+      return `<button type="button" class="row compact" data-act="catalog-help" data-arg="${d.id}"><span class="who"><b>${icon(d.id)} ${esc(d.name)}</b><small>${r ? `Research ${esc(r.name)}` : 'Blueprint needed'}</small></span><span>→</span></button>`;
     }).join('');
-    return `${queue ? `<h3 class="first">Under construction</h3><div class="rows">${queue}</div>` : ''}
-      <h3 class="${queue ? '' : 'first'}">Buildings</h3><div class="bps">${owned}</div>
-      ${locked ? `<h3>Not yet known</h3><div class="bps">${locked}</div>` : ''}
-      <h3>Paths</h3><div class="bp"><div><b>Lay paths</b><small>People walk 25% faster on paths, and they\u2019re a little prettier than mud. 1 wood per tile, laid by laborers.</small><small class="cost">${laid} laid${planned ? ` · ${planned} planned` : ''}</small></div><button type="button" class="act" data-act="paths">Plan</button></div>
-      <h3>Decorations</h3><div class="bps">${decor}</div>
-      <h3>In the colony</h3><div class="rows">${done}</div>`;
+    return mode + `<div class="filters">${selectHtml('catalog-group','Building purpose',this.catalogGroup,[['all','All purposes'],['food','Food & drinks'],['work','Production'],['comfort','Homes & comfort'],['storage','Storage']])}</div><div class="bps">${w.owned.map(id => BUILDING_BY_ID[id]).filter(matches).map(card).join('')}</div><h3>Paths</h3><div class="bp"><div><b>Paths</b><small>+25% walking · 1 wood/tile</small></div><button type="button" class="act" data-act="paths">Plan</button></div><details data-key="missing-buildings"><summary>Unlocks & missing blueprints</summary><div class="rows">${missing}</div></details>`;
   }
 
   private siteRow(w: World, b: Building) {
@@ -620,8 +643,8 @@ export class UI {
         <h2 class="bh">${icon(def.id, 'hico')}${esc(def.name)}</h2><p class="blurb">${def.stages ? `${esc(def.blurb)}</p><p class="prefs">Stage <b>${(b.stage ?? 0) + 1} of ${def.stages.length}</b>: ${esc(def.stages[b.stage ?? 0].label)}. Then: ${esc(def.stages.slice((b.stage ?? 0) + 1).map(x => x.label.toLowerCase()).join(', ') || 'done')}.` : 'Under construction.'}</p>
         ${def.moodGate ? `<p class="${alive(w).filter(c => c.mood >= def.moodGate!).length ? 'prefs' : 'warnline'}">${alive(w).filter(c => c.mood >= def.moodGate!).length} of ${alive(w).length} colonists are at mood ${def.moodGate}+ and willing to work on it${laborers(w).filter(c => c.mood >= def.moodGate!).length ? `, ${laborers(w).filter(c => c.mood >= def.moodGate!).length} of them laborers` : ', but none of them are laborers'}.</p>` : ''}
         <h3>Materials delivered</h3><ul class="thoughts">${mats || '<li><span>No materials needed</span></li>'}</ul>
-        <h3>Work</h3><p class="prefs">${Math.round(b.progress * 10) / 10} of ${siteWork(b)} builder-hours. ${builders.length ? `${builders.map(c => esc(first(c))).join(', ')} on it now.` : laborers(w).length ? 'Laborers will get to it.' : 'Nobody is free. Take someone off a job to make them a laborer.'}</p>
-        <button type="button" class="ghost danger" data-act="cancel-site" data-arg="${b.uid}">Cancel and return materials</button></div>`;
+        <h3>Work</h3><p class="prefs">${Math.round(b.progress * 10) / 10} of ${siteWork(b)} builder-hours. ${builders.length ? `${builders.map(c => personLink(c)).join(', ')} on it now.` : laborers(w).length ? 'Laborers will get to it.' : 'Nobody is free. Take someone off a job to make them a laborer.'}</p>
+        <button type="button" class="ghost" data-act="review-jobs">Review laborers →</button><button type="button" class="ghost danger" data-act="cancel-site" data-arg="${b.uid}">Cancel and return materials</button></div>`;
     }
     const workers = workersAt(w, b.uid);
     const recs = recipesOf(b), cur = currentRecipe(w, b);
@@ -637,15 +660,15 @@ export class UI {
     const inboxLine = recs.some(r => Object.keys(r.inputs).length) ? `<p class="prefs">Ingredients on hand: ${Object.entries(b.inbox).filter(([, n]) => (n ?? 0) >= 0.5).map(([r, n]) => goodHtml(r as ResourceId, Math.floor(n ?? 0))).join(', ') || '<b>none</b>. Laborers carry them in from storage.'}</p>` : '';
     const blocked = blockedReason(w, b);
     const remedyLine = def.patients ? `<p class="prefs">Remedies in storage: ${w.res.tonic >= 0.5 || w.res.poultice >= 0.5 ? `${Math.floor(w.res.tonic)} tonic, ${Math.floor(w.res.poultice)} poultice. The doctor uses one up every few hours of treatment: a poultice heals faster and halves botched treatments, a tonic heals faster still and never botches.` : '<b>none</b>. An apothecary makes poultices and tonics that help the doctor.'}</p>` : '';
-    const patients = def.patients ? `<p class="prefs">Patients: ${patientsAt(w, b).map(c => `${esc(first(c))} (${esc(c.illness!.name.toLowerCase())}, ${Math.round(c.illness!.severity)})`).join(', ') || 'none right now. The doctor helps out as a laborer until someone is ill.'}</p>` : '';
+    const patients = def.patients ? `<p class="prefs">Patients: ${patientsAt(w, b).map(c => `${personLink(c)} · ${esc(c.illness!.name.toLowerCase())} ${Math.round(c.illness!.severity)}`).join(', ') || 'none right now. The doctor helps out as a laborer until someone is ill.'}</p>` : '';
     let staff = (blocked ? `<p class="warnline">${esc(blocked)}</p>` : '') + effLine + inboxLine + patients + remedyLine + (b.def === 'desk' ? this.deskLines(w) : '');
     if (def.slots) {
-      const cur = workers.map(c => `<div class="row static"><span class="dot" style="background:${hex(c.shirt)}"></span><span class="who"><b>${esc(c.name)}</b><small>${def.job ? `${SKILL_NAMES[def.job]} ${Math.floor(c.skills[def.job])} · ` : ''}${def.job === c.likes ? 'loves this job' : def.job === c.dislikes ? 'hates this job' : 'doesn’t mind it'}</small></span><button type="button" class="ghost" data-act="assign" data-arg="${c.id}:none">Remove</button></div>`).join('');
+      const cur = workers.map(c => `<div class="row static"><span class="dot" style="background:${hex(c.shirt)}"></span><span class="who">${personLink(c)}<small>${def.job ? `${SKILL_NAMES[def.job]} ${Math.floor(c.skills[def.job])} · ` : ''}${def.job === c.likes ? 'loves this job' : def.job === c.dislikes ? 'hates this job' : 'doesn’t mind it'}</small></span><button type="button" class="ghost" data-act="assign" data-arg="${c.id}:none">Remove</button></div>`).join('');
       const cand = workers.length < def.slots ? alive(w).filter(c => c.job !== b.uid).sort((a, z) => (def.job ? z.skills[def.job] - a.skills[def.job] : 0) + (Number(z.likes === def.job) - Number(a.likes === def.job)) * 2).map(c => {
         const cw = buildingByUid(w, c.job);
-        return `<button type="button" class="row" data-act="assign" data-arg="${c.id}:${b.uid}"><span class="dot" style="background:${hex(c.shirt)}"></span><span class="who"><b>${esc(c.name)}</b><small>${def.job ? `${SKILL_NAMES[def.job]} ${Math.floor(c.skills[def.job])} · ` : ''}${cw ? `now at ${esc(BUILDING_BY_ID[cw.def].name)}` : 'laborer'}${c.likes === def.job ? ' · loves this' : c.dislikes === def.job ? ' · hates this' : ''}</small></span><span class="add">Assign</span></button>`;
+        return `<div class="row static"><span class="dot" style="background:${hex(c.shirt)}"></span><span class="who">${personLink(c)}<small>${def.job ? `${SKILL_NAMES[def.job]} ${Math.floor(c.skills[def.job])} · ` : ''}${cw ? `now at ${esc(BUILDING_BY_ID[cw.def].name)}` : 'laborer'}${c.likes === def.job ? ' · loves this' : c.dislikes === def.job ? ' · hates this' : ''}</small></span><button type="button" class="ghost" data-act="assign" data-arg="${c.id}:${b.uid}" ${bedridden(c) || c.sulking || c.errand != null ? 'disabled' : ''}>${bedridden(c) ? 'Ill' : c.sulking ? 'Sulking' : c.errand != null ? 'On errand' : 'Assign'}</button></div>`;
       }).join('') : '';
-      staff += `<h3>Workers ${workers.length}/${def.slots}</h3><div class="rows">${cur || '<p class="muted">Nobody works here.</p>'}</div>${cand ? `<h3>Assign someone</h3><div class="rows">${cand}</div>` : ''}`;
+      staff += `<h3>Workers ${workers.length}/${def.slots}</h3><div class="rows">${cur || '<p class="muted">Nobody works here.</p>'}</div>${cand ? `<h3>Assign someone</h3><p class="muted">⚒ ${laborers(w).length} laborers free · keep hands for hauling.</p><div class="rows">${cand}</div>` : ''}`;
     } else if (def.storage) {
       const held = Object.values(b.stock).reduce((n, x) => n + (x ?? 0), 0);
       const contents = RESOURCES.filter(r => (b.stock[r.id] ?? 0) >= 0.5).map(r => goodHtml(r.id, Math.floor(b.stock[r.id] ?? 0))).join(', ');
@@ -659,7 +682,7 @@ export class UI {
         <div class="segs">${preset('all', 'Everything')}${preset('food', 'Food only')}${preset('goods', 'Goods only')}</div>
         <div class="rules">${items}</div>`;
     } else if (def.beds) {
-      const sleepers = alive(w).filter(c => c.bed === b.uid).map(c => esc(first(c))).join(', ');
+      const sleepers = alive(w).filter(c => c.bed === b.uid).map(c => personLink(c)).join(', ');
       staff += `<p class="prefs">Sleeps ${def.beds}${sleepers ? `: ${sleepers}` : ''}.</p>`;
     }
     return `<div class="detail"><div class="d-head"><button type="button" class="ghost back" data-act="back">All buildings</button></div>
