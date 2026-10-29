@@ -3,6 +3,8 @@ import { Application, Container, Graphics, Text } from 'pixi.js';
 import { BUILDING_BY_ID, ResourceId } from '../sim/content';
 import { modelFor, MODELS, caravanModel } from './models';
 import { drawModel } from './draw';
+import { appearance } from '../characters/appearance';
+import type { Colonist } from '../sim/world';
 import { buildingStatus } from '../ui/status';
 import { seasonOf } from '../sim/seasons';
 import type { Season } from '../sim/scenario';
@@ -412,14 +414,28 @@ export class IsoView {
     }
   }
 
-  private colonistSprite(shirt: number, skin: number) {
+  private colonistSprite(c: Colonist) {
+    const { shirt, skin } = c, look = appearance(c);
     const root = new Container();
     const body = new Graphics();
     body.ellipse(0, 0, 7, 3.5).fill({ color: 0x000000, alpha: 0.25 });
     body.roundRect(-5, -16, 10, 14, 4).fill(shirt);
     body.rect(-4, -4, 3, 4).fill(0x3a3028); body.rect(1, -4, 3, 4).fill(0x3a3028);
-    body.circle(0, -21, 5.5).fill(skin);
-    body.ellipse(0, -25, 5.5, 2.6).fill(shade(shirt, 0.6));
+    if (look.hair === 2 || look.hair === 6) body.roundRect(-6,-25,12,13,3).fill(look.hairColor);
+    if (look.hair === 4) body.circle(3,-28,3.4).fill(look.hairColor);
+    body.ellipse(0,-21,look.face === 3 ? 6 : 5.5,look.face === 2 ? 6.5 : 5.5).fill(skin);
+    if (look.hair === 3) {
+      for (const [x,y] of [[-5,-24],[-3,-27],[1,-27],[5,-25]]) body.circle(x,y,3).fill(look.hairColor);
+    } else if (look.hair === 7) body.poly([-5,-25,-2,-27,0,-32,3,-28,5,-24]).fill(look.hairColor);
+    else body.ellipse(0,-25,5.5,look.hair === 5 ? 1.8 : 2.8).fill(look.hairColor);
+    if (look.hair === 0) body.poly([-5,-25,2,-26,-4,-20]).fill(look.hairColor);
+    if (look.hair === 6) body.roundRect(4,-23,3,11,1.5).fill(look.hairColor);
+    if (look.beard) body.poly([-4,-19,4,-19,2,-15,-1,-14,-4,-17]).fill(look.hairColor);
+    if (look.glasses) {
+      body.circle(-2.5,-21,2).stroke({width:0.8,color:0xd7bc7c});body.circle(2.5,-21,2).stroke({width:0.8,color:0xd7bc7c});
+      body.moveTo(-0.5,-21).lineTo(0.5,-21).stroke({width:0.8,color:0xd7bc7c});
+    }
+    if (look.accessory === 0) body.poly([-4,-15,3,-15,1,-10]).fill(0xb36347);
     const carry = new Graphics();
     const pip = new Graphics();
     const zz = new Text({ text: 'z', style: { fontFamily: 'Figtree, system-ui, sans-serif', fontSize: 11, fill: 0xdfe8ff, fontWeight: '700' } });
@@ -467,7 +483,7 @@ export class IsoView {
     for (const c of alive(w)) {
       live.add(c.id);
       let s = this.cGfx.get(c.id);
-      if (!s) { s = this.colonistSprite(c.shirt, c.skin); this.cGfx.set(c.id, s); this.objects.addChild(s.root); }
+      if (!s) { s = this.colonistSprite(c); this.cGfx.set(c.id, s); this.objects.addChild(s.root); }
       const x = c.px + (c.x - c.px) * alpha, y = c.py + (c.y - c.py) * alpha;
       const { sx, sy } = iso(x, y);
       const moving = Math.hypot(c.x - c.px, c.y - c.py) > 0.01;

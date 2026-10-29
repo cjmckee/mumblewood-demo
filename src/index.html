@@ -401,6 +401,15 @@ button.strain { min-height:44px; }
   .who-big { gap:8px; }
   .mood-big b { font-size:24px; }
 }
+/* Stable character identity; status remains separate. */
+.avatar { display:inline-block; width:40px; height:40px; flex:none; vertical-align:middle; border-radius:10px; border:1px solid #6b7058; background:#303a30; }
+.avatar-large { width:64px; height:64px; border-radius:14px; }
+.avatar-mini { width:25px; height:25px; border-radius:6px; margin-right:5px; }
+.recruit .opt > b .avatar { width:48px; height:48px; }
+.text-link:has(.avatar), button.rel { display:inline-flex; align-items:center; gap:4px; }
+.row .who > .text-link { min-width:0; }
+.row .who .text-link { overflow-wrap:anywhere; }
+@media (max-width:360px) { .avatar-large { width:48px; height:48px; } .who-big h2 { font-size:24px; } }
 </style>
 <div id="game">
   <div id="stage"></div>

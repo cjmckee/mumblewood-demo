@@ -14,6 +14,7 @@ import { assess } from '../sim/advisor';
 import { economy, Account } from '../sim/economy';
 import type { IsoView, Picked } from '../render/iso';
 import { icon } from './icons';
+import { avatar } from './avatars';
 import { buildingStatus, saleQuantity } from './status';
 import { replaceMarkup } from './dom';
 import { Destination, buildingDestination, fixDestination, producers } from './navigation';
@@ -63,7 +64,7 @@ const skillKinds = (c: Colonist) => (Object.keys(c.skills) as JobKind[]);
 function topSkills(c: Colonist) { return [...skillKinds(c)].sort((a, b) => c.skills[b] - c.skills[a]).slice(0, 2).map(k => `${SKILL_NAMES[k].toLowerCase()} ${Math.floor(c.skills[k])}`).join(', '); }
 function moodClass(m: number, sulking: boolean) { return sulking ? 'sulk' : m >= 60 ? 'good' : m >= 35 ? 'warn' : 'bad'; }
 
-const personLink = (c: Colonist) => `<button type="button" class="text-link" data-act="colonist" data-arg="${c.id}">${esc(c.name)} →</button>`;
+const personLink = (c: Colonist, portrait = true) => `<button type="button" class="text-link" data-act="colonist" data-arg="${c.id}">${portrait ? avatar(c,'avatar-mini') : ''}${esc(c.name)} →</button>`;
 const moodDirection = (c: Colonist) => c.moodTarget > c.mood + 1 ? '↑' : c.moodTarget < c.mood - 1 ? '↓' : '↔';
 const meter = (value: number, label: string) => `<meter min="0" max="100" value="${Math.max(0,Math.min(100,value))}" aria-label="${esc(label)}">${Math.round(value)}%</meter>`;
 function selectHtml(action: string, label: string, value: string, options: string[][]) { return `<label class="select-label"><span class="sr-only">${label}</span><select data-act="${action}" aria-label="${label}">${options.map(([v,l]) => `<option value="${v}" ${v === value ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`; }
@@ -125,6 +126,7 @@ export class UI {
   private confirmNew = false;
   private strainOpen = false;
   private help: string | null = null;
+  private dialogKey = '';
   private colonistFilter = 'all';
   private colonistSort = 'mood';
   private buildingFilter = 'all';
@@ -260,7 +262,7 @@ export class UI {
         else { const def = defs.find(d => w.owned.includes(d)) ?? defs[0]; if (def) this.navigate(buildingDestination(w, def)); }
         break;
       }
-      case 'resource': this.panel('ledger'); this.resource = arg as InputKey | 'gold'; this.anchor = `account-${arg}`; break;
+      case 'resource': this.panel('ledger'); this.resource = arg as InputKey | 'gold'; this.anchor = `${arg === 'gold' || !RESOURCES.some(r => r.id === arg) ? 'account' : 'resource'}-${arg}`; break;
       case 'storage-help': this.navigate(buildingDestination(w, 'storehouse', true)); break;
       case 'food-rules': this.navigate({ kind: 'food', label: 'Food rules' }); break;
       case 'need': { const def = arg === 'table' ? 'dining' : NEED_BUILD[arg as NeedKey]; this.navigate(buildingDestination(w, def, !['shelter', 'surroundings', 'warmth'].includes(arg))); break; }
@@ -485,7 +487,7 @@ export class UI {
     const rows = ok.sort((a, b) => rank(b) - rank(a)).map(c => {
       const job = buildingByUid(w, c.job);
       const note = [e.skill ? `${SKILL_NAMES[e.skill]} ${Math.floor(c.skills[e.skill])}` : '', job ? `leaves the ${BUILDING_BY_ID[job.def].name.toLowerCase()}` : 'laborer', e.def === 'feud' && c.traits.includes('sunny') ? 'sunny, twice as persuasive' : '', e.pair?.includes(c.id) ? 'part of the feud' : ''].filter(Boolean).join(' · ');
-      return `<button type="button" class="row${c.id === e.assignee ? ' chosen' : ''}" data-act="errand-send" data-arg="${e.id}:${c.id}"><span class="dot" style="background:${hex(c.shirt)}"></span><span class="who"><b>${esc(c.name)}</b><small>${esc(note)}</small></span><span class="add">${c.id === e.assignee ? 'Sent' : 'Send'}</span></button>`;
+      return `<button type="button" class="row${c.id === e.assignee ? ' chosen' : ''}" data-act="errand-send" data-arg="${e.id}:${c.id}">${avatar(c)}<span class="who"><b>${esc(c.name)}</b><small>${esc(note)}</small></span><span class="add">${c.id === e.assignee ? 'Sent' : 'Send'}</span></button>`;
     }).join('');
     const def = { hours: e.hours, left: Math.max(0, Math.ceil(e.deadline - w.hour)) };
     return `<div class="card-wrap event"><p class="eyebrow">Someone needs to go</p><h2>${esc(e.title)}</h2><p class="lede">${esc(e.text)}</p>
@@ -516,8 +518,8 @@ export class UI {
     if (force || html !== this.lastSheet) {
       const scroller = el.querySelector('.sheet-body');
       if (this.sheetKey) this.sheetScroll.set(this.sheetKey, scroller?.scrollTop ?? 0);
-      const key = this.detail ? `${this.detail.kind}:${this.detail.id}` : `${this.tab}:${JSON.stringify(this.destination)}:${this.peopleFilter?.join(',') ?? ''}:${this.colonistFilter}:${this.colonistSort}:${this.buildMode}:${this.buildingFilter}:${this.catalogGroup}`;
-      replaceMarkup(el, html); this.lastSheet = html; this.sheetKey = key;
+      const key = this.detail ? `${this.detail.kind}:${this.detail.id}` : `${this.tab}:${JSON.stringify(this.destination)}:${this.peopleFilter?.join(',') ?? ''}:${this.colonistFilter}:${this.colonistSort}:${this.buildMode}:${this.buildingFilter}:${this.catalogGroup}:${this.resource}`;
+      replaceMarkup(el, html, key === this.sheetKey); this.lastSheet = html; this.sheetKey = key;
       const s2 = el.querySelector('.sheet-body'); if (s2) s2.scrollTop = this.sheetScroll.get(key) ?? 0;
     }
     el.classList.toggle('open', this.open);
@@ -528,7 +530,7 @@ export class UI {
     const rows = alive(w).filter(c => (!this.peopleFilter || this.peopleFilter.includes(c.id)) && matchesPerson(c, this.colonistFilter)).sort((a, b) => this.colonistSort === 'name' ? a.name.localeCompare(b.name) : a.mood - b.mood || a.id - b.id).map(c => {
       const partner = colonistById(w, c.partner);
       return `<button type="button" class="row" data-act="colonist" data-arg="${c.id}">
-        <span class="dot" style="background:${hex(c.shirt)}"></span>
+        ${avatar(c)}
         <span class="who"><b>${esc(c.name)}</b><small>${esc(personState(c) || activityText(w, c))}${partner ? ` · with ${esc(first(partner))}` : ''}</small></span>
         <span class="mood ${moodClass(c.mood, c.sulking)}"><b>${moodDirection(c)} ${Math.round(c.mood)}</b><i style="width:${c.mood}%"></i></span>
       </button>`;
@@ -553,9 +555,9 @@ export class UI {
     const rivals = others.filter(x => x.v < -25).sort((a, b) => a.v - b.v).slice(0, 3);
     const partner = colonistById(w, c.partner);
     const rel = [
-      partner ? `<button type="button" class="rel love" data-act="colonist" data-arg="${partner.id}">♥ ${esc(first(partner))} →</button>` : '',
-      ...friends.map(x => `<button type="button" class="rel friend" data-act="colonist" data-arg="${x.o.id}">♥ ${esc(first(x.o))} →</button>`),
-      ...rivals.map(x => `<button type="button" class="rel rival" data-act="colonist" data-arg="${x.o.id}">× ${esc(first(x.o))} →</button>`),
+      partner ? `<button type="button" class="rel love" data-act="colonist" data-arg="${partner.id}">${avatar(partner,'avatar-mini')} ♥ ${esc(first(partner))} →</button>` : '',
+      ...friends.map(x => `<button type="button" class="rel friend" data-act="colonist" data-arg="${x.o.id}">${avatar(x.o,'avatar-mini')} ♥ ${esc(first(x.o))} →</button>`),
+      ...rivals.map(x => `<button type="button" class="rel rival" data-act="colonist" data-arg="${x.o.id}">${avatar(x.o,'avatar-mini')} × ${esc(first(x.o))} →</button>`),
     ].join('') || '<span class="muted">No strong feelings about anyone yet.</span>';
     const job = buildingByUid(w, c.job);
     const jobs = built(w).filter(b => BUILDING_BY_ID[b.def].slots > 0).map(b => {
@@ -568,7 +570,7 @@ export class UI {
     const worst = [...c.thoughts].filter(t => t.value < 0 && !t.label.startsWith('The frontier')).sort((a,b) => a.value - b.value)[0];
     return `<div class="detail">
       <div class="d-head"><button type="button" class="ghost back" data-act="back">← Colonists</button></div>
-      <div class="who-big"><span class="dot big" style="background:${hex(c.shirt)}"></span><div><h2>${esc(c.name)}</h2><p>${esc(activityText(w, c))}</p></div>
+      <div class="who-big">${avatar(c,'avatar-large')}<div><h2>${esc(c.name)}</h2><p>${esc(activityText(w, c))}</p></div>
         <div class="mood-big ${moodClass(c.mood, c.sulking)}"><b>${moodDirection(c)} ${Math.round(c.mood)}</b><small>→ ${Math.round(c.moodTarget)}</small></div></div>
       ${c.sulking ? '<p class="warnline">☁ Sulking · works again above mood 32</p>' : c.mood < 15 ? '<p class="warnline">⚠ May leave</p>' : ''}${illness}
       ${worst ? `<p class="warnline">${logText(w,worst.label)} <b>−${Math.abs(Math.round(worst.value))}</b></p>` : ''}
@@ -695,10 +697,10 @@ export class UI {
     const patients = def.patients ? `<p class="prefs">Patients: ${patientsAt(w, b).map(c => `${personLink(c)} · ${esc(c.illness!.name.toLowerCase())} ${Math.round(c.illness!.severity)}`).join(', ') || 'none right now. The doctor helps out as a laborer until someone is ill.'}</p>` : '';
     let staff = (blocked ? `<p class="warnline">${esc(blocked)}</p>` : '') + effLine + inboxLine + patients + remedyLine + (b.def === 'desk' ? this.deskLines(w) : '');
     if (def.slots) {
-      const cur = workers.map(c => `<div class="row static"><span class="dot" style="background:${hex(c.shirt)}"></span><span class="who">${personLink(c)}<small>${def.job ? `${SKILL_NAMES[def.job]} ${Math.floor(c.skills[def.job])} · ` : ''}${def.job === c.likes ? 'loves this job' : def.job === c.dislikes ? 'hates this job' : 'doesn’t mind it'}</small></span><button type="button" class="ghost" data-act="assign" data-arg="${c.id}:none">Remove</button></div>`).join('');
+      const cur = workers.map(c => `<div class="row static">${avatar(c)}<span class="who">${personLink(c,false)}<small>${def.job ? `${SKILL_NAMES[def.job]} ${Math.floor(c.skills[def.job])} · ` : ''}${def.job === c.likes ? 'loves this job' : def.job === c.dislikes ? 'hates this job' : 'doesn’t mind it'}</small></span><button type="button" class="ghost" data-act="assign" data-arg="${c.id}:none">Remove</button></div>`).join('');
       const cand = workers.length < def.slots ? alive(w).filter(c => c.job !== b.uid).sort((a, z) => (def.job ? z.skills[def.job] - a.skills[def.job] : 0) + (Number(z.likes === def.job) - Number(a.likes === def.job)) * 2).map(c => {
         const cw = buildingByUid(w, c.job);
-        return `<div class="row static"><span class="dot" style="background:${hex(c.shirt)}"></span><span class="who">${personLink(c)}<small>${def.job ? `${SKILL_NAMES[def.job]} ${Math.floor(c.skills[def.job])} · ` : ''}${cw ? `now at ${esc(BUILDING_BY_ID[cw.def].name)}` : 'laborer'}${c.likes === def.job ? ' · loves this' : c.dislikes === def.job ? ' · hates this' : ''}</small></span><button type="button" class="ghost" data-act="assign" data-arg="${c.id}:${b.uid}" ${bedridden(c) || c.sulking || c.errand != null ? 'disabled' : ''}>${bedridden(c) ? 'Ill' : c.sulking ? 'Sulking' : c.errand != null ? 'On errand' : 'Assign'}</button></div>`;
+        return `<div class="row static">${avatar(c)}<span class="who">${personLink(c,false)}<small>${def.job ? `${SKILL_NAMES[def.job]} ${Math.floor(c.skills[def.job])} · ` : ''}${cw ? `now at ${esc(BUILDING_BY_ID[cw.def].name)}` : 'laborer'}${c.likes === def.job ? ' · loves this' : c.dislikes === def.job ? ' · hates this' : ''}</small></span><button type="button" class="ghost" data-act="assign" data-arg="${c.id}:${b.uid}" ${bedridden(c) || c.sulking || c.errand != null ? 'disabled' : ''}>${bedridden(c) ? 'Ill' : c.sulking ? 'Sulking' : c.errand != null ? 'On errand' : 'Assign'}</button></div>`;
       }).join('') : '';
       staff += `<h3>Workers ${workers.length}/${def.slots}</h3><div class="rows">${cur || '<p class="muted">Nobody works here.</p>'}</div>${cand ? `<h3>Assign someone</h3><p class="muted">⚒ ${laborers(w).length} laborers free · keep hands for hauling.</p><div class="rows">${cand}</div>` : ''}`;
     } else if (def.storage) {
@@ -788,7 +790,7 @@ export class UI {
           'Choose one permanent bonus.',
           d.options.map(id => ({ title: PERK_BY_ID[id].name, icon: 'cornerstone', body: esc(PERK_BY_ID[id].desc), tag: 'Cornerstone' }))); break;
         case 'trade': html = this.tradeCard(w); break;
-        case 'recruit': html = `<div class="card-wrap"><p class="eyebrow">Choose one</p><h2>New settlers</h2><p class="lede">⌂ ${beds(w)} beds · ${alive(w).length} settlers${beds(w) <= alive(w).length ? ' · ⚠ Another bed needed' : ''}</p><div class="opts">${d.options.map((c,i) => `<article class="recruit"><button type="button" class="opt" data-act="resolve" data-arg="${i}" ${(c.fee ?? 0) > w.gold ? 'disabled' : ''}><b><span class="dot" style="background:${hex(c.shirt)}"></span>${esc(c.name)}</b><span>★ ${esc(topSkills(c))}</span><small>♥ ${esc(SKILL_NAMES[c.likes])} · × ${esc(SKILL_NAMES[c.dislikes])} · ${c.fee ? `${c.fee} gold${w.gold < c.fee ? ' · insufficient gold' : ''}` : 'Free'}</small></button><details data-key="recruit-${c.id}"><summary>Traits & tastes</summary>${c.traits.map(t => `<p><b>${esc(TRAIT_BY_ID[t].name)}</b> · ${esc(TRAIT_BY_ID[t].desc)}</p>`).join('')}<p>${tasteLine(c,false)}</p></details></article>`).join('')}</div><button type="button" class="ghost skip" data-act="resolve" data-arg="99">Send all away</button></div>`; break;
+        case 'recruit': html = `<div class="card-wrap"><p class="eyebrow">Choose one</p><h2>New settlers</h2><p class="lede">⌂ ${beds(w)} beds · ${alive(w).length} settlers${beds(w) <= alive(w).length ? ' · ⚠ Another bed needed' : ''}</p><div class="opts">${d.options.map((c,i) => `<article class="recruit"><button type="button" class="opt" data-act="resolve" data-arg="${i}" ${(c.fee ?? 0) > w.gold ? 'disabled' : ''}><b>${avatar(c)}${esc(c.name)}</b><span>★ ${esc(topSkills(c))}</span><small>♥ ${esc(SKILL_NAMES[c.likes])} · × ${esc(SKILL_NAMES[c.dislikes])} · ${c.fee ? `${c.fee} gold${w.gold < c.fee ? ' · insufficient gold' : ''}` : 'Free'}</small></button><details data-key="recruit-${c.id}"><summary>Traits & tastes</summary>${c.traits.map(t => `<p><b>${esc(TRAIT_BY_ID[t].name)}</b> · ${esc(TRAIT_BY_ID[t].desc)}</p>`).join('')}<p>${tasteLine(c,false)}</p></details></article>`).join('')}</div><button type="button" class="ghost skip" data-act="resolve" data-arg="99">Send all away</button></div>`; break;
         case 'errand': { const e = w.errands.find(x => x.id === d.errandId); if (e) html = this.errandPicker(w, e, true); break; }
         case 'event': {
           const ev = EVENTS.find(e => e.id === d.eventId)!;
@@ -802,18 +804,22 @@ export class UI {
     if (!html && this.festivalOpen) html = this.festivalCard(w);
     if (!html && this.strainOpen) html = this.strainCard(w);
     if (!html && this.picking != null) { const e = w.errands.find(x => x.id === this.picking); if (e) html = this.errandPicker(w, e, false); else this.picking = null; }
+    const nextDialogKey = d ? JSON.stringify(d) : this.help ? `help:${this.help}` : this.festivalOpen ? 'festival' : this.strainOpen ? 'strain' : this.picking != null ? `errand:${this.picking}` : this.resumeOpen ? 'resume' : w.status;
+    const changedDialog = nextDialogKey !== this.dialogKey;
     const wasOpen = !el.hidden;
     if (html && !wasOpen) {
       const a = document.activeElement as HTMLElement;
       this.returnFocus = a?.dataset.act ? { act: a.dataset.act, arg: a.dataset.arg ?? '' } : null;
     }
-    if (force || html !== this.lastModal) { replaceMarkup(el, html); this.lastModal = html; }
+    if (force || html !== this.lastModal) { replaceMarkup(el, html, !changedDialog); this.lastModal = html; }
     el.hidden = !html;
     el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); el.tabIndex = -1;
     const heading = el.querySelector('h2');
     if (heading) { heading.id = 'dialog-title'; el.setAttribute('aria-labelledby', 'dialog-title'); }
     for (const id of ['hud', 'sheet', 'placebar', 'stage']) (this.root.querySelector(`#${id}`) as HTMLElement).inert = !!html;
     if (html && (!wasOpen || !el.contains(document.activeElement))) (el.querySelector<HTMLElement>('button:not(:disabled), summary') ?? el).focus({ preventScroll: true });
+    if (html && (!wasOpen || changedDialog)) el.scrollTop = 0;
+    this.dialogKey = nextDialogKey;
     if (!html && wasOpen) {
       const t = this.returnFocus;
       const target = t && [...this.root.querySelectorAll<HTMLElement>('[data-act]')].find(e => e.dataset.act === t.act && (e.dataset.arg ?? '') === t.arg);
@@ -965,7 +971,7 @@ function ledger(w: World, selected: InputKey | 'gold' | null = null) {
   const e = economy(w);
   const selectedGood = selected && selected !== 'gold' ? RESOURCES.find(r => r.id === selected) : null;
   const categoryDetail = selected && selected !== 'gold' && !selectedGood ? `<div id="account-${selected}" class="acct"><h3>${icon(selected)} ${esc(inputName(selected))}</h3><div class="actions">${membersOf(selected).map(r=>`<button type="button" class="ghost" data-act="resource" data-arg="${r}">${goodHtml(r,Math.floor(w.res[r]))} →</button>`).join('')}</div></div>` : '';
-  const resourceDetail = selectedGood ? `<div id="account-${selectedGood.id}" class="acct"><h3>${icon(selectedGood.id)} ${selectedGood.name} · ${Math.floor(w.res[selectedGood.id])}</h3><div class="actions"><button type="button" class="ghost" data-act="source" data-arg="${selectedGood.id}">Sources →</button><button type="button" class="ghost" data-act="workplaces" data-arg="stockpile,storehouse">Storage →</button>${FOODS.includes(selectedGood.id) ? '<button type="button" class="ghost" data-act="food-rules">Food rules →</button>' : ''}</div></div>` : '';
+  const resourceDetail = selectedGood ? `<div id="resource-${selectedGood.id}" class="acct"><h3>${icon(selectedGood.id)} ${selectedGood.name} · ${Math.floor(w.res[selectedGood.id])}</h3><div class="actions"><button type="button" class="ghost" data-act="source" data-arg="${selectedGood.id}">Sources →</button><button type="button" class="ghost" data-act="workplaces" data-arg="stockpile,storehouse">Storage →</button>${FOODS.includes(selectedGood.id) ? '<button type="button" class="ghost" data-act="food-rules">Food rules →</button>' : ''}</div></div>` : '';
   const show = (a: Account) => a.lines.length > 0 || a.stock >= 1;
   const accounts: [Account, InputKey][] = [[e.food, 'meal'], [e.wood, 'wood'], ...([[e.planks, 'planks'], [e.drinks, 'drink'], [e.remedies, 'remedy']] as [Account, InputKey][]).filter(([a]) => show(a))];
   const jobs = e.jobs.sort((a, z) => (z.slots - z.workers) - (a.slots - a.workers)).map(j => {
@@ -986,7 +992,7 @@ function ledger(w: World, selected: InputKey | 'gold' | null = null) {
   return `<p class="muted hint">The last 24 hours, scaled to a full day.</p>
     <div id="account-gold" class="acct gold-acct"><div class="acct-head"><b>${icon('gold')}Gold</b><span>${Math.floor(w.gold)} · this run: ${goldLine} · spent ${Math.round(goldOut)}</span></div></div>
     ${w.perks.length ? `<details data-key="cornerstones"><summary>Cornerstones · ${w.perks.length}</summary><ul class="stones">${w.perks.map(p => `<li>${icon('cornerstone')}<span><b>${esc(PERK_BY_ID[p].name)}</b><small>${esc(PERK_BY_ID[p].desc)}</small></span></li>`).join('')}</ul></details>` : ''}
-    <details data-key="gold-help"><summary>Gold sources</summary><p>Seasonal rent · Crown stipends · events · caravan sales</p></details>${categoryDetail}${resourceDetail}${accounts.map(([a, k]) => accountCard(a, k, selected === k || !!selected && membersOf(k).includes(selected as ResourceId))).join('')}
+    <details data-key="gold-help"><summary>Gold sources</summary><p>Seasonal rent · Crown stipends · events · caravan sales</p></details>${categoryDetail}${resourceDetail}${accounts.map(([a, k]) => accountCard(a, k, selected === k || !!selected && (membersOf(k).includes(selected as ResourceId) || k === 'meal' && FOODS.includes(selected as ResourceId)))).join('')}
     <h3>Jobs</h3><div class="joblist">${jobs || '<p class="muted">No workplaces yet.</p>'}</div>
     <h3>Laborers <span class="muted">· ${e.laborers.length}</span></h3>
     <div class="lt-bar">${segs}</div>
