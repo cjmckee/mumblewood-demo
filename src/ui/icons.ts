@@ -37,6 +37,11 @@ function fish(c: string, belly: string, stripes = false) {
 
 /** each good's drawing, centred in a 24×24 box with its ground shadow at y≈21 */
 const ART: Record<ResourceId, () => string> = {
+  flax: () => ln('M7 20 9 5M12 20 13 3M16 20 17 6', '#7d9a50', 2) + ci(9, 5, 2, '#9cace0') + ci(13, 3, 2, '#9cace0'),
+  cloth: () => pa('M4 6h16v14H4z', '#b9c3df') + ln('M7 6v14M11 6v14M15 6v14M4 10h16M4 15h16', '#8698bd', 1),
+  hides: () => pa('M8 3l4 2 4-2 2 5-2 4 3 5-5 4-2-2-2 2-5-4 3-5-2-4z', '#9b7551'),
+  leather: () => pa('M5 4h13l2 15-14 2-3-12z', '#885737') + ln('M7 6l9 1 1 10-9 1z', '#b58b62', 1),
+  coats: () => pa('M8 3l4 2 4-2 5 6-4 3-1-2 2 11H6L8 10l-1 2-4-3z', '#736391') + ln('M12 5v16M8 15h2M14 15h2', '#d6c6a7', 1),
   // ---- materials ----
   wood: () => shadow(9) + log(2.5, 12.2, 17, 6.6) + log(5.5, 6.4, 14, 6.2),
   planks: () => {
@@ -345,6 +350,11 @@ const BUILDING_ART: Record<string, () => string> = {
       + ln('M6 15.6c4 1 8 1 12 0M6.8 12.4c3.4.8 7 .8 10.4 0M8.6 9.4c2.2.6 4.6.6 6.8 0', sh(s, 0.7), 0.9)
       + pa('M10.4 18.6v-1.4c0-1.2 3.2-1.2 3.2 0v1.4z', '#3a2a1c') + bee(18.4, 6.4) + bee(20.6, 9.6) + bee(4.6, 6);
   },
+  flaxfield: () => ART.flax(),
+  weaver: () => ART.cloth(),
+  trapper: () => ART.hides(),
+  tanner: () => ART.leather(),
+  tailor: () => ART.coats(),
   field: () => {
     const straw = '#d8c060', shirt = '#6a7aa8';
     return shadow(7) + re(11.2, 6, 1.6, 15, '#5a4030') + re(3.6, 8.8, 16.8, 1.4, '#5a4030')

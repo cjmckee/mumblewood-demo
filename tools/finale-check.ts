@@ -150,8 +150,8 @@ const untilHour = (w: World, h: number, each: () => void = () => {}) => { for (l
   ok(activeNeeds(w, 2).includes('variety') && activeNeeds(w, 2).includes('surroundings'), 'a village wants variety and pleasant surroundings');
   // winter: warmth counts at every standing, and a home with no wood is cold
   const wi = createWorld(93); clear(wi); debugGrow(wi, 4);
-  wi.hour = (16 - 1) * 24 + 12; // day 16, the first day of winter
-  ok(seasonOf(wi).season === 'winter' && seasonOf(wi).winter === 1, `day 16 is the first winter (${seasonOf(wi).season} ${seasonOf(wi).winter})`);
+  wi.hour = (21 - 1) * 24 + 12; // summer 1 start: day 21 is the first day of winter
+  ok(seasonOf(wi).season === 'winter' && seasonOf(wi).winter === 1, `day 21 is the first winter (${seasonOf(wi).season} ${seasonOf(wi).winter})`);
   ok(activeNeeds(wi, 0).includes('warmth'), 'a camp in winter needs warmth');
   // decisions pause the clock, so clear them as the hours go
   const hours = (n: number) => { for (let i = 0; i < n; i++) { clear(wi); runHours(wi, 1); } clear(wi); };

@@ -393,6 +393,18 @@ export const MODELS: Record<string, (c: ModelCtx) => Model> = {
     ];
   },
   /** rows of barley on dark soil, and a scarecrow keeping watch */
+  flaxfield: c => {
+    const parts: Part[] = [patch(rect(0.08, 0.08, c.W - 0.08, c.H - 0.08), 0x73563c, 0.2)];
+    for (let u = 0.25; u < c.W; u += 0.35) for (let v = 0.25; v < c.H; v += 0.35) {
+      parts.push(box(u, v, u + 0.03, v + 0.03, 0, 7, 0x7c9653));
+      parts.push(box(u - 0.04, v - 0.04, u + 0.07, v + 0.07, 7, 8, 0x9cace0));
+    }
+    return parts;
+  },
+  weaver: c => [...house(c), box(0.1, 0.8, 0.65, 0.95, 0, 18, 0xb9c3df)],
+  tanner: c => [...house(c), ...barrel(0.2, 0.82, 0.16, 13, 0x885737)],
+  trapper: c => [...house(c), box(0.12, 0.8, 0.5, 0.94, 8, 22, 0x9b7551)],
+  tailor: c => [...house(c), box(0.12, 0.82, 0.5, 0.94, 10, 23, 0x736391), box(0.2, 0.84, 0.4, 0.96, 22, 26, 0xd6c6a7)],
   field: c => {
     const soil = 0x5e4630, gold = c.def.roof;
     const parts: Part[] = [patch(rect(0.04, 0.04, 1.96, 1.96), soil, 0.4)];

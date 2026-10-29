@@ -3,6 +3,8 @@
 import { ResourceId } from './content';
 
 export interface Start {
+  /** Automatic clinic admissions by mortality risk and severity; legacy comparison can disable it. */
+  clinicTriage?: boolean;
   colonists: number;
   res: Partial<Record<ResourceId, number>>;
   /** buildings placed and built around the hearth at the start, in order */
@@ -103,6 +105,8 @@ export interface SeasonRules {
   harsh: number;
   /** days between recruit offers (0 = none that season) */
   recruitEvery: Record<Season, number>;
+  /** Optional experiment: preserve early arrivals, then space offers by population. */
+  recruitTaper?: { from: number; later: number; multiplier: number; laterMultiplier: number };
   /** chance a night spent cold gives someone a winter chill (warm settlers get a small share of it) */
   chill: { cold: number; warm: number };
   /** what a sensible colony puts by for winter (the bot's and the foreman's target): it starts `from` days before
@@ -111,11 +115,16 @@ export interface SeasonRules {
   prep: { from: number; full: number; share: number; fuel: number };
   /** from this year of the run on, every comfort need asks a little more (0 = never) */
   stricterFromYear: number;
+  /** Legacy spring food requirement, retained for controlled comparisons; normally disabled. */
+  springFresh: boolean;
+  /** Experimental relative comfort weight for the existing summer drink need; default 1. */
+  summerDrinkWeight?: number;
   /** mood when winter comes, for having held a harvest festival in autumn or not */
   harvestHome: { held: number; missed: number; hours: number };
 }
 
 export const START: Start = {
+  clinicTriage: true,
   colonists: 3,
   res: { wood: 40, berries: 30, stew: 6 },
   place: ['stockpile', 'leanto', 'leanto', 'woodcutter', 'forager'],
@@ -133,12 +142,14 @@ export const START: Start = {
   outbreakFrom: { day: 6, pop: 5 },
   seasons: {
     days: 10,
-    start: { season: 'summer', day: 6 },
+    start: { season: 'summer', day: 1 },
     work: { spring: [6, 18], summer: [5, 18], autumn: [6, 18], winter: [7, 18] },
     build: { spring: 0.85, winter: 0.85 },
     offPath: { spring: 0.85, winter: 0.85 },
     spoil: { summer: 1.25, autumn: 1.5, winter: 0.4 },
     yield: {
+      flaxfield: { winter: 0, autumn: 1.5 },
+      trapper: { winter: 0.75 },
       forager: { spring: 0.8, summer: 1.25, winter: 0.75 },
       herbgarden: { spring: 0.8, winter: 0.5 },
       orchard: { spring: 0.4, autumn: 1.5, winter: 0 },
@@ -157,6 +168,7 @@ export const START: Start = {
     chill: { cold: 0.04, warm: 0.005 },
     prep: { from: 10, full: 3, share: 0.3, fuel: 0.6 },
     stricterFromYear: 0,
+    springFresh: false,
     harvestHome: { held: 4, missed: -4, hours: 96 },
   },
   story: { base: 3, perDay: 0.15, perPop: 0.4, majorGap: 6, majorChance: 0.6, moderateChance: 0.55, majorFrom: 12, repeatDays: 10 },
