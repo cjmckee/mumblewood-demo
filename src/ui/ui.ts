@@ -252,6 +252,7 @@ export class UI {
       case 'fix': { const [id, index] = arg.split(':'); const fix = assess(w).find(c => c.id === id)?.fixes[Number(index)]; if (fix) this.navigate(fixDestination(w, fix)); break; }
       case 'issue-people': { const people = assess(w).find(c => c.id === arg)?.personIds ?? []; this.panel('colonists'); this.peopleFilter = people; break; }
       case 'workplaces': this.navigate({ kind: 'workplaces', defs: arg.split(','), label: 'Workplaces' }); break;
+      case 'construction': this.panel('build'); this.buildMode = 'manage'; this.buildingFilter = 'sites'; break;
       case 'catalog-help': this.navigate(buildingDestination(w, arg)); break;
       case 'source': {
         const defs = producers(arg as InputKey), existing = w.buildings.filter(b => defs.includes(b.def));
@@ -460,7 +461,7 @@ export class UI {
 
   /** passing troubles from events (a drought, a blight, a frozen well), with how long they have left */
   private effectChips(w: World) {
-    return (w.effects ?? []).filter(e => w.hour < e.until).map(e => `<span class="errand effect"><b>${esc(e.label)}</b><small>${Math.round((1 - e.mult) * 100)}% slower · ${Math.ceil((e.until - w.hour) / 24)}d left</small></span>`).join('');
+    return (w.effects ?? []).filter(e => w.hour < e.until).map(e => `<button type="button" class="errand effect" data-act="workplaces" data-arg="${e.defs.join(',')}"><b>⚠ ${esc(e.label)}</b><small>−${Math.round((1 - e.mult) * 100)}% output · ${Math.ceil((e.until - w.hour) / 24)}d →</small></button>`).join('');
   }
 
   /** the caravan at the hearth once nobody is on the way: a way to send someone (back) over */
@@ -946,9 +947,17 @@ function concernCards(w: World) {
 
 // ---------- Ledger ----------
 const num = (n: number) => `${n > 0.05 ? '+' : n < -0.05 ? '−' : ''}${Math.abs(n) >= 10 ? Math.round(Math.abs(n)) : Math.abs(n).toFixed(1).replace(/\.0$/, '')}`;
+function flowLink(label: string, key: InputKey) {
+  const maker: Record<string,string> = { Chopped:'woodcutter', Hearth:'hearth', Sawmill:'sawmill', 'Brick kiln':'kiln', Carpenter:'carpenter', 'Pie oven':'pieoven', Bathhouse:'bathhouse', 'Drunk at the tavern':'tavern' };
+  const produced = RESOURCES.find(r => label.toLowerCase() === `${r.name.toLowerCase()} made`);
+  const resource: InputKey = label === 'Gathered' ? 'rawFood' : label === 'Meals cooked' || label === 'Raw food into cooking' ? 'meal' : label === 'Food into drinks' ? 'drink' : label === 'Treatments' ? 'remedy' : produced?.id ?? key;
+  const act = maker[label] || label === 'Heating homes' ? 'workplaces' : label === 'Construction' ? 'construction' : label === 'Eaten' ? 'tab' : label === 'Spoiled' ? 'storage-help' : label === 'Events' ? 'tab' : 'source';
+  const arg = maker[label] ?? (label === 'Heating homes' ? 'leanto,cottage' : label === 'Eaten' ? 'colonists' : label === 'Events' ? 'log' : resource);
+  return `<button type="button" class="text-link" data-act="${act}" data-arg="${arg}">${esc(label)} →</button>`;
+}
 function accountCard(a: Account, ico: InputKey, selected: boolean) {
   const max = Math.max(1, ...a.lines.map(l => Math.abs(l.perDay)));
-  const rows = a.lines.map(l => `<div class="lg-row ${l.perDay >= 0 ? 'lg-good' : 'lg-bad'}"><span>${esc(l.label)}</span><i><b style="width:${Math.abs(l.perDay) / max * 100}%"></b></i><em>${num(l.perDay)}</em></div>`).join('');
+  const rows = a.lines.map(l => `<div class="lg-row ${l.perDay >= 0 ? 'lg-good' : 'lg-bad'}">${flowLink(l.label,ico)}<i><b style="width:${Math.abs(l.perDay) / max * 100}%"></b></i><em>${num(l.perDay)}</em></div>`).join('');
   const verdict = a.daysLeft != null ? `<b class="neg">${num(a.net)} a day</b> · ${Math.floor(a.stock)} on hand lasts about ${a.daysLeft < 1 ? 'less than a day' : `${Math.floor(a.daysLeft)} day${Math.floor(a.daysLeft) === 1 ? '' : 's'}`}` : `<b class="${a.net >= 0 ? 'pos' : ''}">${num(a.net)} a day</b> · ${Math.floor(a.stock)} on hand`;
   return `<details class="acct" data-key="account-${ico}" ${selected ? 'open' : ''}><summary id="account-${ico}" class="acct-head"><h4>${icon(ico)}${a.name}</h4><span>${verdict}</span></summary><div class="actions"><button type="button" class="ghost" data-act="source" data-arg="${ico}">Sources →</button>${ico === 'meal' ? '<button type="button" class="ghost" data-act="food-rules">Food rules →</button>' : ''}</div>${rows || '<p class="muted">Nothing moved in the last day.</p>'}</details>`;
 }
@@ -976,7 +985,7 @@ function ledger(w: World, selected: InputKey | 'gold' | null = null) {
   const goldLine = ['rent', 'stipend', 'sell'].map(k => `${k === 'sell' ? 'selling' : k} ${goldIn(k)}`).join(' · ');
   return `<p class="muted hint">The last 24 hours, scaled to a full day.</p>
     <div id="account-gold" class="acct gold-acct"><div class="acct-head"><b>${icon('gold')}Gold</b><span>${Math.floor(w.gold)} · this run: ${goldLine} · spent ${Math.round(goldOut)}</span></div></div>
-    ${w.perks.length ? `<h3>Cornerstones</h3><ul class="stones">${w.perks.map(p => `<li>${icon('cornerstone')}<span><b>${esc(PERK_BY_ID[p].name)}</b><small>${esc(PERK_BY_ID[p].desc)}</small></span></li>`).join('')}</ul>` : ''}
+    ${w.perks.length ? `<details data-key="cornerstones"><summary>Cornerstones · ${w.perks.length}</summary><ul class="stones">${w.perks.map(p => `<li>${icon('cornerstone')}<span><b>${esc(PERK_BY_ID[p].name)}</b><small>${esc(PERK_BY_ID[p].desc)}</small></span></li>`).join('')}</ul></details>` : ''}
     <details data-key="gold-help"><summary>Gold sources</summary><p>Seasonal rent · Crown stipends · events · caravan sales</p></details>${categoryDetail}${resourceDetail}${accounts.map(([a, k]) => accountCard(a, k, selected === k || !!selected && membersOf(k).includes(selected as ResourceId))).join('')}
     <h3>Jobs</h3><div class="joblist">${jobs || '<p class="muted">No workplaces yet.</p>'}</div>
     <h3>Laborers <span class="muted">· ${e.laborers.length}</span></h3>
