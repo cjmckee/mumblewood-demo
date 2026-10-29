@@ -13,8 +13,9 @@ export function buildingDestination(w: World, def: string, staff = false): Desti
   const defs = defsOf(def);
   const places = built(w).filter(b => defs.includes(b.def));
   const name = BUILDING_BY_ID[defs[0]]?.name ?? def;
-  if (staff && places.length === 1) return { kind: 'building', id: places[0].uid, label: `Open ${name}` };
-  if (staff && places.length) return { kind: 'workplaces', defs, label: `Open ${name}` };
+  const verb = BUILDING_BY_ID[defs[0]]?.slots ? 'Staff' : 'Open';
+  if (staff && places.length === 1) return { kind: 'building', id: places[0].uid, label: `${verb} ${name}` };
+  if (staff && places.length) return { kind: 'workplaces', defs, label: `${verb} ${name}` };
   const site = sites(w).find(b => defs.includes(b.def));
   if (site) return { kind: 'building', id: site.uid, label: `View construction` };
   const available = defs.find(id => w.owned.includes(id));

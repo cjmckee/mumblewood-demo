@@ -1,5 +1,7 @@
 # Mumblewood UI polish audit
 
+Implementation follow-up: [completed changes and validation](UI_IMPLEMENTATION.md). This document records the original findings.
+
 Audited October 29, 2026 against commit `6c59830`. This is an audit and proposed implementation order; gameplay and UI code have not been changed.
 
 ## Assessment

@@ -4,7 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "node build.mjs",
+    "check": "tsc --noEmit",
+    "test": "node --import tsx tools/ui-state-check.ts",
+    "test:ui": "node tools/ui-check.mjs"
   },
   "keywords": [],
   "author": "",

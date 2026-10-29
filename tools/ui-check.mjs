@@ -36,6 +36,7 @@ for (const [device,width,height] of [['desktop',1440,900],['phone',390,844],['sm
     const speed=document.querySelector('[data-act=speed][data-arg="0"]');speed.focus();g.world.res.wood++;g.ui.render(true);
     return document.querySelector('#hud .res').scrollLeft===before && document.activeElement?.dataset.act==='speed';
   }),`${device}: HUD updates preserve horizontal scroll and keyboard focus`);
+  await p.evaluate(()=>{window.__game.ui.open=false;window.__game.ui.render(true)});
   await p.locator('[data-act=strain-open]').click();
   check(await state(()=>document.querySelector('#modal').getAttribute('role')==='dialog'&&document.querySelector('#hud').inert&&window.__game.ui.blocksSimulation),`${device}: modal has semantics, background isolation and pauses play`);
   await p.locator('#modal button').last().focus(); await p.keyboard.press('Tab');
@@ -66,6 +67,15 @@ for (const [device,width,height] of [['desktop',1440,900],['phone',390,844],['sm
   await p.screenshot({path:`${out}/${device}-recruit.png`});
   const overflow = await state(()=>[...document.querySelectorAll('#sheet *,#modal *')].filter(e=>e.getClientRects().length&&e.getBoundingClientRect().right>innerWidth+1).map(e=>e.className));
   check(!overflow.length,`${device}: panels have no horizontal overflow (${overflow.join(',')})`);
+  check(await state(()=>{
+    const g=window.__game;
+    const signatures=[...document.querySelectorAll('#modal .avatar')].map(e=>e.dataset.portrait);
+    const c=g.world.decisions[0].options[0];const signature=signatures[0];
+    g.world.decisions=[];g.ui.open=true;g.ui.detail={kind:'colonist',id:c.id};g.ui.render(true);
+    const same=document.querySelector('.avatar-large')?.dataset.portrait===signature;
+    g.world.decisions=[{kind:'recruit',options:g.world.colonists.slice(0,3)}];g.ui.render(true);
+    return same && new Set(signatures).size===signatures.length;
+  }),`${device}: portraits are distinct and consistent between recruitment and detail`);
   // A decision cannot be dismissed with Escape.
   await p.keyboard.press('Escape');
   check(await state(()=>!document.querySelector('#modal').hidden),`${device}: mandatory choice remains open`);
@@ -75,6 +85,9 @@ for (const [device,width,height] of [['desktop',1440,900],['phone',390,844],['sm
   const saleText=await sale.first().innerText();
   await sale.first().click();
   check(saleText.includes('Sell 1')&&await state(()=>window.__game.world.res.wood===1),`${device}: sale label and actual capped quantity agree`);
+  await p.evaluate(()=>{const g=window.__game;g.world.decisions=[];g.ui.render(true);g.ui.startPlacing('woodcutter');document.activeElement?.blur()});
+  await p.keyboard.press('Escape');
+  check(await state(()=>!window.__game.view.placing),`${device}: Escape cancels placement even without a focused control`);
   check(!errors.length,`${device}: no page errors (${errors.join(';')})`);
   await ctx.close();
 }

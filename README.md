@@ -64,3 +64,20 @@ Every push to `main` builds the game and publishes `dist/site/index.html` to Git
 
 The UI changes the simulation only through `apply(world, command)`, so a future save file or replay
 can simply be a seed plus a list of commands.
+
+## UI verification
+
+```sh
+npm test                      # state, destinations, capped trades, stable portraits
+npm run check                 # TypeScript
+npm run build
+python3 -m http.server 8765 --bind 127.0.0.1 --directory dist
+# In another terminal:
+npm run test:ui               # desktop, phone and small-phone browser regressions
+CHROMIUM_PATH=/usr/bin/chromium UI_URL=http://127.0.0.1:8765/site/index.html node tools/save-check.mjs
+```
+
+Browser checks use Playwright available in the development environment. Set
+`CHROMIUM_PATH` or `UI_URL` when using a different browser executable or local server.
+Screenshots are written under `dist/ui-check`. See `docs/UI_IMPLEMENTATION.md` for
+the polish commits and review screenshots.

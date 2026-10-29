@@ -24,7 +24,7 @@ const esc = (s: string) => s.replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt
 const first = (c: Colonist) => c.name.split(' ')[0];
 const sum = (o: Partial<Record<string, number>>) => Object.values(o).reduce<number>((n, v) => n + (v ?? 0), 0);
 const hex = (n: number) => `#${n.toString(16).padStart(6, '0')}`;
-const goodLabel = (k: InputKey) => (k === 'fine' ? 'planks or bricks' : inputName(k));
+const goodLabel = (k: InputKey) => inputName(k);
 /** a good or a category with its icon, optionally with a count in front: "[icon]3 planks"; returns HTML */
 const goodHtml = (k: InputKey, n?: number | string, label = goodLabel(k)) => `<span class="gd">${icon(k)}${n != null ? `${n} ` : ''}${esc(label)}</span>`;
 const costHtml = (cost: Partial<Record<InputKey, number>>, w?: World) =>
@@ -165,7 +165,7 @@ export class UI {
   constructor(private root: HTMLElement, private getWorld: () => World, private send: (c: Command) => string | null, private view: IsoView) {
     root.addEventListener('click', e => { if (!(e.target instanceof HTMLSelectElement)) this.click(e); });
     root.addEventListener('change', e => this.click(e));
-    root.addEventListener('keydown', e => this.keyboard(e));
+    window.addEventListener('keydown', e => this.keyboard(e));
     view.onPick = p => this.picked(p);
     view.onPathTap = (x, y) => {
       const w = this.getWorld();
@@ -194,7 +194,8 @@ export class UI {
   private issueList(w: World) {
     const concerns = assess(w);
     return `<div class="list-head"><b>${concerns.length} concerns</b></div><div class="concerns">${concerns.map(c => {
-      const actions = c.fixes.map((f, i) => `<button type="button" class="ghost" data-act="fix" data-arg="${c.id}:${i}">${esc(fixDestination(w, f).label)} →</button>`).join('');
+      const seen = new Set<string>();
+      const actions = c.fixes.map((f,i) => ({f,i,d:fixDestination(w,f)})).filter(({d})=>{const key=JSON.stringify(d);if(seen.has(key))return false;seen.add(key);return true;}).map(({f,i}) => `<button type="button" class="ghost" data-act="fix" data-arg="${c.id}:${i}">${esc(fixDestination(w, f).label)} →</button>`).join('');
       return `<article class="concern"><b>⚠ ${esc(c.title)}</b><div class="actions">${actions || `<button type="button" class="ghost" data-act="${c.id === 'festival' || c.id === 'moodcharter' ? 'festival-open' : 'tab'}" data-arg="ledger">${c.id === 'festival' || c.id === 'moodcharter' ? 'Plan festival' : 'Open ledger'} →</button>`}${c.personIds.length ? `<button type="button" class="ghost" data-act="issue-people" data-arg="${c.id}">${c.personIds.length} people →</button>` : ''}</div><details data-key="issue-${c.id}"><summary>Details</summary><p>${esc(c.evidence)}</p><p>${esc(c.idea)}</p></details></article>`;
     }).join('') || '<p class="empty">✓ No concerns</p>'}</div>`;
   }
@@ -206,7 +207,7 @@ export class UI {
     if (d.kind === 'catalog') {
       const def = BUILDING_BY_ID[d.def];
       const available = w.owned.includes(d.def);
-      return `<button type="button" class="ghost" data-act="tab" data-arg="build">All buildings</button><h2>${icon(d.def)} ${esc(def.name)}</h2><p>${esc(def.blurb)}</p><p>${costHtml(def.cost)}</p>${available ? `<button type="button" class="act" data-act="build" data-arg="${d.def}">Place</button>` : `<p class="warnline">Blueprint needed · watch drafts and caravans.</p>`}`;
+      return `<button type="button" class="ghost" data-act="tab" data-arg="build">All buildings</button><h2>${icon(d.def)} ${esc(def.name)}</h2><p>${esc(def.blurb)}</p><p>${costHtml(def.cost,w)}</p>${available ? `<button type="button" class="act" data-act="build" data-arg="${d.def}">Place</button>` : `<p class="warnline">Blueprint needed · watch drafts and caravans.</p>`}`;
     }
     return '';
   }
@@ -326,6 +327,7 @@ export class UI {
 
   render(force = false) {
     const w = this.getWorld();
+    this.root.classList.toggle('panel-open', this.open);
     this.renderHud(w, force);
     this.renderSheet(w, force);
     this.renderModal(w, force);
@@ -404,7 +406,7 @@ export class UI {
     } else {
       title = 'Recipes'; body = '<p class="lede">Workers choose the best enabled recipe with available ingredients. ★★★ is fastest. Switch a recipe off to reserve its ingredients.</p>';
     }
-    return `<div class="card-wrap"><p class="eyebrow">Game paused</p><h2>${title}</h2>${body}<button type="button" class="ghost skip" data-act="help-close">Close</button></div>`;
+    return `<div class="card-wrap"><p class="eyebrow">Help</p><h2>${title}</h2>${body}<button type="button" class="ghost skip" data-act="help-close">Close</button></div>`;
   }
 
   private strainCard(w: World) {
@@ -567,6 +569,8 @@ export class UI {
       return `<button type="button" class="job${c.job === b.uid ? ' on' : ''}${fit}" data-act="assign" data-arg="${c.id}:${b.uid}" ${full ? 'disabled' : ''}><span class="jn">${icon(def.id)}${esc(def.name)}</span><small>${def.job ? `${SKILL_NAMES[def.job]} ${Math.floor(c.skills[def.job])} · ` : ''}${n}/${def.slots}${fit === ' likes' ? ' · loves this' : fit === ' dislikes' ? ' · hates this' : ''}</small></button>`;
     }).join('');
     const illness = c.illness ? `<section class="urgent"><b>✚ ${esc(c.illness.name)} · ${Math.round(c.illness.severity)}/100</b>${meter(c.illness.severity, 'Illness severity')}<div class="actions"><button type="button" class="ghost" data-act="need" data-arg="health">${esc(buildingDestination(w, 'clinic', true).label)} →</button></div><small>At 100, leaves for treatment.</small></section>` : '';
+    const personalFixes = assess(w).filter(issue=>issue.personIds.includes(c.id) && issue.fixes.length).slice(0,2);
+    const remedies = personalFixes.map(issue=>`<button type="button" class="ghost" data-act="fix" data-arg="${issue.id}:0">${esc(fixDestination(w,issue.fixes[0]).label)} →</button>`).join('');
     const worst = [...c.thoughts].filter(t => t.value < 0 && !t.label.startsWith('The frontier')).sort((a,b) => a.value - b.value)[0];
     return `<div class="detail">
       <div class="d-head"><button type="button" class="ghost back" data-act="back">← Colonists</button></div>
@@ -574,7 +578,7 @@ export class UI {
         <div class="mood-big ${moodClass(c.mood, c.sulking)}"><b>${moodDirection(c)} ${Math.round(c.mood)}</b><small>→ ${Math.round(c.moodTarget)}</small></div></div>
       ${c.sulking ? '<p class="warnline">☁ Sulking · works again above mood 32</p>' : c.mood < 15 ? '<p class="warnline">⚠ May leave</p>' : ''}${illness}
       ${worst ? `<p class="warnline">${logText(w,worst.label)} <b>−${Math.abs(Math.round(worst.value))}</b></p>` : ''}
-      <div class="actions">${job ? `<button type="button" class="ghost" data-act="building" data-arg="${job.uid}">${icon(job.def)} ${esc(BUILDING_BY_ID[job.def].name)} →</button>` : ''}${c.bed != null ? `<button type="button" class="ghost" data-act="building" data-arg="${c.bed}">⌂ Home →</button>` : '<button type="button" class="ghost" data-act="need" data-arg="shelter">⌂ Find a bed →</button>'}<button type="button" class="ghost" data-act="jobs">⚒ Change job ↓</button></div>
+      <div class="actions">${remedies}${job ? `<button type="button" class="ghost" data-act="building" data-arg="${job.uid}">${icon(job.def)} ${esc(BUILDING_BY_ID[job.def].name)} →</button>` : ''}${c.bed != null ? `<button type="button" class="ghost" data-act="building" data-arg="${c.bed}">⌂ Home →</button>` : '<button type="button" class="ghost" data-act="need" data-arg="shelter">⌂ Find a bed →</button>'}<button type="button" class="ghost" data-act="jobs">⚒ Change job ↓</button></div>
       <h3>Needs · ${Math.round(comfortOf(w, c) * 100)}%</h3>${comfortRows(w, c)}
       <details data-key="person-jobs"><summary id="person-jobs">⚒ Job · ${job ? esc(BUILDING_BY_ID[job.def].name) : 'Laborer'}</summary><p class="muted">${laborers(w).length} laborers free · assigning one slows hauling and building.</p><div class="jobs">${jobs}<button type="button" class="job${c.job == null ? ' on' : ''}" data-act="assign" data-arg="${c.id}:none">Laborer<small>Build · haul · clean</small></button></div></details>
       <details data-key="thoughts"><summary>Mood breakdown</summary>${moodLedger(c)}<ul class="thoughts">${thoughts}</ul></details>
@@ -646,7 +650,7 @@ export class UI {
       const planned = w.paths.filter(p => p === 1).length;
       const html = `<div class="pb-text"><b>Planning paths</b><small>Tap to add/remove · 1 wood/tile. ${planned} planned${planned > w.res.wood ? `, but only ${Math.floor(w.res.wood)} wood` : ''}.</small></div>
         <button type="button" class="act" data-act="paths-done">Done</button>`;
-      if (el.innerHTML !== html) el.innerHTML = html;
+      if (el.innerHTML !== html) replaceMarkup(el, html);
       el.classList.add('two'); el.hidden = false; return;
     }
     el.classList.remove('two');
@@ -660,7 +664,7 @@ export class UI {
       <button type="button" class="ghost rotate" data-act="place-rotate" aria-label="Rotate" title="Rotate (R)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12a7 7 0 1 1-2.05-4.95" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M18.6 3.6v4.6H14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>Rotate</button>
       <button type="button" class="ghost" data-act="place-cancel">Cancel</button>
       <button type="button" class="act" data-act="place-confirm" ${chk.ok ? '' : 'disabled'}>Place here</button>`;
-    if (el.innerHTML !== html) el.innerHTML = html;
+    if (el.innerHTML !== html) replaceMarkup(el, html);
     el.hidden = false;
   }
 
@@ -804,6 +808,7 @@ export class UI {
     if (!html && this.festivalOpen) html = this.festivalCard(w);
     if (!html && this.strainOpen) html = this.strainCard(w);
     if (!html && this.picking != null) { const e = w.errands.find(x => x.id === this.picking); if (e) html = this.errandPicker(w, e, false); else this.picking = null; }
+    if (html && w.status === 'playing') html = html.replace('<p class="eyebrow">', '<p class="eyebrow">Ⅱ Paused · ');
     const nextDialogKey = d ? JSON.stringify(d) : this.help ? `help:${this.help}` : this.festivalOpen ? 'festival' : this.strainOpen ? 'strain' : this.picking != null ? `errand:${this.picking}` : this.resumeOpen ? 'resume' : w.status;
     const changedDialog = nextDialogKey !== this.dialogKey;
     const wasOpen = !el.hidden;
