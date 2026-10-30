@@ -7,7 +7,7 @@ import {
   recipesOf, recipeOn, currentRecipe, orderedRecipes, INPUT_CAPACITY, OUTBOX_CAP, siteOk, rerollCost, REROLL_STEP, stockOf, recipeReach, charterHelpers, charterDef,
   costOf, researchLeft, researchStillNeeds, desks, feastCheck, festivalPreview, mealTotal, drinkTotal,
   comfortParts, comfortOf, colonyComfort, comfortGaps, strainPerDay, footprint, activeNeeds, standingOf, STANDINGS, NeedKey, winterFuelPerDay,
-  sellPrice, charterCounted, charterRequirements, basicsDone, researchOpen, edibleTotal,
+  sellPrice, charterCounted, charterRequirements, basicsDone, researchOpen, edibleTotal, storePrio,
 } from '../sim/world';
 import { charterPreview, metricRoutes, Route } from '../sim/charterplan';
 import { START } from '../sim/scenario';
@@ -108,7 +108,9 @@ function reachText(w: World, r: Recipe, forDraft: boolean) {
 /** filled stars in the accent colour, missing ones dimmed, so ★★ reads as two of three */
 const starHtml = (n: Stars) => `<span class="stars" aria-label="${n} of 3 stars">${'★'.repeat(n)}<s>${'★'.repeat(3 - n)}</s></span>`;
 
-/** small stroke glyphs for the charter chips and route tiles */
+/** the panel's tabs: a glyph over a short name; counts sit on the glyph */
+const TAB_NAME: Record<Tab, string> = { colonists: 'Colonists', build: 'Build', ledger: 'Ledger', issues: 'Issues', log: 'Log' };
+/** small stroke glyphs for the charter chips, route tiles and tabs */
 const svg = (d: string, w = 2) => `<svg class="glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 const PERSON_GLYPH = svg('<circle cx="12" cy="8" r="3.6"/><path d="M5 20c0-3.9 3.1-6.5 7-6.5s7 2.6 7 6.5"/>');
 const MOOD_GLYPH = svg('<circle cx="12" cy="12" r="8.5"/><path d="M8.5 14.2c1 1.3 2.2 1.9 3.5 1.9s2.5-.6 3.5-1.9"/><path d="M9 9.6h.01M15 9.6h.01" stroke-width="2.6"/>');
@@ -118,6 +120,19 @@ const ROUTE_GLYPH: Record<'build' | 'study' | 'draft' | 'never', string> = {
   draft: svg('<rect x="6" y="3" width="12" height="18" rx="2"/>', 3),
   never: svg('<path d="M6 6l12 12M18 6 6 18"/>', 3.4),
 };
+const TAB_GLYPH: Record<Tab, string> = {
+  colonists: svg('<circle cx="9" cy="8" r="3.2"/><path d="M3 19c0-3.4 2.7-5.6 6-5.6s6 2.2 6 5.6"/><path d="M16 5.2a3 3 0 0 1 0 5.6M18 13.8c1.8.7 3 2.4 3 5.2"/>'),
+  build: svg('<path d="M14 4l6 6M11 7l6 6M13 11l-9 9"/>'),
+  ledger: svg('<path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M9 9h6M9 13h6"/>'),
+  issues: svg('<path d="M12 3 22 20H2z"/><path d="M12 10v4M12 17h.01"/>'),
+  log: svg('<path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/>'),
+};
+const LABORER_GLYPH = svg('<path d="M4 8l8-4 8 4v9l-8 4-8-4z"/><path d="M4 8l8 4 8-4M12 12v9"/>');
+const HEARTH_GLYPH = svg('<path d="M12 3c1 3 5 5 5 10a5 5 0 0 1-10 0c0-2 1-3.5 2-4.5.3 1.5 1 2.5 2 3 0-3-1-5 1-8.5z"/><path d="M5 21h14"/>');
+const MOOD_TREND: Record<string, string> = { '↑': '▲', '↓': '▼', '↔': '' };
+const CATALOG_GROUP = { food: 'Food & drinks', work: 'Production', comfort: 'Homes & comfort', storage: 'Storage' };
+const SPOIL_GLYPH = svg('<circle cx="12" cy="13" r="7.5"/><path d="M12 9v4l2.5 2M9 3h6"/>');
+const FRESH_GLYPH = svg('<path d="M12 3v18M4.2 7.5l15.6 9M19.8 7.5l-15.6 9"/>');
 const CATEGORY_MEMBERS = { meal: membersOf('meal'), drink: membersOf('drink'), fine: membersOf('fine'), remedy: membersOf('remedy'), rawFood: membersOf('rawFood') };
 /** a cornerstone's icon: the building or good it's about, where there is one */
 const CORNERSTONE_ICON: Record<string, string> = {
@@ -157,6 +172,8 @@ export class UI {
   private help: string | null = null;
   private dialogKey = '';
   private colonistFilter = 'all';
+  /** the HUD shows every good, not the grouped totals */
+  allGoods = false;
   private colonistSort = 'mood';
   private buildingFilter = 'all';
   private buildMode = 'manage';
@@ -237,11 +254,12 @@ export class UI {
   private destinationList(w: World) {
     const d = this.destination;
     if (!d) return '';
-    if (d.kind === 'workplaces') return `<button type="button" class="ghost" data-act="tab" data-arg="build">All buildings</button><h3>${esc(d.label)}</h3><div class="rows">${w.buildings.filter(b => d.defs.includes(b.def)).map(b => `<button type="button" class="row compact" data-act="building" data-arg="${b.uid}"><span class="who"><b>${icon(b.def)} ${esc(BUILDING_BY_ID[b.def].name)}</b><small>Map ${b.x}, ${b.y} · ${esc(buildingStatus(w, b).label)}</small></span><span>→</span></button>`).join('') || `<p class="empty">No buildings here yet.</p><button type="button" class="ghost" data-act="catalog-help" data-arg="${d.defs[0]}">Find blueprint →</button>`}</div>`;
+    if (d.kind === 'workplaces') return `<button type="button" class="ghost" data-act="tab" data-arg="build">← Buildings</button><h3>${esc(d.label)}</h3><div class="rows">${w.buildings.filter(b => d.defs.includes(b.def)).map((b, i, all) => { const same = all.filter(x => x.def === b.def); const n = same.length > 1 ? ` ${same.indexOf(b) + 1}` : ''; const crew = workersAt(w, b.uid);
+        return `<button type="button" class="row compact" data-act="building" data-arg="${b.uid}"><span class="who"><b>${icon(b.def)} ${esc(BUILDING_BY_ID[b.def].name)}${n}</b><small>${buildingStatus(w, b).warning ? '⚠ ' : ''}${esc(buildingStatus(w, b).label)}</small></span><span class="crew">${crew.map(c => avatar(c, 'avatar-mini')).join('')}→</span></button>`; }).join('') || `<p class="empty">No buildings here yet.</p><button type="button" class="ghost" data-act="catalog-help" data-arg="${d.defs[0]}">Find blueprint →</button>`}</div>`;
     if (d.kind === 'catalog') {
       const def = BUILDING_BY_ID[d.def];
       const available = w.owned.includes(d.def);
-      return `<button type="button" class="ghost" data-act="tab" data-arg="build">All buildings</button><h2>${icon(d.def)} ${esc(def.name)}</h2><p>${esc(def.blurb)}</p><p>${costHtml(def.cost,w)}</p>${available ? `<button type="button" class="act" data-act="build" data-arg="${d.def}">Place</button>` : `<p class="warnline">Blueprint needed · watch drafts and caravans.</p>`}`;
+      return `<button type="button" class="ghost" data-act="tab" data-arg="build">← Buildings</button><h2>${icon(d.def)} ${esc(def.name)}</h2><p>${esc(def.blurb)}</p><p>${costHtml(def.cost,w)}</p>${available ? `<button type="button" class="act" data-act="build" data-arg="${d.def}">Place</button>` : `<p class="warnline">Blueprint needed · watch drafts and caravans.</p>`}`;
     }
     return '';
   }
@@ -292,7 +310,7 @@ export class UI {
       case 'building': this.picked({ kind: 'building', id: Number(arg) }); break;
       case 'fix': { const [id, index] = arg.split(':'); const fix = assess(w).find(c => c.id === id)?.fixes[Number(index)]; if (fix) this.navigate(fixDestination(w, fix)); break; }
       case 'issue-people': { const people = assess(w).find(c => c.id === arg)?.personIds ?? []; this.panel('colonists'); this.peopleFilter = people; break; }
-      case 'workplaces': this.navigate({ kind: 'workplaces', defs: arg.split(','), label: 'Workplaces' }); break;
+      case 'workplaces': { const defs = arg.split(','); this.navigate({ kind: 'workplaces', defs, label: defs.length === 1 ? BUILDING_BY_ID[defs[0]]?.name ?? 'Workplaces' : 'Workplaces' }); break; }
       case 'construction': this.panel('build'); this.buildMode = 'manage'; this.buildingFilter = 'sites'; break;
       case 'catalog-help': this.navigate(buildingDestination(w, arg)); break;
       case 'source': {
@@ -302,6 +320,7 @@ export class UI {
         break;
       }
       case 'resource': this.panel('ledger'); this.resource = arg as InputKey | 'gold'; this.anchor = `${arg === 'gold' || !RESOURCES.some(r => r.id === arg) ? 'account' : 'resource'}-${arg}`; break;
+      case 'all-goods': this.allGoods = !this.allGoods; break;
       case 'storage-help': this.navigate(buildingDestination(w, 'storehouse', true)); break;
       case 'food-rules': this.navigate({ kind: 'food', label: 'Food rules' }); break;
       case 'need': { const def = arg === 'table' ? 'dining' : NEED_BUILD[arg as NeedKey]; this.navigate(buildingDestination(w, def, !['shelter', 'surroundings', 'warmth'].includes(arg))); break; }
@@ -323,7 +342,7 @@ export class UI {
       case 'store-preset': { const [bid, m] = arg.split(':'); this.send({ type: 'storageFilter', building: Number(bid), allow: m === 'food' ? FOODS : m === 'goods' ? GOODS : null }); break; }
       case 'recipe-priority': { const [building,recipe,delta]=arg.split(':').map(Number);this.send({type:'recipePriority',building,recipe,delta:delta as -1|1});break; }
       case 'recipe-toggle': { const [bid, i] = arg.split(':').map(Number); const b = buildingByUid(w, bid); if (!b) break; this.send({ type: 'toggleRecipe', building: bid, recipe: i, on: !recipeOn(b, i) }); break; }
-      case 'store-prio': { const [bid, m] = arg.split(':'); this.send({ type: 'storagePriority', building: Number(bid), high: m === 'high' }); break; }
+      case 'store-prio': { const [bid, m] = arg.split(':').map(Number); this.send({ type: 'storagePriority', building: bid, prio: m as 0 | 1 | 2 }); break; }
       case 'store-item': {
         const [bid, r] = arg.split(':'); const b = buildingByUid(w, Number(bid)); if (!b) break;
         const cur = b.allow ?? RESOURCES.map(x => x.id);
@@ -396,13 +415,24 @@ export class UI {
     const strain = Math.round(w.strain);
     const sea = seasonOf(w);
     const cap = storageCap(w), st = stored(w);
-    const spoiling = spoilingFood(w) >= 5;
+    const spoiling = spoilingFood(w) >= 5 && w.owned.includes('storehouse');
     const storeChip = `<button type="button" data-act="workplaces" data-arg="stockpile,storehouse" class="chip store${st >= cap ? ' full' : ''}" title="Goods in storage, of what it can hold">${icon('stockpile')}<b>${Math.floor(st)}/${cap}</b><span class="nm"> stored</span></button>`
       + (spoiling ? '<button type="button" data-act="storage-help" class="chip spoil" title="Food left on stockpiles is spoiling. A storehouse keeps it fresh."><span class="nm">food </span>spoiling →</button>' : '');
     // on a phone the names drop and the icons carry them; they stay for screen readers and on hover
     const goldChip = `<button type="button" data-act="resource" data-arg="gold" class="chip gold" title="Gold: rent each season, the Crown's stipend, events and selling to the caravan" aria-label="${Math.floor(w.gold)} gold">${icon('gold')}<b>${Math.floor(w.gold)}</b><span class="nm"> gold</span></button>`;
-    const res = goldChip + storeChip + RESOURCES.filter(r => w.res[r.id] >= 0.5 || ['wood', 'berries', 'stew'].includes(r.id))
-      .map(r => `<button type="button" data-act="resource" data-arg="${r.id}" class="chip" title="${r.name}" aria-label="${Math.floor(w.res[r.id])} ${r.name}">${icon(r.id)}<b>${Math.floor(w.res[r.id])}</b><span class="nm"> ${r.name}</span></button>`).join('');
+    // goods grouped: wood on its own, then raw food, meals, drinks, fine materials and remedies as totals (each opens its
+    // breakdown), then whatever the charter counts on its own; "+N" shows every good
+    const chip = (arg: string, ico: string, n: number, name: string, cls = '') => `<button type="button" data-act="resource" data-arg="${arg}" class="chip${cls}" title="${esc(name)}" aria-label="${Math.floor(n)} ${esc(name)}">${icon(ico)}<b>${Math.floor(n)}</b><span class="nm"> ${esc(name)}</span></button>`;
+    const total = (k: InputKey) => membersOf(k).reduce((n, r) => n + w.res[r], 0);
+    const groups = (['rawFood', 'meal', 'drink', 'fine', 'remedy'] as InputKey[]).filter(k => k === 'rawFood' || k === 'meal' || total(k) >= 0.5);
+    const grouped = new Set<string>(['wood', ...groups.flatMap(k => membersOf(k))]);
+    const pinned = [...new Set(charterRequirements(w).flatMap(r => r.metric.kind === 'stock' && r.metric.resources.length <= 2 ? r.metric.resources : []))].filter(r => r !== 'wood');
+    const rest = RESOURCES.filter(r => w.res[r.id] >= 0.5 && r.id !== 'wood' && !(pinned as string[]).includes(r.id) && (this.allGoods || !grouped.has(r.id)));
+    const res = goldChip + storeChip + chip('wood', 'wood', w.res.wood, 'Wood')
+      + groups.map(k => chip(k, k, total(k), inputName(k).replace(/^./, c => c.toUpperCase()), ' grp')).join('')
+      + pinned.map(r => chip(r, r, w.res[r], RESOURCES.find(x => x.id === r)!.name, ' pin')).join('')
+      + (this.allGoods ? rest.map(r => chip(r.id, r.id, w.res[r.id], r.name)).join('') : '')
+      + (rest.length || this.allGoods ? `<button type="button" class="chip more" data-act="all-goods" aria-pressed="${this.allGoods}" title="${this.allGoods ? 'Fewer goods' : 'Every good'}">${this.allGoods ? '−' : `+${rest.length}`}</button>` : '');
     const html = `
       <div class="bar">
         <div class="clock"><span class="day">Day ${day(w)}</span><span class="when"><span class="time">${hh}:00<span class="phase"> · ${timeOfDay(h)}</span></span><button type="button" data-act="help" data-arg="season" class="season s-${sea.season}" title="${SEASON_NAMES[sea.season]}, day ${sea.dayOf} of ${START.seasons.days}${sea.season !== 'winter' ? `; winter in ${sea.toWinter} days` : ''}">${sea.season === 'autumn' ? `Winter in ${sea.toWinter}d` : `${SEASON_NAMES[sea.season]} ${sea.dayOf}/${START.seasons.days}`}</button></span></div>
@@ -585,7 +615,8 @@ export class UI {
   private renderSheet(w: World, force: boolean) {
     const pop = alive(w);
     const tabs = `<nav class="tabs">
-      ${(['colonists', 'build', 'ledger', 'issues', 'log'] as Tab[]).map(t => `<button type="button" data-act="tab" data-arg="${t}" class="${this.tab === t && this.open ? 'on' : ''}">${t === 'colonists' ? `Colonists <em>${pop.length}</em>` : t === 'build' ? 'Build' : t === 'ledger' ? 'Ledger' : t === 'issues' ? `Issues <em>${assess(w).length}</em>` : 'Log'}</button>`).join('')}
+      ${(['colonists', 'build', 'ledger', 'issues', 'log'] as Tab[]).map(t => { const n = t === 'colonists' ? pop.length : t === 'issues' ? assess(w).length : 0;
+        return `<button type="button" data-act="tab" data-arg="${t}" class="${this.tab === t && this.open ? 'on' : ''}"${this.tab === t && this.open ? ' aria-current="page"' : ''}><span class="tico">${TAB_GLYPH[t]}${n ? `<em class="${t === 'issues' ? 'warn' : ''}">${n}</em>` : ''}</span><span class="tl">${TAB_NAME[t]}</span></button>`; }).join('')}
       ${this.open ? `<button type="button" class="x" data-act="close" aria-label="Close panel">×</button>` : ''}
     </nav>`;
     let body = '';
@@ -614,15 +645,17 @@ export class UI {
   private colonistList(w: World) {
     const rows = alive(w).filter(c => (!this.peopleFilter || this.peopleFilter.includes(c.id)) && matchesPerson(c, this.colonistFilter)).sort((a, b) => this.colonistSort === 'name' ? a.name.localeCompare(b.name) : a.mood - b.mood || a.id - b.id).map(c => {
       const partner = colonistById(w, c.partner);
-      return `<button type="button" class="row" data-act="colonist" data-arg="${c.id}">
+      const job = buildingByUid(w, c.job), state = personState(c);
+      return `<button type="button" class="row person" data-act="colonist" data-arg="${c.id}" aria-label="${esc(`${c.name}, ${job ? BUILDING_BY_ID[job.def].name : 'laborer'}, mood ${Math.round(c.mood)}${state ? `, ${state}` : ''}`)}">
         ${avatar(c)}
-        <span class="who"><b>${esc(c.name)}</b><small>${esc(personState(c) || activityText(w, c))}${partner ? ` · with ${esc(first(partner))}` : ''}</small></span>
-        <span class="mood ${moodClass(c.mood, c.sulking)}"><b>${moodDirection(c)} ${Math.round(c.mood)}</b><i style="width:${c.mood}%"></i></span>
+        <span class="who"><b>${esc(c.name)}${partner ? ' <i class="heart" aria-hidden="true">♥</i>' : ''}</b><small class="job-line">${job ? `${icon(job.def)}${esc(BUILDING_BY_ID[job.def].name)}` : `${LABORER_GLYPH}Laborer`}</small></span>
+        ${state ? `<span class="flag" title="${esc(state)}">${esc(state.split(' ')[0])}</span>` : '<span></span>'}
+        <span class="mood ${moodClass(c.mood, c.sulking)}"><b><span class="trend">${MOOD_TREND[moodDirection(c)]}</span>${Math.round(c.mood)}</b><i style="width:${c.mood}%"></i></span>
       </button>`;
     }).join('');
-    return `<div class="list-head"><span>${alive(w).length} colonists · ${beds(w)} beds · average mood ${Math.round(avgMood(w))}</span>
+    return `<div class="list-head"><span class="stats"><span title="Colonists">${PERSON_GLYPH}${alive(w).length}</span><span title="Beds">${icon('leanto')}${beds(w)}</span><span title="Laborers: build, haul, clean">${LABORER_GLYPH}${laborers(w).length}</span><span title="Average mood">${MOOD_GLYPH}${Math.round(avgMood(w))}</span></span>
       <button type="button" class="ghost" data-act="auto">Auto-assign jobs</button></div>
-      <p class="muted hint">⚒ ${laborers(w).length} laborers · builds, hauls, cleans</p><div class="filters">${selectHtml('colonist-filter', 'Show colonists', this.colonistFilter, [['all','Everyone'],['ill','Ill'],['hungry','Hungry'],['unhoused','No bed'],['sulking','Sulking'],['free','No job']])}${selectHtml('colonist-sort', 'Sort colonists', this.colonistSort, [['mood','Lowest mood'],['name','Name']])}</div>${concernCards(w)}${this.peopleFilter ? '<button type="button" class="ghost" data-act="tab" data-arg="colonists">Show everyone</button>' : ''}<div class="rows">${rows || '<p class="empty">No matching colonists.</p>'}</div>
+      <div class="filters">${selectHtml('colonist-filter', 'Show colonists', this.colonistFilter, [['all','Everyone'],['ill','Ill'],['hungry','Hungry'],['unhoused','No bed'],['sulking','Sulking'],['free','No job']])}${selectHtml('colonist-sort', 'Sort colonists', this.colonistSort, [['mood','Lowest mood'],['name','Name']])}</div>${concernCards(w)}${this.peopleFilter ? '<button type="button" class="ghost" data-act="tab" data-arg="colonists">Show everyone</button>' : ''}<div class="rows">${rows || '<p class="empty">No matching colonists.</p>'}</div>
       <details data-key="food-rules"><summary id="food-rules">Food rules · ${w.forbidden.length} reserved</summary><p class="muted hint">Reserved food stays available for charters and feasts.</p>
       <div class="foodrules">${FOODS.map(f => {
         const on = !w.forbidden.includes(f);
@@ -658,7 +691,7 @@ export class UI {
     return `<div class="detail">
       <div class="d-head"><button type="button" class="ghost back" data-act="back">← Colonists</button></div>
       <div class="who-big">${avatar(c,'avatar-large')}<div><h2>${esc(c.name)}</h2><p>${esc(activityText(w, c))}</p></div>
-        <div class="mood-big ${moodClass(c.mood, c.sulking)}"><b>${moodDirection(c)} ${Math.round(c.mood)}</b><small>→ ${Math.round(c.moodTarget)}</small></div></div>
+        <div class="mood-big ${moodClass(c.mood, c.sulking)}" title="Mood ${Math.round(c.mood)}, heading to ${Math.round(c.moodTarget)}"><b>${Math.round(c.mood)}</b>${MOOD_TREND[moodDirection(c)] ? `<small>${MOOD_TREND[moodDirection(c)]} ${Math.round(c.moodTarget)}</small>` : ''}</div></div>
       ${c.sulking ? '<p class="warnline">☁ Sulking · works again above mood 32</p>' : c.mood < 15 ? '<p class="warnline">⚠ May leave</p>' : ''}${illness}
       ${worst ? `<p class="warnline">${logText(w,worst.label)} <b>−${Math.abs(Math.round(worst.value))}</b></p>` : ''}
       <div class="actions">${remedies}${job ? `<button type="button" class="ghost" data-act="building" data-arg="${job.uid}">${icon(job.def)} ${esc(BUILDING_BY_ID[job.def].name)} →</button>` : ''}${c.bed != null ? `<button type="button" class="ghost" data-act="building" data-arg="${c.bed}">⌂ Home →</button>` : '<button type="button" class="ghost" data-act="need" data-arg="shelter">⌂ Find a bed →</button>'}<button type="button" class="ghost" data-act="jobs">⚒ Change job ↓</button></div>
@@ -684,19 +717,30 @@ export class UI {
         if (this.buildingFilter === 'inefficient') return !!d.needs && b.eff < 0.6;
         return true;
       }).sort((a,b) => Number(buildingStatus(w,b).warning) - Number(buildingStatus(w,a).warning));
-      return mode + `<div class="filters">${selectHtml('building-filter','Show buildings',this.buildingFilter,[['all','All buildings'],['unstaffed','Open jobs'],['blocked','Blocked'],['inefficient','Low efficiency'],['sites','Construction']])}</div><div class="rows">${buildings.map(b => {
-        if (!b.built) return this.siteRow(w,b);
-        const status = buildingStatus(w,b);
-        return `<button type="button" class="row compact" data-act="building" data-arg="${b.uid}"><span class="who"><b>${icon(b.def)} ${esc(BUILDING_BY_ID[b.def].name)}</b><small>${b.x}, ${b.y} · ${status.warning ? '⚠ ' : '✓ '}${esc(status.label)}</small></span><span>→</span></button>`;
-      }).join('') || '<p class="empty">No matching buildings.</p>'}</div>`;
+      // one row per kind of building: count, workers or capacity, and the worst problem first; sites on top
+      const sites = buildings.filter(b => !b.built);
+      const groups = new Map<string, Building[]>();
+      for (const b of buildings.filter(b => b.built)) groups.set(b.def, [...(groups.get(b.def) ?? []), b]);
+      const rows = [...groups].map(([def, bs]) => {
+        const d = BUILDING_BY_ID[def], st = bs.map(b => buildingStatus(w, b)), warn = st.find(x => x.warning);
+        const workers = d.slots ? bs.reduce((n, b) => n + workersAt(w, b.uid).length, 0) : 0;
+        const summary = d.slots ? `${workers}/${d.slots * bs.length}` : d.beds ? `${d.beds * bs.length} beds` : d.storage ? st.length === 1 ? st[0].label : `${bs.reduce((n, b) => n + Math.floor(Object.values(b.stock).reduce((m, x) => m + (x ?? 0), 0)), 0)}/${d.storage * bs.length}` : d.seats ? `${d.seats * bs.length} seats` : '';
+        return { def, bs, warn, html: `<button type="button" class="row bgroup${warn ? ' has-warn' : ''}" ${bs.length === 1 ? `data-act="building" data-arg="${bs[0].uid}"` : `data-act="workplaces" data-arg="${def}"`}>
+          <span class="bg-ico">${icon(def) || (def === 'hearth' ? HEARTH_GLYPH : '')}</span><span class="who"><b>${esc(d.name)}${bs.length > 1 ? ` <em>×${bs.length}</em>` : ''}</b>${warn ? `<small class="warnlabel">⚠ ${esc(warn.label)}${st.filter(x => x.warning).length > 1 ? ` ×${st.filter(x => x.warning).length}` : ''}</small>` : ''}</span>
+          <span class="bg-sum">${d.slots ? `${PERSON_GLYPH}` : ''}${esc(summary)}</span></button>` };
+      }).sort((a, b) => Number(!!b.warn) - Number(!!a.warn) || BUILDINGS.findIndex(x => x.id === a.def) - BUILDINGS.findIndex(x => x.id === b.def));
+      return mode + `<div class="filters">${selectHtml('building-filter','Show buildings',this.buildingFilter,[['all','All buildings'],['unstaffed','Open jobs'],['blocked','Blocked'],['inefficient','Low efficiency'],['sites','Construction']])}</div>
+        ${sites.length ? `<div class="rows">${sites.map(b => this.siteRow(w, b)).join('')}</div>` : ''}<div class="rows">${rows.map(r => r.html).join('') || (sites.length ? '' : '<p class="empty">No matching buildings.</p>')}</div>`;
     }
     const matches = (d: typeof BUILDING_BY_ID[string]) => this.catalogGroup === 'all' || buildingGroup(d.id) === this.catalogGroup;
-    const card = (def: typeof BUILDING_BY_ID[string]) => `<div class="bp has-ico"><span class="bp-ico">${icon(def.id,'bico')}</span><div><b>${esc(def.name)}</b><small class="cost">${costHtml(def.cost,w)} · ${def.w}×${def.h}</small><details data-key="catalog-${def.id}"><summary>Details</summary><p>${esc(def.blurb)}</p></details></div><button type="button" class="act" data-act="build" data-arg="${def.id}">Place</button></div>`;
+    const short = (def: typeof BUILDING_BY_ID[string]) => Object.entries(def.cost).some(([k, n]) => stockOf(w, k as InputKey) < (n ?? 0));
+    const outputs = (def: typeof BUILDING_BY_ID[string]) => [...new Set((def.recipes ?? []).map(r => r.output))].map(o => icon(o)).join('');
+    const card = (def: typeof BUILDING_BY_ID[string]) => `<div class="bp compact${short(def) ? ' short' : ''}"><details data-key="catalog-${def.id}"><summary><span class="bp-ico">${icon(def.id,'bico')}</span><span class="bp-main"><b>${esc(def.name)}</b><small class="cost">${costHtml(def.cost,w)}${outputs(def) ? `<span class="outs" aria-label="makes">${outputs(def)}</span>` : ''}</small></span></summary><p>${esc(def.blurb)}</p></details><button type="button" class="place" data-act="build" data-arg="${def.id}" aria-label="Place ${esc(def.name)}">${ROUTE_GLYPH.build}</button></div>`;
     const missing = BUILDINGS.filter(d => !w.owned.includes(d.id) && matches(d)).map(d => {
       const r = researchLeft(w).find(r => r.unlocks.includes(d.id));
       return `<button type="button" class="row compact" data-act="catalog-help" data-arg="${d.id}"><span class="who"><b>${icon(d.id)} ${esc(d.name)}</b><small>${r ? `Research ${esc(r.name)}` : 'Blueprint needed'}</small></span><span>→</span></button>`;
     }).join('');
-    return mode + `<div class="filters">${selectHtml('catalog-group','Building purpose',this.catalogGroup,[['all','All purposes'],['food','Food & drinks'],['work','Production'],['comfort','Homes & comfort'],['storage','Storage']])}</div><div class="bps">${w.owned.map(id => BUILDING_BY_ID[id]).filter(matches).map(card).join('')}</div><h3>Paths</h3><div class="bp"><div><b>Paths</b><small>+25% walking · 1 wood/tile</small></div><button type="button" class="act" data-act="paths">Plan</button></div><details data-key="missing-buildings"><summary>Unlocks & missing blueprints</summary><div class="rows">${missing}</div></details>`;
+    return mode + `${(['food','work','comfort','storage'] as const).map(g => { const defs = w.owned.map(id => BUILDING_BY_ID[id]).filter(d => buildingGroup(d.id) === g); return defs.length ? `<h3 class="group">${CATALOG_GROUP[g]}</h3><div class="bps">${defs.map(card).join('')}</div>` : ''; }).join('')}<h3>Paths</h3><div class="bp"><div><b>Paths</b><small>+25% walking · 1 wood/tile</small></div><button type="button" class="act" data-act="paths">Plan</button></div><details data-key="missing-buildings"><summary>Unlocks & missing blueprints</summary><div class="rows">${missing}</div></details>`;
   }
 
   private siteRow(w: World, b: Building) {
@@ -763,7 +807,7 @@ export class UI {
         const label = inputName(r as InputKey);
         return `<li><button type="button" class="text-link" data-act="source" data-arg="${r}">${icon(r)}${label.charAt(0).toUpperCase() + label.slice(1)}${mix ? ` (${mix})` : ''} →</button><b>${Math.floor(got)} / ${n}</b></li>`;
       }).join('');
-      return `<div class="detail"><div class="d-head"><button type="button" class="ghost back" data-act="back">All buildings</button></div>
+      return `<div class="detail"><div class="d-head"><button type="button" class="ghost back" data-act="back">← Buildings</button></div>
         <h2 class="bh">${icon(def.id, 'hico')}${esc(def.name)}</h2><p class="blurb">${def.stages ? `${esc(def.blurb)}</p><p class="prefs">Stage <b>${(b.stage ?? 0) + 1} of ${def.stages.length}</b>: ${esc(def.stages[b.stage ?? 0].label)}. Then: ${esc(def.stages.slice((b.stage ?? 0) + 1).map(x => x.label.toLowerCase()).join(', ') || 'done')}.` : 'Under construction.'}</p>
         ${def.moodGate ? `<p class="${alive(w).filter(c => c.mood >= def.moodGate!).length ? 'prefs' : 'warnline'}">${alive(w).filter(c => c.mood >= def.moodGate!).length} of ${alive(w).length} colonists are at mood ${def.moodGate}+ and willing to work on it${laborers(w).filter(c => c.mood >= def.moodGate!).length ? `, ${laborers(w).filter(c => c.mood >= def.moodGate!).length} of them laborers` : ', but none of them are laborers'}.</p>` : ''}
         <h3>Materials delivered</h3><ul class="thoughts">${mats || '<li><span>No materials needed</span></li>'}</ul>
@@ -799,22 +843,26 @@ export class UI {
       }).join('') : '';
       staff += `<h3>Workers ${workers.length}/${def.slots}</h3><div class="rows">${cur || '<p class="muted">Nobody works here.</p>'}</div>${cand ? `<h3>Assign someone</h3><p class="muted">⚒ ${laborers(w).length} laborers free · keep hands for hauling.</p><div class="rows">${cand}</div>` : ''}`;
     } else if (def.storage) {
+      // what's in it first: a capacity bar split by kind of good, then a tile per good with its count, largest first
       const held = Object.values(b.stock).reduce((n, x) => n + (x ?? 0), 0);
-      const contents = RESOURCES.filter(r => (b.stock[r.id] ?? 0) >= 0.5).map(r => goodHtml(r.id, Math.floor(b.stock[r.id] ?? 0))).join(', ');
+      const goods = RESOURCES.filter(r => (b.stock[r.id] ?? 0) >= 0.5).sort((a, z) => (b.stock[z.id] ?? 0) - (b.stock[a.id] ?? 0));
+      const spoils = !def.keepsFresh && FOODS.some(f => accepts(b, f));
+      const bar = `<div class="store-bar" role="img" aria-label="${Math.floor(held)} of ${def.storage} stored">${goods.map(r => `<i class="k-${r.kind}" style="width:${((b.stock[r.id] ?? 0) / (def.storage ?? 1) * 100).toFixed(2)}%" title="${esc(r.name)} ${Math.floor(b.stock[r.id] ?? 0)}"></i>`).join('')}</div>`;
+      const tiles = goods.map(r => { const n = Math.floor(b.stock[r.id] ?? 0), rot = spoils && FOODS.includes(r.id);
+        return `<div class="stile k-${r.kind}${rot ? ' rot' : ''}" title="${esc(r.name)}${rot ? ' · spoiling here' : ''}">${icon(r.id)}<b>${n}</b><small>${esc(r.name)}</small>${rot ? `<i class="rot-mark" aria-label="spoiling">${SPOIL_GLYPH}</i>` : ''}</div>`; }).join('');
       const mode = !b.allow ? 'all' : b.allow.length === FOODS.length && FOODS.every(f => b.allow!.includes(f)) ? 'food' : b.allow.length === GOODS.length && GOODS.every(f => b.allow!.includes(f)) ? 'goods' : 'custom';
       const preset = (id: string, label: string) => `<button type="button" class="seg${mode === id ? ' on' : ''}" data-act="store-preset" data-arg="${b.uid}:${id}" aria-pressed="${mode === id}">${label}</button>`;
-      const items = RESOURCES.map(r => { const on = accepts(b, r.id); return `<button type="button" class="rule${on ? ' on' : ''}" data-act="store-item" data-arg="${b.uid}:${r.id}" aria-pressed="${on}">${icon(r.id)}${r.name}<small>${on ? '✓ Accept' : '× Exclude'}</small></button>`; }).join('');
-      staff += `<p class="prefs">${Math.round(held)}/${def.storage} · ${def.keepsFresh ? '✓ Fresh food' : '⚠ Food spoils'}</p>${meter(held / def.storage * 100,'Storage capacity')}<details data-key="contents-${b.uid}"><summary>Contents</summary><p>${contents || 'Empty'}</p></details>
-        <h3>Priority</h3><p class="muted">High priority fills first.</p>
-        <div class="segs two"><button type="button" class="seg${b.high ? '' : ' on'}" data-act="store-prio" data-arg="${b.uid}:low" aria-pressed="${!b.high}">Low</button><button type="button" class="seg${b.high ? ' on' : ''}" data-act="store-prio" data-arg="${b.uid}:high" aria-pressed="${b.high}">High</button></div>
-        <h3>Accepts</h3>
-        <div class="segs">${preset('all', 'Everything')}${preset('food', 'Food only')}${preset('goods', 'Goods only')}</div>
-        <details data-key="storage-items-${b.uid}"><summary>Customize items</summary><div class="rules">${items}</div></details>`;
+      const items = RESOURCES.map(r => { const on = accepts(b, r.id); return `<button type="button" class="ptile${on ? ' on' : ''}" data-act="store-item" data-arg="${b.uid}:${r.id}" aria-pressed="${on}" title="${esc(r.name)}" aria-label="${on ? 'Accepting' : 'Not accepting'} ${esc(r.name)}">${icon(r.id)}</button>`; }).join('');
+      staff += `<div class="store-head"><span class="store-num"><b>${Math.floor(held)}</b>/${def.storage}</span>${spoils ? `<span class="fresh bad" title="Raw food and meals spoil here">${SPOIL_GLYPH} Food spoils</span>` : def.keepsFresh ? `<span class="fresh good" title="Keeps food fresh">${FRESH_GLYPH} Keeps fresh</span>` : ''}</div>${bar}
+        <div class="stiles">${tiles || '<p class="empty">Empty</p>'}</div>
+        <div class="store-set"><h3>Priority</h3><div class="segs">${([[2, 'High'], [1, 'Medium'], [0, 'Low']] as const).map(([v, l]) => `<button type="button" class="seg${storePrio(b) === v ? ' on' : ''}" data-act="store-prio" data-arg="${b.uid}:${v}" aria-pressed="${storePrio(b) === v}">${l}</button>`).join('')}</div></div>
+        <div class="store-set"><h3>Takes</h3><div class="segs">${preset('all', 'All')}${preset('food', 'Food')}${preset('goods', 'Goods')}</div></div>
+        <details data-key="storage-items-${b.uid}"${mode === 'custom' ? ' open' : ''}><summary>Pick items${mode === 'custom' ? ` · ${b.allow!.length}` : ''}</summary><div class="ptiles">${items}</div></details>`;
     } else if (def.beds) {
       const sleepers = alive(w).filter(c => c.bed === b.uid).map(c => personLink(c)).join(', ');
       staff += `<p class="prefs">Sleeps ${def.beds}${sleepers ? `: ${sleepers}` : ''}.</p>`;
     }
-    return `<div class="detail"><div class="d-head"><button type="button" class="ghost back" data-act="back">All buildings</button></div>
+    return `<div class="detail"><div class="d-head"><button type="button" class="ghost back" data-act="back">← Buildings</button></div>
       <h2 class="bh">${icon(def.id, 'hico')}${esc(def.name)}</h2><p class="blurb">${esc(def.blurb)}</p>${recipe}${staff}</div>`;
   }
 
