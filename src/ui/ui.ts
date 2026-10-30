@@ -177,7 +177,10 @@ export class UI {
   onSpeed: (s: number) => void = () => {};
   onRestart: () => void = () => {};
   /** run history from this browser, shown on the end screen */
-  profile: { runs: { result: string; day: number; charters: number }[] } = { runs: [] };
+  profile: { runs: { result: string; day: number; charters: number }[]; firstRunDone?: boolean } = { runs: [] };
+  /** the profile changed and should be saved (the first-run guide finished) */
+  onProfile: () => void = () => {};
+  private lastCoach = '';
   private picking: number | null = null; // errand id whose colonist picker is open
   private festivalOpen = false;
   /** a saved run was found on boot: the game waits on the welcome-back card */
@@ -477,6 +480,36 @@ export class UI {
     this.renderModal(w, force);
     this.renderPlaceBar(w);
     (this.root.querySelector('#sheet') as HTMLElement).hidden = !!this.view.placing || this.view.pathMode;
+    this.coach(w);
+  }
+
+  /**
+   * The first-run guide: on a player's first run only, a soft pulse on the next thing to tap until a research desk is
+   * built and staffed. No words: the Build tab, then Build new, then the desk, then Place here; once it's built, the
+   * Studying chip (or the charter card that holds it), the Staff button and an Assign button.
+   */
+  private coach(w: World) {
+    for (const el of this.root.querySelectorAll('.coach')) el.classList.remove('coach');
+    if (this.profile.firstRunDone || this.profile.runs.length || w.status !== 'playing') return;
+    const desks = w.buildings.filter(b => b.def === 'desk');
+    if (desks.some(b => b.built && workersAt(w, b.uid).length)) { this.profile.firstRunDone = true; this.onProfile(); return; }
+    if (w.decisions.length && !this.peeking) return;
+    let sel = '';
+    if (!desks.length) {
+      sel = this.view.placing?.def === 'desk' ? '#placebar [data-act=place-confirm]'
+        : !this.open || this.tab !== 'build' || this.detail || this.destination ? '#sheet [data-act=tab][data-arg=build]'
+        : this.buildMode !== 'catalog' ? '[data-act=build-mode][data-arg=catalog]' : '#sheet [data-act=build][data-arg=desk]';
+    } else if (desks.some(b => b.built)) {
+      const desk = desks.find(b => b.built)!;
+      sel = this.detail?.kind === 'building' && this.detail.id === desk.uid ? `#sheet [data-act=assign][data-arg$=":${desk.uid}"]`
+        : this.destination?.kind === 'research' ? '.rcur [data-act=desk]' : '#hud [data-act=research-open]';
+    }
+    if (!sel) return;
+    let el = this.root.querySelector<HTMLElement>(sel);
+    if (sel.includes('research-open') && (!el || !el.offsetParent)) el = this.root.querySelector<HTMLElement>('[data-act=charter-toggle]');
+    if (!el) return;
+    el.classList.add('coach');
+    if (sel !== this.lastCoach) { this.lastCoach = sel; el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
   }
 
   // ---------- HUD ----------

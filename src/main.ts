@@ -14,7 +14,7 @@ async function boot() {
   // a small profile kept in this browser: run history now, unlocks later
   // v2: runs from the old six-settler start aren't comparable, so the run history starts fresh
   const PROFILE_KEY = 'mumblewood.profile.v2';
-  type Profile = { runs: { result: string; day: number; charters: number; at: string }[]; unlocks: string[] };
+  type Profile = { runs: { result: string; day: number; charters: number; at: string }[]; unlocks: string[]; firstRunDone?: boolean };
   let profile: Profile = { runs: [], unlocks: [] };
   try { const raw = localStorage.getItem(PROFILE_KEY); if (raw) profile = { ...profile, ...JSON.parse(raw) }; } catch { /* storage unavailable */ }
   const saveProfile = () => { try { localStorage.setItem(PROFILE_KEY, JSON.stringify(profile)); } catch { /* storage unavailable */ } };
@@ -30,6 +30,7 @@ async function boot() {
   const ui = new UI(root, () => world, send, view);
   ui.onSpeed = s => (speed = s);
   ui.profile = profile;
+  ui.onProfile = saveProfile;
   ui.resumeOpen = !!saved;
   ui.resumeSavedAt = saved?.savedAt ?? '';
   ui.onRestart = () => {
