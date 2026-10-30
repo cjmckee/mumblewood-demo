@@ -1,5 +1,5 @@
 // DOM overlay: HUD, bottom sheet, decision modals. Talks to the sim only through commands.
-import { EventNeed, EventOption, BUILDINGS, membersOf, BUILDING_BY_ID, EVENTS, RESEARCH, RESEARCH_BY_ID, BRANCHES_AFTER, JOB_NAMES, PERK_BY_ID, TRADER_BY_ID, RESOURCES, TRAIT_BY_ID, ResourceId, SKILL_NAMES, JOB_KINDS, JobKind, Recipe, InputKey, inputName, recipeRate, Stars } from '../sim/content';
+import { LORE_BOOST, EventNeed, EventOption, BUILDINGS, membersOf, BUILDING_BY_ID, EVENTS, RESEARCH, RESEARCH_BY_ID, BRANCHES_AFTER, JOB_NAMES, PERK_BY_ID, TRADER_BY_ID, RESOURCES, TRAIT_BY_ID, ResourceId, SKILL_NAMES, JOB_KINDS, JobKind, Recipe, InputKey, inputName, recipeRate, Stars } from '../sim/content';
 import {
   World, Command, Colonist, alive, avgMood, beds, buildingByUid, charterProgress, colonistById,
   day, hourOfDay, opinion, workersAt, MAX_DEPARTURES, sites, siteWork, remainingCost, storageCap, stored,
@@ -139,6 +139,18 @@ const SWAP_GLYPH = svg('<path d="M4 8h14l-3-3M20 16H6l3 3"/>', 2.6);
 const MORE_GLYPH = svg('<circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/>', 2.4);
 const CLOCK_GLYPH = svg('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>');
 const STRAIN_GLYPH = svg('<path d="M3 18 9 9l4 5 3-4 5 8z"/>');
+const CHEVRON_UP = svg('<path d="M6 15l6-6 6 6"/>', 2.6);
+const CHEVRON_DOWN = svg('<path d="M6 9l6 6 6-6"/>', 2.6);
+const ARROW_GLYPH = svg('<path d="M5 12h13M13 6l6 6-6 6"/>', 2.4);
+const TARGET_GLYPH = svg('<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.5"/>');
+const CHECK_GLYPH = svg('<path d="M5 12.5 10 17 19 7"/>', 3.4);
+const LOCK_GLYPH = svg('<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>', 2.6);
+/** what each study is about, as an icon: the building it unlocks or speeds up */
+const RESEARCH_ICON: Record<string, string> = {
+  cookery: 'kitchen', messhall: 'dining', physick: 'clinic', warehousing: 'storehouse', gardening: 'flowerbed', masonry: 'bench',
+  smoking: 'dock', salting: 'smokedFish', rotation: 'field', milling: 'mill', malting: 'brewery', cellaring: 'tavern',
+  joinery: 'sawmill', roads: 'lantern', handcarts: 'stockpile', foraging: 'forager', preserving: 'cellar', herblore: 'herbgarden', quarantine: 'clinic',
+};
 const CATEGORY_MEMBERS = { meal: membersOf('meal'), drink: membersOf('drink'), fine: membersOf('fine'), remedy: membersOf('remedy'), rawFood: membersOf('rawFood') };
 /** a cornerstone's icon: the building or good it's about, where there is one */
 const CORNERSTONE_ICON: Record<string, string> = {
@@ -180,6 +192,8 @@ export class UI {
   private colonistFilter = 'all';
   /** the decision card is hidden so the player can look at the colony; play stays paused until they choose */
   private peeking = false;
+  /** the research tree's selected project */
+  private researchPick: string | null = null;
   /** Issues: rows opened to show their evidence and other fixes; every row shown, not the first five; the last order */
   private openIssues = new Set<string>();
   private allIssues = false;
@@ -319,6 +333,7 @@ export class UI {
     if (!d) return '';
     if (d.kind === 'workplaces') return `<button type="button" class="ghost" data-act="tab" data-arg="build">← Buildings</button><h3>${esc(d.label)}</h3><div class="rows">${w.buildings.filter(b => d.defs.includes(b.def)).map((b, i, all) => { const same = all.filter(x => x.def === b.def); const n = same.length > 1 ? ` ${same.indexOf(b) + 1}` : ''; const crew = workersAt(w, b.uid);
         return `<button type="button" class="row compact" data-act="building" data-arg="${b.uid}"><span class="who"><b>${icon(b.def)} ${esc(BUILDING_BY_ID[b.def].name)}${n}</b><small>${buildingStatus(w, b).warning ? '⚠ ' : ''}${esc(buildingStatus(w, b).label)}</small></span><span class="crew">${crew.map(c => avatar(c, 'avatar-mini')).join('')}→</span></button>`; }).join('') || `<p class="empty">No buildings here yet.</p><button type="button" class="ghost" data-act="catalog-help" data-arg="${d.defs[0]}">Find blueprint →</button>`}</div>`;
+    if (d.kind === 'research') return this.researchView(w);
     if (d.kind === 'catalog') {
       const def = BUILDING_BY_ID[d.def];
       const available = w.owned.includes(d.def);
@@ -387,6 +402,9 @@ export class UI {
       case 'issue-toggle': if (this.openIssues.has(arg)) this.openIssues.delete(arg); else this.openIssues.add(arg); break;
       case 'issues-all': this.allIssues = !this.allIssues; break;
       case 'ledger-laborers': this.panel('ledger'); this.anchor = 'ledger-laborers'; break;
+      case 'research-open': this.navigate({ kind: 'research', label: 'Research' }); this.researchPick = null; break;
+      case 'research-pick': this.researchPick = this.researchPick === arg ? null : arg; break;
+      case 'study': { const err = this.send({ type: 'study', id: arg }); if (err) this.toast(err); this.lastModal = ''; break; }
       case 'peek': this.peeking = true; this.lastModal = ''; break;
       case 'peek-back': this.peeking = false; this.lastModal = ''; break;
       case 'storage-help': this.navigate(buildingDestination(w, 'storehouse', true)); break;
@@ -472,7 +490,7 @@ export class UI {
     const pips = Array.from({ length: sc.collapse.lost }, (_, i) => `<i class="pip${i < lost(w) ? ' on' : ''}"></i>`).join('');
     const r = w.research, cur = r?.current ? RESEARCH_BY_ID[r.current] : undefined;
     const studying = cur ? (Object.keys(researchStillNeeds(w)).length ? 'waiting on goods' : desks(w).some(b => workersAt(w, b.uid).length) ? `${Math.floor((r!.progress / cur.hours) * 100)}%` : 'nobody at the desk') : '';
-    const researchChip = !r ? '' : cur ? `<button type="button" class="chip research" data-act="desk"><span><b>Studying</b> ${esc(cur.name)} · ${esc(studying)}</span>${meter((r!.progress / cur.hours) * 100,'Research progress')}</button>`
+    const researchChip = !r ? '' : cur ? `<button type="button" class="chip research" data-act="research-open"><span>${icon('desk')}${icon(RESEARCH_ICON[cur.id] ?? 'desk')}<b>${esc(cur.name)}</b> · ${esc(studying)}</span>${meter((r!.progress / cur.hours) * 100,'Research progress')}</button>`
       : researchLeft(w).length ? '' : '';
     const ch = charterDef(w.charter);
     const feastBtn = ch?.metric.kind === 'longTable' && !w.feast?.done ? (() => {
@@ -886,14 +904,27 @@ export class UI {
     const recs = recipesOf(b), cur = currentRecipe(w, b);
     // whether a recipe's ingredients can come from anywhere: a building owned now, one that could be drafted, or nowhere on this map
     const reach = (r: Recipe) => reachText(w, r, false);
-    let recipe = !recs.length ? '' : `<h3>Recipes <button type="button" class="ghost" data-act="help" data-arg="recipes" aria-label="Recipe help">?</button></h3><div class="recipes">${orderedRecipes(b).map(({r, i}, position) => {
-          const on = recipeOn(b, i), now = on && r === cur;
-          return `<div class="recipe-wrap"><div class="recipe-row"><button type="button" class="recipe${on ? ' on' : ''}" data-act="recipe-toggle" data-arg="${b.uid}:${i}" aria-pressed="${on}">${starHtml(r.stars)}<span><span class="rline">${recipeHtml(r)}</span><small>${+recipeRate(r).toFixed(2)} per worker-hour${now ? blockedReason(w,b) ? ' · ⚠ Waiting' : ' · ▶ Current' : on ? ' · ✓ Enabled' : ' · × Off'}${reach(r) ? ` · ${reach(r)}` : ''}</small></span></button><div class="recipe-moves"><button type="button" class="ghost" data-act="recipe-priority" data-arg="${b.uid}:${i}:-1" aria-label="Move ${esc(inputName(r.output))} recipe up" ${position === 0 ? 'disabled' : ''}>↑</button><button type="button" class="ghost" data-act="recipe-priority" data-arg="${b.uid}:${i}:1" aria-label="Move ${esc(inputName(r.output))} recipe down" ${position === recs.length - 1 ? 'disabled' : ''}>↓</button></div></div><div class="actions inputs">${Object.keys(r.inputs).map(k => `<button type="button" class="text-link" data-act="source" data-arg="${k}">${goodHtml(k as InputKey)} →</button>`).join('')}</div></div>`;
+    // one row per recipe, in the order they're tried: order arrows, stars, inputs → output, the stock target, and a checkbox.
+    // The one being made is tinted; one that's waiting rings the missing input and shows what would make it.
+    const blocked0 = blockedReason(w, b);
+    let recipe = !recs.length ? '' : `<h3>Recipes</h3><div class="recipes">${orderedRecipes(b).map(({r, i}, position) => {
+          const on = recipeOn(b, i), now = on && r === cur && !blocked0;
+          const missing = Object.keys(r.inputs).filter(k => on && membersOf(k as InputKey).reduce((n, x) => n + w.res[x] + (b.inbox[x] ?? 0), 0) < (r.inputs[k as InputKey] ?? 0)) as InputKey[];
+          const waiting = on && (missing.length > 0 || (r === cur && !!blocked0));
+          const route = missing.length ? metricRoutes(w, { kind: 'stock', resources: membersOf(missing[0]), amount: 1 })[0]?.route : undefined;
+          const tiles = route && route.state !== 'ready' ? route.state === 'never' ? `<span class="rtile never" title="Not on this map" role="img" aria-label="Not on this map">${ROUTE_GLYPH.never}</span>` : route.steps.map(st => { const name = BUILDING_BY_ID[st.def].name; const label = st.how === 'build' ? `Build ${name}` : st.how === 'study' ? `Study ${RESEARCH_BY_ID[st.research!].name}` : `Draft a ${name.toLowerCase()}`;
+            const inner = `${icon(st.def)}<i class="rb ${st.how}">${ROUTE_GLYPH[st.how]}</i>`;
+            return st.how === 'draft' ? `<span class="rtile draft" title="${esc(label)}" role="img" aria-label="${esc(label)}">${inner}</span>` : `<button type="button" class="rtile ${st.how}" data-act="catalog-help" data-arg="${st.def}" title="${esc(label)}" aria-label="${esc(label)}">${inner}</button>`; }).join('') : '';
+          const ins = Object.entries(r.inputs).map(([k, n]) => `<button type="button" class="rin${missing.includes(k as InputKey) ? ' missing' : ''}" data-act="source" data-arg="${k}" title="${esc(inputName(k as InputKey))}: where it comes from">${icon(k)}<b>${+(n ?? 0).toFixed(2)}</b></button>`).join('');
+          const limit = b.productionLimits?.[r.output];
+          return `<div class="rrow${now ? ' making' : waiting ? ' waiting' : ''}${on ? '' : ' off'}">
+            <div class="rmain"><span class="rorder"><button type="button" data-act="recipe-priority" data-arg="${b.uid}:${i}:-1" aria-label="Try ${esc(inputName(r.output))} earlier" ${position === 0 ? 'disabled' : ''}>${CHEVRON_UP}</button><button type="button" data-act="recipe-priority" data-arg="${b.uid}:${i}:1" aria-label="Try ${esc(inputName(r.output))} later" ${position === recs.length - 1 ? 'disabled' : ''}>${CHEVRON_DOWN}</button></span>
+              <span class="rbody">${starHtml(r.stars)}${ins ? `<span class="rins">${ins}</span>${ARROW_GLYPH}` : ''}<span class="rout" title="${esc(inputName(r.output))} · ${+recipeRate(r).toFixed(2)} per worker-hour">${icon(r.output)}${now ? '<i class="rnow" aria-label="Making now"></i>' : ''}</span></span>
+              <label class="rtarget" title="Stop at this many in storage (blank: no limit)">${TARGET_GLYPH}<span>${Math.floor(w.res[r.output])}/</span><input type="number" min="0" step="1" placeholder="∞" aria-label="Stock target for ${esc(inputName(r.output))}" data-act="production-target" data-arg="${b.uid}:${r.output}" data-production-limit data-building="${b.uid}" data-output="${r.output}" value="${limit ?? ''}"></label>
+              <button type="button" class="rcheck" role="checkbox" aria-checked="${on}" data-act="recipe-toggle" data-arg="${b.uid}:${i}" aria-label="Make ${esc(inputName(r.output))}"><span>${on ? CHECK_GLYPH : ''}</span></button></div>
+            ${waiting && missing.length ? `<div class="rwait">${missing.map(k => `<span class="rno">${icon(k)}${esc(inputName(k))}</span>`).join('')}${tiles}</div>` : ''}
+          </div>`;
         }).join('')}</div>`;
-    if (recs.length) {
-      const outputs = [...new Set(recs.map(r => r.output))];
-      recipe += `<details data-key="targets-${b.uid}"><summary>Warehouse stock targets</summary><p class="muted">Pause this workshop at the stored target. Blank = unlimited. Buffers and personal coats do not count.</p><div class="production-targets">${outputs.map(output => `<label>${icon(output)}${esc(inputName(output))}<span>${Math.floor(w.res[output])} stored</span><input type="number" min="0" step="1" placeholder="∞" aria-label="Warehouse target for ${esc(inputName(output))}" data-act="production-target" data-arg="${b.uid}:${output}" data-production-limit data-building="${b.uid}" data-output="${output}" value="${b.productionLimits?.[output] ?? ''}"></label>`).join('')}</div></details>`;
-    }
     const effLine = def.needs ? `<p class="prefs">Site ${Math.round(b.eff * 100)}% · ${esc(efficiencyAt(w, b.def, b.x, b.y, b.rot).label)}</p>${meter(b.eff * 100, 'Site efficiency')}` : '';
     const inboxLine = recs.some(r => Object.keys(r.inputs).length) ? `<details data-key="buffers-${b.uid}"><summary>Workshop buffers · ${Math.ceil(Object.values(b.inbox).reduce((n,x)=>n+(x??0),0))}/${INPUT_CAPACITY} in · ${Math.ceil(Object.values(b.outbox).reduce((n,x)=>n+(x??0),0))}/${OUTBOX_CAP} out</summary><p class="prefs">${Object.entries(b.inbox).filter(([,n])=>(n??0)>=0.5).map(([r,n])=>goodHtml(r as ResourceId,Math.floor(n??0))).join(', ') || 'No inputs'} · complete batches are collected; unused inputs return to storage.</p></details>` : '';
     const blocked = blockedReason(w, b);
@@ -938,25 +969,47 @@ export class UI {
     const r = w.research; if (!r) return '';
     const cur = r.current ? RESEARCH_BY_ID[r.current] : undefined;
     const done = r.done.map(id => RESEARCH_BY_ID[id].name).join(', ');
-    if (!cur) return `<p class="prefs">${done ? `Learned: ${esc(done)}.` : ''}</p>${this.researchTree(w)}`;
+    if (!cur) return `<button type="button" class="ghost" data-act="research-open">${icon('desk')} Research tree →</button>`;
     const need = researchStillNeeds(w);
     const goods = Object.entries(cur.cost).map(([k, n]) => { const left = need[k as InputKey] ?? 0; const nm = inputName(k as InputKey); return `<li><button type="button" class="text-link" data-act="source" data-arg="${k}">${icon(k)}${esc(nm.charAt(0).toUpperCase() + nm.slice(1))} →</button><b>${Math.floor((n ?? 0) - left)} / ${n}</b></li>`; }).join('');
     return `<h3>Studying ${esc(cur.name)}</h3><p class="prefs">${esc(cur.desc)} ${cur.unlocks.length ? `Unlocks <b>${esc(cur.unlocks.map(u => BUILDING_BY_ID[u].name.toLowerCase()).join(' and '))}</b>.` : `<b>${esc(cur.effect ?? '')}</b>`}</p>
       <ul class="thoughts">${goods}<li><span>Study</span><b>${Math.floor(r.progress)} / ${cur.hours} hours</b></li></ul>
-      <p class="muted">${Object.keys(need).length ? 'The scholar fetches the goods; laborers help when they can.' : 'Everything is here. Study goes faster with a better Studying skill.'}</p>${this.researchTree(w)}`;
+      <button type="button" class="ghost" data-act="research-open">${icon('desk')} Research tree →</button>`;
   }
 
-  /** the research tree: the basics, then each specialization branch in order, learned / open / not yet */
-  private researchTree(w: World) {
+  /** the research screen: what's being studied, then the basics and each branch as tiles; pick one to see it and study it now */
+  private researchView(w: World) {
     const r = w.research; if (!r) return '';
     const open = new Set(researchOpen(w).map(x => x.id));
-    const node = (id: string) => { const x = RESEARCH_BY_ID[id]; const st = r.done.includes(id) ? 'done' : r.current === id ? 'now' : open.has(id) ? 'open' : 'locked';
-      return `<span class="rnode ${st}" title="${esc(x.effect ?? x.desc)}">${st === 'done' ? '✓ ' : ''}${esc(x.name)}</span>`; };
+    const state = (id: string) => r.done.includes(id) ? 'done' : r.current === id ? 'now' : open.has(id) ? 'open' : 'locked';
+    const pct = (id: string) => { const x = RESEARCH_BY_ID[id]; const h = r.current === id ? r.progress : r.partial?.[id] ?? 0; return Math.min(100, h / x.hours * 100); };
+    const pick = this.researchPick;
+    const node = (id: string) => { const x = RESEARCH_BY_ID[id], st = state(id), p = pct(id);
+      return `<button type="button" class="rn ${st}${pick === id ? ' sel' : ''}" data-act="research-pick" data-arg="${id}" aria-pressed="${pick === id}" title="${esc(x.name)}"><span class="rn-t">${icon(RESEARCH_ICON[id] ?? 'desk')}${st === 'done' ? `<i class="rn-b done">${CHECK_GLYPH}</i>` : st === 'locked' ? `<i class="rn-b lock">${LOCK_GLYPH}</i>` : ''}${p > 0 && st !== 'done' ? `<i class="rn-p"><b style="width:${p.toFixed(0)}%"></b></i>` : ''}</span><span class="rn-l">${esc(x.name)}</span></button>`; };
+    const cur = r.current ? RESEARCH_BY_ID[r.current] : undefined;
+    const need = researchStillNeeds(w);
+    const goods = (x: typeof RESEARCH[number], delivered: boolean) => Object.entries(x.cost).map(([k, n]) => { const left = delivered ? need[k as InputKey] ?? 0 : n ?? 0; const got = (n ?? 0) - left;
+      return `<span class="ifact${delivered && got >= (n ?? 0) ? ' ok' : ''}">${icon(k)}${delivered ? `${Math.floor(got)}/` : ''}${n}</span>`; }).join('');
+    const scholar = desks(w).flatMap(b => workersAt(w, b.uid))[0];
+    const head = cur ? `<div class="rcur"><span class="rcur-i">${icon(RESEARCH_ICON[cur.id] ?? 'desk')}</span><span class="rcur-m"><span class="rcur-t"><b>${esc(cur.name)}</b><small>${Math.floor(r.progress)}/${cur.hours}h</small></span><span class="rbar"><b style="width:${pct(cur.id).toFixed(1)}%"></b></span><span class="ifacts">${goods(cur, true)}<span class="grow"></span>${scholar ? `<button type="button" class="ipeople" data-act="colonist" data-arg="${scholar.id}" title="${esc(scholar.name)}">${avatar(scholar, 'avatar-mini')}</button>` : `<button type="button" class="fixbtn" data-act="desk"><span class="ftile">${icon('desk')}<i class="rb staff">${STAFF_GLYPH}</i></span>Staff</button>`}</span></span></div>` : '';
     const branches = [...new Set(RESEARCH.filter(x => x.branch).map(x => x.branch!))];
-    const rows = [`<div class="rrow"><b>Basics</b><span>${RESEARCH.filter(x => !x.branch).map(x => node(x.id)).join('')}</span></div>`,
-      ...branches.map(b => `<div class="rrow"><b>${esc(b)}</b><span>${RESEARCH.filter(x => x.branch === b).map(x => node(x.id)).join('<i>→</i>')}</span></div>`)];
-    return `<h3>Research${basicsDone(w) < BRANCHES_AFTER ? ` <span class="muted">· specializations open after ${BRANCHES_AFTER} basics</span>` : ''}</h3><div class="rtree">${rows.join('')}</div>`;
+    const sel = pick ? RESEARCH_BY_ID[pick] : undefined;
+    let detail = '';
+    if (sel) {
+      const st = state(sel.id), boost = LORE_BOOST[sel.id];
+      const what = sel.unlocks.length ? `<span class="ifacts">${sel.unlocks.map(u => `<span class="ifact">${icon(u)}${esc(BUILDING_BY_ID[u].name)}</span>`).join('')}</span>`
+        : boost ? `<span class="ifacts">${boost.defs.filter(d => BUILDING_BY_ID[d]).map(d => `<span class="ifact" title="${esc(BUILDING_BY_ID[d].name)}">${icon(d)}</span>`).join('')}<span class="ifact ok">+${Math.round((boost.mult - 1) * 100)}%</span></span>`
+        : `<p class="rd-e">${esc(sel.effect ?? '')}</p>`;
+      const left = Math.max(0, sel.hours - (r.current === sel.id ? r.progress : r.partial?.[sel.id] ?? 0));
+      const action = st === 'open' ? `<button type="button" class="act" data-act="study" data-arg="${sel.id}">Study now</button>` : st === 'now' ? '<span class="rd-s now">Studying</span>' : st === 'done' ? `<span class="rd-s done">${CHECK_GLYPH} Learned</span>` : `<span class="rd-s">${LOCK_GLYPH} ${sel.after && !r.done.includes(sel.after) ? esc(RESEARCH_BY_ID[sel.after].name) : `${basicsDone(w)}/${BRANCHES_AFTER} basics`}</span>`;
+      detail = `<div class="rdetail ${st}"><div class="rd-h">${icon(RESEARCH_ICON[sel.id] ?? 'desk')}<b>${esc(sel.name)}</b>${what}</div><div class="rd-f">${st === 'done' ? '' : `${goods(sel, false)}<span class="ifact">${CLOCK_GLYPH}${Math.ceil(left)}h</span>`}<span class="grow"></span>${action}</div></div>`;
+    }
+    return `<button type="button" class="ghost" data-act="tab" data-arg="build">← Buildings</button><h2 class="rtitle">Research</h2>${head}
+      <h3 class="group">Basics</h3><div class="rbasics">${RESEARCH.filter(x => !x.branch).map(x => node(x.id)).join('')}</div>
+      <h3 class="group">Branches${basicsDone(w) < BRANCHES_AFTER ? ` <span class="rn-gate">${LOCK_GLYPH}${basicsDone(w)}/${BRANCHES_AFTER}</span>` : ''}</h3>
+      <div class="rbranches">${branches.map(bn => `<div class="rbr"><span class="rbr-n">${esc(bn)}</span><span class="rbr-c">${RESEARCH.filter(x => x.branch === bn).map(x => node(x.id)).join('<i class="rlink"></i>')}</span></div>`).join('')}</div>${detail}`;
   }
+
 
   private resumeCard(w: World) {
     const prog = charterProgress(w);

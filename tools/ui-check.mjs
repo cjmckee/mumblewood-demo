@@ -70,7 +70,7 @@ for (const [device,width,height] of [['desktop',1440,900],['phone',390,844],['sm
   await p.evaluate(()=>{
     const g=window.__game,b=g.world.buildings.find(b=>b.def==='woodcutter');
     g.ui.detail={kind:'building',id:b.uid};g.ui.open=true;g.ui.render(true);
-    document.querySelector(`[data-key="targets-${b.uid}"]`).open=true;
+    document.querySelector(`[data-key="targets-${b.uid}"]`)?.setAttribute("open","");
   });
   const target=p.locator('[data-production-limit][data-output=wood]');
   await target.fill('12');
