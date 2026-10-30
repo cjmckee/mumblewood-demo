@@ -239,7 +239,7 @@ export const day = (w: World) => Math.floor(w.hour / 24) + 1;
 export const hourOfDay = (w: World) => w.hour % 24;
 export const alive = (w: World) => w.colonists.filter(c => !c.left);
 const has = (c: Colonist, t: string) => c.traits.includes(t);
-const hasPerk = (w: World, p: string) => w.perks.includes(p);
+export const hasPerk = (w: World, p: string) => w.perks.includes(p);
 export const bdef = (b: Building): BuildingDef => BUILDING_BY_ID[b.def];
 export const buildingByUid = (w: World, uid: number | null) => (uid == null ? undefined : w.buildings.find(b => b.uid === uid));
 export const colonistById = (w: World, id: number | null) => (id == null ? undefined : w.colonists.find(c => c.id === id));
@@ -2657,13 +2657,19 @@ function triggerEvent(w: World) {
   w.nextEventHour = w.hour + gap * 24;
 }
 
+/** what a stock condition counts, in words: a category's name when it's the whole category, otherwise the goods */
+const STOCK_PLURAL: Partial<Record<ResourceId, string>> = { pie: 'pies', tonic: 'tonics', poultice: 'poultices' };
+function stockName(goods: ResourceId[]) {
+  const cat = Object.values(CATEGORIES).find(c => c.members.length === goods.length && c.members.every(m => goods.includes(m)));
+  return cat ? cat.name : goods.map(r => STOCK_PLURAL[r] ?? RESOURCES.find(x => x.id === r)!.name.toLowerCase()).join(' or ');
+}
 function charterValue(w: World, c: CharterDef): { value: number; target: number; label: string } { return metricValue(w, c.metric, 0); }
 /** hours a hold-type condition (a full day with every meal at a table, a full day with nobody sick) has held */
 const holdOf = (w: World, slot: number) => w.charterHolds?.[Math.max(0, slot)] ?? 0;
 function metricValue(w: World, m: CharterMetric, slot: number): { value: number; target: number; label: string } {
   const held = holdOf(w, slot);
   switch (m.kind) {
-    case 'stock': { const v = m.resources.reduce((n, r) => n + w.res[r], 0); return { value: v, target: m.amount, label: `${Math.floor(v)} / ${m.amount} in storage` }; }
+    case 'stock': { const v = m.resources.reduce((n, r) => n + w.res[r], 0); return { value: v, target: m.amount, label: `${Math.floor(v)} / ${m.amount} ${stockName(m.resources)}` }; }
     case 'population': { const v = alive(w).length; return { value: v, target: m.amount, label: `${v} / ${m.amount} colonists` }; }
     case 'avgMood': {
       // judged on the average over the last full day, so the dip before breakfast doesn't reset everything
@@ -2833,9 +2839,13 @@ function checkCharter(w: World) {
   if (c.tier === 3) { w.status = 'won'; addLog(w, 'The Crown declares the colony a proper town. Someone makes a banner. It is spelled wrong.', 'good'); return; }
   const stipend = (START.trade.stipend[c.tier - 1] ?? 0) * (hasPerk(w, 'crownsFavour') ? 2 : 1);
   if (stipend) { earn(w, stipend, 'stipend'); addLog(w, `The Crown's courier brings a stipend: ${stipend} gold, and a receipt to sign in triplicate.`, 'good'); }
+  // the next charter is offered before the cornerstone, so the cornerstone can be picked to suit it
+  // (the cornerstone is rolled first, as before, so the same seed offers the same choices)
+  const queued = w.decisions.length;
   offerCornerstone(w, 'charter');
+  const cornerstone = w.decisions.splice(queued);
   w.charterTier = c.tier + 1;
-  w.decisions.push(charterDecision(w, w.charterTier as 2 | 3));
+  w.decisions.push(charterDecision(w, w.charterTier as 2 | 3), ...cornerstone);
 }
 
 // ---------- Gold and the caravan ----------

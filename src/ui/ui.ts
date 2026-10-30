@@ -1,5 +1,5 @@
 // DOM overlay: HUD, bottom sheet, decision modals. Talks to the sim only through commands.
-import { BUILDINGS, membersOf, BUILDING_BY_ID, EVENTS, RESEARCH, RESEARCH_BY_ID, BRANCHES_AFTER, JOB_NAMES, PERK_BY_ID, TRADER_BY_ID, RESOURCES, TRAIT_BY_ID, ResourceId, SKILL_NAMES, JOB_KINDS, JobKind, Recipe, InputKey, inputName, recipeRate, Stars } from '../sim/content';
+import { EventNeed, EventOption, BUILDINGS, membersOf, BUILDING_BY_ID, EVENTS, RESEARCH, RESEARCH_BY_ID, BRANCHES_AFTER, JOB_NAMES, PERK_BY_ID, TRADER_BY_ID, RESOURCES, TRAIT_BY_ID, ResourceId, SKILL_NAMES, JOB_KINDS, JobKind, Recipe, InputKey, inputName, recipeRate, Stars } from '../sim/content';
 import {
   World, Command, Colonist, alive, avgMood, beds, buildingByUid, charterProgress, colonistById,
   day, hourOfDay, opinion, workersAt, MAX_DEPARTURES, sites, siteWork, remainingCost, storageCap, stored,
@@ -7,8 +7,9 @@ import {
   recipesOf, recipeOn, currentRecipe, orderedRecipes, INPUT_CAPACITY, OUTBOX_CAP, siteOk, rerollCost, REROLL_STEP, stockOf, recipeReach, charterHelpers, charterDef,
   costOf, researchLeft, researchStillNeeds, desks, feastCheck, festivalPreview, mealTotal, drinkTotal,
   comfortParts, comfortOf, colonyComfort, comfortGaps, strainPerDay, footprint, activeNeeds, standingOf, STANDINGS, NeedKey, winterFuelPerDay,
-  sellPrice, charterCounted, charterRequirements, basicsDone, researchOpen,
+  sellPrice, charterCounted, charterRequirements, basicsDone, researchOpen, edibleTotal,
 } from '../sim/world';
+import { charterPreview, Route } from '../sim/charterplan';
 import { START } from '../sim/scenario';
 import { assess } from '../sim/advisor';
 import { economy, Account } from '../sim/economy';
@@ -107,6 +108,12 @@ function reachText(w: World, r: Recipe, forDraft: boolean) {
 /** filled stars in the accent colour, missing ones dimmed, so ★★ reads as two of three */
 const starHtml = (n: Stars) => `<span class="stars" aria-label="${n} of 3 stars">${'★'.repeat(n)}<s>${'★'.repeat(3 - n)}</s></span>`;
 
+/** a cornerstone's icon: the building or good it's about, where there is one */
+const CORNERSTONE_ICON: Record<string, string> = {
+  communalPot: 'stew', warmHearth: 'wood', hearthSongs: 'tavern', homesteaders: 'cottage', hearthkeepers: 'wood', lumberGuild: 'woodcutter',
+  rentCollector: 'gold', pilgrimsRoad: 'caravan', rootCellars: 'cellar', merchantsFavour: 'caravan', openRoad: 'leanto', feastDays: 'dining',
+  brewersGuild: 'brewery', fishingRights: 'dock', masonsLodge: 'sawmill', bakersRow: 'bakery', crownsFavour: 'gold', barnRaising: 'carpenter', ironWill: 'statue',
+};
 const CHARTER_DISPLAY_KEY = 'mumblewood.ui.charter-collapsed.v1';
 function initialCharterCollapsed() {
   try {
@@ -815,9 +822,9 @@ export class UI {
     else if (this.resumeOpen) html = this.resumeCard(w);
     else if (d) {
       switch (d.kind) {
-        case 'charter': html = this.cards(d.tier === 1 ? 'Your first charter' : `Charter ${d.tier} of 3`,
-          d.tier === 1 ? 'Complete three charters to establish your town.' : 'Choose the next goal.',
-          d.options.map(id => { const c = charterDef(id)!; return { title: c.name, body: esc(c.desc), tag: `Tier ${c.tier}` }; })); break;
+        case 'charter': html = this.cards(d.tier === 1 ? 'Your first charter' : d.tier === 3 ? 'The final charter' : `Charter ${d.tier} of 3`,
+          d.tier === 1 ? 'Complete three charters to establish your town.' : d.tier === 3 ? 'Finish one of these to win.' : 'Choose the next goal.',
+          d.options.map(id => this.charterOption(w, id))); break;
         case 'research': {
           const open = basicsDone(w) >= BRANCHES_AFTER;
           html = this.cards(w.research?.done.length ? 'What next for the scholar?' : 'Choose research',
@@ -847,14 +854,14 @@ export class UI {
         }
         case 'perk': html = this.cards(d.why === 'season' ? `${SEASON_NAMES[seasonOf(w).season]}: a new cornerstone` : 'The Crown grants a cornerstone',
           'Choose one permanent bonus.',
-          d.options.map(id => ({ title: PERK_BY_ID[id].name, icon: 'cornerstone', body: esc(PERK_BY_ID[id].desc), tag: 'Cornerstone' }))); break;
+          d.options.map(id => this.cornerstoneOption(id))); break;
         case 'trade': html = this.tradeCard(w); break;
-        case 'recruit': html = `<div class="card-wrap"><p class="eyebrow">Choose one</p><h2>New settlers</h2><p class="lede">⌂ ${beds(w)} beds · ${alive(w).length} settlers${beds(w) <= alive(w).length ? ' · ⚠ Another bed needed' : ''}</p><div class="opts">${d.options.map((c,i) => `<article class="recruit"><button type="button" class="opt" data-act="resolve" data-arg="${i}" ${(c.fee ?? 0) > w.gold ? 'disabled' : ''}><b>${avatar(c)}${esc(c.name)}</b><span>★ ${esc(topSkills(c))}</span><small>♥ ${esc(SKILL_NAMES[c.likes])} · × ${esc(SKILL_NAMES[c.dislikes])} · ${c.fee ? `${c.fee} gold${w.gold < c.fee ? ' · insufficient gold' : ''}` : 'Free'}</small></button><details data-key="recruit-${c.id}"><summary>Traits & tastes</summary>${c.traits.map(t => `<p><b>${esc(TRAIT_BY_ID[t].name)}</b> · ${esc(TRAIT_BY_ID[t].desc)}</p>`).join('')}<p>${tasteLine(c,false)}</p></details></article>`).join('')}</div><button type="button" class="ghost skip" data-act="resolve" data-arg="99">Send all away</button></div>`; break;
+        case 'recruit': html = `<div class="card-wrap"><p class="eyebrow">Choose one</p><h2>New settlers</h2><p class="lede">⌂ ${beds(w)} beds · ${alive(w).length} settlers${beds(w) <= alive(w).length ? ' · ⚠ Another bed needed' : ''}</p><div class="opts">${d.options.map((c,i) => `<article class="recruit"><button type="button" class="opt" data-act="resolve" data-arg="${i}" ${(c.fee ?? 0) > w.gold ? 'disabled' : ''}><b>${avatar(c)}<span class="rname">${esc(c.name)}</span>${c.fee ? `<em class="fee">${icon('gold')}${c.fee} gold${w.gold < c.fee ? ` · you have ${Math.floor(w.gold)}` : ''}</em>` : ''}</b><span>★ ${esc(topSkills(c))}</span><span class="traits">${c.traits.map(t => `<i title="${esc(TRAIT_BY_ID[t].desc)}">${esc(TRAIT_BY_ID[t].name)}</i>`).join('')}</span><small>♥ ${esc(SKILL_NAMES[c.likes])} · × ${esc(SKILL_NAMES[c.dislikes])}</small></button><details data-key="recruit-${c.id}"><summary>What the traits do · tastes</summary>${c.traits.map(t => `<p><b>${esc(TRAIT_BY_ID[t].name)}</b> · ${esc(TRAIT_BY_ID[t].desc)}</p>`).join('')}<p>${tasteLine(c,false)}</p></details></article>`).join('')}</div><button type="button" class="ghost skip" data-act="resolve" data-arg="99">Send all away</button></div>`; break;
         case 'errand': { const e = w.errands.find(x => x.id === d.errandId); if (e) html = this.errandPicker(w, e, true); break; }
         case 'event': {
           const ev = EVENTS.find(e => e.id === d.eventId)!;
           html = `<div class="card-wrap event ${ev.tier}"><p class="eyebrow">${ev.tier === 'major' ? 'Trouble' : 'Something has happened'}</p><h2>${esc(ev.title)}</h2><p class="lede">${esc(ev.text)}</p>
-            <div class="opts">${ev.options.map((o, i) => `<button type="button" class="opt" data-act="resolve" data-arg="${i}"><b>${esc(o.label)}</b><span>${esc(o.detail)}</span></button>`).join('')}</div></div>`;
+            <div class="opts">${ev.options.map((o, i) => this.eventOption(w, o, i)).join('')}</div></div>`;
           break;
         }
       }
@@ -877,7 +884,8 @@ export class UI {
     const heading = el.querySelector('h2');
     if (heading) { heading.id = 'dialog-title'; el.setAttribute('aria-labelledby', 'dialog-title'); }
     for (const id of ['hud', 'sheet', 'placebar', 'stage']) (this.root.querySelector(`#${id}`) as HTMLElement).inert = !!html;
-    if (html && (!wasOpen || !el.contains(document.activeElement))) (el.querySelector<HTMLElement>('button:not(:disabled), summary') ?? el).focus({ preventScroll: true });
+    // the dialog itself takes focus, not its first option, so nothing looks preselected; Tab moves into the options
+    if (html && (!wasOpen || !el.contains(document.activeElement))) el.focus({ preventScroll: true });
     if (html && (!wasOpen || changedDialog)) el.scrollTop = 0;
     this.dialogKey = nextDialogKey;
     if (!html && wasOpen) {
@@ -920,11 +928,52 @@ export class UI {
       <button type="button" class="opt" data-act="resolve" data-arg="0"><b>Done trading</b></button></div>`;
   }
 
-  private cards(title: string, lede: string, opts: { title: string; body: string; tag: string; color?: string; icon?: string; disabled?: boolean }[], skip?: string, extra = '') {
+  /** a charter offer: each condition with how close the colony is, the buildings its goods still need, and what it pays */
+  private charterOption(w: World, id: string) {
+    const c = charterDef(id)!, p = charterPreview(w, id);
+    const route = (r: Route, good?: ResourceId) => {
+      const lead = good ? goodHtml(good) : '';
+      if (r.state === 'never') return `<span class="route never">${lead}⚠ not on this map</span>`;
+      if (r.state === 'ready') return `<span class="route ready">${lead}✓ ${r.by ? `${icon(r.by)}${esc(BUILDING_BY_ID[r.by].name.toLowerCase())} makes ${good ? 'it' : 'them'}` : 'made here'}</span>`;
+      const step = (s: Route['steps'][number]) => {
+        const how = s.how === 'build' ? 'build' : s.how === 'study' ? `study ${esc(RESEARCH_BY_ID[s.research!].name)}` : 'draft';
+        return `<span class="step ${s.how}">${icon(s.def)}${esc(BUILDING_BY_ID[s.def].name.toLowerCase())} <i>${how}</i></span>`;
+      };
+      return `<span class="route">${lead}needs ${r.steps.map(step).join(' ')}</span>`;
+    };
+    const rows = p.conditions.map(x => `<span class="cond${x.met ? ' met' : ''}"><span class="ct"><i aria-hidden="true">${x.met ? '✓' : '○'}</i>${esc(x.text)}${x.have ? ` <em>${esc(x.have)}</em>` : ''}</span>`
+      + `${x.route && !x.met ? route(x.route) : ''}${x.routes && !x.met ? x.routes.map(r => route(r.route, r.good)).join('') : ''}</span>`).join('');
+    return { title: c.name, body: `<span class="conds">${rows}</span>`, tag: c.tier === 3 ? '♛ Finishing it wins the run' : `Pays ${p.rewards.join(' · ')}`, cls: 'charter' };
+  }
+
+  /** a cornerstone: its own icon, the bonus, and any cost marked apart */
+  private cornerstoneOption(id: string) {
+    const perk = PERK_BY_ID[id];
+    return { title: perk.name, icon: CORNERSTONE_ICON[id] ?? 'cornerstone', body: esc(perk.desc) + (perk.cost ? `\n<em class="cost">But: ${esc(perk.cost)}</em>` : ''), tag: '' };
+  }
+
+  /** an event choice, with what it costs against what's in store, and what happens instead when the colony can't pay */
+  private eventOption(w: World, o: EventOption, i: number) {
+    const have: Record<EventNeed, number> = { gold: Math.floor(w.gold), meal: Math.floor(mealTotal(w)), drink: Math.floor(drinkTotal(w)), food: Math.floor(edibleTotal(w)), wood: Math.floor(w.res.wood), planks: Math.floor(w.res.planks) };
+    const label: Record<EventNeed, string> = { gold: 'gold', meal: 'meals', drink: 'drinks', food: 'food', wood: 'wood', planks: 'planks' };
+    const iconFor: Record<EventNeed, string> = { gold: 'gold', meal: 'meal', drink: 'drink', food: 'rawFood', wood: 'wood', planks: 'planks' };
+    const needs = Object.entries(o.needs ?? {}) as [EventNeed, number][];
+    let extra = '';
+    if (o.effect === 'moonDance') {
+      const n = alive(w).filter(c => !bedridden(c)).length, m = Math.floor(mealTotal(w));
+      extra = `<span class="have${m < n ? ' short' : ''}">${icon('meal')}${m} meals for ${n} settlers${m < n ? ' · not everyone gets one' : ''}</span>`;
+    }
+    const short = needs.filter(([k, n]) => have[k] < n);
+    if (needs.length) extra = `<span class="have${short.length ? ' short' : ''}">You have ${needs.map(([k]) => `${icon(iconFor[k])}${have[k]} ${label[k]}`).join(', ')}</span>`
+      + (short.length ? `<span class="warnline">⚠ Not enough. ${esc(o.short ?? '')}</span>` : '');
+    return `<button type="button" class="opt${short.length ? ' short' : ''}" data-act="resolve" data-arg="${i}"><b>${esc(o.label)}</b><span>${esc(o.detail)}</span>${extra}</button>`;
+  }
+
+  private cards(title: string, lede: string, opts: { title: string; body: string; tag: string; color?: string; icon?: string; disabled?: boolean; cls?: string }[], skip?: string, extra = '') {
     return `<div class="card-wrap"><p class="eyebrow">Choose one</p><h2>${esc(title)}</h2><p class="lede">${esc(lede)}</p>
-      <div class="opts">${opts.map((o, i) => `<button type="button" class="opt" data-act="resolve" data-arg="${i}"${o.disabled ? ' disabled' : ''}>
+      <div class="opts">${opts.map((o, i) => `<button type="button" class="opt${o.cls ? ` ${o.cls}` : ''}" data-act="resolve" data-arg="${i}"${o.disabled ? ' disabled' : ''}>
         <b>${o.color ? `<span class="dot" style="background:${o.color}"></span>` : ''}${o.icon ? icon(o.icon, 'cico') : ''}${esc(o.title)}</b>
-        ${o.body.split('\n').map(line => `<span>${line}</span>`).join('')}<small>${o.tag}</small></button>`).join('')}</div>
+        ${o.body.split('\n').map(line => `<span>${line}</span>`).join('')}${o.tag ? `<small>${o.tag}</small>` : ''}</button>`).join('')}</div>
       ${skip ? `<button type="button" class="ghost skip" data-act="resolve" data-arg="99">${esc(skip)}</button>` : ''}${extra}</div>`;
   }
 
@@ -1051,7 +1100,7 @@ function ledger(w: World, selected: InputKey | 'gold' | null = null) {
   const goldLine = ['rent', 'stipend', 'sell'].map(k => `${k === 'sell' ? 'selling' : k} ${goldIn(k)}`).join(' · ');
   return `<p class="muted hint">The last 24 hours, scaled to a full day.</p>
     <div id="account-gold" class="acct gold-acct"><div class="acct-head"><b>${icon('gold')}Gold</b><span>${Math.floor(w.gold)} · this run: ${goldLine} · spent ${Math.round(goldOut)}</span></div></div>
-    ${w.perks.length ? `<details data-key="cornerstones"><summary>Cornerstones · ${w.perks.length}</summary><ul class="stones">${w.perks.map(p => `<li>${icon('cornerstone')}<span><b>${esc(PERK_BY_ID[p].name)}</b><small>${esc(PERK_BY_ID[p].desc)}</small></span></li>`).join('')}</ul></details>` : ''}
+    ${w.perks.length ? `<details data-key="cornerstones"><summary>Cornerstones · ${w.perks.length}</summary><ul class="stones">${w.perks.map(p => `<li>${icon(CORNERSTONE_ICON[p] ?? 'cornerstone')}<span><b>${esc(PERK_BY_ID[p].name)}</b><small>${esc(PERK_BY_ID[p].desc)}${PERK_BY_ID[p].cost ? ` ${esc(PERK_BY_ID[p].cost!)}` : ''}</small></span></li>`).join('')}</ul></details>` : ''}
     <details data-key="gold-help"><summary>Gold sources</summary><p>Seasonal rent · Crown stipends · events · caravan sales</p></details>${categoryDetail}${resourceDetail}${accounts.map(([a, k]) => accountCard(a, k, selected === k || !!selected && (membersOf(k).includes(selected as ResourceId) || k === 'meal' && FOODS.includes(selected as ResourceId)))).join('')}
     <h3>Jobs</h3><div class="joblist">${jobs || '<p class="muted">No workplaces yet.</p>'}</div>
     <h3>Laborers <span class="muted">· ${e.laborers.length}</span></h3>

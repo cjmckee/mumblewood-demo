@@ -212,6 +212,32 @@ h3.first { margin-top: 4px; }
 .opt span { font-size: 13px; color: var(--muted); line-height: 1.4; }
 .opt small { font-size: 12px; color: var(--accent); }
 .skip { justify-self: start; }
+#modal:focus { outline: none; }
+/* charter offers: one row per condition, with the buildings its goods still need */
+.opt .conds { display: grid; gap: 6px; margin-top: 2px; }
+.opt .cond { display: grid; gap: 3px; color: var(--text); }
+.opt .cond .ct { color: var(--text); display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
+.opt .cond .ct i { font-style: normal; color: var(--muted); width: 1em; flex: none; }
+.opt .cond.met .ct, .opt .cond.met .ct i { color: var(--good); }
+.opt .cond em { font-style: normal; color: var(--muted); font-size: 12px; }
+.opt .route { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; padding-left: calc(1em + 6px); font-size: 12px; color: var(--muted); }
+.opt .route.ready { color: var(--good); } .opt .route.never { color: #f3b39f; }
+.opt .route .ico, .opt .step .ico { width: 15px; height: 15px; vertical-align: -3px; margin-right: 2px; }
+.opt .step { display: inline-flex; align-items: center; gap: 3px; padding: 1px 7px 1px 4px; border-radius: 999px; border: 1px solid var(--line); color: var(--text); font-size: 12px; }
+.opt .step i { font-style: normal; color: var(--muted); }
+.opt .step.draft i { color: var(--accent); }
+.opt.charter small { margin-top: 4px; }
+/* cornerstone costs and event shortfalls */
+.opt em.cost { font-style: normal; color: #f3b39f; }
+.opt .have { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 3px; flex-wrap: wrap; }
+.opt .have .ico { width: 15px; height: 15px; }
+.opt .have.short { color: #f3b39f; }
+.opt .warnline { margin: 4px 0 0; padding: 6px 8px; }
+.opt.short { border-color: rgba(224, 105, 74, .5); }
+/* recruit traits as chips */
+.opt .traits { display: flex; flex-wrap: wrap; gap: 4px; }
+.opt .traits i { font-style: normal; font-size: 12px; color: var(--text); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; }
+.recruit .opt > b .rname { flex: 1; font-size: inherit; color: inherit; }
 .reroll-note { margin: 2px 0 0; font-size: 12px; }
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin: 6px 0 8px; }
 .stats div { background: #232a24; border-radius: 10px; padding: 10px 12px; }
