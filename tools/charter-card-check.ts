@@ -1,7 +1,8 @@
 // Decision cards: charter offers show each condition's route and what finishing pays; the next charter is offered
 // before the charter's cornerstone; event options that spend goods say so. Usage: npx tsx tools/charter-card-check.ts
-import { createWorld, apply, runHours, debugGrow, charterRequirements, World } from '../src/sim/world';
-import { charterPreview, Route } from '../src/sim/charterplan';
+import { createWorld, apply, runHours, debugGrow, charterRequirements, charterDef, World } from '../src/sim/world';
+const charterDefOf = (id: string) => charterDef(id)!;
+import { charterPreview, metricRoutes, Route } from '../src/sim/charterplan';
 import { EVENTS, PERKS } from '../src/sim/content';
 
 let failed = 0;
@@ -34,6 +35,13 @@ check(tonic?.route?.state === 'never', 'tonics without a meadow: not on this map
 // variety lists a route per kind
 const tasting = charterPreview(w, 'tasting').conditions.find(c => c.text.startsWith('3 kinds of drink'));
 check((tasting?.routes?.length ?? 0) === 3, `three drink routes are listed (${tasting?.routes?.map(r => r.good)})`);
+
+// while a charter is under way, its panel gets the same routes: bread on a fresh map needs a mill and a field drafted
+const f = createWorld(777);
+const breadParts = (charterDefOf('bread').metric as { kind: 'all'; parts: any[] }).parts;
+const breadRoute = metricRoutes(f, breadParts.find(p => p.kind === 'stock'))[0]?.route;
+check(steps(breadRoute).includes('draft:mill') && steps(breadRoute).includes('draft:field'), `in play, bread shows the mill and field to draft (${steps(breadRoute)})`);
+check(metricRoutes(f, breadParts.find(p => p.kind === 'population')).length === 0, 'colonists have no route tiles');
 
 // finishing a charter: the next charter is offered first, then its cornerstone
 const g = createWorld(4242);

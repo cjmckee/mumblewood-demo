@@ -9,7 +9,7 @@ import {
   comfortParts, comfortOf, colonyComfort, comfortGaps, strainPerDay, footprint, activeNeeds, standingOf, STANDINGS, NeedKey, winterFuelPerDay,
   sellPrice, charterCounted, charterRequirements, basicsDone, researchOpen, edibleTotal,
 } from '../sim/world';
-import { charterPreview, Route } from '../sim/charterplan';
+import { charterPreview, metricRoutes, Route } from '../sim/charterplan';
 import { START } from '../sim/scenario';
 import { assess } from '../sim/advisor';
 import { economy, Account } from '../sim/economy';
@@ -108,6 +108,17 @@ function reachText(w: World, r: Recipe, forDraft: boolean) {
 /** filled stars in the accent colour, missing ones dimmed, so ★★ reads as two of three */
 const starHtml = (n: Stars) => `<span class="stars" aria-label="${n} of 3 stars">${'★'.repeat(n)}<s>${'★'.repeat(3 - n)}</s></span>`;
 
+/** small stroke glyphs for the charter chips and route tiles */
+const svg = (d: string, w = 2) => `<svg class="glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+const PERSON_GLYPH = svg('<circle cx="12" cy="8" r="3.6"/><path d="M5 20c0-3.9 3.1-6.5 7-6.5s7 2.6 7 6.5"/>');
+const MOOD_GLYPH = svg('<circle cx="12" cy="12" r="8.5"/><path d="M8.5 14.2c1 1.3 2.2 1.9 3.5 1.9s2.5-.6 3.5-1.9"/><path d="M9 9.6h.01M15 9.6h.01" stroke-width="2.6"/>');
+const ROUTE_GLYPH: Record<'build' | 'study' | 'draft' | 'never', string> = {
+  build: svg('<path d="M14 4l6 6M11 7l6 6M13 11l-9 9"/>', 3),
+  study: svg('<path d="M4 5h6a2 2 0 0 1 2 2v13a2 2 0 0 0-2-2H4zM20 5h-6a2 2 0 0 0-2 2v13a2 2 0 0 1 2-2h6z"/>', 3),
+  draft: svg('<rect x="6" y="3" width="12" height="18" rx="2"/>', 3),
+  never: svg('<path d="M6 6l12 12M18 6 6 18"/>', 3.4),
+};
+const CATEGORY_MEMBERS = { meal: membersOf('meal'), drink: membersOf('drink'), fine: membersOf('fine'), remedy: membersOf('remedy'), rawFood: membersOf('rawFood') };
 /** a cornerstone's icon: the building or good it's about, where there is one */
 const CORNERSTONE_ICON: Record<string, string> = {
   communalPot: 'stew', warmHearth: 'wood', hearthSongs: 'tavern', homesteaders: 'cottage', hearthkeepers: 'wood', lumberGuild: 'woodcutter',
@@ -409,11 +420,11 @@ export class UI {
         <div id="colony-status-details" class="status-details" ${this.charterCollapsed ? 'hidden' : ''}>
         <div class="charter">
           ${prog ? `
-          <div class="requirements">${charterRequirements(w).map(r => { const m = r.metric; const act = m.kind === 'stock' || m.kind === 'variety' ? 'resource' : m.kind === 'built' || m.kind === 'monument' ? 'catalog-help' : m.kind === 'everyoneBed' || m.kind === 'healthy' || m.kind === 'allTable' || m.kind === 'longTable' ? 'need' : 'tab'; const arg = m.kind === 'stock' ? m.resources[0] : m.kind === 'variety' ? m.category : m.kind === 'built' || m.kind === 'monument' ? m.def : m.kind === 'everyoneBed' ? 'shelter' : m.kind === 'healthy' ? 'health' : m.kind === 'allTable' || m.kind === 'longTable' ? 'table' : 'colonists'; return `<button type="button" class="requirement" data-act="${act}" data-arg="${arg}"><span>${r.ratio >= 1 ? '✓' : '○'} ${esc(r.label)}</span><span class="mini"><i style="width:${r.ratio * 100}%"></i></span><span>→</span></button>`; }).join('')}</div>${feastBtn}` : w.research && !w.charterOffered ? `<div class="ch-label">The first charter arrives on the morning of day ${sc.firstCharterDay}.</div>` : ''}
+          ${this.requirementChips(w)}${feastBtn}` : w.research && !w.charterOffered ? `<div class="ch-label">The first charter arrives on the morning of day ${sc.firstCharterDay}.</div>` : ''}
           ${researchChip}${concernCards(w)}
         </div>
         <div class="threats">
-          <button type="button" class="strain" data-act="strain-open" title="Frontier strain: a mood penalty that rises every day, faster when people's needs go unmet. Tap for why."><span>Strain</span><b>${strain ? '−' : ''}${strain}</b><small class="rate">+${strainPerDay(w).toFixed(1)}/day</small></button>${this.festivalChip(w)}
+          <button type="button" class="strain" data-act="strain-open" title="Frontier strain: a mood penalty that rises every day, faster when people's needs go unmet. Tap for why."><span>Strain</span><b>${strain}</b><small class="rate">▲ ${strainPerDay(w).toFixed(1)}/day</small></button>${this.festivalChip(w)}
           <button type="button" data-act="help" data-arg="loss" class="leavers" title="If ${sc.collapse.lost} settlers leave or die${sc.collapse.minAlive ? `, or only ${sc.collapse.minAlive} remain` : ''}, the colony collapses"><span>Lost</span><div class="pips">${pips}</div></button>
         </div>
         </div>
@@ -428,6 +439,42 @@ export class UI {
       const row = this.root.querySelector('#hud .res') as HTMLElement | null;
       if (row) { const more = () => row.classList.toggle('more', row.scrollLeft + row.clientWidth < row.scrollWidth - 2); more(); row.addEventListener('scroll', more, { passive: true }); }
     }
+  }
+
+  /** the charter while it's under way: one chip per condition (icon, have/need, green when met), then the buildings its
+   *  goods still need as tiles marked build / study / draft; chips and build or study tiles go where it can be fixed */
+  private requirementChips(w: World) {
+    const tile = (s: Route['steps'][number]) => {
+      const name = BUILDING_BY_ID[s.def].name;
+      const label = s.how === 'build' ? `Build ${name}` : s.how === 'study' ? `Study ${RESEARCH_BY_ID[s.research!].name} for the ${name.toLowerCase()}` : `Draft a ${name.toLowerCase()} blueprint`;
+      const inner = `${icon(s.def)}<i class="rb ${s.how}">${ROUTE_GLYPH[s.how]}</i>`;
+      return s.how === 'draft' ? `<span class="rtile draft" title="${esc(label)}" role="img" aria-label="${esc(label)}">${inner}</span>`
+        : `<button type="button" class="rtile ${s.how}" data-act="catalog-help" data-arg="${s.def}" title="${esc(label)}" aria-label="${esc(label)}">${inner}</button>`;
+    };
+    const routes = (rs: { good?: InputKey; route: Route }[]) => rs.filter(x => x.route.state !== 'ready').map(x =>
+      `<span class="rgroup">${x.good ? icon(x.good) : ''}${x.route.state === 'never' ? `<span class="rtile never" title="Not on this map" role="img" aria-label="Not on this map">${ROUTE_GLYPH.never}</span>` : x.route.steps.map(tile).join('')}</span>`).join('');
+    const log = w.moodLog ?? [];
+    const mood = Math.round(log.length ? log.reduce((a, b) => a + b, 0) / log.length : avgMood(w));
+    return `<div class="req-chips">${charterRequirements(w).map(r => {
+      const m = r.metric, met = r.ratio >= 1;
+      const act = m.kind === 'stock' || m.kind === 'variety' ? 'resource' : m.kind === 'built' || m.kind === 'monument' ? 'catalog-help' : m.kind === 'everyoneBed' || m.kind === 'healthy' || m.kind === 'allTable' || m.kind === 'longTable' ? 'need' : 'tab';
+      const arg = m.kind === 'stock' ? m.resources[0] : m.kind === 'variety' ? m.category : m.kind === 'built' || m.kind === 'monument' ? m.def : m.kind === 'everyoneBed' ? 'shelter' : m.kind === 'healthy' ? 'health' : m.kind === 'allTable' || m.kind === 'longTable' ? 'table' : 'colonists';
+      const cat = m.kind === 'stock' ? Object.entries(CATEGORY_MEMBERS).find(([, ms]) => ms.length === m.resources.length && ms.every(x => m.resources.includes(x)))?.[0] : undefined;
+      const [ico, text] = m.kind === 'population' ? [PERSON_GLYPH, `${r.value}/${r.target}`]
+        : m.kind === 'avgMood' ? [MOOD_GLYPH, `${mood}/${m.amount}`]
+        : m.kind === 'stock' ? [icon(cat ?? m.resources[0]), `${Math.floor(r.value)}/${r.target}`]
+        : m.kind === 'variety' ? [icon(m.category), `${CATEGORY_MEMBERS[m.category].filter(x => w.res[x] >= m.each).length}/${m.kinds}`]
+        : m.kind === 'built' ? [icon(m.def), `${r.value}/${r.target}`]
+        : m.kind === 'everyoneBed' ? [icon('leanto'), `${r.value}/${r.target}`]
+        : m.kind === 'allTable' ? [icon('dining'), `${r.value}/${r.target}h`]
+        : m.kind === 'healthy' ? [icon('clinic'), `${r.value}/${r.target}h`]
+        : m.kind === 'monument' ? [icon(m.def), `${Math.min(Math.floor(r.value), r.target)}/${r.target}`]
+        : m.kind === 'longTable' ? [icon('dining'), w.feast?.done ? '✓' : `${feastCheck(w).served}/${m.pop}`]
+        : ['', esc(r.label)];
+      const chip = `<button type="button" class="rchip${met ? ' met' : ''}" data-act="${act}" data-arg="${arg}" title="${esc(r.label)}" aria-label="${esc(r.label)}">${ico}<b>${text}</b></button>`;
+      const tiles = met ? '' : routes(metricRoutes(w, m));
+      return tiles ? `<span class="req">${chip}<span class="rarrow" aria-hidden="true">›</span>${tiles}</span>` : `<span class="req">${chip}</span>`;
+    }).join('')}</div>`;
   }
 
   private helpCard(w: World) {
@@ -823,7 +870,7 @@ export class UI {
     else if (d) {
       switch (d.kind) {
         case 'charter': html = this.cards(d.tier === 1 ? 'Your first charter' : d.tier === 3 ? 'The final charter' : `Charter ${d.tier} of 3`,
-          d.tier === 1 ? 'Complete three charters to establish your town.' : d.tier === 3 ? 'Finish one of these to win.' : 'Choose the next goal.',
+          d.tier === 3 ? 'Finish one of these to win.' : `${d.tier === 1 ? 'Complete three charters to establish your town. ' : ''}Each pays ${charterPreview(w, d.options[0]).rewards[0]}, eases strain ${Math.round(START.relief.charter * 100)}% and brings a cornerstone.`,
           d.options.map(id => this.charterOption(w, id))); break;
         case 'research': {
           const open = basicsDone(w) >= BRANCHES_AFTER;
@@ -943,7 +990,7 @@ export class UI {
     };
     const rows = p.conditions.map(x => `<span class="cond${x.met ? ' met' : ''}"><span class="ct"><i aria-hidden="true">${x.met ? '✓' : '○'}</i>${esc(x.text)}${x.have ? ` <em>${esc(x.have)}</em>` : ''}</span>`
       + `${x.route && !x.met ? route(x.route) : ''}${x.routes && !x.met ? x.routes.map(r => route(r.route, r.good)).join('') : ''}</span>`).join('');
-    return { title: c.name, body: `<span class="conds">${rows}</span>`, tag: c.tier === 3 ? '♛ Finishing it wins the run' : `Pays ${p.rewards.join(' · ')}`, cls: 'charter' };
+    return { title: c.name, body: `<span class="conds">${rows}</span>`, tag: '', cls: 'charter' };
   }
 
   /** a cornerstone: its own icon, the bonus, and any cost marked apart */
@@ -952,21 +999,16 @@ export class UI {
     return { title: perk.name, icon: CORNERSTONE_ICON[id] ?? 'cornerstone', body: esc(perk.desc) + (perk.cost ? `\n<em class="cost">But: ${esc(perk.cost)}</em>` : ''), tag: '' };
   }
 
-  /** an event choice, with what it costs against what's in store, and what happens instead when the colony can't pay */
+  /** an event choice: what it costs as a have/need pill (red, and the choice dimmed, when short), and when short what happens instead */
   private eventOption(w: World, o: EventOption, i: number) {
     const have: Record<EventNeed, number> = { gold: Math.floor(w.gold), meal: Math.floor(mealTotal(w)), drink: Math.floor(drinkTotal(w)), food: Math.floor(edibleTotal(w)), wood: Math.floor(w.res.wood), planks: Math.floor(w.res.planks) };
-    const label: Record<EventNeed, string> = { gold: 'gold', meal: 'meals', drink: 'drinks', food: 'food', wood: 'wood', planks: 'planks' };
     const iconFor: Record<EventNeed, string> = { gold: 'gold', meal: 'meal', drink: 'drink', food: 'rawFood', wood: 'wood', planks: 'planks' };
+    const pill = (ico: string, h: number, n: number, what: string) => `<span class="cost-pill${h < n ? ' short' : ''}" title="${h} of ${n} ${what}" aria-label="${h} of ${n} ${what}">${icon(ico)}${h}/${n}</span>`;
     const needs = Object.entries(o.needs ?? {}) as [EventNeed, number][];
-    let extra = '';
-    if (o.effect === 'moonDance') {
-      const n = alive(w).filter(c => !bedridden(c)).length, m = Math.floor(mealTotal(w));
-      extra = `<span class="have${m < n ? ' short' : ''}">${icon('meal')}${m} meals for ${n} settlers${m < n ? ' · not everyone gets one' : ''}</span>`;
-    }
-    const short = needs.filter(([k, n]) => have[k] < n);
-    if (needs.length) extra = `<span class="have${short.length ? ' short' : ''}">You have ${needs.map(([k]) => `${icon(iconFor[k])}${have[k]} ${label[k]}`).join(', ')}</span>`
-      + (short.length ? `<span class="warnline">⚠ Not enough. ${esc(o.short ?? '')}</span>` : '');
-    return `<button type="button" class="opt${short.length ? ' short' : ''}" data-act="resolve" data-arg="${i}"><b>${esc(o.label)}</b><span>${esc(o.detail)}</span>${extra}</button>`;
+    const pills = needs.map(([k, n]) => pill(iconFor[k], have[k], n, k));
+    if (o.effect === 'moonDance') pills.push(pill('meal', Math.floor(mealTotal(w)), alive(w).filter(c => !bedridden(c)).length, 'meals for the settlers'));
+    const short = needs.some(([k, n]) => have[k] < n);
+    return `<button type="button" class="opt ev${short ? ' short' : ''}" data-act="resolve" data-arg="${i}"><b><span class="evl">${esc(o.label)}</span>${pills.length ? `<span class="pills">${pills.join('')}</span>` : ''}</b><span>${esc(o.detail)}</span>${short && o.short ? `<span class="instead">Short: ${esc(o.short)}</span>` : ''}</button>`;
   }
 
   private cards(title: string, lede: string, opts: { title: string; body: string; tag: string; color?: string; icon?: string; disabled?: boolean; cls?: string }[], skip?: string, extra = '') {

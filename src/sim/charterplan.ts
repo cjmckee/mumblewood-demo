@@ -134,3 +134,34 @@ export function charterPreview(w: World, id: string): CharterPreview {
   }
   return { id, conditions, rewards };
 }
+
+/** routes for one condition while the charter is under way: the missing buildings for its goods (per kind for variety) */
+export function metricRoutes(w: World, m: CharterMetric): { good?: InputKey; route: Route }[] {
+  switch (m.kind) {
+    case 'stock': return [{ route: asRoute(routeAny(w, m.resources)) }];
+    case 'variety': {
+      const members = CATEGORIES[m.category].members;
+      const have = members.filter(r => w.res[r] >= m.each).length;
+      if (have >= m.kinds) return [];
+      // the kinds still short, cheapest first, as many as are still needed
+      return members.filter(r => w.res[r] < m.each).map(good => ({ good, r: routeFor(w, good) })).filter(x => x.r)
+        .sort((a, b) => a.r!.cost - b.r!.cost).slice(0, m.kinds - have).map(x => ({ good: x.good, route: asRoute(x.r) }));
+    }
+    case 'built': return [{ route: asRoute(buildingRoute(w, m.def)) }];
+    case 'allTable': {
+      const table = buildingRoute(w, 'dining'), meal = routeAny(w, MEALS);
+      if (!table || !meal) return [{ route: { state: 'never', steps: [] } }];
+      return [{ route: asRoute({ cost: 0, steps: [...table.steps, ...meal.steps.filter(s => !table.steps.some(x => x.def === s.def))] }) }];
+    }
+    case 'monument': {
+      const b = w.buildings.find(x => x.def === m.def);
+      const stage = BUILDING_BY_ID[m.def].stages?.[b?.stage ?? 0];
+      if (!b) return [{ route: asRoute(buildingRoute(w, m.def)) }];
+      if (b.built || !stage) return [];
+      const k = Object.keys(stage.cost)[0] as InputKey;
+      return [{ route: asRoute(routeAny(w, membersOf(k))) }];
+    }
+    case 'longTable': return [{ good: 'meal', route: asRoute(routeAny(w, MEALS)) }, { good: 'drink', route: asRoute(routeAny(w, CATEGORIES.drink.members)) }];
+    default: return [];
+  }
+}
