@@ -1,6 +1,6 @@
 # UI polish implementation
 
-Implemented the [UI audit](UI_AUDIT.md) in focused commits, with character portraits after the information and interaction changes. Changes are local commits on the working branch; nothing has been deployed.
+Implemented the [UI audit](UI_AUDIT.md) in focused commits, with character portraits after the information and interaction changes. This records the initial implementation. See [the playtest plan](UI_PLAYTEST_PLAN.md) for integration with current main and the deferred usability decisions.
 
 | Commit | Change |
 | --- | --- |

@@ -100,3 +100,5 @@ Run `npm run check` for the type check, all focused simulation suites (each in a
 See [the current merge checkpoint](docs/merge-readiness.md) for shipped defaults, final watched runs, save compatibility, and deferred polish/balance decisions. Older experiment notes record historical settings and should be read alongside that checkpoint.
 
 For the browser save/resume check, install Playwright separately, serve `dist/site`, then run `GAME_URL=http://127.0.0.1:8000/ node tools/save-check.mjs`. `CHROMIUM_PATH` can select a system Chromium. The browser check is separate from the Node simulation suites.
+
+For the UI playtest, follow [the playtest and follow-up plan](docs/UI_PLAYTEST_PLAN.md). It separates the shipped fixes from usability decisions awaiting playtest evidence.
