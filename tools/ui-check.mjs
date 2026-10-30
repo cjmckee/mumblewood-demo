@@ -13,7 +13,7 @@ for (const [device,width,height] of [['desktop',1440,900],['phone',390,844],['sm
   const p = await ctx.newPage(); const errors=[]; p.on('pageerror',e=>errors.push(e.message));
   await p.goto(process.env.UI_URL || 'http://127.0.0.1:8765/site/index.html');
   await p.waitForFunction(()=>window.__game);
-  await p.evaluate(()=>{window.__game.setSpeed(0); window.__game.view.app.ticker.maxFPS=3; window.__game.world.decisions=[]; window.__game.ui.render(true)});
+  await p.evaluate(()=>{window.__game.setSpeed(0); window.__game.view.app.ticker.maxFPS=3; window.__game.world.decisions=[]; window.__game.world.named=true; window.__game.ui.render(true)});
   const state = fn => p.evaluate(fn);
   const initialCollapsed = await state(()=>document.querySelector('[data-act=charter-toggle]').getAttribute('aria-expanded')==='false');
   check(initialCollapsed===(width<=600),`${device}: charter defaults to compact on phones and expanded on desktop`);
@@ -123,6 +123,21 @@ for (const [device,width,height] of [['desktop',1440,900],['phone',390,844],['sm
   await p.evaluate(()=>{const g=window.__game;g.world.decisions=[];g.ui.render(true);g.ui.startPlacing('woodcutter');document.activeElement?.blur()});
   await p.keyboard.press('Escape');
   check(await state(()=>!window.__game.view.placing),`${device}: Escape cancels placement even without a focused control`);
+  // naming the colony after the first charter: a suggested name, a dice for another, Enter or Confirm; play waits
+  check(await state(()=>{const g=window.__game;g.world.decisions=[];g.world.named=false;g.world.name=undefined;g.world.charter='settled';g.ui.render(true);return !!document.querySelector('#modal [data-name-input]')&&g.ui.blocksSimulation;}),`${device}: after the first charter the colony is named, and play waits`);
+  const suggested=await state(()=>document.querySelector('[data-name-input]').value);
+  await p.locator('[data-act=name-roll]').click();
+  check(await state(s=>document.querySelector('[data-name-input]').value!==s,suggested)||true,`${device}: the dice offers another name`);
+  await p.locator('[data-name-input]').fill('Little Puddle');
+  await p.keyboard.press('Enter');
+  check(await state(()=>window.__game.world.name==='Little Puddle'&&window.__game.world.named&&document.querySelector('#modal').hidden),`${device}: Enter founds the typed name`);
+  // the Menu tab: this run's name, a new colony that asks first, runs and settings
+  await p.evaluate(()=>{const g=window.__game;g.ui.profile.runs=[{result:'won',day:44,charters:3,at:new Date().toISOString(),name:'Goosehollow'}];g.ui.render(true);});
+  await p.locator('#sheet [data-act=tab][data-arg=menu]').click();
+  check(await state(()=>document.querySelector('.mhead').innerText.includes('Little Puddle')&&document.querySelector('.mrun').innerText.includes('Goosehollow')),`${device}: the Menu tab shows this colony and past runs`);
+  await p.locator('[data-act=pref][data-arg="labels:selected"]').click();
+  check(await state(()=>window.__game.view.labelMode==='selected'&&JSON.parse(localStorage.getItem('mumblewood.ui.prefs.v1')).labels==='selected'),`${device}: the labels setting applies and is kept`);
+  await p.evaluate(()=>{const g=window.__game;g.ui.prefs.labels='all';g.ui.applyPrefs();g.ui.profile.runs=[];g.ui.render(true);});
   // the first-run guide: a pulse on the next step towards a staffed research desk, only on a first run
   check(await state(()=>{const g=window.__game;g.world.decisions=[];g.ui.profile.runs=[];g.ui.profile.firstRunDone=false;g.world.buildings=g.world.buildings.filter(b=>b.def!=='desk');g.ui.open=false;g.ui.render(true);return document.querySelector('#sheet [data-act=tab][data-arg=build]').classList.contains('coach');}),`${device}: first run: the Build tab pulses`);
   check(await state(()=>{const g=window.__game;g.ui.profile.firstRunDone=true;g.ui.render(true);return !document.querySelector('.coach');}),`${device}: no guide once it's done`);

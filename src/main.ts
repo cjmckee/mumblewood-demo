@@ -1,4 +1,4 @@
-import { createWorld, tick, apply, runHours, TICKS_PER_HOUR, World, Command, day, debugEvent } from './sim/world';
+import { createWorld, tick, apply, runHours, TICKS_PER_HOUR, World, Command, day, debugEvent, colonyName } from './sim/world';
 import { IsoView } from './render/iso';
 import { UI } from './ui/ui';
 import { autoDecide, autoBuild } from './sim/autoplayer';
@@ -14,7 +14,7 @@ async function boot() {
   // a small profile kept in this browser: run history now, unlocks later
   // v2: runs from the old six-settler start aren't comparable, so the run history starts fresh
   const PROFILE_KEY = 'mumblewood.profile.v2';
-  type Profile = { runs: { result: string; day: number; charters: number; at: string }[]; unlocks: string[]; firstRunDone?: boolean };
+  type Profile = { runs: { result: string; day: number; charters: number; at: string; name?: string }[]; unlocks: string[]; firstRunDone?: boolean };
   let profile: Profile = { runs: [], unlocks: [] };
   try { const raw = localStorage.getItem(PROFILE_KEY); if (raw) profile = { ...profile, ...JSON.parse(raw) }; } catch { /* storage unavailable */ }
   const saveProfile = () => { try { localStorage.setItem(PROFILE_KEY, JSON.stringify(profile)); } catch { /* storage unavailable */ } };
@@ -31,6 +31,7 @@ async function boot() {
   ui.onSpeed = s => (speed = s);
   ui.profile = profile;
   ui.onProfile = saveProfile;
+  ui.applyPrefs();
   ui.resumeOpen = !!saved;
   ui.resumeSavedAt = saved?.savedAt ?? '';
   ui.onRestart = () => {
@@ -57,7 +58,7 @@ async function boot() {
     if (world.status !== 'playing' && !recorded) {
       recorded = true;
       clearSave();
-      profile.runs.push({ result: world.status, day: day(world), charters: world.chartersDone.length, at: new Date().toISOString() });
+      profile.runs.push({ result: world.status, day: day(world), charters: world.chartersDone.length, at: new Date().toISOString(), name: colonyName(world) });
       saveProfile();
     }
     view.lastWorld = world;

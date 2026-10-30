@@ -740,6 +740,43 @@ h3.group { margin: 14px 0 6px; font-size: 11px; letter-spacing: .1em; text-trans
 .tdone { width: 100%; margin-top: 6px; }
 @media (max-width: 600px) { .tsum { display: none; } .tstep button { min-width: 32px; } .tprice { width: 38px; } }
 @media (max-width: 360px) { .tico { display: none; } }
+/* Menu tab: this run, a new colony, past runs, settings */
+.mhead { display: flex; align-items: center; gap: 12px; background: #222823; border-radius: 12px; padding: 10px 12px; margin-top: 6px; }
+.mday { font-family: var(--font-display); font-size: 28px; color: var(--accent); line-height: 1; white-space: nowrap; }
+.mm { display: grid; gap: 2px; min-width: 0; }
+.mm b { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mm small { font-size: 12px; color: var(--muted); }
+.msaved { display: inline-flex; align-items: center; gap: 4px; } .msaved .glyph { width: 13px; height: 13px; }
+.mnew { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; min-height: 44px; margin-top: 8px; border-radius: 12px; border: 1px solid rgba(224, 105, 74, .5); background: transparent; color: #f3b39f; font-weight: 700; }
+.mnew .glyph { width: 17px; height: 17px; }
+.mnew.confirm { flex-wrap: wrap; padding: 8px; gap: 8px; cursor: default; color: var(--text); font-weight: 500; }
+.mnew.confirm span { flex-basis: 100%; text-align: center; font-size: 13px; }
+.act.danger { background: var(--bad); color: #fff; }
+.mruns-h { display: flex; align-items: center; justify-content: space-between; }
+.mwins { display: inline-flex; align-items: center; gap: 4px; color: var(--accent); font-weight: 700; font-size: 13px; margin-top: 8px; }
+.mwins .glyph { width: 15px; height: 15px; }
+.mrun { display: flex; align-items: center; gap: 10px; padding: 7px 4px; border-top: 1px solid #2a312a; font-size: 13px; }
+.mrun > .glyph { width: 18px; height: 18px; color: var(--muted); flex: none; } .mrun.won > .glyph { color: var(--accent); }
+.mr-n { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .mrun.lost .mr-n { color: var(--muted); }
+.mr-d { display: inline-flex; align-items: center; gap: 3px; color: var(--muted); font-variant-numeric: tabular-nums; width: 42px; } .mr-d .glyph { width: 13px; height: 13px; }
+.mr-c { display: inline-flex; gap: 3px; } .mr-c i { width: 8px; height: 8px; border-radius: 99px; background: #3a413a; } .mr-c i.on { background: var(--good); }
+.mr-t { color: var(--muted); font-size: 12px; width: 48px; text-align: right; }
+.msets { display: grid; gap: 6px; }
+.mset { display: flex; align-items: center; gap: 10px; background: #222823; border-radius: 12px; padding: 6px 6px 6px 10px; min-height: 52px; }
+.mset > .glyph { width: 20px; height: 20px; color: var(--muted); }
+.mset > span:not(.segs) { flex: 1; font-size: 14px; font-weight: 600; }
+.mset .segs { margin: 0; flex: none; }
+/* naming the colony */
+.card-wrap.naming .nrow { display: flex; gap: 8px; margin-top: 4px; min-width: 0; }
+.card-wrap.naming { min-width: 0; }
+.nin { flex: 1; min-width: 0; width: 0; height: 48px; padding: 0 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel-solid); color: var(--text); font: inherit; font-size: 18px; font-weight: 600; }
+.nin:focus { outline: none; border-color: var(--accent); }
+.nroll { width: 48px; height: 48px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel-solid); color: var(--text); display: grid; place-items: center; padding: 0; }
+.nroll .glyph { width: 24px; height: 24px; }
+.nok { min-height: 48px; font-size: 16px; margin-top: 4px; }
+/* reduce motion, from the Menu tab */
+.calm *, .calm *::before, .calm *::after { animation: none !important; transition: none !important; }
+.calm .coach { box-shadow: 0 0 0 3px var(--accent); }
 </style>
 <div id="game">
   <div id="stage"></div>

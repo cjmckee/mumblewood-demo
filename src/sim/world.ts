@@ -159,6 +159,9 @@ export interface World {
   /** gold: from rent, the Crown's stipend, events and selling to the caravan */
   gold: number;
   caravan: Caravan | null;
+  /** the colony's name: the player's, once chosen (named); before that colonyName() makes one from the seed */
+  name?: string;
+  named?: boolean;
   /** the trader due with the next caravan, announced when the last one leaves */
   nextTrader?: string;
   /** the storyteller: threat built up and not yet spent, when the last major event came, and how many of each tier */
@@ -835,6 +838,20 @@ function researchDecision(w: World, fixed?: string[]): Decision {
   const options = fixed?.length ? fixed.filter(id => open.includes(id)) : open;
   return { kind: 'research', options };
 }
+// ---------- Colony names ----------
+const NAME_FRONT = ['Mumble', 'Thistle', 'Muddle', 'Puddle', 'Bramble', 'Gristle', 'Wobble', 'Fiddle', 'Grumble', 'Nettle', 'Soggy', 'Mossy', 'Crumb', 'Dither', 'Turnip', 'Goose', 'Badger', 'Wimble', 'Dimp', 'Frog', 'Hob', 'Muck', 'Pickle', 'Squelch'];
+const NAME_BACK = ['wood', 'bottom', 'ford', 'hollow', 'by', 'ton', 'wick', 'stead', 'combe', 'mere', 'end', 'holt', 'thorpe', 'dale', 'well', 'brook', 'ham', 'field'];
+const NAME_TAIL = ['-on-the-Bog', '-under-Hill', ' Parva', ' Magna', '-in-the-Mud', ' Market', '-le-Puddle', ' St. Pomfrey'];
+export const NAME_MAX = 28;
+/** a colony name from a number: a front and a back, now and then a tail */
+export function nameFrom(n: number) {
+  let h = (n ^ 0x9e3779b9) >>> 0; const next = () => { h = Math.imul(h ^ (h >>> 15), 2246822519) >>> 0; h = Math.imul(h ^ (h >>> 13), 3266489917) >>> 0; return (h ^= h >>> 16) >>> 0; };
+  const front = NAME_FRONT[next() % NAME_FRONT.length], back = NAME_BACK[next() % NAME_BACK.length];
+  return front + back + (next() % 4 === 0 ? NAME_TAIL[next() % NAME_TAIL.length] : '');
+}
+/** the colony's name: the player's, or one made from the seed */
+export const colonyName = (w: World) => w.name || nameFrom(w.seed);
+
 /** start (or go back to) a project, keeping the hours put into the one being left */
 function startStudy(w: World, id: string) {
   const r = w.research, partial = (r.partial ??= {});
@@ -948,6 +965,7 @@ export type Command =
   | { type: 'foodRule'; food: ResourceId; allowed: boolean }
   | { type: 'resolve'; option: number }
   | { type: 'study'; id: string }
+  | { type: 'name'; name: string }
   | { type: 'autoAssign' }
   | { type: 'setAutoAssignNew'; value: boolean }
   | { type: 'storageFilter'; building: number; allow: ResourceId[] | null }
@@ -1113,6 +1131,11 @@ export function apply(w: World, cmd: Command): string | null {
     case 'autoAssign': autoAssign(w); return null;
     case 'setAutoAssignNew': w.autoAssignNew = cmd.value; return null;
     case 'resolve': return resolveDecision(w, cmd.option);
+    case 'name': {
+      const name = cmd.name.replace(/\s+/g, ' ').trim().slice(0, NAME_MAX);
+      w.name = name || colonyName(w); w.named = true;
+      return null;
+    }
     case 'study': {
       // switch the scholar to another open project now; hours already spent on any project are kept
       if (!w.research) return 'There is no research yet.';
