@@ -123,7 +123,7 @@ for (const [device,width,height] of [['desktop',1440,900],['phone',390,844],['sm
   await p.evaluate(()=>{const g=window.__game;g.world.decisions=[];g.ui.render(true);g.ui.startPlacing('woodcutter');document.activeElement?.blur()});
   await p.keyboard.press('Escape');
   check(await state(()=>!window.__game.view.placing),`${device}: Escape cancels placement even without a focused control`);
-  // naming the colony after the first charter: a suggested name, a dice for another, Enter or Found it; play waits
+  // naming the colony after the first charter: a suggested name, a dice for another, Enter or Confirm; play waits
   check(await state(()=>{const g=window.__game;g.world.decisions=[];g.world.named=false;g.world.name=undefined;g.world.charter='settled';g.ui.render(true);return !!document.querySelector('#modal [data-name-input]')&&g.ui.blocksSimulation;}),`${device}: after the first charter the colony is named, and play waits`);
   const suggested=await state(()=>document.querySelector('[data-name-input]').value);
   await p.locator('[data-act=name-roll]').click();

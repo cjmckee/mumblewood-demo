@@ -1179,7 +1179,7 @@ export class UI {
       if (!this.nameInit || this.nameSeed !== w.seed) { this.nameInit = colonyName(w); this.nameSeed = w.seed; this.nameDraft = null; }
       html = `<div class="card-wrap naming"><p class="eyebrow">A new settlement</p><h2>Name your colony</h2>
         <div class="nrow"><input type="text" class="nin" data-name-input maxlength="${NAME_MAX}" value="${esc(this.nameInit)}" aria-label="Colony name" autocomplete="off" spellcheck="false"><button type="button" class="nroll" data-act="name-roll" title="Another name" aria-label="Another name">${DICE_GLYPH}</button></div>
-        <button type="button" class="act nok" data-act="name-ok">Found it</button></div>`;
+        <button type="button" class="act nok" data-act="name-ok">Confirm</button></div>`;
     }
     if (!html && this.help) html = this.helpCard(w);
     if (!html && this.festivalOpen) html = this.festivalCard(w);
