@@ -420,6 +420,16 @@ button.strain { min-height:44px; }
   #game.panel-open #hud .status { display:none; }
 }
 .recipe-row{display:flex;gap:6px;align-items:stretch}.recipe-row>.recipe{flex:1;min-width:0}.recipe-moves{display:flex;flex-direction:column;justify-content:center}.recipe-moves button{min-width:34px;min-height:32px}.recipe-moves button:disabled{opacity:.3}.production-targets label{display:flex;align-items:center;gap:6px;margin:8px 0}.production-targets label span{margin-left:auto;font-size:12px;color:var(--muted)}.production-targets input{width:76px;min-height:36px;background:var(--panel-solid);color:inherit;border:1px solid var(--line);border-radius:6px;padding:6px;font:inherit}
+/* Keep charter progress visible while reclaiming map space. */
+#hud .status { display:block; }
+.status-toggle { display:flex; width:100%; min-height:44px; align-items:center; justify-content:space-between; gap:12px; padding:0; color:var(--text); background:none; border:0; text-align:left; }
+.status-heading { display:grid; gap:3px; min-width:0; }
+.status-heading .ch-tier { font-size:10px; }
+.status-chevron { width:22px; height:22px; flex:none; color:var(--accent); }
+.status.is-collapsed .status-chevron { transform:rotate(180deg); }
+.status-details { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:12px; align-items:center; margin-top:6px; }
+.status.is-collapsed .meter { margin-bottom:0; }
+@media (max-width:600px) { .status-details { gap:8px; } }
 </style>
 <div id="game">
   <div id="stage"></div>

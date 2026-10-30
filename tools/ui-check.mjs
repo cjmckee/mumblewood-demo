@@ -15,6 +15,25 @@ for (const [device,width,height] of [['desktop',1440,900],['phone',390,844],['sm
   await p.waitForFunction(()=>window.__game);
   await p.evaluate(()=>{window.__game.setSpeed(0); window.__game.view.app.ticker.maxFPS=3; window.__game.world.decisions=[]; window.__game.ui.render(true)});
   const state = fn => p.evaluate(fn);
+  const initialCollapsed = await state(()=>document.querySelector('[data-act=charter-toggle]').getAttribute('aria-expanded')==='false');
+  check(initialCollapsed===(width<=600),`${device}: charter defaults to compact on phones and expanded on desktop`);
+  await p.evaluate(()=>{const g=window.__game;g.world.charter='settled';g.ui.charterCollapsed=true;g.ui.render(true)});
+  const compactHeight=await state(()=>document.querySelector('#hud .status').getBoundingClientRect().height);
+  check(compactHeight<=96&&await state(()=>document.querySelector('.status .ch-name').innerText&&document.querySelector('.status [role=progressbar]')&&document.querySelector('#colony-status-details').hidden),`${device}: compact charter keeps its goal and progress in under 96px`);
+  await p.locator('[data-act=charter-toggle]').click();
+  const expandedHeight=await state(()=>document.querySelector('#hud .status').getBoundingClientRect().height);
+  check(expandedHeight>compactHeight+60&&await state(()=>!document.querySelector('#colony-status-details').hidden&&document.querySelector('[data-act=charter-toggle]').getAttribute('aria-expanded')==='true'),`${device}: tapping expands all requirements and colony controls`);
+  await p.screenshot({path:`${out}/${device}-charter-expanded.png`});
+  await p.locator('[data-act=charter-toggle]').focus();await p.keyboard.press('Enter');
+  check(await state(()=>{
+    const g=window.__game;g.world.res.wood++;g.ui.render(true);
+    return document.querySelector('#colony-status-details').hidden&&document.activeElement?.dataset.act==='charter-toggle';
+  }),`${device}: keyboard collapse survives live updates and preserves focus`);
+  await p.screenshot({path:`${out}/${device}-charter-compact.png`});
+  await p.reload();await p.waitForFunction(()=>window.__game);
+  await p.evaluate(()=>{const g=window.__game;g.setSpeed(0);g.view.app.ticker.maxFPS=3;g.world.decisions=[];g.ui.resumeOpen=false;g.ui.render(true)});
+  check(await state(()=>document.querySelector('[data-act=charter-toggle]').getAttribute('aria-expanded')==='false'),`${device}: charter preference survives reload`);
+
   check(await state(()=>{
     const g=window.__game;g.ui.open=true;g.ui.tab='colonists';g.ui.render(true);
     return ['apples','bread','skewers'].every(id=>document.querySelector(`[data-act=food][data-arg=${id}]`));
@@ -36,7 +55,7 @@ for (const [device,width,height] of [['desktop',1440,900],['phone',390,844],['sm
     const speed=document.querySelector('[data-act=speed][data-arg="0"]');speed.focus();g.world.res.wood++;g.ui.render(true);
     return document.querySelector('#hud .res').scrollLeft===before && document.activeElement?.dataset.act==='speed';
   }),`${device}: HUD updates preserve horizontal scroll and keyboard focus`);
-  await p.evaluate(()=>{window.__game.ui.open=false;window.__game.ui.render(true)});
+  await p.evaluate(()=>{window.__game.ui.open=false;window.__game.ui.charterCollapsed=false;window.__game.ui.render(true)});
   await p.locator('[data-act=strain-open]').click();
   check(await state(()=>document.querySelector('#modal').getAttribute('role')==='dialog'&&document.querySelector('#hud').inert&&window.__game.ui.blocksSimulation),`${device}: modal has semantics, background isolation and pauses play`);
   await p.locator('#modal button').last().focus(); await p.keyboard.press('Tab');
