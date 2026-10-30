@@ -198,7 +198,8 @@ export interface World {
   stats: { peakPop: number; couples: number; breakups: number; departures: number; mealsEaten: number; built: number; cured: number; errands: number; deaths: number };
   version: number; // bumps when buildings change shape or state, for the renderer
   /** research: projects finished, the one under way and its progress in work-hours */
-  research: { done: string[]; current: string | null; progress: number };
+  /** partial: hours already put into projects the scholar switched away from, kept for when they come back */
+  research: { done: string[]; current: string | null; progress: number; partial?: Record<string, number> };
   /** the first charter has been offered */
   charterOffered?: boolean;
   /** the day blueprint drafts started: they wait for the first charter */
@@ -834,6 +835,12 @@ function researchDecision(w: World, fixed?: string[]): Decision {
   const options = fixed?.length ? fixed.filter(id => open.includes(id)) : open;
   return { kind: 'research', options };
 }
+/** start (or go back to) a project, keeping the hours put into the one being left */
+function startStudy(w: World, id: string) {
+  const r = w.research, partial = (r.partial ??= {});
+  if (r.current && r.current !== id && r.progress > 0) partial[r.current] = r.progress;
+  r.current = id; r.progress = partial[id] ?? 0; delete partial[id];
+}
 /** goods the current project still needs at the desks, by cost key */
 export function researchStillNeeds(w: World): Partial<Record<InputKey, number>> {
   const cur = w.research?.current ? RESEARCH_BY_ID[w.research.current] : undefined;
@@ -940,6 +947,7 @@ export type Command =
   | { type: 'sendOnErrand'; errand: number; colonist: number | null }
   | { type: 'foodRule'; food: ResourceId; allowed: boolean }
   | { type: 'resolve'; option: number }
+  | { type: 'study'; id: string }
   | { type: 'autoAssign' }
   | { type: 'setAutoAssignNew'; value: boolean }
   | { type: 'storageFilter'; building: number; allow: ResourceId[] | null }
@@ -1105,6 +1113,17 @@ export function apply(w: World, cmd: Command): string | null {
     case 'autoAssign': autoAssign(w); return null;
     case 'setAutoAssignNew': w.autoAssignNew = cmd.value; return null;
     case 'resolve': return resolveDecision(w, cmd.option);
+    case 'study': {
+      // switch the scholar to another open project now; hours already spent on any project are kept
+      if (!w.research) return 'There is no research yet.';
+      if (w.research.current === cmd.id) return null;
+      if (!researchOpen(w).some(r => r.id === cmd.id)) return 'That can\u2019t be studied yet.';
+      startStudy(w, cmd.id);
+      // choosing from the tree answers a waiting "what next?" offer
+      w.decisions = w.decisions.filter(d => d.kind !== 'research');
+      addLog(w, `The scholar turns to ${RESEARCH_BY_ID[cmd.id].name.toLowerCase()}.`);
+      return null;
+    }
   }
 }
 
@@ -1131,7 +1150,7 @@ function resolveDecision(w: World, option: number): string | null {
     case 'research': {
       const id = d.options[option] ?? d.options[0];
       if (!id || !w.research) break;
-      w.research.current = id; w.research.progress = 0;
+      startStudy(w, id);
       const def = RESEARCH_BY_ID[id];
       addLog(w, `The scholar opens a book on ${def.name.toLowerCase()}. ${desks(w).some(b => workersAt(w, b.uid).length) ? '' : 'Someone needs to sit at the research desk.'}`.trim());
       break;

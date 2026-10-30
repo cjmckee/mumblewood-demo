@@ -7,7 +7,8 @@ export type Destination =
   | { kind: 'workplaces'; defs: string[]; label: string }
   | { kind: 'catalog'; def: string; label: string }
   | { kind: 'people'; label: string }
-  | { kind: 'food'; label: string };
+  | { kind: 'food'; label: string }
+  | { kind: 'research'; label: string };
 
 export function buildingDestination(w: World, def: string, staff = false): Destination {
   const defs = defsOf(def);
