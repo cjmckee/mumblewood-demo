@@ -116,10 +116,10 @@ for (const [device,width,height] of [['desktop',1440,900],['phone',390,844],['sm
   check(await state(()=>!document.querySelector('#modal').hidden),`${device}: mandatory choice remains open`);
   // A capped sale must display and transact the same quantity.
   await p.evaluate(()=>{const g=window.__game;g.world.decisions=[{kind:'trade'}];g.world.caravan={trader:'pedlar',leaves:g.world.hour+24,stock:{},blueprints:[],sold:{wood:19},x:20,y:20};g.world.res.wood=2;g.ui.render(true)});
-  const sale = p.locator('[data-act=trade-sell][data-arg^="wood:"]');
-  const saleText=await sale.first().innerText();
-  await sale.first().click();
-  check(saleText.includes('Sell 1')&&await state(()=>window.__game.world.res.wood===1),`${device}: sale label and actual capped quantity agree`);
+  await p.locator('[data-act=tq][data-arg="sell:wood:5"]').click();
+  const capped=await state(()=>{const r=document.querySelector('[data-act=tq][data-arg="sell:wood:5"]');return r.disabled&&r.closest('.tstep').querySelector('b').textContent==='1';});
+  await p.locator('[data-act=trade-go]').click();
+  check(capped&&await state(()=>window.__game.world.res.wood===1),`${device}: the order caps a sale at what's left, and Trade sells that much`);
   await p.evaluate(()=>{const g=window.__game;g.world.decisions=[];g.ui.render(true);g.ui.startPlacing('woodcutter');document.activeElement?.blur()});
   await p.keyboard.press('Escape');
   check(await state(()=>!window.__game.view.placing),`${device}: Escape cancels placement even without a focused control`);
