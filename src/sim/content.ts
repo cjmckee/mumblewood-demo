@@ -248,11 +248,12 @@ export const TRAITS: TraitDef[] = [
 ];
 export const TRAIT_BY_ID: Record<string, TraitDef> = Object.fromEntries(TRAITS.map(t => [t.id, t]));
 
-export interface PerkDef { id: string; name: string; desc: string }
+/** desc: the bonus; cost: the price some cornerstones carry, shown apart so it can't be missed */
+export interface PerkDef { id: string; name: string; desc: string; cost?: string }
 export const PERKS: PerkDef[] = [
-  { id: 'communalPot', name: 'Communal pot', desc: 'Meals give +5 more mood. Raw food is −3 worse.' },
+  { id: 'communalPot', name: 'Communal pot', desc: 'Meals give +5 more mood.', cost: 'Raw food is −3 worse.' },
   { id: 'ironWill', name: 'Iron constitution', desc: 'Frontier strain grows 35% slower.' },
-  { id: 'overtime', name: 'Overtime bell', desc: 'Everyone works 25% faster, and is −3 mood about it.' },
+  { id: 'overtime', name: 'Overtime bell', desc: 'Everyone works 25% faster.', cost: 'Everyone is −3 mood about it.' },
   { id: 'saintsDay', name: "Saint Pomfrey's blessing", desc: '+6 mood for everyone, forever.' },
   { id: 'warmHearth', name: 'Everburning hearth', desc: 'The hearth burns no wood at all, and evenings there are +2.' },
   { id: 'hearthSongs', name: 'Hearth songs', desc: 'Strain eases by 1 every evening the tavern is open and staffed.' },
@@ -260,11 +261,11 @@ export const PERKS: PerkDef[] = [
   { id: 'homesteaders', name: 'Homesteaders', desc: 'Comfort counts for 30% more against strain.' },
   { id: 'hearthkeepers', name: 'Hearthkeepers', desc: 'Homes burn half as much wood in winter.' },
   { id: 'lumberGuild', name: 'Lumber guild', desc: 'Woodcutters bring in 50% more wood.' },
-  { id: 'rentCollector', name: 'Rent collector', desc: 'Rent is doubled. Everyone is −2 mood about it, forever.' },
+  { id: 'rentCollector', name: 'Rent collector', desc: 'Rent is doubled.', cost: 'Everyone is −2 mood about it, forever.' },
   { id: 'pilgrimsRoad', name: 'Pilgrims’ road', desc: 'The caravan comes in winter too.' },
   { id: 'rootCellars', name: 'Root cellars', desc: 'Nothing spoils in winter.' },
   { id: 'merchantsFavour', name: 'Merchant’s favour', desc: 'The caravan sells for 20% less and pays 20% more.' },
-  { id: 'openRoad', name: 'Open road', desc: 'Settlers ask to join every day, all year. Strain grows 10% faster.' },
+  { id: 'openRoad', name: 'Open road', desc: 'Settlers ask to join every day, all year.', cost: 'Strain grows 10% faster.' },
   { id: 'feastDays', name: 'Feast days', desc: 'Festivals ease 50% more strain.' },
   // guilds: a big boost to one chain, worth it only if the colony runs on that chain
   { id: 'brewersGuild', name: 'Brewers\u2019 guild', desc: 'Breweries and cider presses work 75% faster.' },
@@ -272,8 +273,8 @@ export const PERKS: PerkDef[] = [
   { id: 'masonsLodge', name: 'Masons\u2019 lodge', desc: 'Sawmills, carpenters, kilns and clay pits work 75% faster.' },
   { id: 'bakersRow', name: 'Bakers\u2019 row', desc: 'Grain fields, mills, bakeries and pie ovens work 75% faster.' },
   // trade-offs
-  { id: 'crownsFavour', name: 'The Crown\u2019s favour', desc: '60 gold now, and charter stipends are doubled. Strain grows 15% faster.' },
-  { id: 'barnRaising', name: 'Barn raising', desc: 'Everything is built twice as fast. Everyone is −2 mood from the hammering.' },
+  { id: 'crownsFavour', name: 'The Crown\u2019s favour', desc: '60 gold now, and charter stipends are doubled.', cost: 'Strain grows 15% faster.' },
+  { id: 'barnRaising', name: 'Barn raising', desc: 'Everything is built twice as fast.', cost: 'Everyone is −2 mood from the hammering.' },
 ];
 /** what each guild speeds up */
 export const GUILD_BOOST: Record<string, string[]> = {
@@ -303,7 +304,10 @@ export interface CharterDef {
   sites?: SiteId[];
 }
 
-export interface EventOption { label: string; detail: string; effect: string }
+/** what an option spends, checked against stores when the event is shown: gold, meals, drinks, any food, wood or planks */
+export type EventNeed = 'gold' | 'meal' | 'drink' | 'food' | 'wood' | 'planks';
+/** needs: what it costs; short: what happens instead when the colony can't pay */
+export interface EventOption { label: string; detail: string; effect: string; needs?: Partial<Record<EventNeed, number>>; short?: string }
 /**
  * How the storyteller treats an event. Threat builds up every day (see scenario.ts, story); minor events cost little or
  * nothing and come often, moderate and major ones wait until the budget can pay for them, and a major one buys a quiet
@@ -316,12 +320,12 @@ export interface EventDef extends StoryTag { id: string; title: string; text: st
 export const EVENTS: EventDef[] = [
   { id: 'bard', tier: 'minor', cost: 0, title: 'A travelling bard', text: 'A bard offers to play "The Ballad of Your Colony" for a modest fee. He has not yet written it.',
     options: [
-      { label: 'Pay 6 drinks', detail: 'Everyone +6 mood for a day, and strain eases by 8%.', effect: 'bardPlay' },
+      { label: 'Pay 6 drinks', detail: 'Everyone +6 mood for a day, and strain eases by 8%.', effect: 'bardPlay', needs: { drink: 6 }, short: 'The bard plays one note and leaves.' },
       { label: 'Shoo him away', detail: 'Nothing happens. He writes a mean song anyway.', effect: 'none' },
     ] },
   { id: 'wedding', tier: 'minor', cost: 0, title: 'A wedding is proposed', text: 'A couple wants to make it official. Everyone is invited, whether they like it or not.', requires: 'couple',
     options: [
-      { label: 'Host it (8 meals, 5 drinks)', detail: 'Everyone +7 mood for 2 days, and strain eases by 10%.', effect: 'wedding' },
+      { label: 'Host it (8 meals, 5 drinks)', detail: 'Everyone +7 mood for 2 days, and strain eases by 10%.', effect: 'wedding', needs: { meal: 8, drink: 5 }, short: 'The couple elopes instead (−8 mood for 2 days).' },
       { label: 'Elope quietly', detail: 'The couple is −8 mood for 2 days.', effect: 'elope' },
     ] },
   { id: 'frogs', tier: 'minor', cost: 2, title: 'It is raining frogs', text: 'Small, confused frogs. Some colonists find it delightful. Others are holding umbrellas very tightly.',
@@ -331,17 +335,17 @@ export const EVENTS: EventDef[] = [
     ] },
   { id: 'outhouse', tier: 'minor', cost: 3, title: 'The outhouse is haunted', text: 'Witnesses describe moaning, rattling, and "a judgmental presence".',
     options: [
-      { label: 'Rebuild it (10 planks)', detail: 'Lose 10 planks.', effect: 'outhouseFix' },
+      { label: 'Rebuild it (10 planks)', detail: 'Lose 10 planks.', effect: 'outhouseFix', needs: { planks: 10 }, short: 'The ghost stays: everyone −3 mood for 3 days.' },
       { label: 'Live with the ghost', detail: 'Everyone −3 mood for 3 days.', effect: 'ghost' },
     ] },
   { id: 'letters', tier: 'minor', cost: 0, title: 'Letters from home', text: 'A courier staggers out of the woods with a sack of letters, most of them from aunts. He would like feeding before the walk back.', requires: 'strain',
     options: [
-      { label: 'Feed him (15 food)', detail: 'Strain eases by 10%, or 15% if nobody is sulking. Everyone +3 mood for a day.', effect: 'lettersRead' },
+      { label: 'Feed him (15 food)', detail: 'Strain eases by 10%, or 15% if nobody is sulking. Everyone +3 mood for a day.', effect: 'lettersRead', needs: { food: 15 }, short: 'The courier leaves with the letters: everyone −2 mood.' },
       { label: 'Send him on his way', detail: 'The letters go back. Everyone −2 mood for a day.', effect: 'lettersLost' },
     ] },
   { id: 'homesick', tier: 'moderate', cost: 6, title: 'A cold wind from the east', text: 'The wind smells like somewhere else. People are talking about home, and not fondly about here.', requires: 'strain',
     options: [
-      { label: 'Light a bonfire (20 wood)', detail: 'Strain doesn’t rise from this, and everyone +2 mood for a day.', effect: 'bonfire' },
+      { label: 'Light a bonfire (20 wood)', detail: 'Strain doesn’t rise from this, and everyone +2 mood for a day.', effect: 'bonfire', needs: { wood: 20 }, short: 'No bonfire: strain rises by 3.' },
       { label: 'Tough it out', detail: 'Strain rises by 3.', effect: 'homesick' },
     ] },
   { id: 'moon', tier: 'minor', cost: 0, title: 'A harvest moon', text: 'The moon is enormous and orange. Someone suggests a dance. Someone else suggests the dance needs food.',
@@ -351,8 +355,8 @@ export const EVENTS: EventDef[] = [
     ] },
   { id: 'peddler', tier: 'minor', cost: 0, title: 'A peddler with a cart', text: 'She is selling "authentic" relics and also, more usefully, planks.',
     options: [
-      { label: 'Trade 30 wood for 12 planks', detail: 'A decent deal.', effect: 'peddlerPlanks' },
-      { label: 'Buy the relic (8 gold)', detail: 'Everyone +3 mood for 3 days. It is a spoon.', effect: 'relic' },
+      { label: 'Trade 30 wood for 12 planks', detail: 'A decent deal.', effect: 'peddlerPlanks', needs: { wood: 30 }, short: 'No trade.' },
+      { label: 'Buy the relic (8 gold)', detail: 'Everyone +3 mood for 3 days. It is a spoon.', effect: 'relic', needs: { gold: 8 }, short: 'No relic.' },
     ] },
   { id: 'purse', tier: 'minor', cost: 0, title: 'A purse in the mud', text: 'Someone found a purse on the road. It is heavy, embroidered "NOT YOURS", and smells faintly of cheese.',
     options: [
@@ -361,24 +365,24 @@ export const EVENTS: EventDef[] = [
     ] },
   { id: 'taxman', tier: 'moderate', cost: 8, title: 'The Crown’s tax collector', text: 'A man in a very tall hat has come to count things. He has a ledger, a quill, and no sense of humour.',
     options: [
-      { label: 'Pay the levy (12 gold)', detail: 'He tips the hat and leaves.', effect: 'taxPay' },
+      { label: 'Pay the levy (12 gold)', detail: 'He tips the hat and leaves.', effect: 'taxPay', needs: { gold: 12 }, short: 'He takes 20 food instead, and everyone is −3 mood for 2 days.' },
       { label: 'Hide the valuables', detail: 'He takes 20 food instead, and everyone is −3 mood for 2 days.', effect: 'taxHide' },
     ] },
   { id: 'busker', tier: 'minor', cost: 0, title: 'Buskers at the hearth', text: 'Two fiddlers and a man with a spoon are playing for coins. The spoon man is surprisingly good.',
     options: [
-      { label: 'Toss them 6 gold', detail: 'Everyone +4 mood for a day, and strain eases by 5%.', effect: 'buskerPay' },
+      { label: 'Toss them 6 gold', detail: 'Everyone +4 mood for a day, and strain eases by 5%.', effect: 'buskerPay', needs: { gold: 6 }, short: 'Nothing happens.' },
       { label: 'Applaud politely', detail: 'Nothing happens. The spoon man looks hurt.', effect: 'none' },
     ] },
   // ---- bigger trouble and the seasons' own events ----
   { id: 'tollGang', tier: 'major', cost: 25, title: 'A goblin toll gang', text: 'Six goblins with a barrier pole have set up across the road. They insist the road is theirs. One of them has a very small crown.',
     options: [
-      { label: 'Pay the toll (30 gold)', detail: 'They lift the pole and wave you through, smugly.', effect: 'tollPay' },
+      { label: 'Pay the toll (30 gold)', detail: 'They lift the pole and wave you through, smugly.', effect: 'tollPay', needs: { gold: 30 }, short: 'They smash up a workshop, and everyone is −3 mood for 2 days.' },
       { label: 'Bar the gates', detail: 'They smash up a workshop before they get bored, and everyone is −3 mood for 2 days.', effect: 'tollRefuse' },
     ] },
   { id: 'inspector', tier: 'major', cost: 20, seasons: ['autumn'], title: 'The Crown\u2019s inspector', text: 'An inspector with a clipboard has come to see whether the colony is "worth the paperwork". He is hungry and corruptible, in that order.',
     options: [
-      { label: 'Feed his retinue (15 meals)', detail: 'He writes something positive, probably. Strain eases by 5%.', effect: 'inspectorMeals' },
-      { label: 'Slip him 25 gold', detail: 'The clipboard is put away.', effect: 'inspectorGold' },
+      { label: 'Feed his retinue (15 meals)', detail: 'He writes something positive, probably. Strain eases by 5%.', effect: 'inspectorMeals', needs: { meal: 15 }, short: 'He leaves unimpressed: strain +6, everyone −3 mood.' },
+      { label: 'Slip him 25 gold', detail: 'The clipboard is put away.', effect: 'inspectorGold', needs: { gold: 25 }, short: 'He leaves unimpressed: strain +6, everyone −3 mood.' },
     ] },
   { id: 'blight', tier: 'moderate', cost: 12, seasons: ['autumn'], requires: 'crops', title: 'Blight in the rows', text: 'Black spots on the leaves of the fields and the orchard. The old-timers say burn it. The young ones say it looks fine.',
     options: [
@@ -392,7 +396,7 @@ export const EVENTS: EventDef[] = [
     ] },
   { id: 'author', tier: 'minor', cost: 0, title: 'A travelling author', text: 'A famous author is writing a book about the frontier and would like to stay a night. She asks a great many questions about the toilets.',
     options: [
-      { label: 'Host her (5 meals)', detail: 'Everyone +3 mood for a day, and strain eases by 8%.', effect: 'authorHost' },
+      { label: 'Host her (5 meals)', detail: 'Everyone +3 mood for a day, and strain eases by 8%.', effect: 'authorHost', needs: { meal: 5 }, short: 'She moves on. Nothing happens.' },
       { label: 'No room at the inn', detail: 'Nothing happens. You will not be in the book.', effect: 'none' },
     ] },
 ];

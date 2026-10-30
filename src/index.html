@@ -77,7 +77,7 @@ b { font-weight: 600; }
 .ch-label { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .threats { display: grid; gap: 6px; border-left: 1px solid var(--line); padding-left: 12px; }
 .threats span { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); display: block; }
-.strain b { color: var(--bad); font-size: 15px; font-variant-numeric: tabular-nums; }
+.strain b { color: var(--wear); font-size: 15px; font-variant-numeric: tabular-nums; }
 .pips { display: flex; gap: 3px; margin-top: 2px; }
 .pip { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid #6b6f62; }
 .pip.on { background: var(--bad); border-color: var(--bad); }
@@ -212,6 +212,59 @@ h3.first { margin-top: 4px; }
 .opt span { font-size: 13px; color: var(--muted); line-height: 1.4; }
 .opt small { font-size: 12px; color: var(--accent); }
 .skip { justify-self: start; }
+#modal:focus { outline: none; }
+/* charter offers: one row per condition, with the buildings its goods still need */
+.opt .conds { display: grid; gap: 6px; margin-top: 2px; }
+.opt .cond { display: grid; gap: 3px; color: var(--text); }
+.opt .cond .ct { color: var(--text); display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
+.opt .cond .ct i { font-style: normal; color: var(--muted); width: 1em; flex: none; }
+.opt .cond.met .ct, .opt .cond.met .ct i { color: var(--good); }
+.opt .cond em { font-style: normal; color: var(--muted); font-size: 12px; }
+.opt .route { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; padding-left: calc(1em + 6px); font-size: 12px; color: var(--muted); }
+.opt .route.ready { color: var(--good); } .opt .route.never { color: #f3b39f; }
+.opt .route .ico, .opt .step .ico { width: 15px; height: 15px; vertical-align: -3px; margin-right: 2px; }
+.opt .step { display: inline-flex; align-items: center; gap: 3px; padding: 1px 7px 1px 4px; border-radius: 999px; border: 1px solid var(--line); color: var(--text); font-size: 12px; }
+.opt .step i { font-style: normal; color: var(--muted); }
+.opt .step.draft i { color: var(--accent); }
+.opt.charter small { margin-top: 4px; }
+/* the charter under way: a chip per condition, then the buildings its goods still need */
+.req-chips { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin: 6px 0 8px; }
+.req { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.rchip { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 11px 0 7px; border-radius: 999px; background: var(--panel-solid); border: 1px solid var(--line); color: var(--text); }
+.rchip b { font-size: 14px; font-variant-numeric: tabular-nums; }
+.rchip .ico, .rchip .glyph { width: 20px; height: 20px; flex: none; }
+.rchip.met { border-color: rgba(140, 207, 111, .45); color: var(--good); }
+.rchip:hover, .rtile:hover { border-color: var(--accent); }
+.rarrow { color: var(--muted); font-size: 16px; line-height: 1; }
+.rgroup { display: inline-flex; align-items: center; gap: 8px; }
+.rgroup > .ico { width: 18px; height: 18px; }
+.req .rgroup:has(> .ico) { padding: 3px 6px 3px 5px; border: 1px solid var(--line); border-radius: 10px; }
+.rtile { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 8px; background: var(--panel-solid); border: 1px solid var(--line); padding: 0; flex: none; }
+.rtile > .ico { width: 24px; height: 24px; }
+.rtile .rb { position: absolute; right: -4px; bottom: -4px; width: 16px; height: 16px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; color: var(--panel-solid); box-shadow: 0 0 0 2px var(--panel-solid); }
+.rtile .rb .glyph { width: 10px; height: 10px; }
+.rb.build { background: var(--text); } .rb.study { background: #8fb8e0; } .rb.draft { background: var(--accent); }
+.rtile.draft { cursor: default; }
+.rtile.never { border-style: dashed; border-color: var(--bad); color: var(--bad); cursor: default; }
+.rtile.never .glyph { width: 14px; height: 14px; }
+.opt .cond .ct .glyph, .glyph { display: inline-block; }
+/* event costs as have/need pills */
+.opt.ev b { justify-content: space-between; align-items: flex-start; }
+.opt.ev .evl { font-size: inherit; color: inherit; line-height: 1.3; }
+.opt.ev .pills { font-size: inherit; }
+.opt.ev .pills { display: inline-flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.cost-pill { display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 9px 0 5px; border-radius: 999px; background: rgba(140, 207, 111, .12); color: var(--good); font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cost-pill .ico { width: 17px; height: 17px; }
+.cost-pill.short { background: rgba(224, 105, 74, .14); color: #f3b39f; }
+.opt.ev.short > b .evl, .opt.ev.short > span:not(.instead) { opacity: .6; }
+.opt .instead { color: #f3b39f; font-size: 12px; }
+/* cornerstone costs and event shortfalls */
+.opt em.cost { font-style: normal; color: #f3b39f; }
+.opt.short { border-color: rgba(224, 105, 74, .5); }
+/* recruit traits as chips */
+.opt .traits { display: flex; flex-wrap: wrap; gap: 4px; }
+.opt .traits i { font-style: normal; font-size: 12px; color: var(--text); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; }
+.recruit .opt > b .rname { flex: 1; font-size: inherit; color: inherit; }
 .reroll-note { margin: 2px 0 0; font-size: 12px; }
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin: 6px 0 8px; }
 .stats div { background: #232a24; border-radius: 10px; padding: 10px 12px; }
