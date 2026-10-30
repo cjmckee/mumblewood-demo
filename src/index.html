@@ -248,6 +248,12 @@ h3.first { margin-top: 4px; }
 .tbtn:hover:not(:disabled) { border-color: var(--accent); }
 .tbtn:disabled { opacity: .35; }
 .gold-acct { margin-bottom: 4px; }
+.rtree { display: grid; gap: 6px; }
+.rrow { display: grid; grid-template-columns: 78px 1fr; gap: 8px; align-items: start; font-size: 12px; }
+.rrow > b { color: var(--muted); font-weight: 600; padding-top: 3px; }
+.rrow > span { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; } .rrow i { font-style: normal; color: var(--muted); }
+.rnode { padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.rnode.done { color: var(--good); border-color: rgba(140,207,111,.4); } .rnode.now { color: var(--accent); border-color: var(--accent); } .rnode.open { color: var(--text); } .rnode.locked { opacity: .45; }
 .opt em.fee { font-style: normal; color: #f0c75a; font-weight: 600; display: inline-flex; align-items: center; gap: 3px; } .opt em.fee .ico { width: 15px; height: 15px; }
 .stones { list-style: none; margin: 0 0 10px; padding: 0; display: grid; gap: 2px; }
 .stones li { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: start; padding: 6px 0; border-bottom: 1px solid #262c26; }
@@ -413,6 +419,7 @@ button.strain { min-height:44px; }
 @media (max-width:600px) {
   #game.panel-open #hud .status { display:none; }
 }
+.recipe-row{display:flex;gap:6px;align-items:stretch}.recipe-row>.recipe{flex:1;min-width:0}.recipe-moves{display:flex;flex-direction:column;justify-content:center}.recipe-moves button{min-width:34px;min-height:32px}.recipe-moves button:disabled{opacity:.3}.production-targets label{display:flex;align-items:center;gap:6px;margin:8px 0}.production-targets label span{margin-left:auto;font-size:12px;color:var(--muted)}.production-targets input{width:76px;min-height:36px;background:var(--panel-solid);color:inherit;border:1px solid var(--line);border-radius:6px;padding:6px;font:inherit}
 </style>
 <div id="game">
   <div id="stage"></div>

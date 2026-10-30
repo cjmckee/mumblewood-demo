@@ -68,8 +68,8 @@ can simply be a seed plus a list of commands.
 ## UI verification
 
 ```sh
-npm test                      # state, destinations, capped trades, stable portraits
-npm run check                 # TypeScript
+npm test                      # simulation and UI state suites
+npm run check                 # TypeScript, all state suites, build
 npm run build
 python3 -m http.server 8765 --bind 127.0.0.1 --directory dist
 # In another terminal:
@@ -81,3 +81,22 @@ Browser checks use Playwright available in the development environment. Set
 `CHROMIUM_PATH` or `UI_URL` when using a different browser executable or local server.
 Screenshots are written under `dist/ui-check`. See `docs/UI_IMPLEMENTATION.md` for
 the polish commits and review screenshots.
+## Phase 3: clothing and scenario settings
+
+See [the clothing design and checks](docs/phase3-clothing.md) for both production routes, seasonal equipment, balance findings, and configurable starting date/colonist count. New games begin on summer 1.
+
+The starting woodcutter can also rough-saw planks (3 wood each). Disable its wood-gathering recipe to select rough planks; a drafted sawmill is faster and cheaper. The bot uses a bounded early fallback and seeks efficient upgrades: see [bot production policy](docs/bot-production.md).
+
+Workshops now provision complete recipe batches in shared input/output buffers. Recipe panels include priority controls and per-workshop warehouse stock targets. See [workshop logistics](docs/workshop-logistics.md) for behavior and measured trip counts.
+
+Regular tavern service uses one small serving per settler each evening; guests continue socializing afterward, including when stock runs out. See [serving behavior and watched runs](docs/tavern-servings.md).
+
+The bot now plans fine-material suppliers before the buildings they unlock, using bounded rough planks when needed. See [planning checks and watched cases](docs/fine-material-planning.md).
+
+## Checks and merge checkpoint
+
+Run `npm run check` for the type check, all focused simulation suites (each in a fresh process), and both browser builds. `npm test` runs just the simulation suites. Pull requests and pushes to main run the same checks in GitHub Actions.
+
+See [the current merge checkpoint](docs/merge-readiness.md) for shipped defaults, final watched runs, save compatibility, and deferred polish/balance decisions. Older experiment notes record historical settings and should be read alongside that checkpoint.
+
+For the browser save/resume check, install Playwright separately, serve `dist/site`, then run `GAME_URL=http://127.0.0.1:8000/ node tools/save-check.mjs`. `CHROMIUM_PATH` can select a system Chromium. The browser check is separate from the Node simulation suites.

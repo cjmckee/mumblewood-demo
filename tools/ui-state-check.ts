@@ -17,6 +17,8 @@ assert.equal(fixDestination(w,{staff:'woodcutter',n:2}).kind,'workplaces');
 const forager = w.buildings.find(b=>b.def==='forager')!;
 forager.off=recipesOf(forager).map((_,i)=>i);
 assert.equal(buildingStatus(w,forager).label,'Recipes off');
+forager.off=[]; forager.productionLimits=Object.fromEntries(recipesOf(forager).map(r=>[r.output,0]));
+assert.deepEqual(buildingStatus(w,forager), {label:'Stock target met', warning:false});
 assert.equal(saleQuantity(5,2,20),2);
 assert.equal(saleQuantity(20,12,1),1);
 assert.equal(saleQuantity(5,12,0),0);

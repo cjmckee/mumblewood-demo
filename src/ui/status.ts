@@ -1,5 +1,5 @@
 import { BUILDING_BY_ID } from '../sim/content';
-import { World, Building, blockedReason, workersAt, recipesOf, currentRecipe, researchLeft } from '../sim/world';
+import { World, Building, blockedReason, workersAt, recipesOf, currentRecipe, researchLeft, enabledRecipes } from '../sim/world';
 
 /** Shared by the map and management lists so warnings agree. */
 export function buildingStatus(w: World, b: Building): { label: string; warning: boolean } {
@@ -7,6 +7,7 @@ export function buildingStatus(w: World, b: Building): { label: string; warning:
   if (!b.built) return { label: 'Under construction', warning: false };
   if (b.def === 'desk' && w.research && !w.research.current && !researchLeft(w).length) return { label: 'Research complete', warning: false };
   const reason = blockedReason(w, b);
+  if (reason && recipesOf(b).length && !currentRecipe(w,b) && enabledRecipes(b).length) return { label: 'Stock target met', warning: false };
   if (reason) return { label: recipesOf(b).length && !currentRecipe(w, b) ? 'Recipes off' : reason, warning: true };
   const n = workersAt(w, b.uid).length;
   if (d.slots && !n) return { label: 'No workers', warning: true };

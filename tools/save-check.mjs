@@ -13,7 +13,7 @@ const errors = []; p.on('pageerror', e => errors.push(e.message));
 const ready = () => p.waitForFunction(() => window.__game?.world, null, { timeout: 20000 });
 const state = () => p.evaluate(() => { const w = window.__game.world; return { hour: w.hour, day: window.__game.day(), pop: w.colonists.filter(c => !c.left).length, rng: w.rngState, json: JSON.stringify(w), modal: !document.getElementById('modal').hidden, text: document.getElementById('modal').innerText.toLowerCase() }; });
 
-await p.goto(process.env.UI_URL || 'file://' + page_); await ready();
+await p.goto(process.env.UI_URL || process.env.GAME_URL || 'file://' + page_); await ready();
 let s = await state();
 ok(s.day === 1 && !s.text.includes('welcome back'), 'a first visit starts a new colony, no welcome card');
 await p.evaluate(() => { const g = window.__game; g.autoplay(24 * 6.4); g.setSpeed(0); });

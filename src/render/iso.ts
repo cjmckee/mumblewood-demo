@@ -24,6 +24,7 @@ const GRASS: Record<Season, [number, number, number]> = {
 };
 
 export const RES_COLOR: Record<ResourceId, number> = {
+  flax: 0x9aaf65, cloth: 0xb9c3df, hides: 0x9b7551, leather: 0x885737, coats: 0x736391,
   wood: 0xa07a4c, planks: 0xd2a96a, berries: 0xc04a6a, fish: 0x5b9cc2, mushrooms: 0xb39ad0,
   stew: 0xd98a3c, pie: 0xe6c25a, smokedFish: 0x9c8c7a, ale: 0xd6a33c,
   apples: 0xd2452f, grain: 0xd8c060, honey: 0xe8a21c, cider: 0xb8c25a, mead: 0xb06a2a,

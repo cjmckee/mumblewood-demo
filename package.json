@@ -4,9 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "test": "node tools/check.mjs",
+    "typecheck": "tsc --noEmit",
     "build": "node build.mjs",
-    "check": "tsc --noEmit",
-    "test": "node --import tsx tools/ui-state-check.ts",
+    "check": "npm run typecheck && npm test && npm run build",
     "test:ui": "node tools/ui-check.mjs"
   },
   "keywords": [],

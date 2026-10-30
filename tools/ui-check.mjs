@@ -48,6 +48,22 @@ for (const [device,width,height] of [['desktop',1440,900],['phone',390,844],['sm
   check(await state(()=>window.__game.ui.tab==='build'&&document.querySelector('.sheet-body [data-act=building]')),`${device}: ledger jobs open a workplace chooser`);
   await p.locator('.sheet-body [data-act=building]').first().click();
   check(await state(()=>window.__game.ui.detail?.kind==='building'&&document.querySelector('[data-act=assign]')),`${device}: chooser reaches staffing controls`);
+  await p.evaluate(()=>{
+    const g=window.__game,b=g.world.buildings.find(b=>b.def==='woodcutter');
+    g.ui.detail={kind:'building',id:b.uid};g.ui.open=true;g.ui.render(true);
+    document.querySelector(`[data-key="targets-${b.uid}"]`).open=true;
+  });
+  const target=p.locator('[data-production-limit][data-output=wood]');
+  await target.fill('12');
+  check(await state(()=>{
+    window.__game.ui.render(true);const input=document.querySelector('[data-production-limit][data-output=wood]');
+    return input.value==='12' && document.activeElement===input;
+  }),`${device}: live updates preserve production target drafts and focus`);
+  await target.press('Tab');
+  check(await state(()=>window.__game.world.buildings.find(b=>b.def==='woodcutter').productionLimits?.wood===12),`${device}: production target still saves`);
+  await p.locator('[data-act=recipe-priority][data-arg$=":1:-1"]').click();
+  check(await state(()=>window.__game.world.buildings.find(b=>b.def==='woodcutter').recipeOrder?.[0]===1),`${device}: recipe priority controls still reorder production`);
+  await p.evaluate(()=>{const b=window.__game.world.buildings.find(b=>b.def==='woodcutter');b.recipeOrder=undefined;b.productionLimits={}});
   check(await state(()=>{
     const g=window.__game;g.ui.open=true;g.ui.tab='issues';g.ui.detail=null;g.world.res.wood=0;g.ui.render(true);
     const c=document.querySelector('[data-act=fix]');if(!c)return false;const before=JSON.stringify(g.world);c.click();return JSON.stringify(g.world)===before && g.ui.tab==='build';
@@ -56,7 +72,7 @@ for (const [device,width,height] of [['desktop',1440,900],['phone',390,844],['sm
     const g=window.__game;const c=g.world.colonists.find(c=>!c.left);c.illness={name:'Test illness',severity:50};c.hunger=0;c.bed=null;
     g.ui.tab='colonists';g.ui.open=true;g.ui.detail={kind:'colonist',id:c.id};g.ui.render(true);
   });
-  check(await state(()=>document.querySelector('.urgent [data-act=need][data-arg=health]')&&document.querySelector('[data-act=jobs]')),`${device}: illness and job remedies are exposed`);
+  check(await state(()=>document.querySelector('.urgent [data-act=need][data-arg=health]')&&document.querySelector('[data-act=jobs]')&&document.querySelector('[data-act=source][data-arg=coats]')),`${device}: illness and job remedies are exposed`);
   await p.locator('[data-act=jobs]').click();
   check(await state(()=>document.querySelector('[data-key=person-jobs]').open),`${device}: change job expands assignment`);
   await p.screenshot({path:`${out}/${device}-colonist.png`});
