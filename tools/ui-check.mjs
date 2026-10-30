@@ -123,6 +123,18 @@ for (const [device,width,height] of [['desktop',1440,900],['phone',390,844],['sm
   await p.evaluate(()=>{const g=window.__game;g.world.decisions=[];g.ui.render(true);g.ui.startPlacing('woodcutter');document.activeElement?.blur()});
   await p.keyboard.press('Escape');
   check(await state(()=>!window.__game.view.placing),`${device}: Escape cancels placement even without a focused control`);
+  // looking at the colony during a decision: one button hides the card, panels work, play stays paused, a bar brings it back
+  await p.evaluate(()=>{const g=window.__game;g.world.decisions=[];g.ui.open=false;g.event('bard');});
+  await p.locator('#modal .peek-btn').click();
+  const hourBefore=await state(()=>window.__game.world.hour);
+  await p.evaluate(()=>window.__game.setSpeed(3)); await p.waitForTimeout(600);
+  check(await state(()=>document.querySelector('#modal').hidden&&!document.querySelector('#peekbar').hidden&&!document.querySelector('#hud').inert&&!document.querySelector('#sheet').inert),`${device}: peeking hides the card and frees the HUD and panel`);
+  await p.locator('#sheet [data-act=tab][data-arg=ledger]').click();
+  check(await state(()=>window.__game.ui.open&&window.__game.ui.tab==='ledger'&&window.__game.world.decisions.length===1),`${device}: panels open while the choice waits`);
+  check(await p.evaluate(h=>window.__game.world.hour===h,hourBefore),`${device}: play stays paused while peeking`);
+  await p.locator('#peekbar button').click();
+  check(await state(()=>!document.querySelector('#modal').hidden&&document.querySelector('#peekbar').hidden),`${device}: back to the choice`);
+  await p.evaluate(()=>{const g=window.__game;g.setSpeed(0);g.world.decisions=[];g.ui.render(true);});
   check(!errors.length,`${device}: no page errors (${errors.join(';')})`);
   await ctx.close();
 }
