@@ -107,11 +107,21 @@ function reachText(w: World, r: Recipe, forDraft: boolean) {
 /** filled stars in the accent colour, missing ones dimmed, so ★★ reads as two of three */
 const starHtml = (n: Stars) => `<span class="stars" aria-label="${n} of 3 stars">${'★'.repeat(n)}<s>${'★'.repeat(3 - n)}</s></span>`;
 
+const CHARTER_DISPLAY_KEY = 'mumblewood.ui.charter-collapsed.v1';
+function initialCharterCollapsed() {
+  try {
+    const preference = localStorage.getItem(CHARTER_DISPLAY_KEY);
+    if (preference === 'true' || preference === 'false') return preference === 'true';
+  } catch { /* UI preferences are optional when storage is unavailable. */ }
+  return window.matchMedia('(max-width: 600px)').matches;
+}
+
 export class UI {
   tab: Tab = 'colonists';
   open = false;
   detail: Detail = null;
   speed = 1;
+  private charterCollapsed = initialCharterCollapsed();
   private lastHud = ''; private lastSheet = ''; private lastModal = '';
   onSpeed: (s: number) => void = () => {};
   onRestart: () => void = () => {};
@@ -241,6 +251,10 @@ export class UI {
     const act = el.dataset.act!, arg = el instanceof HTMLSelectElement ? el.value : el.dataset.arg ?? '';
     const w = this.getWorld();
     switch (act) {
+      case 'charter-toggle':
+        this.charterCollapsed = !this.charterCollapsed;
+        try { localStorage.setItem(CHARTER_DISPLAY_KEY, String(this.charterCollapsed)); } catch { /* Keep the session preference. */ }
+        break;
       case 'help': this.help = arg; break;
       case 'help-close': this.help = null; break;
       case 'colonist-filter': this.colonistFilter = arg; break;
@@ -347,6 +361,8 @@ export class UI {
     const h = hourOfDay(w);
     const hh = String(Math.floor(h)).padStart(2, '0');
     const prog = charterProgress(w);
+    const title = prog?.charter.name ?? (w.status === 'won' ? 'Town charter granted' : w.research && !w.charterOffered ? 'The Crown is watching' : 'Awaiting a charter');
+    const issueCount = assess(w).length;
     const sc = START;
     const pips = Array.from({ length: sc.collapse.lost }, (_, i) => `<i class="pip${i < lost(w) ? ' on' : ''}"></i>`).join('');
     const r = w.research, cur = r?.current ? RESEARCH_BY_ID[r.current] : undefined;
@@ -377,18 +393,24 @@ export class UI {
         </div>
       </div>
       <div class="res">${res}</div>
-      <div class="status">
+      <section class="status${this.charterCollapsed ? ' is-collapsed' : ''}" aria-label="Charter and colony status">
+        <button type="button" class="status-toggle" data-act="charter-toggle" aria-expanded="${!this.charterCollapsed}" aria-controls="colony-status-details" aria-label="${this.charterCollapsed ? 'Expand' : 'Collapse'} charter details: ${esc(title)}">
+          <span class="status-heading"><span class="ch-name">${esc(title)}</span><span class="ch-tier">${prog ? `Charter ${w.chartersDone.length + 1}/3 · ${Math.round(prog.ratio * 100)}%` : 'Colony status'}${issueCount ? ` · ⚠ ${issueCount}` : ''}</span></span>
+          <svg class="status-chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="m5 12 5-5 5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        ${prog ? `<div class="meter" role="progressbar" aria-label="Charter progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(prog.ratio * 100)}"><i style="width:${(prog.ratio * 100).toFixed(1)}%"></i></div>` : ''}
+        <div id="colony-status-details" class="status-details" ${this.charterCollapsed ? 'hidden' : ''}>
         <div class="charter">
-          ${prog ? `<div class="ch-top"><span class="ch-name">${esc(prog.charter.name)}</span><span class="ch-tier">Charter ${w.chartersDone.length + 1} of 3</span></div>
-          <div class="meter"><i style="width:${(prog.ratio * 100).toFixed(1)}%"></i></div>
-          <div class="requirements">${charterRequirements(w).map(r => { const m = r.metric; const act = m.kind === 'stock' || m.kind === 'variety' ? 'resource' : m.kind === 'built' || m.kind === 'monument' ? 'catalog-help' : m.kind === 'everyoneBed' || m.kind === 'healthy' || m.kind === 'allTable' || m.kind === 'longTable' ? 'need' : 'tab'; const arg = m.kind === 'stock' ? m.resources[0] : m.kind === 'variety' ? m.category : m.kind === 'built' || m.kind === 'monument' ? m.def : m.kind === 'everyoneBed' ? 'shelter' : m.kind === 'healthy' ? 'health' : m.kind === 'allTable' || m.kind === 'longTable' ? 'table' : 'colonists'; return `<button type="button" class="requirement" data-act="${act}" data-arg="${arg}"><span>${r.ratio >= 1 ? '✓' : '○'} ${esc(r.label)}</span><span class="mini"><i style="width:${r.ratio * 100}%"></i></span><span>→</span></button>`; }).join('')}</div>${feastBtn}` : `<div class="ch-top"><span class="ch-name">${w.status === 'won' ? 'Town charter granted' : w.research && !w.charterOffered ? 'The Crown is watching' : 'Awaiting a charter'}</span></div>${w.research && !w.charterOffered ? `<div class="ch-label">The first charter arrives on the morning of day ${sc.firstCharterDay}.</div>` : ''}`}
+          ${prog ? `
+          <div class="requirements">${charterRequirements(w).map(r => { const m = r.metric; const act = m.kind === 'stock' || m.kind === 'variety' ? 'resource' : m.kind === 'built' || m.kind === 'monument' ? 'catalog-help' : m.kind === 'everyoneBed' || m.kind === 'healthy' || m.kind === 'allTable' || m.kind === 'longTable' ? 'need' : 'tab'; const arg = m.kind === 'stock' ? m.resources[0] : m.kind === 'variety' ? m.category : m.kind === 'built' || m.kind === 'monument' ? m.def : m.kind === 'everyoneBed' ? 'shelter' : m.kind === 'healthy' ? 'health' : m.kind === 'allTable' || m.kind === 'longTable' ? 'table' : 'colonists'; return `<button type="button" class="requirement" data-act="${act}" data-arg="${arg}"><span>${r.ratio >= 1 ? '✓' : '○'} ${esc(r.label)}</span><span class="mini"><i style="width:${r.ratio * 100}%"></i></span><span>→</span></button>`; }).join('')}</div>${feastBtn}` : w.research && !w.charterOffered ? `<div class="ch-label">The first charter arrives on the morning of day ${sc.firstCharterDay}.</div>` : ''}
           ${researchChip}${concernCards(w)}
         </div>
         <div class="threats">
           <button type="button" class="strain" data-act="strain-open" title="Frontier strain: a mood penalty that rises every day, faster when people's needs go unmet. Tap for why."><span>Strain</span><b>${strain ? '−' : ''}${strain}</b><small class="rate">+${strainPerDay(w).toFixed(1)}/day</small></button>${this.festivalChip(w)}
           <button type="button" data-act="help" data-arg="loss" class="leavers" title="If ${sc.collapse.lost} settlers leave or die${sc.collapse.minAlive ? `, or only ${sc.collapse.minAlive} remain` : ''}, the colony collapses"><span>Lost</span><div class="pips">${pips}</div></button>
         </div>
-      </div>
+        </div>
+      </section>
       ${w.errands.length || this.caravanChip(w) || this.effectChips(w) ? `<div class="errands">${this.caravanChip(w)}${w.errands.map(e => this.errandChip(w, e)).join('')}${this.effectChips(w)}</div>` : ''}`;
     if (force || html !== this.lastHud) {
       const hud = this.root.querySelector<HTMLElement>('#hud')!;

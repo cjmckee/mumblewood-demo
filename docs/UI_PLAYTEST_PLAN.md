@@ -37,6 +37,10 @@ Fix reproducible correctness, save, or blocked-action bugs immediately. Treat la
 
 ## Merge checks
 
+### Playtest feedback: charter panel size
+
+The first mobile playtest found that expanded charter information used too much map space. The charter panel now has an explicit collapse/expand control, starts compact on phones, and remembers the player's preference independently of the game save. The compact view retains the charter name, overall progress, and concern count. Further mobile goal-visibility changes remain driven by playtest feedback.
+
 - Run `npm run check` with main's complete state-check runner, including the UI state suite.
 - Run browser UI regressions at 1440×900, 390×844, and 320×640, including recipe priority, target editing across refresh, portrait consistency, keyboard behavior and navigation.
 - Run save/resume/restart browser checks against the integrated build.
