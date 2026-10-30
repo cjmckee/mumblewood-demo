@@ -11,7 +11,7 @@ import {
 } from '../sim/world';
 import { charterPreview, metricRoutes, Route } from '../sim/charterplan';
 import { START } from '../sim/scenario';
-import { assess } from '../sim/advisor';
+import { assess, rankForPlayer, Ranked, defsOf } from '../sim/advisor';
 import { economy, Account } from '../sim/economy';
 import type { IsoView, Picked } from '../render/iso';
 import { icon } from './icons';
@@ -133,6 +133,12 @@ const MOOD_TREND: Record<string, string> = { '↑': '▲', '↓': '▼', '↔': 
 const CATALOG_GROUP = { food: 'Food & drinks', work: 'Production', comfort: 'Homes & comfort', storage: 'Storage' };
 const SPOIL_GLYPH = svg('<circle cx="12" cy="13" r="7.5"/><path d="M12 9v4l2.5 2M9 3h6"/>');
 const FRESH_GLYPH = svg('<path d="M12 3v18M4.2 7.5l15.6 9M19.8 7.5l-15.6 9"/>');
+const EYE_GLYPH = svg('<path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>');
+const STAFF_GLYPH = svg('<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/>', 3);
+const SWAP_GLYPH = svg('<path d="M4 8h14l-3-3M20 16H6l3 3"/>', 2.6);
+const MORE_GLYPH = svg('<circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/>', 2.4);
+const CLOCK_GLYPH = svg('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>');
+const STRAIN_GLYPH = svg('<path d="M3 18 9 9l4 5 3-4 5 8z"/>');
 const CATEGORY_MEMBERS = { meal: membersOf('meal'), drink: membersOf('drink'), fine: membersOf('fine'), remedy: membersOf('remedy'), rawFood: membersOf('rawFood') };
 /** a cornerstone's icon: the building or good it's about, where there is one */
 const CORNERSTONE_ICON: Record<string, string> = {
@@ -172,6 +178,14 @@ export class UI {
   private help: string | null = null;
   private dialogKey = '';
   private colonistFilter = 'all';
+  /** the decision card is hidden so the player can look at the colony; play stays paused until they choose */
+  private peeking = false;
+  /** Issues: rows opened to show their evidence and other fixes; every row shown, not the first five; the last order */
+  private openIssues = new Set<string>();
+  private allIssues = false;
+  private issueOrder: string[] = [];
+  private issueSig = '';
+  private peekKey = '';
   /** the HUD shows every good, not the grouped totals */
   allGoods = false;
   private colonistSort = 'mood';
@@ -196,6 +210,7 @@ export class UI {
   private keyboard(e: KeyboardEvent) {
     const modal = this.root.querySelector<HTMLElement>('#modal')!;
     if (modal.hidden) {
+      if (e.key === 'Escape' && this.peeking) { this.peeking = false; this.render(true); return; }
       if (e.key === 'Escape') { this.view.placing = null; this.view.pathMode = false; this.open = false; this.detail = null; this.render(true); }
       return;
     }
@@ -209,6 +224,7 @@ export class UI {
   }
 
   constructor(private root: HTMLElement, private getWorld: () => World, private send: (c: Command) => string | null, private view: IsoView) {
+    currentUI = this;
     root.addEventListener('click', e => { if (!(e.target instanceof HTMLSelectElement) && !(e.target instanceof HTMLInputElement)) this.click(e); });
     window.addEventListener('keydown', e => this.keyboard(e));
     root.addEventListener('change', e => {
@@ -242,13 +258,60 @@ export class UI {
     else this.destination = d;
   }
 
+  /** the player's concerns in a steady order: re-sorted only when one appears, goes or changes colour */
+  rankedIssues(w: World): Ranked[] {
+    const r = rankForPlayer(w);
+    const sig = r.map(c => c.id + c.level).sort().join(',');
+    if (sig !== this.issueSig) { this.issueSig = sig; this.issueOrder = r.map(c => c.id); }
+    return this.issueOrder.map(id => r.find(c => c.id === id)).filter((c): c is Ranked => !!c);
+  }
+
+  /** a fix as a button: the building it's about, a corner mark for what to do, and one word */
+  fixButtonFor(w: World, c: Ranked) { return this.fixButton(w, c, 0); }
+  private fixButton(w: World, c: Ranked, i: number) {
+    const f = c.fixes[i];
+    let ico = '', how: 'staff' | 'build' | 'study' | 'draft' | 'swap' | 'open' = 'open', act = 'fix', arg = `${c.id}:${i}`, label = '';
+    if (!f) {
+      if (c.id === 'festival' || c.id === 'moodcharter') { ico = icon('meal'); act = 'festival-open'; arg = ''; label = 'Plan a festival'; }
+      else if (c.id === 'leaving') { ico = PERSON_GLYPH; act = 'issue-people'; arg = c.id; label = 'See who'; }
+      else if (c.id === 'stretched' || c.id === 'slack') { ico = TAB_GLYPH.ledger; act = 'ledger-laborers'; arg = ''; label = 'Laborers in the ledger'; }
+      else { ico = TAB_GLYPH.ledger; act = 'tab'; arg = 'ledger'; label = 'Open the ledger'; }
+    } else {
+      label = fixDestination(w, f).label;
+      if ('build' in f) { how = 'build'; ico = icon(f.build); }
+      else if ('staff' in f) { how = 'staff'; ico = icon(defsOf(f.staff)[0]); }
+      else if ('draft' in f) { how = 'draft'; ico = icon(f.draft); }
+      else if ('research' in f) { how = 'study'; ico = icon(RESEARCH_BY_ID[f.research]?.unlocks[0] ?? 'desk'); }
+      else if ('reassign' in f) { how = 'swap'; ico = SWAP_GLYPH; }
+      else if ('relaxFoodRules' in f) { ico = icon('meal'); }
+      else ico = PERSON_GLYPH;
+    }
+    const verb = { staff: 'Staff', build: 'Build', study: 'Study', draft: 'Draft', swap: 'Swap', open: 'Open' }[how];
+    const mark = how === 'open' ? '' : `<i class="rb ${how}">${how === 'staff' ? STAFF_GLYPH : how === 'swap' ? SWAP_GLYPH : ROUTE_GLYPH[how]}</i>`;
+    return `<button type="button" class="fixbtn" data-act="${act}" data-arg="${arg}" title="${esc(label)}" aria-label="${esc(label)}"><span class="ftile">${ico}${mark}</span>${verb}</button>`;
+  }
+
+  private issueRow(w: World, c: Ranked) {
+    const open = this.openIssues.has(c.id);
+    const title = c.title.replace(/^\d+\s+/, '').replace(/^./, ch => ch.toUpperCase());
+    const ppl = c.personIds.map(id => colonistById(w, id)).filter((p): p is Colonist => !!p);
+    const people = ppl.length ? `<button type="button" class="ipeople" data-act="issue-people" data-arg="${c.id}" aria-label="${ppl.length} ${ppl.length === 1 ? 'person' : 'people'}" title="${esc(ppl.map(p => p.name).join(', '))}">${ppl.slice(0, 3).map(p => avatar(p, 'avatar-mini')).join('')}${ppl.length > 3 ? `<em>+${ppl.length - 3}</em>` : ''}</button>` : '';
+    return `<article class="issue ${c.level}">
+      <div class="irow"><span class="idot" role="img" aria-label="${c.level === 'red' ? 'Urgent' : 'Worth fixing'}"></span>
+        <span class="imain"><button type="button" class="ititle" data-act="issue-toggle" data-arg="${c.id}" aria-expanded="${open}">${esc(title)}</button><span class="ifacts">${concernFacts(w, c)}${people}</span></span>
+        ${this.fixButton(w, c, 0)}${c.fixes.length > 1 ? `<button type="button" class="imore" data-act="issue-toggle" data-arg="${c.id}" aria-expanded="${open}" aria-label="More fixes">${MORE_GLYPH}</button>` : ''}</div>
+      ${open ? `<div class="iexp"><p>${esc(c.evidence)}</p>${c.fixes.length > 1 ? `<div class="ifixes">${c.fixes.slice(1).map((_, i) => this.fixButton(w, c, i + 1)).join('')}</div>` : ''}</div>` : ''}
+    </article>`;
+  }
+
   private issueList(w: World) {
-    const concerns = assess(w);
-    return `<div class="list-head"><b>${concerns.length} concerns</b></div><div class="concerns">${concerns.map(c => {
-      const seen = new Set<string>();
-      const actions = c.fixes.map((f,i) => ({f,i,d:fixDestination(w,f)})).filter(({d})=>{const key=JSON.stringify(d);if(seen.has(key))return false;seen.add(key);return true;}).map(({f,i}) => `<button type="button" class="ghost" data-act="fix" data-arg="${c.id}:${i}">${esc(fixDestination(w, f).label)} →</button>`).join('');
-      return `<article class="concern"><b>⚠ ${esc(c.title)}</b><div class="actions">${actions || `<button type="button" class="ghost" data-act="${c.id === 'festival' || c.id === 'moodcharter' ? 'festival-open' : 'tab'}" data-arg="ledger">${c.id === 'festival' || c.id === 'moodcharter' ? 'Plan festival' : 'Open ledger'} →</button>`}${c.personIds.length ? `<button type="button" class="ghost" data-act="issue-people" data-arg="${c.id}">${c.personIds.length} people →</button>` : ''}</div><details data-key="issue-${c.id}"><summary>Details</summary><p>${esc(c.evidence)}</p><p>${esc(c.idea)}</p></details></article>`;
-    }).join('') || '<p class="empty">✓ No concerns</p>'}</div>`;
+    const all = this.rankedIssues(w);
+    if (!all.length) return '<p class="empty">✓ No concerns</p>';
+    // the first five, and every red one; the rest fold into a "more" row
+    const shown = this.allIssues ? all : all.filter((c, i) => c.level === 'red' || i < 5);
+    const hidden = all.length - shown.length;
+    return `<div class="issues">${shown.map(c => this.issueRow(w, c)).join('')}
+      ${hidden ? `<button type="button" class="issues-more" data-act="issues-all"><span class="idot"></span>+${hidden} more</button>` : this.allIssues && all.length > 5 ? `<button type="button" class="issues-more" data-act="issues-all">Show fewer</button>` : ''}</div>`;
   }
 
   private destinationList(w: World) {
@@ -308,8 +371,8 @@ export class UI {
       case 'back': this.detail = null; this.view.selected = null; break;
       case 'colonist': this.picked({ kind: 'colonist', id: Number(arg) }); break;
       case 'building': this.picked({ kind: 'building', id: Number(arg) }); break;
-      case 'fix': { const [id, index] = arg.split(':'); const fix = assess(w).find(c => c.id === id)?.fixes[Number(index)]; if (fix) this.navigate(fixDestination(w, fix)); break; }
-      case 'issue-people': { const people = assess(w).find(c => c.id === arg)?.personIds ?? []; this.panel('colonists'); this.peopleFilter = people; break; }
+      case 'fix': { const [id, index] = arg.split(':'); const fix = rankForPlayer(w).find(c => c.id === id)?.fixes[Number(index)]; if (fix) this.navigate(fixDestination(w, fix)); break; }
+      case 'issue-people': { const people = rankForPlayer(w).find(c => c.id === arg)?.personIds ?? []; this.panel('colonists'); this.peopleFilter = people; break; }
       case 'workplaces': { const defs = arg.split(','); this.navigate({ kind: 'workplaces', defs, label: defs.length === 1 ? BUILDING_BY_ID[defs[0]]?.name ?? 'Workplaces' : 'Workplaces' }); break; }
       case 'construction': this.panel('build'); this.buildMode = 'manage'; this.buildingFilter = 'sites'; break;
       case 'catalog-help': this.navigate(buildingDestination(w, arg)); break;
@@ -321,6 +384,11 @@ export class UI {
       }
       case 'resource': this.panel('ledger'); this.resource = arg as InputKey | 'gold'; this.anchor = `${arg === 'gold' || !RESOURCES.some(r => r.id === arg) ? 'account' : 'resource'}-${arg}`; break;
       case 'all-goods': this.allGoods = !this.allGoods; break;
+      case 'issue-toggle': if (this.openIssues.has(arg)) this.openIssues.delete(arg); else this.openIssues.add(arg); break;
+      case 'issues-all': this.allIssues = !this.allIssues; break;
+      case 'ledger-laborers': this.panel('ledger'); this.anchor = 'ledger-laborers'; break;
+      case 'peek': this.peeking = true; this.lastModal = ''; break;
+      case 'peek-back': this.peeking = false; this.lastModal = ''; break;
       case 'storage-help': this.navigate(buildingDestination(w, 'storehouse', true)); break;
       case 'food-rules': this.navigate({ kind: 'food', label: 'Food rules' }); break;
       case 'need': { const def = arg === 'table' ? 'dining' : NEED_BUILD[arg as NeedKey]; this.navigate(buildingDestination(w, def, !['shelter', 'surroundings', 'warmth'].includes(arg))); break; }
@@ -399,7 +467,7 @@ export class UI {
     const hh = String(Math.floor(h)).padStart(2, '0');
     const prog = charterProgress(w);
     const title = prog?.charter.name ?? (w.status === 'won' ? 'Town charter granted' : w.research && !w.charterOffered ? 'The Crown is watching' : 'Awaiting a charter');
-    const issueCount = assess(w).length;
+    const issueCount = this.rankedIssues(w).length;
     const sc = START;
     const pips = Array.from({ length: sc.collapse.lost }, (_, i) => `<i class="pip${i < lost(w) ? ' on' : ''}"></i>`).join('');
     const r = w.research, cur = r?.current ? RESEARCH_BY_ID[r.current] : undefined;
@@ -615,7 +683,7 @@ export class UI {
   private renderSheet(w: World, force: boolean) {
     const pop = alive(w);
     const tabs = `<nav class="tabs">
-      ${(['colonists', 'build', 'ledger', 'issues', 'log'] as Tab[]).map(t => { const n = t === 'colonists' ? pop.length : t === 'issues' ? assess(w).length : 0;
+      ${(['colonists', 'build', 'ledger', 'issues', 'log'] as Tab[]).map(t => { const n = t === 'colonists' ? pop.length : t === 'issues' ? this.rankedIssues(w).length : 0;
         return `<button type="button" data-act="tab" data-arg="${t}" class="${this.tab === t && this.open ? 'on' : ''}"${this.tab === t && this.open ? ' aria-current="page"' : ''}><span class="tico">${TAB_GLYPH[t]}${n ? `<em class="${t === 'issues' ? 'warn' : ''}">${n}</em>` : ''}</span><span class="tl">${TAB_NAME[t]}</span></button>`; }).join('')}
       ${this.open ? `<button type="button" class="x" data-act="close" aria-label="Close panel">×</button>` : ''}
     </nav>`;
@@ -966,6 +1034,18 @@ export class UI {
     if (!html && this.strainOpen) html = this.strainCard(w);
     if (!html && this.picking != null) { const e = w.errands.find(x => x.id === this.picking); if (e) html = this.errandPicker(w, e, false); else this.picking = null; }
     if (html && w.status === 'playing') html = html.replace('<p class="eyebrow">', '<p class="eyebrow">Ⅱ Paused · ');
+    // a decision can be set aside to look at the colony: one button hides the whole card, and a bar brings it back
+    const decisionKey = d ? JSON.stringify(d) : '';
+    if (decisionKey !== this.peekKey) { this.peeking = false; this.peekKey = decisionKey; }
+    if (!d || this.resumeOpen || w.status !== 'playing') this.peeking = false;
+    if (html && d && !this.resumeOpen && w.status === 'playing') html = html.replace(/^(\s*<div class="card-wrap[^"]*"[^>]*>)/, `$1<button type="button" class="peek-btn" data-act="peek" title="Look at the colony" aria-label="Hide this choice and look at the colony">${EYE_GLYPH}</button>`);
+    const bar = this.root.querySelector<HTMLElement>('#peekbar')!;
+    const title = d ? (html.match(/<h2>(.*?)<\/h2>/)?.[1] ?? '') : '';
+    if (this.peeking) {
+      const next = `<span class="pk-paused">Ⅱ Paused</span><span class="pk-title">${title}</span><button type="button" data-act="peek-back">Back to choice</button>`;
+      if (bar.innerHTML !== next) bar.innerHTML = next;
+      bar.hidden = false; html = '';
+    } else bar.hidden = true;
     const nextDialogKey = d ? JSON.stringify(d) : this.help ? `help:${this.help}` : this.festivalOpen ? 'festival' : this.strainOpen ? 'strain' : this.picking != null ? `errand:${this.picking}` : this.resumeOpen ? 'resume' : w.status;
     const changedDialog = nextDialogKey !== this.dialogKey;
     const wasOpen = !el.hidden;
@@ -1145,9 +1225,40 @@ function moodLedger(c: Colonist) {
 }
 
 /** the colony's biggest complaints and warnings, read off the same things the player can see */
+/** the concern banner: how many, and the most urgent one with its numbers and its fix */
 function concernCards(w: World) {
-  const concerns = assess(w);
-  return concerns.length ? `<button type="button" class="issue-summary" data-act="tab" data-arg="issues">⚠ ${concerns.length} concerns <span>${esc(concerns[0].title)} →</span></button>` : '';
+  const ui = currentUI; if (!ui) return '';
+  const all = ui.rankedIssues(w); if (!all.length) return '';
+  const top = all[0], title = top.title.replace(/^\d+\s+/, '').replace(/^./, ch => ch.toUpperCase());
+  return `<div class="issue-summary ${top.level}"><button type="button" class="is-open" data-act="tab" data-arg="issues" aria-label="${all.length} concerns; the top one: ${esc(title)}"><span class="is-count">${TAB_GLYPH.issues}${all.length}</span><span class="idot"></span><span class="is-title">${esc(title)}</span><span class="ifacts">${concernFacts(w, top)}</span></button>${ui.fixButtonFor(w, top)}</div>`;
+}
+let currentUI: UI | null = null;
+/** the numbers behind a concern, as icons: what's in store, who's working, how long it lasts */
+function concernFacts(w: World, c: Ranked) {
+  const fact = (ico: string, text: string, bad = false) => `<span class="ifact${bad ? ' bad' : ''}">${ico}${text}</span>`;
+  const staff = (kind: string) => { const bs = built(w).filter(b => defsOf(kind).includes(b.def)); return `${bs.reduce((n, b) => n + workersAt(w, b.uid).length, 0)}/${bs.reduce((n, b) => n + BUILDING_BY_ID[b.def].slots, 0)}`; };
+  const e = economy(w), pop = alive(w).length;
+  const days = (d?: number | null) => d == null ? '' : fact(CLOCK_GLYPH, `${d < 1 ? '<1' : Math.floor(d)}d`, d < 3);
+  switch (c.id) {
+    case 'hungry': case 'spoiling': return fact(icon('rawFood'), String(Math.floor(c.id === 'spoiling' ? spoilingFood(w) : RESOURCES.filter(r => r.kind === 'raw').reduce((n, r) => n + w.res[r.id], 0))));
+    case 'raw': return fact(icon('meal'), String(Math.floor(mealTotal(w)))) + fact(icon('kitchen'), staff('kitchen'));
+    case 'table': return fact(icon('dining'), `${built(w).filter(b => b.def === 'dining').reduce((n, b) => n + (BUILDING_BY_ID[b.def].seats ?? 0), 0)}/${pop}`);
+    case 'ale': return fact(icon('drink'), String(Math.floor(drinkTotal(w))));
+    case 'beds': return fact(icon('leanto'), `${beds(w)}/${pop}`);
+    case 'vain': return fact(icon('cottage'), String(built(w).filter(b => b.def === 'cottage').length));
+    case 'sick': return fact(icon('clinic'), built(w).some(b => b.def === 'clinic') ? staff('clinic') : '0', !built(w).some(b => b.def === 'clinic'));
+    case 'cold': case 'wood': case 'coldhomes': return fact(icon('wood'), String(Math.floor(w.res.wood)), true) + fact(icon('woodcutter'), staff('woodcutter'));
+    case 'woodflow': return fact(icon('wood'), `${num(e.wood.net)}/d`, true) + days(e.wood.daysLeft);
+    case 'foodflow': return fact(icon('rawFood'), `${num(e.food.net)}/d`, true) + days(e.food.daysLeft);
+    case 'winter': return fact(icon('wood'), String(Math.floor(w.res.wood))) + days(c.due);
+    case 'storage': return fact(icon('stockpile'), `${Math.floor(stored(w))}/${storageCap(w)}`, true);
+    case 'planks': return fact(icon('fine'), String(Math.floor(stockOf(w, 'fine'))), true);
+    case 'stretched': case 'slack': return fact(LABORER_GLYPH, `${Math.round(e.busyShare * 100)}%`);
+    case 'festival': return fact(STRAIN_GLYPH, String(Math.round(w.strain)));
+    case 'moodcharter': return fact(MOOD_GLYPH, String(Math.round(avgMood(w))));
+    case 'desk': return fact(icon('desk'), staff('desk'), true);
+    default: return '';
+  }
 }
 
 // ---------- Ledger ----------
@@ -1193,7 +1304,7 @@ function ledger(w: World, selected: InputKey | 'gold' | null = null) {
     ${w.perks.length ? `<details data-key="cornerstones"><summary>Cornerstones · ${w.perks.length}</summary><ul class="stones">${w.perks.map(p => `<li>${icon(CORNERSTONE_ICON[p] ?? 'cornerstone')}<span><b>${esc(PERK_BY_ID[p].name)}</b><small>${esc(PERK_BY_ID[p].desc)}${PERK_BY_ID[p].cost ? ` ${esc(PERK_BY_ID[p].cost!)}` : ''}</small></span></li>`).join('')}</ul></details>` : ''}
     <details data-key="gold-help"><summary>Gold sources</summary><p>Seasonal rent · Crown stipends · events · caravan sales</p></details>${categoryDetail}${resourceDetail}${accounts.map(([a, k]) => accountCard(a, k, selected === k || !!selected && (membersOf(k).includes(selected as ResourceId) || k === 'meal' && FOODS.includes(selected as ResourceId)))).join('')}
     <h3>Jobs</h3><div class="joblist">${jobs || '<p class="muted">No workplaces yet.</p>'}</div>
-    <h3>Laborers <span class="muted">· ${e.laborers.length}</span></h3>
+    <h3 id="ledger-laborers">Laborers <span class="muted">· ${e.laborers.length}</span></h3>
     <div class="lt-bar">${segs}</div>
     <p class="lt-key">${['hauling', 'building', 'cleaning', 'eating', 'idle'].map(k => `<span class="lt-${k}"><i></i>${k} ${pct(k)}%</span>`).join('')}</p>
     <p class="prefs">${laborNote}</p>`;

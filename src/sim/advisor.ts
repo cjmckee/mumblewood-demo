@@ -310,3 +310,29 @@ const kindOf = (def: string) => Object.entries(KIND_DEFS).find(([, ds]) => ds.in
 export function gripeSummary(w: World) {
   return [...gripes(w)].filter(([k]) => k !== 'strain').map(([k, v]) => ({ key: k, people: v.people.length, weight: v.weight })).sort((a, b) => b.weight - a.weight);
 }
+
+/**
+ * The concerns as the player sees them: red for what can cost people or the run (hunger, illness, the cold, someone
+ * close to leaving, food or wood running out within days, winter at the door), yellow for what costs mood or time.
+ * Red comes first, soonest harm first; yellow by how much mood fixing it recovers, then how many it touches.
+ * The bot keeps using assess() and its own order.
+ */
+export type Ranked = Concern & { level: 'red' | 'yellow'; due?: number };
+export function rankForPlayer(w: World, cs: Concern[] = assess(w)): Ranked[] {
+  const e = economy(w), sea = seasonOf(w);
+  const leaving = alive(w).filter(c => c.mood < 15);
+  const all: Concern[] = leaving.length ? [{ id: 'leaving', title: `${leaving.length} may leave`, evidence: 'Mood under 15: they walk out if it stays this low', idea: 'see what each of them is missing', weight: 50, people: leaving.length, personIds: leaving.map(c => c.id), fixes: [] }, ...cs] : cs;
+  const ranked: Ranked[] = all.map(c => {
+    let level: 'red' | 'yellow' = 'yellow', due: number | undefined;
+    switch (c.id) {
+      case 'leaving': case 'hungry': case 'sick': case 'cold': case 'coldhomes': level = 'red'; break;
+      case 'foodflow': due = e.food.daysLeft ?? undefined; if (due != null && due < 3) level = 'red'; break;
+      case 'woodflow': case 'wood': due = e.wood.daysLeft ?? undefined; if (due != null && due < 3) level = 'red'; break;
+      case 'winter': due = sea.season === 'winter' ? 0 : sea.toWinter; if (due <= 2) level = 'red'; break;
+    }
+    return { ...c, level, due };
+  });
+  return ranked.sort((a, b) => (a.level === b.level ? 0 : a.level === 'red' ? -1 : 1)
+    || (a.level === 'red' ? (a.due ?? 99) - (b.due ?? 99) : 0)
+    || b.weight - a.weight || b.personIds.length - a.personIds.length);
+}
