@@ -16,7 +16,7 @@ const state = () => p.evaluate(() => { const w = window.__game.world; return { h
 await p.goto(process.env.UI_URL || process.env.GAME_URL || 'file://' + page_); await ready();
 let s = await state();
 ok(s.day === 1 && !s.text.includes('welcome back'), 'a first visit starts a new colony, no welcome card');
-await p.evaluate(() => { const g = window.__game; g.autoplay(24 * 6.4); g.setSpeed(0); });
+await p.evaluate(() => { const g = window.__game; g.autoplay(24 * 6.4); g.world.named = true; g.setSpeed(0); });
 const saved = await p.evaluate(() => window.__game.save());
 ok(!!saved && saved.world.hour > 24 * 6, `the run saves (day ${Math.floor(saved?.world.hour / 24) + 1})`);
 const before = await state();
@@ -55,13 +55,13 @@ ok(s.day === 1 && !s.text.includes('welcome back'), 'confirming starts a new col
 const fresh = await p.evaluate(() => JSON.parse(localStorage.getItem('mumblewood.save.v1') ?? 'null'));
 ok(fresh && fresh.world.hour < 12, 'and the save is replaced by the new colony');
 
-// start over from the Log tab
-await p.evaluate(() => { const g = window.__game; g.autoplay(30); g.setSpeed(0); });
-await p.click('[data-act=tab][data-arg=log]'); await p.waitForTimeout(200);
-await p.click('.restart-row [data-act=restart]'); await p.waitForTimeout(200);
-ok(await p.isVisible('text=This one will be lost for good'), 'the Log tab’s Start over asks first');
-await p.screenshot({ path: `${out}/phone-log-restart.png` });
-await p.click('.restart-row [data-act=restart-cancel]'); await p.waitForTimeout(200);
+// start over from the Menu tab
+await p.evaluate(() => { const g = window.__game; g.autoplay(30); g.world.named = true; g.setSpeed(0); });
+await p.click('[data-act=tab][data-arg=menu]'); await p.waitForTimeout(200);
+await p.click('.mnew[data-act=restart]'); await p.waitForTimeout(200);
+ok(await p.isVisible('text=will be lost for good'), 'the Menu tab’s New colony asks first');
+await p.screenshot({ path: `${out}/phone-menu-restart.png` });
+await p.click('.mnew [data-act=restart-cancel]'); await p.waitForTimeout(200);
 ok((await state()).day > 1, 'Keep playing keeps the colony');
 
 // a finished run clears the save, so the next visit starts fresh

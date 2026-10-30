@@ -7,7 +7,7 @@ import {
   recipesOf, recipeOn, currentRecipe, orderedRecipes, INPUT_CAPACITY, OUTBOX_CAP, siteOk, rerollCost, REROLL_STEP, stockOf, recipeReach, charterHelpers, charterDef,
   costOf, researchLeft, researchStillNeeds, desks, feastCheck, festivalPreview, mealTotal, drinkTotal,
   comfortParts, comfortOf, colonyComfort, comfortGaps, strainPerDay, footprint, activeNeeds, standingOf, STANDINGS, NeedKey, winterFuelPerDay,
-  sellPrice, charterCounted, charterRequirements, basicsDone, researchOpen, edibleTotal, storePrio,
+  sellPrice, charterCounted, charterRequirements, basicsDone, researchOpen, edibleTotal, storePrio, colonyName, nameFrom, NAME_MAX,
 } from '../sim/world';
 import { charterPreview, metricRoutes, Route } from '../sim/charterplan';
 import { START } from '../sim/scenario';
@@ -88,7 +88,7 @@ function logText(w: World, text: string) {
   return html;
 }
 
-type Tab = 'colonists' | 'build' | 'ledger' | 'issues' | 'log';
+type Tab = 'colonists' | 'build' | 'ledger' | 'issues' | 'log' | 'menu';
 type Detail = { kind: 'colonist' | 'building'; id: number } | null;
 
 const goodName = (r: ResourceId) => RESOURCES.find(x => x.id === r)!.name.toLowerCase();
@@ -109,7 +109,7 @@ function reachText(w: World, r: Recipe, forDraft: boolean) {
 const starHtml = (n: Stars) => `<span class="stars" aria-label="${n} of 3 stars">${'★'.repeat(n)}<s>${'★'.repeat(3 - n)}</s></span>`;
 
 /** the panel's tabs: a glyph over a short name; counts sit on the glyph */
-const TAB_NAME: Record<Tab, string> = { colonists: 'Colonists', build: 'Build', ledger: 'Ledger', issues: 'Issues', log: 'Log' };
+const TAB_NAME: Record<Tab, string> = { colonists: 'Colonists', build: 'Build', ledger: 'Ledger', issues: 'Issues', log: 'Log', menu: 'Menu' };
 /** small stroke glyphs for the charter chips, route tiles and tabs */
 const svg = (d: string, w = 2) => `<svg class="glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 const PERSON_GLYPH = svg('<circle cx="12" cy="8" r="3.6"/><path d="M5 20c0-3.9 3.1-6.5 7-6.5s7 2.6 7 6.5"/>');
@@ -126,6 +126,7 @@ const TAB_GLYPH: Record<Tab, string> = {
   ledger: svg('<path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M9 9h6M9 13h6"/>'),
   issues: svg('<path d="M12 3 22 20H2z"/><path d="M12 10v4M12 17h.01"/>'),
   log: svg('<path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/>'),
+  menu: svg('<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3.5 17.5a1.8 1.8 0 0 0 2.5 2.5l5.8-5.8a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.3-.3-.3-2.3z"/>'),
 };
 const LABORER_GLYPH = svg('<path d="M4 8l8-4 8 4v9l-8 4-8-4z"/><path d="M4 8l8 4 8-4M12 12v9"/>');
 const HEARTH_GLYPH = svg('<path d="M12 3c1 3 5 5 5 10a5 5 0 0 1-10 0c0-2 1-3.5 2-4.5.3 1.5 1 2.5 2 3 0-3-1-5 1-8.5z"/><path d="M5 21h14"/>');
@@ -153,6 +154,13 @@ const RESEARCH_ICON: Record<string, string> = {
 };
 const STAR_GLYPH = '<svg class="glyph" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l3 7 7 .6-5.3 4.6 1.7 7.3L12 17.8 5.6 21.5l1.7-7.3L2 9.6 9 9z"/></svg>';
 const BOX_GLYPH = svg('<path d="M4 8l8-4 8 4v9l-8 4-8-4z"/><path d="M4 8l8 4 8-4M12 12v9"/>');
+const TROPHY_GLYPH = svg('<path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M9 20h6"/>');
+const SKULL_GLYPH = svg('<circle cx="12" cy="11" r="7"/><path d="M9 11h.01M15 11h.01M10 18v3M14 18v3"/>');
+const SAVE_GLYPH = svg('<path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/>');
+const PLUS_GLYPH = svg('<path d="M12 5v14M5 12h14"/>', 2.4);
+const LABEL_GLYPH = svg('<path d="M4 7h10l4 5-4 5H4z"/>');
+const MOTION_GLYPH = svg('<path d="M3 12h4l3-7 4 14 3-7h4"/>');
+const DICE_GLYPH = svg('<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 9h.01M15 15h.01M15 9h.01M9 15h.01M12 12h.01" stroke-width="2.8"/>');
 const CATEGORY_MEMBERS = { meal: membersOf('meal'), drink: membersOf('drink'), fine: membersOf('fine'), remedy: membersOf('remedy'), rawFood: membersOf('rawFood') };
 /** a cornerstone's icon: the building or good it's about, where there is one */
 const CORNERSTONE_ICON: Record<string, string> = {
@@ -160,6 +168,9 @@ const CORNERSTONE_ICON: Record<string, string> = {
   rentCollector: 'gold', pilgrimsRoad: 'caravan', rootCellars: 'cellar', merchantsFavour: 'caravan', openRoad: 'leanto', feastDays: 'dining',
   brewersGuild: 'brewery', fishingRights: 'dock', masonsLodge: 'sawmill', bakersRow: 'bakery', crownsFavour: 'gold', barnRaising: 'carpenter', ironWill: 'statue',
 };
+const PREFS_KEY = 'mumblewood.ui.prefs.v1';
+type Prefs = { labels: 'all' | 'selected'; calm: boolean };
+function loadPrefs(): Prefs { try { return { labels: 'all', calm: false, ...JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}') }; } catch { return { labels: 'all', calm: false }; } }
 const CHARTER_DISPLAY_KEY = 'mumblewood.ui.charter-collapsed.v1';
 function initialCharterCollapsed() {
   try {
@@ -179,7 +190,7 @@ export class UI {
   onSpeed: (s: number) => void = () => {};
   onRestart: () => void = () => {};
   /** run history from this browser, shown on the end screen */
-  profile: { runs: { result: string; day: number; charters: number }[]; firstRunDone?: boolean } = { runs: [] };
+  profile: { runs: { result: string; day: number; charters: number; at?: string; name?: string }[]; firstRunDone?: boolean } = { runs: [] };
   /** the profile changed and should be saved (the first-run guide finished) */
   onProfile: () => void = () => {};
   private lastCoach = '';
@@ -197,6 +208,10 @@ export class UI {
   private colonistFilter = 'all';
   /** the decision card is hidden so the player can look at the colony; play stays paused until they choose */
   private peeking = false;
+  /** settings from the Menu tab, kept in this browser apart from the save */
+  prefs: Prefs = loadPrefs();
+  /** naming the colony after the first charter: the suggested name shown, and what's typed */
+  private nameInit = ''; private nameDraft: string | null = null; private nameSeed = -1;
   /** the trade order being put together: amounts to buy and sell, and blueprints, for the caravan that's here */
   private order: { key: string; buy: Record<string, number>; sell: Record<string, number>; bps: string[] } = { key: '', buy: {}, sell: {}, bps: [] };
   /** the research tree's selected project */
@@ -220,7 +235,9 @@ export class UI {
   private sheetKey = '';
   private sheetScroll = new Map<string, number>();
   private returnFocus: { act: string; arg: string } | null = null;
-  get blocksSimulation() { return this.festivalOpen || this.strainOpen || this.picking != null || this.help != null; }
+  get blocksSimulation() { return this.festivalOpen || this.strainOpen || this.picking != null || this.help != null || this.naming(this.getWorld()); }
+  /** the first charter is picked and the colony hasn't been named yet */
+  private naming(w: World) { return w.status === 'playing' && !w.named && !!(w.charter || w.chartersDone.length) && !this.resumeOpen; }
 
   private dismissDialog() {
     if (this.getWorld().decisions.length || this.resumeOpen || this.getWorld().status !== 'playing') return;
@@ -246,6 +263,9 @@ export class UI {
 
   constructor(private root: HTMLElement, private getWorld: () => World, private send: (c: Command) => string | null, private view: IsoView) {
     currentUI = this;
+    // the colony name being typed: kept without redrawing the card; Enter founds it
+    root.addEventListener('input', e => { const t = e.target as HTMLElement; if (t instanceof HTMLInputElement && t.dataset.nameInput != null) this.nameDraft = t.value; });
+    root.addEventListener('keydown', e => { const t = e.target as HTMLElement; if (e.key === 'Enter' && t instanceof HTMLInputElement && t.dataset.nameInput != null) { e.preventDefault(); (root.querySelector('[data-act=name-ok]') as HTMLElement | null)?.click(); } });
     root.addEventListener('click', e => { if (!(e.target instanceof HTMLSelectElement) && !(e.target instanceof HTMLInputElement)) this.click(e); });
     window.addEventListener('keydown', e => this.keyboard(e));
     root.addEventListener('change', e => {
@@ -405,6 +425,10 @@ export class UI {
         break;
       }
       case 'resource': this.panel('ledger'); this.resource = arg as InputKey | 'gold'; this.anchor = `${arg === 'gold' || !RESOURCES.some(r => r.id === arg) ? 'account' : 'resource'}-${arg}`; break;
+      case 'pref': { const [k, v] = arg.split(':'); if (k === 'labels') this.prefs.labels = v as Prefs['labels']; if (k === 'calm') this.prefs.calm = !!v;
+        try { localStorage.setItem(PREFS_KEY, JSON.stringify(this.prefs)); } catch { /* optional */ } this.applyPrefs(); break; }
+      case 'name-roll': this.nameInit = nameFrom((Math.random() * 2 ** 32) >>> 0); this.nameDraft = null; this.lastModal = ''; break;
+      case 'name-ok': this.send({ type: 'name', name: this.nameDraft ?? this.nameInit }); this.nameDraft = null; this.nameInit = ''; this.lastModal = ''; break;
       case 'all-goods': this.allGoods = !this.allGoods; break;
       case 'issue-toggle': if (this.openIssues.has(arg)) this.openIssues.delete(arg); else this.openIssues.add(arg); break;
       case 'issues-all': this.allIssues = !this.allIssues; break;
@@ -750,7 +774,7 @@ export class UI {
   private renderSheet(w: World, force: boolean) {
     const pop = alive(w);
     const tabs = `<nav class="tabs">
-      ${(['colonists', 'build', 'ledger', 'issues', 'log'] as Tab[]).map(t => { const n = t === 'colonists' ? pop.length : t === 'issues' ? this.rankedIssues(w).length : 0;
+      ${(['colonists', 'build', 'ledger', 'issues', 'log', 'menu'] as Tab[]).map(t => { const n = t === 'colonists' ? pop.length : t === 'issues' ? this.rankedIssues(w).length : 0;
         return `<button type="button" data-act="tab" data-arg="${t}" class="${this.tab === t && this.open ? 'on' : ''}"${this.tab === t && this.open ? ' aria-current="page"' : ''}><span class="tico">${TAB_GLYPH[t]}${n ? `<em class="${t === 'issues' ? 'warn' : ''}">${n}</em>` : ''}</span><span class="tl">${TAB_NAME[t]}</span></button>`; }).join('')}
       ${this.open ? `<button type="button" class="x" data-act="close" aria-label="Close panel">×</button>` : ''}
     </nav>`;
@@ -762,6 +786,7 @@ export class UI {
       else if (this.tab === 'build') body = this.destination ? this.destinationList(w) : this.buildList(w);
       else if (this.tab === 'ledger') body = ledger(w, this.resource);
       else if (this.tab === 'issues') body = this.issueList(w);
+      else if (this.tab === 'menu') body = this.menuView(w);
       else body = this.logList(w);
     }
     const html = tabs + (this.open ? `<div class="sheet-body">${body}</div>` : '');
@@ -1064,18 +1089,37 @@ export class UI {
     const prog = charterProgress(w);
     const when = (() => { const t = Date.parse(this.resumeSavedAt); if (!t) return ''; const m = Math.round((Date.now() - t) / 60000); return m < 1 ? 'just now' : m < 60 ? `${m} minute${m === 1 ? '' : 's'} ago` : m < 60 * 24 ? `${Math.round(m / 60)} hour${Math.round(m / 60) === 1 ? '' : 's'} ago` : `${Math.round(m / 1440)} day${Math.round(m / 1440) === 1 ? '' : 's'} ago`; })();
     const lines = [`Day ${day(w)} · ${alive(w).length} settlers · mood ${Math.round(avgMood(w))} · strain ${Math.round(w.strain)}`, prog ? `Charter ${w.chartersDone.length + 1} of 3: ${prog.charter.name}, ${prog.label}` : w.chartersDone.length ? `${w.chartersDone.length} charter${w.chartersDone.length > 1 ? 's' : ''} done` : 'No charter yet'];
-    return `<div class="card-wrap"><p class="eyebrow">Welcome back${when ? ` · saved ${when}` : ''}</p><h2>Your colony is waiting</h2>
+    return `<div class="card-wrap"><p class="eyebrow">Welcome back${when ? ` · saved ${when}` : ''}</p><h2>${esc(colonyName(w))}</h2>
       <p class="lede">${lines.map(esc).join('<br>')}</p>
       <div class="opts"><button type="button" class="opt" data-act="resume"><b>Continue</b></button>
       ${this.confirmNew ? `<button type="button" class="opt danger" data-act="restart"><b>Yes, start over</b><span>This colony will be lost for good.</span></button>` : `<button type="button" class="opt" data-act="restart"><b>Start a new colony</b></button>`}</div>
       ${this.confirmNew ? '<button type="button" class="ghost skip" data-act="restart-cancel">Keep this colony</button>' : ''}</div>`;
   }
 
+  /** the Menu tab: this run, a new colony, past runs and settings */
+  private menuView(w: World) {
+    const prog = charterProgress(w);
+    const runs = (this.profile.runs as { result: string; day: number; charters: number; at?: string; name?: string }[]).slice().reverse();
+    const wins = runs.filter(r => r.result === 'won').length;
+    const date = (at?: string) => { const t = at ? new Date(at) : null; return t && !isNaN(+t) ? t.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : ''; };
+    const run = (r: typeof runs[number]) => `<div class="mrun ${r.result === 'won' ? 'won' : 'lost'}">${r.result === 'won' ? TROPHY_GLYPH : SKULL_GLYPH}<span class="mr-n">${esc(r.name ?? (r.result === 'won' ? 'Won' : 'Lost'))}</span><span class="mr-d">${CLOCK_GLYPH}${r.day}</span><span class="mr-c" aria-label="${r.charters} of 3 charters">${[0, 1, 2].map(i => `<i class="${i < r.charters ? 'on' : ''}"></i>`).join('')}</span><span class="mr-t">${date(r.at)}</span></div>`;
+    const prefs = this.prefs;
+    const seg = (key: 'labels', opts: [string, string][]) => `<span class="segs">${opts.map(([v, l]) => `<button type="button" class="seg${prefs[key] === v ? ' on' : ''}" data-act="pref" data-arg="${key}:${v}" aria-pressed="${prefs[key] === v}">${l}</button>`).join('')}</span>`;
+    const box = (key: 'calm') => `<button type="button" class="rcheck" role="checkbox" aria-checked="${!!prefs[key]}" data-act="pref" data-arg="${key}:${prefs[key] ? '' : '1'}"><span>${prefs[key] ? CHECK_GLYPH : ''}</span></button>`;
+    return `<div class="mhead"><span class="mday">Day ${day(w)}</span><span class="mm"><b>${esc(colonyName(w))}</b><small>${prog ? `${esc(prog.charter.name)} · charter ${w.chartersDone.length + 1}/3` : w.chartersDone.length ? `${w.chartersDone.length} charters done` : 'No charter yet'}</small><small class="msaved">${SAVE_GLYPH}Saves automatically</small></span></div>
+      ${this.confirmNew ? `<div class="mnew confirm"><span>${esc(colonyName(w))} will be lost for good.</span><button type="button" class="act danger" data-act="restart">New colony</button><button type="button" class="ghost" data-act="restart-cancel">Keep playing</button></div>`
+        : `<button type="button" class="mnew" data-act="restart">${PLUS_GLYPH}New colony</button>`}
+      <div class="mruns-h"><h3 class="group">Runs</h3>${runs.length ? `<span class="mwins">${TROPHY_GLYPH}${wins} / ${runs.length}</span>` : ''}</div>
+      <div class="mruns">${runs.slice(0, 20).map(run).join('') || '<p class="empty">No finished runs yet</p>'}</div>
+      <h3 class="group">Settings</h3>
+      <div class="msets"><div class="mset">${LABEL_GLYPH}<span>Building labels</span>${seg('labels', [['all', 'All'], ['selected', 'Selected']])}</div>
+      <div class="mset">${MOTION_GLYPH}<span>Reduce motion</span>${box('calm')}</div></div>`;
+  }
+
+  applyPrefs() { this.view.labelMode = this.prefs.labels; this.root.classList.toggle('calm', this.prefs.calm); }
+
   private logList(w: World) {
-    const restart = this.confirmNew
-      ? `<div class="restart-row"><span>Start a new colony? This one will be lost for good.</span><button type="button" class="ghost danger" data-act="restart">Yes, start over</button><button type="button" class="ghost" data-act="restart-cancel">Keep playing</button></div>`
-      : `<div class="restart-row"><span class="muted">Your colony saves automatically in this browser.</span><button type="button" class="ghost" data-act="restart">Start over</button></div>`;
-    return restart + `<ol class="log">${w.log.slice(-60).reverse().map(l => `<li class="t-${l.tone}"><time>${l.tone === 'bad' ? '⚠' : l.tone === 'good' ? '✓' : l.tone === 'love' ? '♥' : '•'} Day ${l.day}, ${String(l.hour).padStart(2, '0')}:00</time><span>${logText(w,l.text)}</span></li>`).join('')}</ol>`;
+    return `<ol class="log">${w.log.slice(-60).reverse().map(l => `<li class="t-${l.tone}"><time>${l.tone === 'bad' ? '⚠' : l.tone === 'good' ? '✓' : l.tone === 'love' ? '♥' : '•'} Day ${l.day}, ${String(l.hour).padStart(2, '0')}:00</time><span>${logText(w,l.text)}</span></li>`).join('')}</ol>`;
   }
 
   // ---------- Decisions ----------
@@ -1131,6 +1175,12 @@ export class UI {
         }
       }
     }
+    if (!html && this.naming(w)) {
+      if (!this.nameInit || this.nameSeed !== w.seed) { this.nameInit = colonyName(w); this.nameSeed = w.seed; this.nameDraft = null; }
+      html = `<div class="card-wrap naming"><p class="eyebrow">A new settlement</p><h2>Name your colony</h2>
+        <div class="nrow"><input type="text" class="nin" data-name-input maxlength="${NAME_MAX}" value="${esc(this.nameInit)}" aria-label="Colony name" autocomplete="off" spellcheck="false"><button type="button" class="nroll" data-act="name-roll" title="Another name" aria-label="Another name">${DICE_GLYPH}</button></div>
+        <button type="button" class="act nok" data-act="name-ok">Found it</button></div>`;
+    }
     if (!html && this.help) html = this.helpCard(w);
     if (!html && this.festivalOpen) html = this.festivalCard(w);
     if (!html && this.strainOpen) html = this.strainCard(w);
@@ -1148,7 +1198,7 @@ export class UI {
       if (bar.innerHTML !== next) bar.innerHTML = next;
       bar.hidden = false; html = '';
     } else bar.hidden = true;
-    const nextDialogKey = d ? JSON.stringify(d) : this.help ? `help:${this.help}` : this.festivalOpen ? 'festival' : this.strainOpen ? 'strain' : this.picking != null ? `errand:${this.picking}` : this.resumeOpen ? 'resume' : w.status;
+    const nextDialogKey = d ? JSON.stringify(d) : this.naming(w) ? `name:${this.nameInit}` : this.help ? `help:${this.help}` : this.festivalOpen ? 'festival' : this.strainOpen ? 'strain' : this.picking != null ? `errand:${this.picking}` : this.resumeOpen ? 'resume' : w.status;
     const changedDialog = nextDialogKey !== this.dialogKey;
     const wasOpen = !el.hidden;
     if (html && !wasOpen) {
@@ -1163,6 +1213,7 @@ export class UI {
     for (const id of ['hud', 'sheet', 'placebar', 'stage']) (this.root.querySelector(`#${id}`) as HTMLElement).inert = !!html;
     // the dialog itself takes focus, not its first option, so nothing looks preselected; Tab moves into the options
     if (html && (!wasOpen || !el.contains(document.activeElement))) el.focus({ preventScroll: true });
+    const nin = el.querySelector<HTMLInputElement>('[data-name-input]'); if (nin && (!wasOpen || changedDialog)) { nin.focus({ preventScroll: true }); nin.select(); }
     if (html && (!wasOpen || changedDialog)) el.scrollTop = 0;
     this.dialogKey = nextDialogKey;
     if (!html && wasOpen) {
@@ -1272,8 +1323,8 @@ export class UI {
   private endScreen(w: World) {
     const won = w.status === 'won';
     const s = w.stats;
-    return `<div class="card-wrap end ${won ? 'won' : 'lost'}"><p class="eyebrow">${won ? 'Victory' : 'The colony collapsed'}</p>
-      <h2>${won ? 'Mumblewood is a town' : 'The kettle remains'}</h2>
+    return `<div class="card-wrap end ${won ? 'won' : 'lost'}"><p class="eyebrow">${won ? 'Victory' : `${esc(colonyName(w))} collapsed`}</p>
+      <h2>${won ? `${esc(colonyName(w))} is a town` : 'The kettle remains'}</h2>
       <p class="lede">${won ? 'All three charters complete.' : alive(w).length <= START.collapse.minAlive ? 'Too few settlers remain.' : 'Too many settlers were lost.'} You lasted ${day(w)} day${day(w) === 1 ? '' : 's'}.</p>
       ${!won ? `<p class="terms">${[...w.log].reverse().filter(l=>l.tone === 'bad').slice(0,3).map(l=>esc(l.text)).join('<br>')}</p>` : ''}<dl class="stats"><div><dt>Charters</dt><dd>${w.chartersDone.length} / 3</dd></div><div><dt>Peak population</dt><dd>${s.peakPop}</dd></div>
       <div><dt>Couples formed</dt><dd>${s.couples}</dd></div><div><dt>Breakups</dt><dd>${s.breakups}</dd></div>

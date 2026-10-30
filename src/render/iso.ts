@@ -65,6 +65,8 @@ export class IsoView {
   night = new Graphics();
   glow = new Graphics();
   labels = new Container();
+  /** the player's setting: every building's label, or only the selected building's and construction */
+  labelMode: 'all' | 'selected' = 'all';
   private bGfx = new Map<number, { c: Container; label?: Text }>();
   private cGfx = new Map<number, { root: Container; body: Graphics; pip: Graphics; carry: Graphics; zz: Text }>();
   private builtKey = '';
@@ -403,6 +405,7 @@ export class IsoView {
       // homes are easy to tell by their shape and there are lots of them: label one only while it's selected or going up
       const d = bdef(b);
       if (d.beds && !d.slots && b.built && !sel) { label.visible = false; return []; }
+      if (this.labelMode === 'selected' && b.built && !sel) { label.visible = false; return []; }
       const pri = (sel ? 1e6 : 0) + (b.built ? 0 : 1e5) + f.w * f.h * 1e3 + label.y;
       return [{ label, pri }];
     }).sort((a, z) => z.pri - a.pri);
