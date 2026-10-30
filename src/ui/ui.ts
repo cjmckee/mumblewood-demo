@@ -7,7 +7,7 @@ import {
   recipesOf, recipeOn, currentRecipe, orderedRecipes, INPUT_CAPACITY, OUTBOX_CAP, siteOk, rerollCost, REROLL_STEP, stockOf, recipeReach, charterHelpers, charterDef,
   costOf, researchLeft, researchStillNeeds, desks, feastCheck, festivalPreview, mealTotal, drinkTotal,
   comfortParts, comfortOf, colonyComfort, comfortGaps, strainPerDay, footprint, activeNeeds, standingOf, STANDINGS, NeedKey, winterFuelPerDay,
-  sellPrice, charterCounted, charterRequirements, basicsDone, researchOpen, edibleTotal,
+  sellPrice, charterCounted, charterRequirements, basicsDone, researchOpen, edibleTotal, storePrio,
 } from '../sim/world';
 import { charterPreview, metricRoutes, Route } from '../sim/charterplan';
 import { START } from '../sim/scenario';
@@ -342,7 +342,7 @@ export class UI {
       case 'store-preset': { const [bid, m] = arg.split(':'); this.send({ type: 'storageFilter', building: Number(bid), allow: m === 'food' ? FOODS : m === 'goods' ? GOODS : null }); break; }
       case 'recipe-priority': { const [building,recipe,delta]=arg.split(':').map(Number);this.send({type:'recipePriority',building,recipe,delta:delta as -1|1});break; }
       case 'recipe-toggle': { const [bid, i] = arg.split(':').map(Number); const b = buildingByUid(w, bid); if (!b) break; this.send({ type: 'toggleRecipe', building: bid, recipe: i, on: !recipeOn(b, i) }); break; }
-      case 'store-prio': { const [bid, m] = arg.split(':'); this.send({ type: 'storagePriority', building: Number(bid), high: m === 'high' }); break; }
+      case 'store-prio': { const [bid, m] = arg.split(':').map(Number); this.send({ type: 'storagePriority', building: bid, prio: m as 0 | 1 | 2 }); break; }
       case 'store-item': {
         const [bid, r] = arg.split(':'); const b = buildingByUid(w, Number(bid)); if (!b) break;
         const cur = b.allow ?? RESOURCES.map(x => x.id);
@@ -855,7 +855,7 @@ export class UI {
       const items = RESOURCES.map(r => { const on = accepts(b, r.id); return `<button type="button" class="ptile${on ? ' on' : ''}" data-act="store-item" data-arg="${b.uid}:${r.id}" aria-pressed="${on}" title="${esc(r.name)}" aria-label="${on ? 'Accepting' : 'Not accepting'} ${esc(r.name)}">${icon(r.id)}</button>`; }).join('');
       staff += `<div class="store-head"><span class="store-num"><b>${Math.floor(held)}</b>/${def.storage}</span>${spoils ? `<span class="fresh bad" title="Raw food and meals spoil here">${SPOIL_GLYPH} Food spoils</span>` : def.keepsFresh ? `<span class="fresh good" title="Keeps food fresh">${FRESH_GLYPH} Keeps fresh</span>` : ''}</div>${bar}
         <div class="stiles">${tiles || '<p class="empty">Empty</p>'}</div>
-        <div class="store-set"><h3>Fills</h3><div class="segs two"><button type="button" class="seg${b.high ? '' : ' on'}" data-act="store-prio" data-arg="${b.uid}:low" aria-pressed="${!b.high}" title="Fills after high-priority storage">Low</button><button type="button" class="seg${b.high ? ' on' : ''}" data-act="store-prio" data-arg="${b.uid}:high" aria-pressed="${b.high}" title="Fills first">First</button></div></div>
+        <div class="store-set"><h3>Priority</h3><div class="segs">${([[2, 'High'], [1, 'Medium'], [0, 'Low']] as const).map(([v, l]) => `<button type="button" class="seg${storePrio(b) === v ? ' on' : ''}" data-act="store-prio" data-arg="${b.uid}:${v}" aria-pressed="${storePrio(b) === v}">${l}</button>`).join('')}</div></div>
         <div class="store-set"><h3>Takes</h3><div class="segs">${preset('all', 'All')}${preset('food', 'Food')}${preset('goods', 'Goods')}</div></div>
         <details data-key="storage-items-${b.uid}"${mode === 'custom' ? ' open' : ''}><summary>Pick items${mode === 'custom' ? ` · ${b.allow!.length}` : ''}</summary><div class="ptiles">${items}</div></details>`;
     } else if (def.beds) {

@@ -105,6 +105,8 @@ export interface Building {
   /** storage buildings: which goods it takes; null means everything */
   allow: ResourceId[] | null;
   /** storage buildings: high-priority storage fills first and is topped up from low */
+  /** storage priority: 2 high, 1 medium (the default), 0 low; `high` is kept for older saves and tools */
+  prio?: 0 | 1 | 2;
   high: boolean;
   /** workshops: indices of recipes the player has switched off */
   off?: number[];
@@ -338,10 +340,12 @@ export function spoilingFood(w: World) {
   return Math.max(0, FOODS.reduce((n, r) => n + w.res[r], 0) - fresh);
 }
 const dist = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(a.x - b.x, a.y - b.y);
+/** a storage's priority: haulers fill higher first; saves from before the three levels read high as 2 and the rest as medium */
+export const storePrio = (b: Building): number => b.prio ?? (b.high ? 2 : 1);
 /** where to put down a load of r: the nearest highest-priority storage that takes it and has room */
 function storeTarget(w: World, r: ResourceId, from: { x: number; y: number }): Building | undefined {
   const all = storages(w);
-  const pick = (xs: Building[]) => xs.sort((a, b) => Number(b.high) - Number(a.high) || dist(spotOf(a), from) - dist(spotOf(b), from))[0];
+  const pick = (xs: Building[]) => xs.sort((a, b) => storePrio(b) - storePrio(a) || dist(spotOf(a), from) - dist(spotOf(b), from))[0];
   return pick(all.filter(b => accepts(b, r) && roomIn(b) >= 1)) ?? pick(all.filter(b => accepts(b, r))) ?? pick(all);
 }
 /** where to fetch r on the way from `from` to `to`: the storage holding it with the shortest trip */
@@ -379,7 +383,7 @@ export function reconcileStock(w: World) {
         if (diff > -1e-6) break;
       }
     } else {
-      const order = all.slice().sort((a, b) => Number(b.high) - Number(a.high) || dist(spotOf(a), ctr) - dist(spotOf(b), ctr));
+      const order = all.slice().sort((a, b) => storePrio(b) - storePrio(a) || dist(spotOf(a), ctr) - dist(spotOf(b), ctr));
       for (const b of order.filter(b => accepts(b, r))) {
         const t = Math.min(Math.max(0, roomIn(b)), diff); if (t <= 0) continue;
         b.stock[r] = (b.stock[r] ?? 0) + t; diff -= t; if (diff < 1e-6) break;
@@ -939,7 +943,7 @@ export type Command =
   | { type: 'autoAssign' }
   | { type: 'setAutoAssignNew'; value: boolean }
   | { type: 'storageFilter'; building: number; allow: ResourceId[] | null }
-  | { type: 'storagePriority'; building: number; high: boolean }
+  | { type: 'storagePriority'; building: number; high?: boolean; prio?: 0 | 1 | 2 }
   | { type: 'productionLimit'; building: number; output: ResourceId; limit: number | null }
   | { type: 'recipePriority'; building: number; recipe: number; delta: -1 | 1 }
   | { type: 'toggleRecipe'; building: number; recipe: number; on: boolean }
@@ -998,7 +1002,7 @@ export function apply(w: World, cmd: Command): string | null {
     case 'storagePriority': {
       const b = buildingByUid(w, cmd.building);
       if (!b || !bdef(b).storage) return 'Only storage has a priority.';
-      b.high = cmd.high; w.version++;
+      b.prio = cmd.prio ?? (cmd.high ? 2 : 1); b.high = b.prio === 2; w.version++;
       return null;
     }
     case 'reroll': {
@@ -1648,8 +1652,8 @@ function chooseTask(w: World, c: Colonist): Task | null {
   for (const b of storages(w)) for (const [r, n] of Object.entries(b.stock) as [ResourceId, number][]) {
     if ((n ?? 0) < 1 || taskCount(w, t => t.kind === 'haul' && t.from === b.uid && t.res === r) > 0) continue;
     const misplaced = !accepts(b, r);
-    if (!misplaced && b.high) continue;
-    if (!storages(w).some(o => o !== b && accepts(o, r) && roomIn(o) >= 1 && (misplaced || o.high))) continue;
+    if (!misplaced && storePrio(b) === 2) continue;
+    if (!storages(w).some(o => o !== b && accepts(o, r) && roomIn(o) >= 1 && (misplaced || storePrio(o) > storePrio(b)))) continue;
     const s = spotOf(b);
     opts.push({ t: { kind: 'haul', from: b.uid, res: r, amount: Math.min(CARRY, n), restock: true }, pri: misplaced ? 1.8 : 1.6, x: s.x, y: s.y });
   }
