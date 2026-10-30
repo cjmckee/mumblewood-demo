@@ -7,7 +7,8 @@
     "test": "node tools/check.mjs",
     "typecheck": "tsc --noEmit",
     "build": "node build.mjs",
-    "check": "npm run typecheck && npm test && npm run build"
+    "check": "npm run typecheck && npm test && npm run build",
+    "test:ui": "node tools/ui-check.mjs"
   },
   "keywords": [],
   "author": "",

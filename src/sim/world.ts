@@ -2803,6 +2803,15 @@ export function charterProgress(w: World) {
   const v = charterValue(w, c);
   return { charter: c, ...v, ratio: Math.min(1, v.value / v.target) };
 }
+/** Presentation of each requirement, using the same counters as completion checks. */
+export function charterRequirements(w: World) {
+  const c = charterDef(w.charter);
+  if (!c) return [];
+  return (c.metric.kind === 'all' ? c.metric.parts : [c.metric]).map((metric, i) => {
+    const v = metricValue(w, metric, i);
+    return { metric, ...v, ratio: Math.min(1, v.value / Math.max(1, v.target)) };
+  });
+}
 function checkCharter(w: World) {
   const c = charterDef(w.charter);
   if (!c || w.status !== 'playing') return;

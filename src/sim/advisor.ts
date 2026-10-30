@@ -29,6 +29,7 @@ export interface Concern {
   /** sum of mood points lost across colonists, or an equivalent urgency */
   weight: number;
   people: number;
+  personIds: number[];
   fixes: Fix[];
 }
 
@@ -109,7 +110,11 @@ export function assess(w: World): Concern[] {
   const out: Concern[] = [];
   const pop = alive(w).length;
   const g = gripes(w);
-  const add = (id: string, title: string, evidence: string, idea: string, weight: number, people: number, fixes: Fix[]) => out.push({ id, title, evidence, idea, weight, people, fixes });
+  const add = (id: string, title: string, evidence: string, idea: string, weight: number, people: number, fixes: Fix[]) => {
+    const keys = id === 'coworkers' ? ['feud', 'grumbler'] : [id];
+    const affected = id === 'coldhomes' ? alive(w).filter(c => c.cold) : keys.flatMap(k => g.get(k)?.people ?? []);
+    out.push({ id, title, evidence, idea, weight, people, fixes, personIds: [...new Set(affected.map(c => c.id))] });
+  };
   const who = (k: string) => g.get(k)?.people.length ?? 0;
   const wt = (k: string) => g.get(k)?.weight ?? 0;
 

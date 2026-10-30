@@ -52,7 +52,7 @@ export function economy(w: World): Economy {
   ]);
   // planks, bricks and wicker: one book, since any of them builds the nice buildings
   const fineIds = CATEGORIES.fine.members;
-  const planks = account('Planks and bricks', fineIds.reduce((n, r) => n + w.res[r], 0), [
+  const planks = account('Fine materials', fineIds.reduce((n, r) => n + w.res[r], 0), [
     ...fineIds.map(r => ({ label: `${RESOURCES.find(x => x.id === r)!.name} made`, perDay: per(sumKeys(f, k => res(k) === r && src(k).startsWith('+'))) })),
     { label: 'Construction', perDay: -per(sumKeys(f, k => fineIds.includes(res(k) as ResourceId) && src(k).startsWith('-build'))) },
     { label: 'Events', perDay: -per(sumKeys(f, k => fineIds.includes(res(k) as ResourceId) && src(k) === '-event')) },

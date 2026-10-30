@@ -327,6 +327,98 @@ small.fest.on { color: var(--accent); }
 }
 @media (max-width: 430px) { .phase { display: none; } }
 @media (prefers-reduced-motion: reduce) { .meter i { transition: none; } }
+/* Actionable information */
+.sr-only { position:absolute; width:1px; height:1px; padding:0; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; }
+.actions { display:flex; flex-wrap:wrap; gap:6px; margin:8px 0; }
+.issue-summary { width:100%; display:flex; flex-wrap:wrap; gap:4px 10px; text-align:left; border:1px solid var(--line); border-radius:8px; background:#292d22; color:var(--warn); padding:8px 10px; margin:8px 0; font-size:12px; }
+.issue-summary span { color:var(--text); }
+.status .issue-summary { margin-bottom:0; }
+button.job-row, button.lg-row { width:100%; color:inherit; background:none; border:0; text-align:left; font:inherit; cursor:pointer; }
+button.job-row { border-bottom:1px solid var(--line); }
+button.lg-row { border-radius:6px; padding:6px 0; }
+button.lg-row:hover, button.job-row:hover { background:#293126; }
+.acct summary { cursor:pointer; list-style:none; }
+.acct summary::after { content:'＋'; color:var(--accent); }
+.acct[open] summary::after { content:'−'; }
+details > summary { cursor:pointer; color:var(--accent); font-size:13px; padding:8px 0; }
+details > p { font-size:13px; color:var(--muted); }
+.tabs { gap:0; padding-inline:8px; }
+.tabs button { padding-inline:9px; font-size:13px; }
+.tabs .x { font-size:22px; padding-inline:10px; }
+.res button.chip { background:var(--panel); border:1px solid var(--line); }
+.trow { flex-wrap:wrap; }
+.tbtn { font-size:11px; }
+/* Triage and management */
+.filters { display:flex; gap:8px; margin:10px 0; flex-wrap:wrap; }
+.select-label { flex:1; min-width:120px; }
+select { width:100%; padding:10px; font:inherit; font-size:13px; border:1px solid var(--line); color:var(--text); border-radius:9px; background:#222823; }
+.text-link { color:var(--accent); border:0; padding:4px 0; font-size:13px; background:none; text-align:left; }
+.urgent { margin:10px 0; border-left:3px solid var(--bad); padding:10px; background:#352720; border-radius:8px; font-size:13px; }
+meter { width:100%; height:12px; accent-color:var(--accent); }
+.cost-short { color:var(--bad); }
+button.rel { background:#252d26; border:1px solid var(--line); font:inherit; font-size:13px; padding:8px; }
+.sheet-body > details, .detail > details { border-top:1px solid var(--line); margin-top:10px; padding-top:4px; }
+.bp details p { margin:0; }
+.who-big > div { min-width:0; }
+.who-big h2 { overflow-wrap:anywhere; }
+.who-big { align-items:start; }
+.sheet-body .segs { margin-bottom:12px; }
+/* Compact states and accessible controls */
+body { margin:0; }
+button, summary, select { touch-action:manipulation; }
+button { min-height:36px; }
+summary { min-height:36px; }
+button.season, button.leavers { background:none; border:0; text-align:left; font:inherit; color:inherit; padding:2px 0; }
+.clock button.season { font-size:12px; min-height:28px; }
+button.leavers { width:100%; }
+.requirements { display:grid; gap:2px; margin:4px 0; }
+.requirement { display:grid; grid-template-columns:minmax(0,1fr) 40px auto; align-items:center; gap:8px; background:none; border:0; color:var(--muted); font-size:12px; text-align:left; padding:4px 0; width:100%; }
+.requirement .mini { width:40px; }
+.status .research { display:grid; border-radius:8px; width:100%; }
+.research meter { height:6px; }
+.recipe-wrap { border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+.recipe-wrap .recipe { width:100%; border:0; border-radius:0; }
+.inputs { margin:0; padding:0 10px; gap:10px; }
+.inputs .text-link { font-size:12px; }
+.recruit { border:1px solid var(--line); border-radius:12px; overflow:hidden; background:#232a24; }
+.recruit .opt { width:100%; border:0; border-radius:0; }
+.recruit details { padding:0 14px 4px; }
+.recruit summary { font-size:12px; }
+.recruit details p { font-size:12px; margin:4px 0; }
+#modal { align-content:start; padding-top:max(16px,env(safe-area-inset-top,0px)); }
+@media (min-height:900px) { #modal { align-content:safe center; } }
+.trow { grid-template-columns:minmax(0,1fr) auto; }
+.trow .tbtn { justify-self:stretch; }
+.tname { min-height:40px; }
+button.strain { min-height:44px; }
+@media (max-width:600px) {
+  button, summary, select { min-height:44px; }
+  .tabs button { padding-inline:7px; font-size:12px; }
+  .tabs .x { min-width:40px; }
+  .res button.chip { min-height:36px; }
+  .clock button.season { min-height:32px; }
+  .speeds button { min-width:36px; padding-inline:7px; }
+  .status { padding:8px 10px; gap:8px; }
+  .requirements .requirement { min-height:32px; }
+  .fest { padding:5px 8px; min-height:36px; }
+  .issue-summary { font-size:12px; }
+  .skill { grid-template-columns:62px 1fr 16px; gap:5px; }
+  .foodrules, .rules { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .who-big { gap:8px; }
+  .mood-big b { font-size:24px; }
+}
+/* Stable character identity; status remains separate. */
+.avatar { display:inline-block; width:40px; height:40px; flex:none; vertical-align:middle; border-radius:10px; border:1px solid #6b7058; background:#303a30; }
+.avatar-large { width:64px; height:64px; border-radius:14px; }
+.avatar-mini { width:25px; height:25px; border-radius:6px; margin-right:5px; }
+.recruit .opt > b .avatar { width:48px; height:48px; }
+.text-link:has(.avatar), button.rel { display:inline-flex; align-items:center; gap:4px; }
+.row .who > .text-link { min-width:0; }
+.row .who .text-link { overflow-wrap:anywhere; }
+@media (max-width:360px) { .avatar-large { width:48px; height:48px; } .who-big h2 { font-size:24px; } }
+@media (max-width:600px) {
+  #game.panel-open #hud .status { display:none; }
+}
 .recipe-row{display:flex;gap:6px;align-items:stretch}.recipe-row>.recipe{flex:1;min-width:0}.recipe-moves{display:flex;flex-direction:column;justify-content:center}.recipe-moves button{min-width:34px;min-height:32px}.recipe-moves button:disabled{opacity:.3}.production-targets label{display:flex;align-items:center;gap:6px;margin:8px 0}.production-targets label span{margin-left:auto;font-size:12px;color:var(--muted)}.production-targets input{width:76px;min-height:36px;background:var(--panel-solid);color:inherit;border:1px solid var(--line);border-radius:6px;padding:6px;font:inherit}
 </style>
 <div id="game">

@@ -3,6 +3,9 @@ import { Application, Container, Graphics, Text } from 'pixi.js';
 import { BUILDING_BY_ID, ResourceId } from '../sim/content';
 import { modelFor, MODELS, caravanModel } from './models';
 import { drawModel } from './draw';
+import { appearance } from '../characters/appearance';
+import type { Colonist } from '../sim/world';
+import { buildingStatus } from '../ui/status';
 import { seasonOf } from '../sim/seasons';
 import type { Season } from '../sim/scenario';
 import { World, Building, MAP_SIZE, BUILD_MIN, BUILD_MAX, CENTER, alive, hourOfDay, workersAt, bdef, siteWork, canPlace, spotOf, built, footprint, doorTile, dims, turnPoint, terrainAt, T_TREE, T_BUSH, T_WATER, T_APPLE, T_FLOWERS, T_SOIL, T_CLAY } from '../sim/world';
@@ -365,6 +368,14 @@ export class IsoView {
     for (const b of w.buildings) {
       const sel = this.selected?.kind === 'building' && this.selected.id === b.uid;
       const o = this.drawBuilding(w, b, sel);
+      if (buildingStatus(w, b).warning) {
+        const p = iso(b.x + dims(b).w / 2, b.y + dims(b).h / 2);
+        const y = p.sy - 30 - bdef(b).height * 22;
+        const badge = new Graphics();
+        badge.circle(p.sx, y, 9).fill(0xe8c547).stroke({ width: 2, color: 0x292b20 });
+        badge.moveTo(p.sx, y - 4).lineTo(p.sx, y + 1).stroke({ width: 2, color: 0x292b20 });
+        badge.circle(p.sx, y + 4, 1.1).fill(0x292b20); o.c.addChild(badge);
+      }
       this.bGfx.set(b.uid, o);
       this.objects.addChild(o.c);
     }
@@ -404,14 +415,28 @@ export class IsoView {
     }
   }
 
-  private colonistSprite(shirt: number, skin: number) {
+  private colonistSprite(c: Colonist) {
+    const { shirt, skin } = c, look = appearance(c);
     const root = new Container();
     const body = new Graphics();
     body.ellipse(0, 0, 7, 3.5).fill({ color: 0x000000, alpha: 0.25 });
     body.roundRect(-5, -16, 10, 14, 4).fill(shirt);
     body.rect(-4, -4, 3, 4).fill(0x3a3028); body.rect(1, -4, 3, 4).fill(0x3a3028);
-    body.circle(0, -21, 5.5).fill(skin);
-    body.ellipse(0, -25, 5.5, 2.6).fill(shade(shirt, 0.6));
+    if (look.hair === 2 || look.hair === 6) body.roundRect(-6,-25,12,13,3).fill(look.hairColor);
+    if (look.hair === 4) body.circle(3,-28,3.4).fill(look.hairColor);
+    body.ellipse(0,-21,look.face === 3 ? 6 : 5.5,look.face === 2 ? 6.5 : 5.5).fill(skin);
+    if (look.hair === 3) {
+      for (const [x,y] of [[-5,-24],[-3,-27],[1,-27],[5,-25]]) body.circle(x,y,3).fill(look.hairColor);
+    } else if (look.hair === 7) body.poly([-5,-25,-2,-27,0,-32,3,-28,5,-24]).fill(look.hairColor);
+    else body.ellipse(0,-25,5.5,look.hair === 5 ? 1.8 : 2.8).fill(look.hairColor);
+    if (look.hair === 0) body.poly([-5,-25,2,-26,-4,-20]).fill(look.hairColor);
+    if (look.hair === 6) body.roundRect(4,-23,3,11,1.5).fill(look.hairColor);
+    if (look.beard) body.poly([-4,-19,4,-19,2,-15,-1,-14,-4,-17]).fill(look.hairColor);
+    if (look.glasses) {
+      body.circle(-2.5,-21,2).stroke({width:0.8,color:0xd7bc7c});body.circle(2.5,-21,2).stroke({width:0.8,color:0xd7bc7c});
+      body.moveTo(-0.5,-21).lineTo(0.5,-21).stroke({width:0.8,color:0xd7bc7c});
+    }
+    if (look.accessory === 0) body.poly([-4,-15,3,-15,1,-10]).fill(0xb36347);
     const carry = new Graphics();
     const pip = new Graphics();
     const zz = new Text({ text: 'z', style: { fontFamily: 'Figtree, system-ui, sans-serif', fontSize: 11, fill: 0xdfe8ff, fontWeight: '700' } });
@@ -426,10 +451,20 @@ export class IsoView {
     const def = BUILDING_BY_ID[this.placing.def];
     const { x, y } = this.placing, rot = this.placing.rot ?? 0, f = footprint(def.id, rot);
     const ok = canPlace(w, def.id, x, y, rot).ok;
+    const radius = def.needs === 'trees' ? 4 : ['bushes','apples'].includes(def.needs ?? '') ? 2.6 : def.needs === 'flowers' ? 3 : def.needs === 'clay' ? 2.2 : 0;
+    if (radius) {
+      const ring = Array.from({length:40},(_,i)=>iso(x + f.w/2 + Math.cos(i/40*Math.PI*2)*radius, y + f.h/2 + Math.sin(i/40*Math.PI*2)*radius));
+      g.poly(ring.flatMap(p=>[p.sx,p.sy])).fill({color:0x8ccf6f,alpha:0.06}).stroke({width:1.5,color:0x8ccf6f,alpha:0.7});
+    }
     const col = ok ? 0x8ccf6f : 0xe0694a;
     for (let tx = x; tx < x + f.w; tx++) for (let ty = y; ty < y + f.h; ty++) this.tile(g, tx, ty, col, 0.38, 0.03);
     g.poly(flat(iso(x, y), iso(x + f.w, y), iso(x + f.w, y + f.h), iso(x, y + f.h))).stroke({ width: 2.5, color: col });
-    if (!def.walkable && !def.decor) { const d = doorTile(def.id, x, y, rot); this.tile(g, d.x, d.y, 0xf1e9d8, 0.3, 0.18); }
+    if (!def.walkable && !def.decor) {
+      const d = doorTile(def.id, x, y, rot); this.tile(g, d.x, d.y, 0xa8e2ef, 0.5, 0.18);
+      const p = iso(d.x + 0.5, d.y + 0.5), ctr = iso(x + f.w/2,y + f.h/2);
+      const len = Math.max(1,Math.hypot(ctr.sx-p.sx,ctr.sy-p.sy)), dx=(ctr.sx-p.sx)/len, dy=(ctr.sy-p.sy)/len;
+      g.poly([p.sx+dx*9,p.sy+dy*9,p.sx-dx*6-dy*6,p.sy-dy*6+dx*6,p.sx-dx*6+dy*6,p.sy-dy*6-dx*6]).fill(0xa8e2ef).stroke({width:1,color:0x1b292b});
+    }
     if (!def.walkable && !def.decor && def.id !== 'hearth') drawModel(this.ghostModel, modelFor({ def, W: def.w, H: def.h, night: false, busy: false, stage: 3 }), def.id, x, y, rot, 0.62);
     // the other doorways, so the player can see what not to block
     for (const b of w.buildings) if (!bdef(b).walkable) { const s = spotOf(b); this.tile(g, Math.floor(s.x), Math.floor(s.y), 0xf1e9d8, 0.12, 0.25); }
@@ -449,7 +484,7 @@ export class IsoView {
     for (const c of alive(w)) {
       live.add(c.id);
       let s = this.cGfx.get(c.id);
-      if (!s) { s = this.colonistSprite(c.shirt, c.skin); this.cGfx.set(c.id, s); this.objects.addChild(s.root); }
+      if (!s) { s = this.colonistSprite(c); this.cGfx.set(c.id, s); this.objects.addChild(s.root); }
       const x = c.px + (c.x - c.px) * alpha, y = c.py + (c.y - c.py) * alpha;
       const { sx, sy } = iso(x, y);
       const moving = Math.hypot(c.x - c.px, c.y - c.py) > 0.01;
@@ -536,6 +571,10 @@ export class IsoView {
       this.placing = { ...this.placing, x: Math.round(p.x - f.w / 2), y: Math.round(p.y - f.h / 2) };
       this.onPlaceMove(this.placing);
       return;
+    }
+    for (const b of [...w.buildings].reverse()) if (buildingStatus(w, b).warning) {
+      const at = iso(b.x + dims(b).w / 2, b.y + dims(b).h / 2);
+      if (Math.hypot(p.sx - at.sx, p.sy - (at.sy - 30 - bdef(b).height * 22)) < 16) { this.onPick({ kind: 'building', id: b.uid }); return; }
     }
     let best: Picked | null = null, bestD = 1e9;
     for (const c of alive(w)) {
