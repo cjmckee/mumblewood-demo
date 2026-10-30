@@ -180,11 +180,16 @@ function initialCharterCollapsed() {
   return window.matchMedia('(max-width: 600px)').matches;
 }
 
+/** the night skip's mark on the speed button */
+const MOON = '<svg class="moon" viewBox="0 0 16 16" aria-hidden="true"><path d="M10.5 2.2a6 6 0 1 0 3.3 9.6A5 5 0 0 1 10.5 2.2z" fill="currentColor"/></svg>';
+
 export class UI {
   tab: Tab = 'colonists';
   open = false;
   detail: Detail = null;
   speed = 1;
+  /** everyone is asleep and the night is running faster (main.ts) */
+  nightSkip = false;
   private charterCollapsed = initialCharterCollapsed();
   private lastHud = ''; private lastSheet = ''; private lastModal = '';
   onSpeed: (s: number) => void = () => {};
@@ -596,7 +601,7 @@ export class UI {
       <div class="bar">
         <div class="clock"><span class="day">Day ${day(w)}</span><span class="when"><span class="time">${hh}:00<span class="phase"> · ${timeOfDay(h)}</span></span><button type="button" data-act="help" data-arg="season" class="season s-${sea.season}" title="${SEASON_NAMES[sea.season]}, day ${sea.dayOf} of ${START.seasons.days}${sea.season !== 'winter' ? `; winter in ${sea.toWinter} days` : ''}">${sea.season === 'autumn' ? `Winter in ${sea.toWinter}d` : `${SEASON_NAMES[sea.season]} ${sea.dayOf}/${START.seasons.days}`}</button></span></div>
         <div class="speeds" role="group" aria-label="Game speed">
-          ${[['0', 'Pause'], ['1', '1×'], ['2', '2×'], ['3', '3×']].map(([s, l]) => `<button type="button" data-act="speed" data-arg="${s}" class="${this.speed === Number(s) ? 'on' : ''}" aria-pressed="${this.speed === Number(s)}">${l}</button>`).join('')}
+          ${[['0', 'Pause'], ['1', '1×'], ['2', '2×'], ['3', '3×']].map(([s, l]) => { const on = this.speed === Number(s), night = on && this.nightSkip && s !== '0'; return `<button type="button" data-act="speed" data-arg="${s}" class="${on ? 'on' : ''}${night ? ' night' : ''}" aria-pressed="${on}"${night ? ` title="Everyone's asleep: ${Number(s) * 4}× until someone wakes"` : ''}>${night ? `${MOON}${Number(s) * 4}×` : l}</button>`; }).join('')}
         </div>
       </div>
       <div class="res">${res}</div>

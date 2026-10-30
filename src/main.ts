@@ -1,4 +1,4 @@
-import { createWorld, tick, apply, runHours, TICKS_PER_HOUR, World, Command, day, debugEvent, colonyName } from './sim/world';
+import { createWorld, tick, apply, runHours, TICKS_PER_HOUR, World, Command, day, debugEvent, colonyName, everyoneAsleep } from './sim/world';
 import { IsoView } from './render/iso';
 import { UI } from './ui/ui';
 import { autoDecide, autoBuild } from './sim/autoplayer';
@@ -6,6 +6,8 @@ import { saveWorld, loadSave, clearSave } from './save';
 
 /** in-game hours per real second at each speed setting (1x ≈ 90 s per day) */
 const SPEEDS = [0, 0.27, 0.55, 1.1];
+/** once everyone is asleep, the night runs this many times faster than the chosen speed */
+const NIGHT_SKIP = 4;
 
 async function boot() {
   const root = document.getElementById('game')!;
@@ -51,9 +53,17 @@ async function boot() {
     const now = performance.now();
     const dt = Math.min(0.25, (now - last) / 1000); last = now;
     if (!world.decisions.length && world.status === 'playing' && !ui.resumeOpen && !ui.blocksSimulation) {
-      acc += dt * SPEEDS[speed] * TICKS_PER_HOUR;
-      while (acc >= 1) { tick(world); acc -= 1; if (world.decisions.length) { acc = 0; break; } }
-    }
+      // the night skip: nobody to watch, so the night goes by faster; not while the player is placing or laying paths
+      let skip = speed > 0 && !view.placing && !view.pathMode && everyoneAsleep(world);
+      acc += dt * SPEEDS[speed] * (skip ? NIGHT_SKIP : 1) * TICKS_PER_HOUR;
+      while (acc >= 1) {
+        tick(world); acc -= 1;
+        if (world.decisions.length) { acc = 0; break; }
+        // someone woke (or something came up): the rest of this frame runs at the normal speed
+        if (skip && !everyoneAsleep(world)) { skip = false; acc /= NIGHT_SKIP; }
+      }
+      ui.nightSkip = skip;
+    } else ui.nightSkip = false;
     if (world.status === 'playing' && !ui.resumeOpen && (dirty || Math.floor(world.hour) !== lastSavedHour) && now - lastSave > (dirty ? 300 : 5000)) save();
     if (world.status !== 'playing' && !recorded) {
       recorded = true;
