@@ -123,6 +123,10 @@ for (const [device,width,height] of [['desktop',1440,900],['phone',390,844],['sm
   await p.evaluate(()=>{const g=window.__game;g.world.decisions=[];g.ui.render(true);g.ui.startPlacing('woodcutter');document.activeElement?.blur()});
   await p.keyboard.press('Escape');
   check(await state(()=>!window.__game.view.placing),`${device}: Escape cancels placement even without a focused control`);
+  // the first-run guide: a pulse on the next step towards a staffed research desk, only on a first run
+  check(await state(()=>{const g=window.__game;g.world.decisions=[];g.ui.profile.runs=[];g.ui.profile.firstRunDone=false;g.world.buildings=g.world.buildings.filter(b=>b.def!=='desk');g.ui.open=false;g.ui.render(true);return document.querySelector('#sheet [data-act=tab][data-arg=build]').classList.contains('coach');}),`${device}: first run: the Build tab pulses`);
+  check(await state(()=>{const g=window.__game;g.ui.profile.firstRunDone=true;g.ui.render(true);return !document.querySelector('.coach');}),`${device}: no guide once it's done`);
+  check(await state(()=>{const g=window.__game;g.ui.profile.firstRunDone=false;g.ui.profile.runs=[{result:'lost',day:3,charters:0}];g.ui.render(true);const none=!document.querySelector('.coach');g.ui.profile.runs=[];g.ui.profile.firstRunDone=true;g.ui.render(true);return none;}),`${device}: no guide after a first run`);
   // looking at the colony during a decision: one button hides the card, panels work, play stays paused, a bar brings it back
   await p.evaluate(()=>{const g=window.__game;g.world.decisions=[];g.ui.open=false;g.event('bard');});
   await p.locator('#modal .peek-btn').click();
