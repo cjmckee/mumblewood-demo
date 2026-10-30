@@ -550,6 +550,35 @@ h3.group { margin: 14px 0 6px; font-size: 11px; letter-spacing: .1em; text-trans
 }
 .row .crew { display: inline-flex; align-items: center; gap: 2px; }
 .row .crew .avatar-mini { margin-right: 0; width: 22px; height: 22px; }
+/* Storage: contents first, as a bar split by kind and a tile per good; settings below */
+.store-head { display: flex; justify-content: space-between; align-items: baseline; margin: 10px 0 6px; }
+.store-num { color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
+.store-num b { color: var(--text); font-size: 24px; font-weight: 700; }
+.fresh { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; }
+.fresh .glyph { width: 15px; height: 15px; }
+.fresh.good { color: #8fb8e0; } .fresh.bad { color: #f3b39f; }
+.store-bar { display: flex; height: 12px; border-radius: 6px; background: #2c332b; overflow: hidden; gap: 1px; }
+.store-bar i { display: block; height: 100%; min-width: 2px; }
+.k-raw { --k: #8ccf6f; } .k-ingredient { --k: #d7c27a; } .k-meal { --k: #e8a33d; } .k-material { --k: #b08a64; } .k-luxury { --k: #b48ad6; } .k-remedy { --k: #6fc7b8; }
+.store-bar i { background: var(--k); }
+.stiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; margin: 10px 0 4px; }
+.stile { position: relative; display: grid; justify-items: center; gap: 1px; padding: 8px 4px 6px; border-radius: 10px; background: #222823; border-bottom: 3px solid var(--k); }
+.stile .ico { width: 30px; height: 30px; }
+.stile b { font-size: 18px; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.stile small { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.stile .rot-mark { position: absolute; top: 5px; right: 5px; color: #f3b39f; }
+.stile .rot-mark .glyph { width: 13px; height: 13px; }
+.store-set { display: grid; grid-template-columns: 64px 1fr; align-items: center; gap: 10px; margin-top: 10px; }
+.store-set h3 { margin: 0; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.store-set .segs { margin: 0; }
+.ptiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 6px; padding: 4px 0 8px; }
+.ptile { position: relative; height: 44px; border-radius: 10px; border: 1px solid var(--line); background: #1a1f1b; display: grid; place-items: center; padding: 0; opacity: .35; }
+.ptile .ico { width: 26px; height: 26px; filter: grayscale(1); }
+.ptile.on { opacity: 1; border-color: rgba(140, 207, 111, .45); background: #222823; }
+.ptile.on .ico { filter: none; }
+.ptile:not(.on)::after { content: ''; position: absolute; left: 8px; right: 8px; top: 50%; height: 2px; background: var(--bad); transform: rotate(-35deg); }
+.res .chip.pin { border-color: rgba(232, 163, 61, .55); }
+.res .chip.more { font-weight: 700; color: var(--muted); min-width: 40px; justify-content: center; }
 </style>
 <div id="game">
   <div id="stage"></div>

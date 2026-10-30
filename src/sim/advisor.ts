@@ -273,7 +273,8 @@ export function assess(w: World): Concern[] {
     if (desk && !workersAt(w, desk.uid).length) add('desk', 'Nobody at the research desk', `Studying ${RESEARCH.find(r => r.id === w.research!.current)!.name} · the desk card shows what's left`, 'put someone at the research desk', 7, 0, [{ staff: 'desk', n: 1 }]);
   }
   if (storageCap(w) && stored(w) / storageCap(w) > 0.85) add('storage', 'Storage nearly full', `${stored(w) | 0}/${storageCap(w)} stored`, 'build another stockpile', 8, 0, [{ build: 'stockpile' }]);
-  if (spoilingFood(w) >= 20) add('spoiling', 'Food spoiling', `${spoilingFood(w) | 0} food sitting outside a storehouse`, has(w, 'storehouse') ? 'set a storehouse to food, or build another' : researchFor(w, 'storehouse')?.idea ?? 'build a storehouse', 5, 0, has(w, 'storehouse') ? [{ build: storageFree(w, 'berries') < 20 ? 'storehouse' : '' }].filter(f => f.build) : [{ build: 'storehouse' }]);
+  // only once something can be done about it: before Warehousing there's no storehouse to build, and the start's food sits out
+  if (spoilingFood(w) >= 20 && w.owned.includes('storehouse')) add('spoiling', 'Food spoiling', `${spoilingFood(w) | 0} food sitting outside a storehouse`, has(w, 'storehouse') ? 'set a storehouse to food, or build another' : researchFor(w, 'storehouse')?.idea ?? 'build a storehouse', 5, 0, has(w, 'storehouse') ? [{ build: storageFree(w, 'berries') < 20 ? 'storehouse' : '' }].filter(f => f.build) : [{ build: 'storehouse' }]);
   const plankNeeds = w.owned.filter(id => !has(w, id) && BUILDING_BY_ID[id].cost.fine && !BUILDING_BY_ID[id].decor);
   if (plankNeeds.length && stockOf(w, 'fine') < 8) {
     const fixes: Fix[] = [];

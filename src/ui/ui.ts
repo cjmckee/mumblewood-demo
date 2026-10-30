@@ -131,6 +131,8 @@ const LABORER_GLYPH = svg('<path d="M4 8l8-4 8 4v9l-8 4-8-4z"/><path d="M4 8l8 4
 const HEARTH_GLYPH = svg('<path d="M12 3c1 3 5 5 5 10a5 5 0 0 1-10 0c0-2 1-3.5 2-4.5.3 1.5 1 2.5 2 3 0-3-1-5 1-8.5z"/><path d="M5 21h14"/>');
 const MOOD_TREND: Record<string, string> = { '↑': '▲', '↓': '▼', '↔': '' };
 const CATALOG_GROUP = { food: 'Food & drinks', work: 'Production', comfort: 'Homes & comfort', storage: 'Storage' };
+const SPOIL_GLYPH = svg('<circle cx="12" cy="13" r="7.5"/><path d="M12 9v4l2.5 2M9 3h6"/>');
+const FRESH_GLYPH = svg('<path d="M12 3v18M4.2 7.5l15.6 9M19.8 7.5l-15.6 9"/>');
 const CATEGORY_MEMBERS = { meal: membersOf('meal'), drink: membersOf('drink'), fine: membersOf('fine'), remedy: membersOf('remedy'), rawFood: membersOf('rawFood') };
 /** a cornerstone's icon: the building or good it's about, where there is one */
 const CORNERSTONE_ICON: Record<string, string> = {
@@ -170,6 +172,8 @@ export class UI {
   private help: string | null = null;
   private dialogKey = '';
   private colonistFilter = 'all';
+  /** the HUD shows every good, not the grouped totals */
+  allGoods = false;
   private colonistSort = 'mood';
   private buildingFilter = 'all';
   private buildMode = 'manage';
@@ -316,6 +320,7 @@ export class UI {
         break;
       }
       case 'resource': this.panel('ledger'); this.resource = arg as InputKey | 'gold'; this.anchor = `${arg === 'gold' || !RESOURCES.some(r => r.id === arg) ? 'account' : 'resource'}-${arg}`; break;
+      case 'all-goods': this.allGoods = !this.allGoods; break;
       case 'storage-help': this.navigate(buildingDestination(w, 'storehouse', true)); break;
       case 'food-rules': this.navigate({ kind: 'food', label: 'Food rules' }); break;
       case 'need': { const def = arg === 'table' ? 'dining' : NEED_BUILD[arg as NeedKey]; this.navigate(buildingDestination(w, def, !['shelter', 'surroundings', 'warmth'].includes(arg))); break; }
@@ -410,13 +415,24 @@ export class UI {
     const strain = Math.round(w.strain);
     const sea = seasonOf(w);
     const cap = storageCap(w), st = stored(w);
-    const spoiling = spoilingFood(w) >= 5;
+    const spoiling = spoilingFood(w) >= 5 && w.owned.includes('storehouse');
     const storeChip = `<button type="button" data-act="workplaces" data-arg="stockpile,storehouse" class="chip store${st >= cap ? ' full' : ''}" title="Goods in storage, of what it can hold">${icon('stockpile')}<b>${Math.floor(st)}/${cap}</b><span class="nm"> stored</span></button>`
       + (spoiling ? '<button type="button" data-act="storage-help" class="chip spoil" title="Food left on stockpiles is spoiling. A storehouse keeps it fresh."><span class="nm">food </span>spoiling →</button>' : '');
     // on a phone the names drop and the icons carry them; they stay for screen readers and on hover
     const goldChip = `<button type="button" data-act="resource" data-arg="gold" class="chip gold" title="Gold: rent each season, the Crown's stipend, events and selling to the caravan" aria-label="${Math.floor(w.gold)} gold">${icon('gold')}<b>${Math.floor(w.gold)}</b><span class="nm"> gold</span></button>`;
-    const res = goldChip + storeChip + RESOURCES.filter(r => w.res[r.id] >= 0.5 || ['wood', 'berries', 'stew'].includes(r.id))
-      .map(r => `<button type="button" data-act="resource" data-arg="${r.id}" class="chip" title="${r.name}" aria-label="${Math.floor(w.res[r.id])} ${r.name}">${icon(r.id)}<b>${Math.floor(w.res[r.id])}</b><span class="nm"> ${r.name}</span></button>`).join('');
+    // goods grouped: wood on its own, then raw food, meals, drinks, fine materials and remedies as totals (each opens its
+    // breakdown), then whatever the charter counts on its own; "+N" shows every good
+    const chip = (arg: string, ico: string, n: number, name: string, cls = '') => `<button type="button" data-act="resource" data-arg="${arg}" class="chip${cls}" title="${esc(name)}" aria-label="${Math.floor(n)} ${esc(name)}">${icon(ico)}<b>${Math.floor(n)}</b><span class="nm"> ${esc(name)}</span></button>`;
+    const total = (k: InputKey) => membersOf(k).reduce((n, r) => n + w.res[r], 0);
+    const groups = (['rawFood', 'meal', 'drink', 'fine', 'remedy'] as InputKey[]).filter(k => k === 'rawFood' || k === 'meal' || total(k) >= 0.5);
+    const grouped = new Set<string>(['wood', ...groups.flatMap(k => membersOf(k))]);
+    const pinned = [...new Set(charterRequirements(w).flatMap(r => r.metric.kind === 'stock' && r.metric.resources.length <= 2 ? r.metric.resources : []))].filter(r => r !== 'wood');
+    const rest = RESOURCES.filter(r => w.res[r.id] >= 0.5 && r.id !== 'wood' && !(pinned as string[]).includes(r.id) && (this.allGoods || !grouped.has(r.id)));
+    const res = goldChip + storeChip + chip('wood', 'wood', w.res.wood, 'Wood')
+      + groups.map(k => chip(k, k, total(k), inputName(k).replace(/^./, c => c.toUpperCase()), ' grp')).join('')
+      + pinned.map(r => chip(r, r, w.res[r], RESOURCES.find(x => x.id === r)!.name, ' pin')).join('')
+      + (this.allGoods ? rest.map(r => chip(r.id, r.id, w.res[r.id], r.name)).join('') : '')
+      + (rest.length || this.allGoods ? `<button type="button" class="chip more" data-act="all-goods" aria-pressed="${this.allGoods}" title="${this.allGoods ? 'Fewer goods' : 'Every good'}">${this.allGoods ? '−' : `+${rest.length}`}</button>` : '');
     const html = `
       <div class="bar">
         <div class="clock"><span class="day">Day ${day(w)}</span><span class="when"><span class="time">${hh}:00<span class="phase"> · ${timeOfDay(h)}</span></span><button type="button" data-act="help" data-arg="season" class="season s-${sea.season}" title="${SEASON_NAMES[sea.season]}, day ${sea.dayOf} of ${START.seasons.days}${sea.season !== 'winter' ? `; winter in ${sea.toWinter} days` : ''}">${sea.season === 'autumn' ? `Winter in ${sea.toWinter}d` : `${SEASON_NAMES[sea.season]} ${sea.dayOf}/${START.seasons.days}`}</button></span></div>
@@ -827,17 +843,21 @@ export class UI {
       }).join('') : '';
       staff += `<h3>Workers ${workers.length}/${def.slots}</h3><div class="rows">${cur || '<p class="muted">Nobody works here.</p>'}</div>${cand ? `<h3>Assign someone</h3><p class="muted">⚒ ${laborers(w).length} laborers free · keep hands for hauling.</p><div class="rows">${cand}</div>` : ''}`;
     } else if (def.storage) {
+      // what's in it first: a capacity bar split by kind of good, then a tile per good with its count, largest first
       const held = Object.values(b.stock).reduce((n, x) => n + (x ?? 0), 0);
-      const contents = RESOURCES.filter(r => (b.stock[r.id] ?? 0) >= 0.5).map(r => goodHtml(r.id, Math.floor(b.stock[r.id] ?? 0))).join(', ');
+      const goods = RESOURCES.filter(r => (b.stock[r.id] ?? 0) >= 0.5).sort((a, z) => (b.stock[z.id] ?? 0) - (b.stock[a.id] ?? 0));
+      const spoils = !def.keepsFresh && FOODS.some(f => accepts(b, f));
+      const bar = `<div class="store-bar" role="img" aria-label="${Math.floor(held)} of ${def.storage} stored">${goods.map(r => `<i class="k-${r.kind}" style="width:${((b.stock[r.id] ?? 0) / (def.storage ?? 1) * 100).toFixed(2)}%" title="${esc(r.name)} ${Math.floor(b.stock[r.id] ?? 0)}"></i>`).join('')}</div>`;
+      const tiles = goods.map(r => { const n = Math.floor(b.stock[r.id] ?? 0), rot = spoils && FOODS.includes(r.id);
+        return `<div class="stile k-${r.kind}${rot ? ' rot' : ''}" title="${esc(r.name)}${rot ? ' · spoiling here' : ''}">${icon(r.id)}<b>${n}</b><small>${esc(r.name)}</small>${rot ? `<i class="rot-mark" aria-label="spoiling">${SPOIL_GLYPH}</i>` : ''}</div>`; }).join('');
       const mode = !b.allow ? 'all' : b.allow.length === FOODS.length && FOODS.every(f => b.allow!.includes(f)) ? 'food' : b.allow.length === GOODS.length && GOODS.every(f => b.allow!.includes(f)) ? 'goods' : 'custom';
       const preset = (id: string, label: string) => `<button type="button" class="seg${mode === id ? ' on' : ''}" data-act="store-preset" data-arg="${b.uid}:${id}" aria-pressed="${mode === id}">${label}</button>`;
-      const items = RESOURCES.map(r => { const on = accepts(b, r.id); return `<button type="button" class="rule${on ? ' on' : ''}" data-act="store-item" data-arg="${b.uid}:${r.id}" aria-pressed="${on}">${icon(r.id)}${r.name}<small>${on ? '✓ Accept' : '× Exclude'}</small></button>`; }).join('');
-      staff += `<p class="prefs">${Math.round(held)}/${def.storage} · ${def.keepsFresh ? '✓ Fresh food' : '⚠ Food spoils'}</p>${meter(held / def.storage * 100,'Storage capacity')}<details data-key="contents-${b.uid}"><summary>Contents</summary><p>${contents || 'Empty'}</p></details>
-        <h3>Priority</h3><p class="muted">High priority fills first.</p>
-        <div class="segs two"><button type="button" class="seg${b.high ? '' : ' on'}" data-act="store-prio" data-arg="${b.uid}:low" aria-pressed="${!b.high}">Low</button><button type="button" class="seg${b.high ? ' on' : ''}" data-act="store-prio" data-arg="${b.uid}:high" aria-pressed="${b.high}">High</button></div>
-        <h3>Accepts</h3>
-        <div class="segs">${preset('all', 'Everything')}${preset('food', 'Food only')}${preset('goods', 'Goods only')}</div>
-        <details data-key="storage-items-${b.uid}"><summary>Customize items</summary><div class="rules">${items}</div></details>`;
+      const items = RESOURCES.map(r => { const on = accepts(b, r.id); return `<button type="button" class="ptile${on ? ' on' : ''}" data-act="store-item" data-arg="${b.uid}:${r.id}" aria-pressed="${on}" title="${esc(r.name)}" aria-label="${on ? 'Accepting' : 'Not accepting'} ${esc(r.name)}">${icon(r.id)}</button>`; }).join('');
+      staff += `<div class="store-head"><span class="store-num"><b>${Math.floor(held)}</b>/${def.storage}</span>${spoils ? `<span class="fresh bad" title="Raw food and meals spoil here">${SPOIL_GLYPH} Food spoils</span>` : def.keepsFresh ? `<span class="fresh good" title="Keeps food fresh">${FRESH_GLYPH} Keeps fresh</span>` : ''}</div>${bar}
+        <div class="stiles">${tiles || '<p class="empty">Empty</p>'}</div>
+        <div class="store-set"><h3>Fills</h3><div class="segs two"><button type="button" class="seg${b.high ? '' : ' on'}" data-act="store-prio" data-arg="${b.uid}:low" aria-pressed="${!b.high}" title="Fills after high-priority storage">Low</button><button type="button" class="seg${b.high ? ' on' : ''}" data-act="store-prio" data-arg="${b.uid}:high" aria-pressed="${b.high}" title="Fills first">First</button></div></div>
+        <div class="store-set"><h3>Takes</h3><div class="segs">${preset('all', 'All')}${preset('food', 'Food')}${preset('goods', 'Goods')}</div></div>
+        <details data-key="storage-items-${b.uid}"${mode === 'custom' ? ' open' : ''}><summary>Pick items${mode === 'custom' ? ` · ${b.allow!.length}` : ''}</summary><div class="ptiles">${items}</div></details>`;
     } else if (def.beds) {
       const sleepers = alive(w).filter(c => c.bed === b.uid).map(c => personLink(c)).join(', ');
       staff += `<p class="prefs">Sleeps ${def.beds}${sleepers ? `: ${sleepers}` : ''}.</p>`;
