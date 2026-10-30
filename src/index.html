@@ -289,17 +289,6 @@ h3.first { margin-top: 4px; }
 .errand.caravan b { display: inline-flex; align-items: center; gap: 5px; } .errand.caravan .ico { width: 18px; height: 18px; }
 .trade .eyebrow { display: flex; align-items: center; gap: 6px; } .trade .eyebrow .ico { width: 18px; height: 18px; }
 .goldnum { color: #f0c75a; }
-.tlist { display: grid; gap: 2px; }
-.trow { display: grid; grid-template-columns: 1fr auto auto auto; align-items: center; gap: 6px; padding: 6px 0; border-bottom: 1px solid #262c26; }
-.trow:has(> button:only-of-type) { grid-template-columns: 1fr auto auto; }
-.tname { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.tname .ico { width: 24px; height: 24px; flex: none; }
-.tname span { display: grid; min-width: 0; } .tname b { font-size: 14px; } .tname small { font-size: 11.5px; color: var(--muted); }
-.tprice { display: inline-flex; align-items: center; gap: 2px; font-weight: 700; font-variant-numeric: tabular-nums; color: #f0c75a; font-size: 14px; }
-.tprice .ico { width: 15px; height: 15px; }
-.tbtn { background: #2b332c; border: 1px solid var(--line); color: var(--text); border-radius: 999px; padding: 6px 10px; font-weight: 600; font-size: 13px; min-width: 42px; }
-.tbtn:hover:not(:disabled) { border-color: var(--accent); }
-.tbtn:disabled { opacity: .35; }
 .gold-acct { margin-bottom: 4px; }
 .opt em.fee { font-style: normal; color: #f0c75a; font-weight: 600; display: inline-flex; align-items: center; gap: 3px; } .opt em.fee .ico { width: 15px; height: 15px; }
 .stones { list-style: none; margin: 0 0 10px; padding: 0; display: grid; gap: 2px; }
@@ -393,8 +382,6 @@ details > p { font-size:13px; color:var(--muted); }
 .tabs button { padding-inline:9px; font-size:13px; }
 .tabs .x { font-size:22px; padding-inline:10px; }
 .res button.chip { background:var(--panel); border:1px solid var(--line); }
-.trow { flex-wrap:wrap; }
-.tbtn { font-size:11px; }
 /* Triage and management */
 .filters { display:flex; gap:8px; margin:10px 0; flex-wrap:wrap; }
 .select-label { flex:1; min-width:120px; }
@@ -434,9 +421,6 @@ button.leavers { width:100%; }
 .recruit details p { font-size:12px; margin:4px 0; }
 #modal { align-content:start; padding-top:max(16px,env(safe-area-inset-top,0px)); }
 @media (min-height:900px) { #modal { align-content:safe center; } }
-.trow { grid-template-columns:minmax(0,1fr) auto; }
-.trow .tbtn { justify-self:stretch; }
-.tname { min-height:40px; }
 button.strain { min-height:44px; }
 @media (max-width:600px) {
   button, summary, select { min-height:44px; }
@@ -712,6 +696,50 @@ h3.group { margin: 14px 0 6px; font-size: 11px; letter-spacing: .1em; text-trans
 .coach { position: relative; outline: 2px solid var(--accent); outline-offset: 2px; animation: coach 1.4s ease-in-out infinite; z-index: 1; }
 @keyframes coach { 0%, 100% { box-shadow: 0 0 0 0 rgba(232, 163, 61, .75); } 60% { box-shadow: 0 0 0 9px rgba(232, 163, 61, 0); } }
 @media (prefers-reduced-motion: reduce) { .coach { animation: none; box-shadow: 0 0 0 3px var(--accent); } }
+/* Trade: one row per good, cheapest first; set quantities, then one Trade button does it all */
+.card-wrap.trade .thead { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; }
+.card-wrap.trade .goldnum { display: inline-flex; align-items: center; gap: 5px; font-size: 20px; font-weight: 800; color: #f0c75a; }
+.card-wrap.trade .goldnum .ico { width: 22px; height: 22px; }
+.card-wrap.trade h3.group span { letter-spacing: 0; text-transform: none; margin-left: 6px; }
+.tlist { display: grid; gap: 6px; }
+.trow { display: flex; align-items: center; gap: 8px; background: #222823; border: 1px solid transparent; border-radius: 12px; padding: 6px 8px; }
+.trow.need { border-color: rgba(232, 163, 61, .55); }
+.tico { position: relative; display: inline-flex; width: 38px; height: 38px; border-radius: 9px; background: var(--panel-solid); align-items: center; justify-content: center; flex: none; }
+.tico > .ico { width: 28px; height: 28px; }
+.tico .rb { position: absolute; right: -4px; bottom: -4px; width: 15px; height: 15px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; color: var(--panel-solid); box-shadow: 0 0 0 2px #222823; }
+.tico .rb .glyph { width: 9px; height: 9px; }
+.tname { display: grid; gap: 2px; flex: 1; min-width: 0; }
+.tname b { display: flex; align-items: center; gap: 6px; font-size: 14px; min-width: 0; }
+.tname .tn { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.tneed { flex: none; }
+.tname small { display: flex; gap: 10px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.tname small span { display: inline-flex; align-items: center; gap: 3px; }
+.tname small .ico, .tname small .glyph { width: 14px; height: 14px; }
+.tneed { display: inline-flex; align-items: center; justify-content: center; height: 20px; min-width: 20px; padding: 0 3px; border-radius: 999px; background: rgba(232, 163, 61, .14); color: var(--accent); font-style: normal; }
+.tneed .ico, .tneed .glyph { width: 14px; height: 14px; }
+.tprice { display: inline-flex; align-items: center; justify-content: flex-end; gap: 2px; width: 44px; font-weight: 700; font-size: 13px; color: #f0c75a; font-variant-numeric: tabular-nums; flex: none; }
+.tprice .ico { width: 14px; height: 14px; }
+.tstep { display: inline-flex; align-items: center; gap: 4px; flex: none; }
+.tstep button { min-width: 34px; height: 34px; min-height: 0; border-radius: 9px; border: 1px solid var(--line); background: var(--panel-solid); color: var(--text); font-weight: 700; font-size: 13px; padding: 0 6px; }
+.tstep button:first-child { font-size: 17px; }
+.tstep button:hover:not(:disabled) { border-color: var(--accent); }
+.tstep button:disabled { opacity: .3; }
+.tstep b { width: 26px; text-align: center; font-size: 15px; font-variant-numeric: tabular-nums; }
+.tsum { width: 44px; text-align: right; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; flex: none; }
+.tsum.buy, .ttotal b.buy { color: #f3b39f; } .tsum.sell, .ttotal b.sell { color: var(--good); }
+.trow .rcheck { margin-left: auto; }
+.ttotal { position: sticky; bottom: 0; z-index: 1; margin-top: 10px; display: flex; align-items: center; gap: 10px; background: #232a24; border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; box-shadow: 0 -10px 24px rgba(0,0,0,.45); }
+.tt-l { display: grid; gap: 2px; flex: 1; }
+.tt-f { display: inline-flex; gap: 10px; font-size: 13px; font-variant-numeric: tabular-nums; min-height: 17px; }
+.tt-g { display: inline-flex; align-items: center; gap: 5px; font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.tt-g .ico { width: 16px; height: 16px; } .tt-g .glyph { width: 13px; height: 13px; }
+.tt-g b { color: var(--text); } .tt-g b.after { color: #f0c75a; }
+.ttotal.short .tt-g b.after { color: var(--bad); }
+.ttotal .act { min-height: 44px; padding: 0 22px; font-size: 15px; }
+.ttotal .act:disabled { opacity: .4; }
+.tdone { width: 100%; margin-top: 6px; }
+@media (max-width: 600px) { .tsum { display: none; } .tstep button { min-width: 32px; } .tprice { width: 38px; } }
+@media (max-width: 360px) { .tico { display: none; } }
 </style>
 <div id="game">
   <div id="stage"></div>

@@ -151,6 +151,8 @@ const RESEARCH_ICON: Record<string, string> = {
   smoking: 'dock', salting: 'smokedFish', rotation: 'field', milling: 'mill', malting: 'brewery', cellaring: 'tavern',
   joinery: 'sawmill', roads: 'lantern', handcarts: 'stockpile', foraging: 'forager', preserving: 'cellar', herblore: 'herbgarden', quarantine: 'clinic',
 };
+const STAR_GLYPH = '<svg class="glyph" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l3 7 7 .6-5.3 4.6 1.7 7.3L12 17.8 5.6 21.5l1.7-7.3L2 9.6 9 9z"/></svg>';
+const BOX_GLYPH = svg('<path d="M4 8l8-4 8 4v9l-8 4-8-4z"/><path d="M4 8l8 4 8-4M12 12v9"/>');
 const CATEGORY_MEMBERS = { meal: membersOf('meal'), drink: membersOf('drink'), fine: membersOf('fine'), remedy: membersOf('remedy'), rawFood: membersOf('rawFood') };
 /** a cornerstone's icon: the building or good it's about, where there is one */
 const CORNERSTONE_ICON: Record<string, string> = {
@@ -195,6 +197,8 @@ export class UI {
   private colonistFilter = 'all';
   /** the decision card is hidden so the player can look at the colony; play stays paused until they choose */
   private peeking = false;
+  /** the trade order being put together: amounts to buy and sell, and blueprints, for the caravan that's here */
+  private order: { key: string; buy: Record<string, number>; sell: Record<string, number>; bps: string[] } = { key: '', buy: {}, sell: {}, bps: [] };
   /** the research tree's selected project */
   private researchPick: string | null = null;
   /** Issues: rows opened to show their evidence and other fixes; every row shown, not the first five; the last order */
@@ -444,6 +448,18 @@ export class UI {
       case 'resolve': this.send({ type: 'resolve', option: Number(arg) }); this.lastModal = ''; break;
       case 'reroll': { const err = this.send({ type: 'reroll' }); if (err) this.toast(err); this.lastModal = ''; break; }
       case 'trade-buy': { const [r, n] = arg.split(':'); const err = this.send({ type: 'buy', res: r as ResourceId, n: Number(n) }); if (err) this.toast(err); this.lastModal = ''; break; }
+      case 'tq': { const [side, r, d] = arg.split(':'); const book = side === 'buy' ? this.order.buy : this.order.sell; const t = w.caravan;
+        const max = side === 'buy' ? t?.stock[r as ResourceId]?.n ?? 0 : saleQuantity(START.trade.sellCap, Math.floor(w.res[r as ResourceId]), START.trade.sellCap - (t?.sold[r as ResourceId] ?? 0));
+        book[r] = Math.max(0, Math.min(max, (book[r] ?? 0) + Number(d))); if (!book[r]) delete book[r]; this.lastModal = ''; break; }
+      case 'tq-bp': { const o = this.order; o.bps = o.bps.includes(arg) ? o.bps.filter(x => x !== arg) : [...o.bps, arg]; this.lastModal = ''; break; }
+      case 'trade-go': {
+        // sell first so the gold is there, then buy, then blueprints; the order empties
+        const o = this.order, errs: string[] = [];
+        for (const [r, q] of Object.entries(o.sell)) { const e = this.send({ type: 'sell', res: r as ResourceId, n: q }); if (e) errs.push(e); }
+        for (const [r, q] of Object.entries(o.buy)) { const e = this.send({ type: 'buy', res: r as ResourceId, n: q }); if (e) errs.push(e); }
+        for (const id of o.bps) { const e = this.send({ type: 'buyBlueprint', id }); if (e) errs.push(e); }
+        this.order = { key: o.key, buy: {}, sell: {}, bps: [] };
+        if (errs.length) this.toast(errs[0]); this.lastModal = ''; break; }
       case 'trade-sell': { const [r, n] = arg.split(':'); const err = this.send({ type: 'sell', res: r as ResourceId, n: Number(n) }); if (err) this.toast(err); this.lastModal = ''; break; }
       case 'trade-bp': { const err = this.send({ type: 'buyBlueprint', id: arg }); this.toast(err ?? `${BUILDING_BY_ID[arg].name} added to what you can build.`); this.lastModal = ''; break; }
       case 'caravan-visit': { const err = this.send({ type: 'visitCaravan' }); this.toast(err ?? 'Pick someone to walk over to the caravan.'); break; }
@@ -1157,36 +1173,56 @@ export class UI {
     }
   }
 
+  /** the trade screen: one row per good, cheapest first, set quantities with −, +1 and +5, and one Trade button does it all */
   private tradeCard(w: World) {
     const t = w.caravan; if (!t) return '';
-    const autumn = seasonOf(w).season === 'autumn';
+    const key = `${t.trader}:${t.leaves}`;
+    if (this.order.key !== key) this.order = { key, buy: {}, sell: {}, bps: [] };
+    const o = this.order, gold = Math.floor(w.gold), cap = START.trade.sellCap;
     const left = Math.max(0, Math.ceil(t.leaves - w.hour));
-    const charterGoods = new Set<string>(charterCounted(w));
     const tr = TRADER_BY_ID[t.trader];
-    const wants = tr.wants.map(r => RESOURCES.find(x => x.id === r)!.name.toLowerCase());
-    const gold = Math.floor(w.gold);
-    const btn = (act: string, arg: string, label: string, ok: boolean) => `<button type="button" class="tbtn" data-act="${act}" data-arg="${arg}" ${ok ? '' : 'disabled'}>${label}</button>`;
-    const bps = t.blueprints.map(b => { const def = BUILDING_BY_ID[b.id]; const helps = charterHelpers(w.charter ?? '').includes(b.id);
-      return `<div class="trow"><span class="tname">${icon(b.id)}<span><b>${esc(def.name)}</b><small>${helps ? 'Helps your charter · ' : ''}blueprint</small></span></span><span class="tprice">${b.price}${icon('gold')}</span>${btn('trade-bp', b.id, `Buy · ${b.price} gold`, gold >= b.price)}</div>`; }).join('');
-    const wares = (Object.entries(t.stock) as [ResourceId, { n: number; price: number }][]).filter(([, it]) => it.n > 0).sort((a, b) => Number(charterGoods.has(b[0])) - Number(charterGoods.has(a[0]))).map(([r, it]) => {
-      const name = RESOURCES.find(x => x.id === r)!.name;
-      return `<div class="trow"><span class="tname">${icon(r)}<span><b>${esc(name)}</b><small>${charterGoods.has(r) ? 'For your charter · ' : ''}${it.n} left · you have ${Math.floor(w.res[r])}</small></span></span><span class="tprice">${it.price}${icon('gold')}</span>${btn('trade-buy', `${r}:1`, `Buy 1 · ${it.price}g`, gold >= it.price)}${btn('trade-buy', `${r}:5`, `Buy 5 · ${it.price * 5}g`, gold >= it.price * Math.min(5, it.n) && it.n >= 5)}</div>`;
+    // what's needed: goods the charter counts, and inputs a staffed workshop is waiting on
+    const charter = new Set<string>(charterCounted(w));
+    const waiting = new Map<string, string>();
+    for (const b of built(w)) if (recipesOf(b).length && workersAt(w, b.uid).length) for (const { r, i } of orderedRecipes(b)) if (recipeOn(b, i))
+      for (const [k, n] of Object.entries(r.inputs) as [InputKey, number][]) { const ms = membersOf(k); if (ms.reduce((m, x) => m + w.res[x] + (b.inbox[x] ?? 0), 0) < n) for (const x of ms) if (!waiting.has(x)) waiting.set(x, b.def); }
+    const needTag = (r: string) => charter.has(r) ? `<i class="tneed" title="Your charter counts these" aria-label="charter">${STAR_GLYPH}</i>` : waiting.has(r) ? `<i class="tneed" title="${esc(BUILDING_BY_ID[waiting.get(r)!].name)} is waiting for this">${icon(waiting.get(r)!)}</i>` : '';
+    const price = (p: number) => `<span class="tprice">${Number.isInteger(p) ? p : p.toFixed(1)}${icon('gold')}</span>`;
+    const step = (side: 'buy' | 'sell', r: string, q: number, max: number) => `<span class="tstep"><button type="button" data-act="tq" data-arg="${side}:${r}:-1" aria-label="One fewer" ${q ? '' : 'disabled'}>−</button><b aria-label="${q} in the order">${q}</b><button type="button" data-act="tq" data-arg="${side}:${r}:1" ${q < max ? '' : 'disabled'}>+1</button><button type="button" data-act="tq" data-arg="${side}:${r}:5" ${q < max ? '' : 'disabled'}>+5</button></span>`;
+    const sum = (q: number, g: number, side: 'buy' | 'sell') => `<span class="tsum ${side}">${q ? `${side === 'buy' ? '−' : '+'}${g}` : ''}</span>`;
+    const nameOf = (r: string) => RESOURCES.find(x => x.id === r)!.name;
+    // blueprints: a checkbox adds one to the order
+    const bps = t.blueprints.map(b => { const def = BUILDING_BY_ID[b.id], on = o.bps.includes(b.id), helps = charterHelpers(w.charter ?? '').includes(b.id);
+      return `<div class="trow${helps ? ' need' : ''}"><span class="tico">${icon(b.id)}<i class="rb draft">${ROUTE_GLYPH.draft}</i></span><span class="tname"><b>${esc(def.name)}${helps ? `<i class="tneed" title="Helps your charter">${STAR_GLYPH}</i>` : ''}</b></span>${price(b.price)}<button type="button" class="rcheck" role="checkbox" aria-checked="${on}" data-act="tq-bp" data-arg="${b.id}" aria-label="Buy the ${esc(def.name)} blueprint"><span>${on ? CHECK_GLYPH : ''}</span></button>${sum(on ? 1 : 0, b.price, 'buy')}</div>`; }).join('');
+    const wares = (Object.entries(t.stock) as [ResourceId, { n: number; price: number }][]).filter(([, it]) => it.n > 0).sort((a, b) => a[1].price - b[1].price || a[0].localeCompare(b[0])).map(([r, it]) => {
+      const q = Math.min(o.buy[r] ?? 0, it.n);
+      return `<div class="trow${charter.has(r) || waiting.has(r) ? ' need' : ''}"><span class="tico">${icon(r)}</span><span class="tname"><b><span class="tn">${esc(nameOf(r))}</span>${needTag(r)}</b><small><span title="You have">${BOX_GLYPH}${Math.floor(w.res[r])}</span><span title="The trader has">${icon('caravan')}${it.n}</span></small></span>${price(it.price)}${step('buy', r, q, it.n)}${sum(q, q * it.price, 'buy')}</div>`;
     }).join('');
-    const cap = START.trade.sellCap;
-    const counted = new Set(charterCounted(w));
-    const mine = RESOURCES.filter(x => w.res[x.id] >= 1 && sellPrice(w, x.id) > 0).sort((a, b) => w.res[b.id] - w.res[a.id]).map(x => {
-      const p = sellPrice(w, x.id), sold = t.sold[x.id] ?? 0, room = cap - sold, have = Math.floor(w.res[x.id]);
-      const small = saleQuantity(5, have, room), large = saleQuantity(20, have, room);
-      const sellButton = (n: number) => btn('trade-sell', `${x.id}:${n}`, n ? `Sell ${n} · ${Math.floor(n * p + 1e-9)}g` : 'Limit reached', n > 0);
-      return `<div class="trow"><span class="tname">${icon(x.id)}<span><b>${esc(x.name)}</b><small>you have ${have}${sold ? ` · sold ${sold}/${cap}` : ''}${counted.has(x.id) ? ' · your charter counts these' : ''}</small></span></span><span class="tprice">${Number.isInteger(p) ? p : p.toFixed(1)}${icon('gold')}</span>${sellButton(small)}${large > small ? sellButton(large) : ''}</div>`;
+    const mine = RESOURCES.filter(x => w.res[x.id] >= 1 && sellPrice(w, x.id) > 0).sort((a, b) => sellPrice(w, a.id) - sellPrice(w, b.id) || a.name.localeCompare(b.name)).map(x => {
+      const p = sellPrice(w, x.id), sold = t.sold[x.id] ?? 0, max = saleQuantity(cap, Math.floor(w.res[x.id]), cap - sold), q = Math.min(o.sell[x.id] ?? 0, max);
+      return `<div class="trow${charter.has(x.id) || waiting.has(x.id) ? ' need' : ''}"><span class="tico">${icon(x.id)}</span><span class="tname"><b><span class="tn">${esc(x.name)}</span>${needTag(x.id)}</b><small><span title="You have">${BOX_GLYPH}${Math.floor(w.res[x.id])}</span><span title="Sold this visit, of the most they buy">${sold}/${cap}</span></small></span>${price(p)}${step('sell', x.id, q, max)}${sum(q, Math.floor(q * p + 1e-9), 'sell')}</div>`;
     }).join('');
+    const tot = this.orderTotals(w);
+    const after = gold - tot.out + tot.in, any = Object.keys(o.buy).length + Object.keys(o.sell).length + o.bps.length > 0;
     const name = tr.name.charAt(0).toUpperCase() + tr.name.slice(1);
-    return `<div class="card-wrap trade"><p class="eyebrow">${icon('caravan')} The caravan · leaves in ${left}h</p><h2>${esc(name)}</h2>
-      <p class="lede"><b class="goldnum">${gold} gold</b>.${wants.length ? ` Buys ${esc(wants.slice(0, -1).join(', '))} and ${esc(wants[wants.length - 1])}${autumn ? ', and at the harvest fair anything else, a little cheaper' : ' and nothing else'}.` : ' Buys anything, cheaply.'}</p>
-      <details data-key="trader-lore"><summary>About this trader</summary><p>${esc(tr.who)}</p></details>${bps ? `<h3 class="first">Blueprints</h3><div class="tlist">${bps}</div>` : ''}
-      <h3>The trader sells</h3><div class="tlist">${wares || '<p class="muted">Nothing left.</p>'}</div>
-      <h3>The trader buys <span class="muted">· up to ${cap} of each</span></h3><div class="tlist">${mine || '<p class="muted">You have nothing this trader wants.</p>'}</div>
-      <button type="button" class="opt" data-act="resolve" data-arg="0"><b>Done trading</b></button></div>`;
+    return `<div class="card-wrap trade"><p class="eyebrow">${icon('caravan')} Leaves in ${left}h</p><div class="thead"><h2>${esc(name)}</h2><span class="goldnum">${icon('gold')}${gold}</span></div>
+      <details data-key="trader-lore"><summary>About this trader</summary><p>${esc(tr.who)}</p></details>
+      ${bps ? `<h3 class="group">Blueprints</h3><div class="tlist">${bps}</div>` : ''}
+      <h3 class="group">Buy</h3><div class="tlist">${wares || '<p class="empty">Sold out</p>'}</div>
+      <h3 class="group">Sell <span>up to ${cap} each</span></h3><div class="tlist">${mine || '<p class="empty">Nothing this trader wants</p>'}</div>
+      <div class="ttotal${after < 0 ? ' short' : ''}"><span class="tt-l"><span class="tt-f">${tot.out ? `<b class="buy">−${tot.out}</b>` : ''}${tot.in ? `<b class="sell">+${tot.in}</b>` : ''}</span><span class="tt-g">${icon('gold')}<b>${gold}</b>${ARROW_GLYPH}<b class="after">${after}</b></span></span>
+        <button type="button" class="act" data-act="trade-go" ${any && after >= 0 ? '' : 'disabled'}>Trade</button></div>
+      <button type="button" class="ghost tdone" data-act="resolve" data-arg="0">Done</button></div>`;
+  }
+
+  /** gold the order spends and earns, as the caravan would count it */
+  private orderTotals(w: World) {
+    const t = w.caravan, o = this.order; let out = 0, inn = 0;
+    if (!t) return { out, in: inn };
+    for (const [r, q] of Object.entries(o.buy)) { const it = t.stock[r as ResourceId]; if (it && q) out += Math.min(q, it.n) * it.price; }
+    for (const id of o.bps) { const b = t.blueprints.find(x => x.id === id); if (b) out += b.price; }
+    for (const [r, q] of Object.entries(o.sell)) if (q) inn += Math.floor(q * sellPrice(w, r as ResourceId) + 1e-9);
+    return { out, in: inn };
   }
 
   /** a charter offer: each condition with how close the colony is, the buildings its goods still need, and what it pays */
