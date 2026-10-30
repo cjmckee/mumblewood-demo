@@ -1353,6 +1353,17 @@ function errandHourly(w: World) {
 
 // ---------- Illness ----------
 /** too sick to work: anyone with the flu, or an injury that hasn't mended past the worst */
+/**
+ * The night skip: everyone is in bed (bedridden settlers count) and nothing is going on that the player may want to
+ * watch, so the clock can run faster until someone wakes (main.ts). An urgent job, a caravan in town, a festival or
+ * feast still to come, or a decision waiting all keep the normal speed.
+ */
+export function everyoneAsleep(w: World): boolean {
+  if (w.status !== 'playing' || w.decisions.length) return false;
+  if (w.errands.length || w.caravan || w.festival?.called || w.feast?.called) return false;
+  const people = alive(w);
+  return people.length > 0 && people.every(c => c.activity === 'sleeping' || c.activity === 'sick');
+}
 export function bedridden(c: Colonist) { return !!c.illness && (c.illness.contagious || c.illness.severity > WALKING_WOUNDED); }
 export const WALKING_WOUNDED = 8;
 /** remedy a doctor uses per patient-hour of treatment */
