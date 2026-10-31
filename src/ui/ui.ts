@@ -1,10 +1,10 @@
 // DOM overlay: HUD, bottom sheet, decision modals. Talks to the sim only through commands.
-import { LORE_BOOST, EventNeed, EventOption, BUILDINGS, membersOf, BUILDING_BY_ID, EVENTS, RESEARCH, RESEARCH_BY_ID, BRANCHES_AFTER, JOB_NAMES, PERK_BY_ID, TRADER_BY_ID, RESOURCES, TRAIT_BY_ID, ResourceId, SKILL_NAMES, JOB_KINDS, JobKind, Recipe, InputKey, inputName, recipeRate, Stars } from '../sim/content';
+import { LORE_BOOST, EventNeed, EventOption, BUILDINGS, membersOf, isGroup, BUILDING_BY_ID, EVENTS, RESEARCH, RESEARCH_BY_ID, BRANCHES_AFTER, JOB_NAMES, PERK_BY_ID, TRADER_BY_ID, RESOURCES, TRAIT_BY_ID, ResourceId, SKILL_NAMES, JOB_KINDS, JobKind, Recipe, InputKey, inputName, recipeRate, Stars } from '../sim/content';
 import {
   World, Command, Colonist, alive, avgMood, beds, buildingByUid, charterProgress, colonistById,
   day, hourOfDay, opinion, workersAt, MAX_DEPARTURES, sites, siteWork, remainingCost, storageCap, stored,
   keepsFresh, findSpot, canPlace, laborers, centerOf, built, Building, efficiencyAt, pathAt, MAP_SIZE, blockedReason, Errand, patientsAt, clinicAdmissions, lost, bedridden, spoilingFood, accepts, roomIn, FOODS, GOODS,
-  recipesOf, recipeOn, currentRecipe, orderedRecipes, INPUT_CAPACITY, OUTBOX_CAP, siteOk, rerollCost, REROLL_STEP, stockOf, recipeReach, charterHelpers, charterDef,
+  recipesOf, recipeOn, optionOn, optionsOf, currentRecipe, orderedRecipes, INPUT_CAPACITY, OUTBOX_CAP, siteOk, rerollCost, REROLL_STEP, stockOf, recipeReach, charterHelpers, charterDef,
   costOf, researchLeft, researchStillNeeds, desks, feastCheck, festivalPreview, mealTotal, drinkTotal,
   comfortParts, comfortOf, colonyComfort, comfortGaps, strainPerDay, footprint, activeNeeds, standingOf, STANDINGS, NeedKey, winterFuelPerDay,
   sellPrice, charterCounted, charterRequirements, basicsDone, researchOpen, edibleTotal, storePrio, colonyName, nameFrom, NAME_MAX,
@@ -26,6 +26,12 @@ const first = (c: Colonist) => c.name.split(' ')[0];
 const sum = (o: Partial<Record<string, number>>) => Object.values(o).reduce<number>((n, v) => n + (v ?? 0), 0);
 const hex = (n: number) => `#${n.toString(16).padStart(6, '0')}`;
 const goodLabel = (k: InputKey) => inputName(k);
+/** how an ingredient option stands for a workshop: "have" (in stock, or something built makes it), "can" (could be made
+ *  after building or drafting), "never" (nothing on this map makes it) */
+function optionState(w: World, b: Building, r: ResourceId): 'have' | 'can' | 'never' {
+  if (w.res[r] >= 1 || (b.inbox[r] ?? 0) >= 1 || built(w).some(x => recipesOf(x).some(q => q.output === r))) return 'have';
+  return BUILDINGS.some(d => siteOk(w, d) && (d.recipes ?? []).some(q => q.output === r)) ? 'can' : 'never';
+}
 /** a good or a category with its icon, optionally with a count in front: "[icon]3 planks"; returns HTML */
 const goodHtml = (k: InputKey, n?: number | string, label = goodLabel(k)) => `<span class="gd">${icon(k)}${n != null ? `${n} ` : ''}${esc(label)}</span>`;
 const costHtml = (cost: Partial<Record<InputKey, number>>, w?: World) =>
@@ -221,6 +227,8 @@ export class UI {
   private order: { key: string; buy: Record<string, number>; sell: Record<string, number>; bps: string[] } = { key: '', buy: {}, sell: {}, bps: [] };
   /** the research tree's selected project */
   private researchPick: string | null = null;
+  /** the recipe input whose options are open under its row, as "building:recipe:input" */
+  private optsOpen: string | null = null;
   /** Issues: rows opened to show their evidence and other fixes; every row shown, not the first five; the last order */
   private openIssues = new Set<string>();
   private allIssues = false;
@@ -463,6 +471,8 @@ export class UI {
       case 'assign': { const [cid, bid] = arg.split(':').map(x => (x === 'none' ? null : Number(x))); const err = this.send({ type: 'assign', colonist: cid!, building: bid }); if (err) this.toast(err); break; }
       case 'store-preset': { const [bid, m] = arg.split(':'); this.send({ type: 'storageFilter', building: Number(bid), allow: m === 'food' ? FOODS : m === 'goods' ? GOODS : null }); break; }
       case 'recipe-priority': { const [building,recipe,delta]=arg.split(':').map(Number);this.send({type:'recipePriority',building,recipe,delta:delta as -1|1});break; }
+      case 'recipe-options': { this.optsOpen = this.optsOpen === arg ? null : arg; this.lastSheet = ''; break; }
+      case 'option-toggle': { const [bid, k, g] = arg.split(':'); const b = buildingByUid(w, Number(bid)); if (!b) break; this.send({ type: 'toggleOption', building: b.uid, key: k as InputKey, good: g as ResourceId, on: !optionOn(b, k as InputKey, g as ResourceId) }); break; }
       case 'recipe-toggle': { const [bid, i] = arg.split(':').map(Number); const b = buildingByUid(w, bid); if (!b) break; this.send({ type: 'toggleRecipe', building: bid, recipe: i, on: !recipeOn(b, i) }); break; }
       case 'store-prio': { const [bid, m] = arg.split(':').map(Number); this.send({ type: 'storagePriority', building: bid, prio: m as 0 | 1 | 2 }); break; }
       case 'store-item': {
@@ -988,20 +998,30 @@ export class UI {
     const blocked0 = blockedReason(w, b);
     let recipe = !recs.length ? '' : `<h3>Recipes</h3><div class="recipes">${orderedRecipes(b).map(({r, i}, position) => {
           const on = recipeOn(b, i), now = on && r === cur && !blocked0;
-          const missing = Object.keys(r.inputs).filter(k => on && membersOf(k as InputKey).reduce((n, x) => n + w.res[x] + (b.inbox[x] ?? 0), 0) < (r.inputs[k as InputKey] ?? 0)) as InputKey[];
+          const missing = Object.keys(r.inputs).filter(k => on && optionsOf(b, k as InputKey).reduce((n, x) => n + w.res[x] + (b.inbox[x] ?? 0), 0) < (r.inputs[k as InputKey] ?? 0)) as InputKey[];
           const waiting = on && (missing.length > 0 || (r === cur && !!blocked0));
           const route = missing.length ? metricRoutes(w, { kind: 'stock', resources: membersOf(missing[0]), amount: 1 })[0]?.route : undefined;
           const tiles = route && route.state !== 'ready' ? route.state === 'never' ? `<span class="rtile never" title="Not on this map" role="img" aria-label="Not on this map">${ROUTE_GLYPH.never}</span>` : route.steps.map(st => { const name = BUILDING_BY_ID[st.def].name; const label = st.how === 'build' ? `Build ${name}` : st.how === 'study' ? `Study ${RESEARCH_BY_ID[st.research!].name}` : `Draft a ${name.toLowerCase()}`;
             const inner = `${icon(st.def)}<i class="rb ${st.how}">${ROUTE_GLYPH[st.how]}</i>`;
             return st.how === 'draft' ? `<span class="rtile draft" title="${esc(label)}" role="img" aria-label="${esc(label)}">${inner}</span>` : `<button type="button" class="rtile ${st.how}" data-act="catalog-help" data-arg="${st.def}" title="${esc(label)}" aria-label="${esc(label)}">${inner}</button>`; }).join('') : '';
-          const ins = Object.entries(r.inputs).map(([k, n]) => `<button type="button" class="rin${missing.includes(k as InputKey) ? ' missing' : ''}" data-act="source" data-arg="${k}" title="${esc(inputName(k as InputKey))}: where it comes from">${icon(k)}<b>${+(n ?? 0).toFixed(2)}</b></button>`).join('');
+          // a single good links to where it comes from; a category or slot shows its options and opens them below
+          const ins = Object.entries(r.inputs).map(([k, n]) => {
+            const miss = missing.includes(k as InputKey) ? ' missing' : '', amt = `<b>${+(n ?? 0).toFixed(2)}</b>`;
+            if (!isGroup(k)) return `<button type="button" class="rin${miss}" data-act="source" data-arg="${k}" title="${esc(inputName(k as InputKey))}: where it comes from">${icon(k)}${amt}</button>`;
+            const key = `${b.uid}:${i}:${k}`, open = this.optsOpen === key, shown = optionsOf(b, k as InputKey).filter(x => optionState(w, b, x) !== 'never');
+            const cut = membersOf(k as InputKey).some(x => !optionOn(b, k as InputKey, x));
+            return `<button type="button" class="rin grp${miss}${cut ? ' cut' : ''}" data-act="recipe-options" data-arg="${key}" aria-expanded="${open}" title="${esc(inputName(k as InputKey))}: choose which kinds">${shown.length ? `<span class="rgrp">${shown.slice(0, 4).map(x => icon(x)).join('')}</span>` : icon(k)}${amt}</button>`;
+          }).join('');
+          const optsKey = Object.keys(r.inputs).find(k => this.optsOpen === `${b.uid}:${i}:${k}`) as InputKey | undefined;
+          const opts = optsKey ? `<div class="ropts" role="group" aria-label="${esc(inputName(optsKey))} this building may use">${membersOf(optsKey).map(x => { const st = optionState(w, b, x), on = optionOn(b, optsKey, x);
+            return `<button type="button" class="ropt ${st}" role="checkbox" aria-checked="${on}" data-act="option-toggle" data-arg="${b.uid}:${optsKey}:${x}" title="${esc(inputName(x))}${st === 'never' ? ' · not made on this map' : st === 'can' ? ' · nothing makes it yet' : ''}"><span class="rbox">${on ? CHECK_GLYPH : ''}</span>${icon(x)}<b>${Math.floor(w.res[x])}</b></button>`; }).join('')}</div>` : '';
           const limit = b.productionLimits?.[r.output];
           return `<div class="rrow${now ? ' making' : waiting ? ' waiting' : ''}${on ? '' : ' off'}">
             <div class="rmain"><span class="rorder"><button type="button" data-act="recipe-priority" data-arg="${b.uid}:${i}:-1" aria-label="Try ${esc(inputName(r.output))} earlier" ${position === 0 ? 'disabled' : ''}>${CHEVRON_UP}</button><button type="button" data-act="recipe-priority" data-arg="${b.uid}:${i}:1" aria-label="Try ${esc(inputName(r.output))} later" ${position === recs.length - 1 ? 'disabled' : ''}>${CHEVRON_DOWN}</button></span>
               <span class="rbody">${starHtml(r.stars)}${ins ? `<span class="rins">${ins}</span>${ARROW_GLYPH}` : ''}<span class="rout" title="${esc(inputName(r.output))} · ${+recipeRate(r).toFixed(2)} per worker-hour">${icon(r.output)}${now ? '<i class="rnow" aria-label="Making now"></i>' : ''}</span></span>
               <label class="rtarget" title="Stop at this many in storage (blank: no limit)">${TARGET_GLYPH}<span>${Math.floor(w.res[r.output])}/</span><input type="number" min="0" step="1" placeholder="∞" aria-label="Stock target for ${esc(inputName(r.output))}" data-act="production-target" data-arg="${b.uid}:${r.output}" data-production-limit data-building="${b.uid}" data-output="${r.output}" value="${limit ?? ''}"></label>
               <button type="button" class="rcheck" role="checkbox" aria-checked="${on}" data-act="recipe-toggle" data-arg="${b.uid}:${i}" aria-label="Make ${esc(inputName(r.output))}"><span>${on ? CHECK_GLYPH : ''}</span></button></div>
-            ${waiting && missing.length ? `<div class="rwait">${missing.map(k => `<span class="rno">${icon(k)}${esc(inputName(k))}</span>`).join('')}${tiles}</div>` : ''}
+            ${opts}${waiting && missing.length ? `<div class="rwait">${missing.map(k => `<span class="rno">${icon(k)}${esc(inputName(k))}</span>`).join('')}${tiles}</div>` : ''}
           </div>`;
         }).join('')}</div>`;
     const effLine = def.needs ? `<p class="prefs">Site ${Math.round(b.eff * 100)}% · ${esc(efficiencyAt(w, b.def, b.x, b.y, b.rot).label)}</p>${meter(b.eff * 100, 'Site efficiency')}` : '';
@@ -1241,7 +1261,7 @@ export class UI {
     const charter = new Set<string>(charterCounted(w));
     const waiting = new Map<string, string>();
     for (const b of built(w)) if (recipesOf(b).length && workersAt(w, b.uid).length) for (const { r, i } of orderedRecipes(b)) if (recipeOn(b, i))
-      for (const [k, n] of Object.entries(r.inputs) as [InputKey, number][]) { const ms = membersOf(k); if (ms.reduce((m, x) => m + w.res[x] + (b.inbox[x] ?? 0), 0) < n) for (const x of ms) if (!waiting.has(x)) waiting.set(x, b.def); }
+      for (const [k, n] of Object.entries(r.inputs) as [InputKey, number][]) { const ms = optionsOf(b, k); if (ms.reduce((m, x) => m + w.res[x] + (b.inbox[x] ?? 0), 0) < n) for (const x of ms) if (!waiting.has(x)) waiting.set(x, b.def); }
     const needTag = (r: string) => charter.has(r) ? `<i class="tneed" title="Your charter counts these" aria-label="charter">${STAR_GLYPH}</i>` : waiting.has(r) ? `<i class="tneed" title="${esc(BUILDING_BY_ID[waiting.get(r)!].name)} is waiting for this">${icon(waiting.get(r)!)}</i>` : '';
     const price = (p: number) => `<span class="tprice">${Number.isInteger(p) ? p : p.toFixed(1)}${icon('gold')}</span>`;
     const step = (side: 'buy' | 'sell', r: string, q: number, max: number) => `<span class="tstep"><button type="button" data-act="tq" data-arg="${side}:${r}:-1" aria-label="One fewer" ${q ? '' : 'disabled'}>−</button><b aria-label="${q} in the order">${q}</b><button type="button" data-act="tq" data-arg="${side}:${r}:1" ${q < max ? '' : 'disabled'}>+1</button><button type="button" data-act="tq" data-arg="${side}:${r}:5" ${q < max ? '' : 'disabled'}>+5</button></span>`;
