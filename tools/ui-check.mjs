@@ -154,6 +154,14 @@ for (const [device,width,height] of [['desktop',1440,900],['phone',390,844],['sm
   await p.locator('#peekbar button').click();
   check(await state(()=>!document.querySelector('#modal').hidden&&document.querySelector('#peekbar').hidden),`${device}: back to the choice`);
   await p.evaluate(()=>{const g=window.__game;g.setSpeed(0);g.world.decisions=[];g.ui.render(true);});
+  // Place here: idle refreshes keep the same button, and a slow tap lands even while the game runs and refreshes under it
+  check(await state(()=>{const g=window.__game;g.world.res.wood=200;g.ui.startPlacing('leanto');const b=document.querySelector('#placebar [data-act=place-confirm]');for(let i=0;i<5;i++)g.ui.render();return document.querySelector('#placebar [data-act=place-confirm]')===b;}),`${device}: the place bar isn't rebuilt when nothing changed`);
+  {
+    const before=await state(()=>{window.__game.setSpeed(1);return window.__game.world.buildings.length;});
+    const box=await state(()=>{const r=document.querySelector('#placebar [data-act=place-confirm]').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};});
+    await p.mouse.move(box.x,box.y); await p.mouse.down(); await p.waitForTimeout(700); await p.mouse.up(); await p.waitForTimeout(50);
+    check(await p.evaluate(n=>{const g=window.__game;g.setSpeed(0);return g.world.buildings.length===n+1&&!g.view.placing;},before),`${device}: a slow tap on Place here places the building`);
+  }
   check(!errors.length,`${device}: no page errors (${errors.join(';')})`);
   await ctx.close();
 }

@@ -191,7 +191,9 @@ export class UI {
   /** everyone is asleep and the night is running faster (main.ts) */
   nightSkip = false;
   private charterCollapsed = initialCharterCollapsed();
-  private lastHud = ''; private lastSheet = ''; private lastModal = '';
+  private lastHud = ''; private lastSheet = ''; private lastModal = ''; private lastPlaceBar = ''; private lastPeekBar = '';
+  /** a pointer is down on a panel: the routine refresh waits, so the button under it isn't swapped out mid-tap */
+  private pressing = false;
   onSpeed: (s: number) => void = () => {};
   onRestart: () => void = () => {};
   /** run history from this browser, shown on the end screen */
@@ -272,6 +274,10 @@ export class UI {
     root.addEventListener('input', e => { const t = e.target as HTMLElement; if (t instanceof HTMLInputElement && t.dataset.nameInput != null) this.nameDraft = t.value; });
     root.addEventListener('keydown', e => { const t = e.target as HTMLElement; if (e.key === 'Enter' && t instanceof HTMLInputElement && t.dataset.nameInput != null) { e.preventDefault(); (root.querySelector('[data-act=name-ok]') as HTMLElement | null)?.click(); } });
     root.addEventListener('click', e => { if (!(e.target instanceof HTMLSelectElement) && !(e.target instanceof HTMLInputElement)) this.click(e); });
+    // a tap is press then release on the same element; a redraw in between replaces it and the click never lands
+    root.addEventListener('pointerdown', e => { if ((e.target as HTMLElement).closest?.('#hud,#sheet,#placebar,#modal,#peekbar')) this.pressing = true; }, true);
+    const release = () => { if (this.pressing) setTimeout(() => { this.pressing = false; }, 0); };
+    window.addEventListener('pointerup', release, true); window.addEventListener('pointercancel', release, true);
     window.addEventListener('keydown', e => this.keyboard(e));
     root.addEventListener('change', e => {
       const input=e.target;if(!(input instanceof HTMLInputElement)||!input.hasAttribute('data-production-limit')){this.click(e);return;}
@@ -518,6 +524,7 @@ export class UI {
   }
 
   render(force = false) {
+    if (this.pressing && !force) return;
     const w = this.getWorld();
     this.root.classList.toggle('panel-open', this.open);
     this.renderHud(w, force);
@@ -943,12 +950,12 @@ export class UI {
       const planned = w.paths.filter(p => p === 1).length;
       const html = `<div class="pb-text"><b>Planning paths</b><small>Tap to add/remove · 1 wood/tile. ${planned} planned${planned > w.res.wood ? `, but only ${Math.floor(w.res.wood)} wood` : ''}.</small></div>
         <button type="button" class="act" data-act="paths-done">Done</button>`;
-      if (el.innerHTML !== html) replaceMarkup(el, html);
+      if (html !== this.lastPlaceBar) { replaceMarkup(el, html); this.lastPlaceBar = html; }
       el.classList.add('two'); el.hidden = false; return;
     }
     el.classList.remove('two');
     const pl = this.view.placing;
-    if (!pl) { el.hidden = true; el.innerHTML = ''; return; }
+    if (!pl) { el.hidden = true; el.innerHTML = ''; this.lastPlaceBar = ''; return; }
     const def = BUILDING_BY_ID[pl.def];
     const chk = canPlace(w, pl.def, pl.x, pl.y, pl.rot ?? 0);
     const eff = def.needs ? efficiencyAt(w, pl.def, pl.x, pl.y, pl.rot ?? 0) : null;
@@ -957,7 +964,7 @@ export class UI {
       <button type="button" class="ghost rotate" data-act="place-rotate" aria-label="Rotate" title="Rotate (R)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12a7 7 0 1 1-2.05-4.95" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M18.6 3.6v4.6H14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>Rotate</button>
       <button type="button" class="ghost" data-act="place-cancel">Cancel</button>
       <button type="button" class="act" data-act="place-confirm" ${chk.ok ? '' : 'disabled'}>Place here</button>`;
-    if (el.innerHTML !== html) replaceMarkup(el, html);
+    if (html !== this.lastPlaceBar) { replaceMarkup(el, html); this.lastPlaceBar = html; }
     el.hidden = false;
   }
 
@@ -1200,7 +1207,7 @@ export class UI {
     const title = d ? (html.match(/<h2>(.*?)<\/h2>/)?.[1] ?? '') : '';
     if (this.peeking) {
       const next = `<span class="pk-paused">Ⅱ Paused</span><span class="pk-title">${title}</span><button type="button" data-act="peek-back">Back to choice</button>`;
-      if (bar.innerHTML !== next) bar.innerHTML = next;
+      if (next !== this.lastPeekBar) { bar.innerHTML = next; this.lastPeekBar = next; }
       bar.hidden = false; html = '';
     } else bar.hidden = true;
     const nextDialogKey = d ? JSON.stringify(d) : this.naming(w) ? `name:${this.nameInit}` : this.help ? `help:${this.help}` : this.festivalOpen ? 'festival' : this.strainOpen ? 'strain' : this.picking != null ? `errand:${this.picking}` : this.resumeOpen ? 'resume' : w.status;
