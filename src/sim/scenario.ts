@@ -42,6 +42,15 @@ export interface Start {
   /** the body: hours of waking work from a full belly to empty, how hungry before someone goes for food, walking speed
    *  in tiles an hour, and the share of food left out (not in a storehouse) that spoils each day */
   body: { hungerHours: number; eatBelow: number; walk: number; spoilPerDay: number };
+  /**
+   * workshop workers fetching their own ingredients, on top of laborers:
+   * - topUpAt: fetch once the workshop holds fewer than this many outputs' worth and nobody has claimed the refill
+   *   (refills open at INPUT_REFILL_AT, so 2 means "as soon as one is due"); 0 waits until it's dry, the old way
+   * - overtake: when dry and the laborer bringing it hasn't picked it up yet, take the trip over if theirs is more than
+   *   this many times longer than the worker's own; 0 always waits for them
+   * - roundTrip: carry finished goods to storage on the way, and bring ingredients back from there
+   */
+  selfSupply: { topUpAt: number; overtake: number; roundTrip: boolean };
   /** outbreaks wait until this day and this many colonists */
   outbreakFrom: { day: number; pop: number };
   /** the calendar and what each season does; see seasons.ts */
@@ -139,6 +148,7 @@ export const START: Start = {
   hearth: { base: 0.125, perPerson: 0.03 },
   woodReserve: 10,
   body: { hungerHours: 34, eatBelow: 45, walk: 7, spoilPerDay: 0.035 },
+  selfSupply: { topUpAt: 2, overtake: 1.5, roundTrip: true },
   outbreakFrom: { day: 6, pop: 5 },
   seasons: {
     days: 10,
