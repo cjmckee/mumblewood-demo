@@ -71,17 +71,17 @@ const untilHour = (w: World, h: number, each: () => void = () => {}) => { for (l
   const spot = findSpot(w, 'hall', 16, 16, true)!;
   ok(!apply(w, { type: 'place', def: 'hall', x: spot.x, y: spot.y }), 'the Hall can be placed');
   const hall = w.buildings.find(b => b.def === 'hall')!;
-  w.res.planks = 80; w.res.stew = 60; w.res.pie = 20; w.res.cider = 40;
+  w.res.planks = 80; w.res.stew = 60; w.res.supper = 20; w.res.mulled = 40;
   for (const c of alive(w)) { c.mood = 30; c.moodTarget = 30; c.job = null; }
   // grumpy settlers won't touch it (mood is recomputed hourly, so pin it low for the check)
   for (let h = 0; h < 12; h++) { for (const c of alive(w)) { c.mood = 30; } runHours(w, 1); clear(w); }
   ok(Object.keys(hall.delivered).length === 0 && hall.progress === 0, 'nobody below mood 55 hauls for or builds the Hall');
   // content settlers build all three stages
   let h = 0;
-  while (!hall.built && h < 24 * 20) { for (const c of alive(w)) { c.mood = 70; c.hunger = 90; } w.res.planks = Math.max(w.res.planks, 20); w.res.stew = Math.max(w.res.stew, 20); w.res.cider = Math.max(w.res.cider, 20); runHours(w, 1); h++; clear(w); }
+  while (!hall.built && h < 24 * 20) { for (const c of alive(w)) { c.mood = 70; c.hunger = 90; } w.res.planks = Math.max(w.res.planks, 20); w.res.stew = Math.max(w.res.stew, 20); w.res.supper = Math.max(w.res.supper, 20); w.res.mulled = Math.max(w.res.mulled, 20); runHours(w, 1); h++; clear(w); }
   ok(hall.built, `content settlers finish all three stages (${h}h, stage ${hall.stage})`);
   ok((hall.stage ?? 0) === 2, 'the Hall went through three stages');
-  ok(costOf({ ...hall, stage: 1 }).meal === 40 && costOf({ ...hall, stage: 2 }).drink === 25, 'stage costs: 60 fine, 40 meals, 25 drinks');
+  ok(costOf({ ...hall, stage: 1 }).supper === 30 && costOf({ ...hall, stage: 2 }).mulled === 25, 'stage costs: 60 fine, 30 suppers, 25 mulled cups');
   void laborers; void BUILDING_BY_ID;
 }
 
@@ -105,7 +105,7 @@ const untilHour = (w: World, h: number, each: () => void = () => {}) => { for (l
   for (const id of ['dining', 'dining', 'dining']) { w2.owned.push('dining'); const s = findSpot(w2, id, 16, 16, true)!; apply(w2, { type: 'place', def: id, x: s.x, y: s.y }); }
   for (const b of w2.buildings) if (b.def === 'dining') { b.built = true; b.progress = 99; }
   for (const r of MEALS) w2.res[r] = 30;
-  w2.res.ale = 30; w2.res.cider = 30; w2.res.mead = 30; w2.res.tea = 30;
+  w2.res.ale = 30; w2.res.cider = 30; w2.res.mead = 30; w2.res.tea = 30; w2.res.mulled = 30;
   for (const c of alive(w2)) { c.sulking = false; c.mood = 60; c.illness = null; }
   const f = feastCheck(w2);
   ok(f.ok, `with 14 settlers, ${f.seats} seats and every meal and drink, the check says ready (${f.served} served)`);
@@ -115,9 +115,9 @@ const untilHour = (w: World, h: number, each: () => void = () => {}) => { for (l
   ok(w2.status === 'won' || w2.chartersDone.includes('longtable'), `the Long Table charter completes (status ${w2.status})`);
   // tastes matter: with one drink, the people who dislike it go without
   const w3 = createWorld(82); clear(w3); w3.charter = 'longtable';
-  w3.res.cider = 50; w3.res.stew = 50; w3.res.pie = 50;
-  alive(w3)[0].tastes = { loves: ['pie', 'ale'], dislikes: ['stew', 'cider'] };
-  for (const c of alive(w3).slice(1)) c.tastes = { loves: ['pie', 'cider'], dislikes: ['stew', 'mead'] };
+  w3.res.cider = 50; w3.res.stew = 50; w3.res.supper = 50;
+  alive(w3)[0].tastes = { loves: ['supper', 'ale'], dislikes: ['stew', 'cider'] };
+  for (const c of alive(w3).slice(1)) c.tastes = { loves: ['supper', 'cider'], dislikes: ['stew', 'mead'] };
   const dislikeCider = alive(w3).filter(c => c.tastes.dislikes.includes('cider')).length;
   ok(dislikeCider === 1 && feastCheck(w3).hungry === 1, `with only cider, the one settler who dislikes it can't be served (${feastCheck(w3).hungry} unserved)`);
   void built; void charterProgress;
@@ -164,10 +164,10 @@ const untilHour = (w: World, h: number, each: () => void = () => {}) => { for (l
 // ---- strain relief: charters ----
 {
   const w = createWorld(90); clear(w); debugGrow(w, 6);
-  w.charter = 'settled'; w.charterHolds = []; w.strain = 20;
+  w.charter = 'settled'; w.charterHolds = []; w.strain = 20; w.tally = { eaten: { stew: 30 }, drunk: {}, made: {}, used: {} };
   w.res.stew = 40; w.moodLog = Array(24).fill(60); for (const c of alive(w)) { c.mood = 60; c.moodTarget = 60; }
   runHours(w, 1); clear(w);
-  ok(w.chartersDone.includes('settled'), 'Settled in completes with 6 settlers, 40 stew and mood 60');
+  ok(w.chartersDone.includes('settled'), 'Settled in completes with 6 settlers, 30 meals eaten and mood 60');
   ok(Math.abs(w.strain - 14) < 0.5, `finishing a charter eases 30% of strain (20 → ${w.strain.toFixed(1)})`);
 }
 

@@ -11,9 +11,9 @@ const steps = (r?: Route) => (r?.steps ?? []).map(s => `${s.how}:${s.def}`);
 
 const w: World = createWorld(777);
 const settled = charterPreview(w, 'settled');
-const meals = settled.conditions.find(c => c.text === '25 meals');
+const meals = settled.conditions.find(c => c.text === '30 meals eaten');
 check(!!meals && steps(meals.route).includes('study:kitchen'), `fresh colony: meals need the stew kitchen studied (${steps(meals?.route)})`);
-const smoke = charterPreview(w, 'woodsmoke').conditions.find(c => c.text === '20 smoked fish');
+const smoke = charterPreview(w, 'woodsmoke').conditions.find(c => c.text === '20 smoked fish eaten');
 check(steps(smoke?.route).includes('draft:dock'), `smoked fish needs a fishing dock drafted (${steps(smoke?.route)})`);
 const planks = charterPreview(w, 'firstplanks').conditions.find(c => c.text.includes('fine materials'));
 check(planks?.route?.state === 'ready' && planks.route.by === 'woodcutter', 'fine materials: the woodcutter already rough-saws planks');
@@ -24,23 +24,23 @@ check(!!pop && !pop.met && pop.have === '3 now', 'population shows how many ther
 
 // once the basics are studied, the kitchen only has to be placed
 debugGrow(w, 6);
-const known = charterPreview(w, 'settled').conditions.find(c => c.text === '25 meals');
+const known = charterPreview(w, 'settled').conditions.find(c => c.text === '30 meals eaten');
 check(steps(known?.route).includes('build:kitchen'), `after research the kitchen is "build" (${steps(known?.route)})`);
 
 // a map without a meadow can never make tonics
 const noMeadow = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(s => createWorld(s)).find(x => !x.sites.includes('meadow'))!;
-const tonic = charterPreview(noMeadow, 'hearty').conditions.find(c => c.text === '12 tonics');
+const tonic = charterPreview(noMeadow, 'hearty').conditions.find(c => c.text === '12 tonics used');
 check(tonic?.route?.state === 'never', 'tonics without a meadow: not on this map');
 
 // variety lists a route per kind
-const tasting = charterPreview(w, 'tasting').conditions.find(c => c.text.startsWith('3 kinds of drink'));
+const tasting = charterPreview(w, 'tasting').conditions.find(c => c.text.startsWith('40 renown from 3 kinds of drink'));
 check((tasting?.routes?.length ?? 0) === 3, `three drink routes are listed (${tasting?.routes?.map(r => r.good)})`);
 
-// while a charter is under way, its panel gets the same routes: bread on a fresh map needs a mill and a field drafted
+// while a charter is under way, its panel gets the same routes: bread on a fresh map needs an oven (acorn meal can come from the forager)
 const f = createWorld(777);
 const breadParts = (charterDefOf('bread').metric as { kind: 'all'; parts: any[] }).parts;
-const breadRoute = metricRoutes(f, breadParts.find(p => p.kind === 'stock'))[0]?.route;
-check(steps(breadRoute).includes('draft:mill') && steps(breadRoute).includes('draft:field'), `in play, bread shows the mill and field to draft (${steps(breadRoute)})`);
+const breadRoute = metricRoutes(f, breadParts.find(p => p.kind === 'tally'))[0]?.route;
+check(breadRoute?.state === 'steps' && steps(breadRoute).length > 0 && !steps(breadRoute).includes('draft:field'), `in play, bread shows the buildings still missing, with no grain field needed (${steps(breadRoute)})`);
 check(metricRoutes(f, breadParts.find(p => p.kind === 'population')).length === 0, 'colonists have no route tiles');
 
 // finishing a charter: the next charter is offered first, then its cornerstone
@@ -48,7 +48,7 @@ const g = createWorld(4242);
 while (g.decisions.length) apply(g, { type: 'resolve', option: 0 });
 debugGrow(g, 7);
 g.charter = 'settled'; g.charterTier = 1; g.charterHolds = [];
-g.res.stew = 40; g.moodLog = Array(24).fill(90);
+g.res.stew = 40; g.tally = { eaten: { stew: 30 }, drunk: {}, made: {}, used: {} }; g.moodLog = Array(24).fill(90);
 for (const c of g.colonists) c.mood = 90;
 runHours(g, 2);
 check(g.chartersDone.includes('settled'), 'the charter completes');
@@ -56,7 +56,7 @@ check(g.decisions[0]?.kind === 'charter' && g.decisions[1]?.kind === 'perk', `ne
 
 // the requirement row names what it counts
 const h = createWorld(5); h.charter = 'bread';
-check(charterRequirements(h).some(r => r.label.endsWith('/ 20 bread')), `stock requirement names the good (${charterRequirements(h).map(r => r.label)})`);
+check(charterRequirements(h).some(r => r.label.endsWith('/ 30 bread eaten')), `tally requirement names the good and how it counts (${charterRequirements(h).map(r => r.label)})`);
 
 // any option whose label spends gold, meals, drinks, food, wood or planks declares it, with what happens if short
 const spends = /(\d+) (gold|meals?|drinks?|food|wood|planks)|Pay \d+|Toss them \d+|Slip him \d+/;

@@ -7,7 +7,7 @@ import {
   recipesOf, recipeOn, optionOn, optionsOf, currentRecipe, orderedRecipes, INPUT_CAPACITY, OUTBOX_CAP, siteOk, rerollCost, REROLL_STEP, stockOf, recipeReach, charterHelpers, charterDef,
   costOf, researchLeft, researchStillNeeds, desks, feastCheck, festivalPreview, mealTotal, drinkTotal,
   comfortParts, comfortOf, colonyComfort, comfortGaps, strainPerDay, footprint, activeNeeds, standingOf, STANDINGS, NeedKey, winterFuelPerDay,
-  sellPrice, charterCounted, charterRequirements, basicsDone, researchOpen, edibleTotal, storePrio, colonyName, nameFrom, NAME_MAX,
+  sellPrice, renownOf, charterCounted, charterRequirements, basicsDone, researchOpen, edibleTotal, storePrio, colonyName, nameFrom, NAME_MAX,
 } from '../sim/world';
 import { charterPreview, metricRoutes, Route } from '../sim/charterplan';
 import { START } from '../sim/scenario';
@@ -600,7 +600,7 @@ export class UI {
     const total = (k: InputKey) => membersOf(k).reduce((n, r) => n + w.res[r], 0);
     const groups = (['rawFood', 'meal', 'drink', 'fine', 'remedy'] as InputKey[]).filter(k => k === 'rawFood' || k === 'meal' || total(k) >= 0.5);
     const grouped = new Set<string>(['wood', ...groups.flatMap(k => membersOf(k))]);
-    const pinned = [...new Set(charterRequirements(w).flatMap(r => r.metric.kind === 'stock' && r.metric.resources.length <= 2 ? r.metric.resources : []))].filter(r => r !== 'wood');
+    const pinned = [...new Set(charterRequirements(w).flatMap(r => (r.metric.kind === 'stock' || r.metric.kind === 'tally') && r.metric.resources.length <= 2 ? r.metric.resources : []))].filter(r => r !== 'wood');
     const rest = RESOURCES.filter(r => w.res[r.id] >= 0.5 && r.id !== 'wood' && !(pinned as string[]).includes(r.id) && (this.allGoods || !grouped.has(r.id)));
     const res = goldChip + storeChip + chip('wood', 'wood', w.res.wood, 'Wood')
       + groups.map(k => chip(k, k, total(k), inputName(k).replace(/^./, c => c.toUpperCase()), ' grp')).join('')
@@ -661,13 +661,15 @@ export class UI {
     const mood = Math.round(log.length ? log.reduce((a, b) => a + b, 0) / log.length : avgMood(w));
     return `<div class="req-chips">${charterRequirements(w).map(r => {
       const m = r.metric, met = r.ratio >= 1;
-      const act = m.kind === 'stock' || m.kind === 'variety' ? 'resource' : m.kind === 'built' || m.kind === 'monument' ? 'catalog-help' : m.kind === 'everyoneBed' || m.kind === 'healthy' || m.kind === 'allTable' || m.kind === 'longTable' ? 'need' : 'tab';
-      const arg = m.kind === 'stock' ? m.resources[0] : m.kind === 'variety' ? m.category : m.kind === 'built' || m.kind === 'monument' ? m.def : m.kind === 'everyoneBed' ? 'shelter' : m.kind === 'healthy' ? 'health' : m.kind === 'allTable' || m.kind === 'longTable' ? 'table' : 'colonists';
-      const cat = m.kind === 'stock' ? Object.entries(CATEGORY_MEMBERS).find(([, ms]) => ms.length === m.resources.length && ms.every(x => m.resources.includes(x)))?.[0] : undefined;
+      const act = m.kind === 'stock' || m.kind === 'variety' || m.kind === 'tally' || m.kind === 'renown' ? 'resource' : m.kind === 'built' || m.kind === 'monument' ? 'catalog-help' : m.kind === 'everyoneBed' || m.kind === 'healthy' || m.kind === 'allTable' || m.kind === 'longTable' ? 'need' : 'tab';
+      const arg = m.kind === 'stock' || m.kind === 'tally' ? m.resources[0] : m.kind === 'variety' || m.kind === 'renown' ? m.category : m.kind === 'built' || m.kind === 'monument' ? m.def : m.kind === 'everyoneBed' ? 'shelter' : m.kind === 'healthy' ? 'health' : m.kind === 'allTable' || m.kind === 'longTable' ? 'table' : 'colonists';
+      const cat = m.kind === 'stock' || m.kind === 'tally' ? Object.entries(CATEGORY_MEMBERS).find(([, ms]) => ms.length === m.resources.length && ms.every(x => m.resources.includes(x)))?.[0] : undefined;
       const [ico, text] = m.kind === 'population' ? [PERSON_GLYPH, `${r.value}/${r.target}`]
         : m.kind === 'avgMood' ? [MOOD_GLYPH, `${mood}/${m.amount}`]
         : m.kind === 'stock' ? [icon(cat ?? m.resources[0]), `${Math.floor(r.value)}/${r.target}`]
         : m.kind === 'variety' ? [icon(m.category), `${CATEGORY_MEMBERS[m.category].filter(x => w.res[x] >= m.each).length}/${m.kinds}`]
+        : m.kind === 'tally' ? [icon(cat ?? m.resources[0]), `${Math.floor(r.value)}/${r.target}`]
+        : m.kind === 'renown' ? [icon(m.category) + STAR_GLYPH, `${Math.floor(renownOf(w, m.category).points)}/${m.amount}`]
         : m.kind === 'built' ? [icon(m.def), `${r.value}/${r.target}`]
         : m.kind === 'everyoneBed' ? [icon('leanto'), `${r.value}/${r.target}`]
         : m.kind === 'allTable' ? [icon('dining'), `${r.value}/${r.target}h`]
