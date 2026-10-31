@@ -44,21 +44,21 @@ export const RAW_FOODS: ResourceId[] = ['berries', 'fish', 'mushrooms', 'apples'
 /** meals, best first: with no favourite, a settler takes the first one in store */
 export const MEALS: ResourceId[] = ['pie', 'hotpot', 'skewers', 'smokedFish', 'bread', 'stew'];
 /**
- * The goods ladder. Plain goods come from one raw good; good ones from one chain of two or three steps; fine ones
- * from two chains meeting in one recipe; feast ones from two good-tier goods. The higher the tier, the more mood a
+ * The goods ladder. Simple goods come from one raw good; refined ones from one chain of two or three steps; quality
+ * ones from two chains meeting in one recipe; magnificent ones from two refined goods. The higher the tier, the more mood a
  * meal or drink gives and the more it counts toward comfort, so running more chains is what makes a town content.
  */
-export type GoodTier = 'plain' | 'good' | 'fine' | 'feast';
+export type GoodTier = 'simple' | 'refined' | 'quality' | 'magnificent';
 export const TIER: Partial<Record<ResourceId, GoodTier>> = {
-  stew: 'plain', tea: 'plain',
-  bread: 'good', smokedFish: 'good', skewers: 'good', ale: 'good', cider: 'good', mead: 'good',
-  pie: 'fine', hotpot: 'fine', mulled: 'fine',
+  stew: 'simple', tea: 'simple',
+  bread: 'refined', smokedFish: 'refined', skewers: 'refined', ale: 'refined', cider: 'refined', mead: 'refined',
+  pie: 'quality', hotpot: 'quality', mulled: 'quality',
 };
-export const TIER_RANK: Record<GoodTier, number> = { plain: 0, good: 1, fine: 2, feast: 3 };
+export const TIER_RANK: Record<GoodTier, number> = { simple: 0, refined: 1, quality: 2, magnificent: 3 };
 /** mood from a meal or drink of each tier, before tastes and traits */
-export const TIER_MOOD: Record<GoodTier, number> = { plain: 3, good: 6, fine: 10, feast: 13 };
-/** the trader never carries fine or feast goods: those have to be made here */
-export const tradeable = (r: ResourceId) => TIER_RANK[TIER[r] ?? 'plain'] < TIER_RANK.fine;
+export const TIER_MOOD: Record<GoodTier, number> = { simple: 3, refined: 6, quality: 10, magnificent: 13 };
+/** the trader never carries quality or magnificent goods: those have to be made here */
+export const tradeable = (r: ResourceId) => TIER_RANK[TIER[r] ?? 'simple'] < TIER_RANK.quality;
 /**
  * What the caravan charges for one of each good, in gold. It pays back a share of that when it buys (SELL_SHARE),
  * more at the autumn fair: raw goods are cheap, and the more work a good holds the more it's worth.
@@ -86,9 +86,9 @@ export const TRADERS: TraderDef[] = [
 ];
 export const TRADER_BY_ID: Record<string, TraderDef> = Object.fromEntries(TRADERS.map(t => [t.id, t]));
 /** mood from eating each meal, before tastes and traits */
-export const MEAL_MOOD: Partial<Record<ResourceId, number>> = Object.fromEntries(MEALS.map(r => [r, TIER_MOOD[TIER[r] ?? 'plain']]));
+export const MEAL_MOOD: Partial<Record<ResourceId, number>> = Object.fromEntries(MEALS.map(r => [r, TIER_MOOD[TIER[r] ?? 'simple']]));
 /** mood from a drink at the tavern, before tastes and traits */
-export const DRINK_MOOD: Partial<Record<ResourceId, number>> = Object.fromEntries((['ale', 'cider', 'mead', 'tea', 'mulled'] as ResourceId[]).map(r => [r, TIER_MOOD[TIER[r] ?? 'plain']]));
+export const DRINK_MOOD: Partial<Record<ResourceId, number>> = Object.fromEntries((['ale', 'cider', 'mead', 'tea', 'mulled'] as ResourceId[]).map(r => [r, TIER_MOOD[TIER[r] ?? 'simple']]));
 
 export type JobKind = 'chopping' | 'foraging' | 'fishing' | 'cooking' | 'crafting' | 'brewing' | 'serving' | 'medicine' | 'studying';
 export const JOB_NAMES: Record<JobKind, string> = {

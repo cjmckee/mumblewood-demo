@@ -321,8 +321,8 @@ export function drinkTotal(w: World) { return CATEGORIES.drink.members.reduce((n
 /** take drinks out of storage, the most plentiful first; returns what was taken */
 function takeDrink(w: World, n: number, why: string, c?: Colonist): ResourceId | null {
   let left = n, main: ResourceId | null = null;
-  // a drinker reaches for the one they love and leaves the one they dislike; otherwise the finest, then the most plentiful
-  const order = [...CATEGORIES.drink.members].sort((p, q) => (c ? taste(c, q) - taste(c, p) : 0) || TIER_RANK[TIER[q] ?? 'plain'] - TIER_RANK[TIER[p] ?? 'plain'] || w.res[q] - w.res[p]);
+  // a drinker reaches for the one they love and leaves the one they dislike; otherwise the highest tier, then the most plentiful
+  const order = [...CATEGORIES.drink.members].sort((p, q) => (c ? taste(c, q) - taste(c, p) : 0) || TIER_RANK[TIER[q] ?? 'simple'] - TIER_RANK[TIER[p] ?? 'simple'] || w.res[q] - w.res[p]);
   for (const r of order) {
     const t = Math.min(w.res[r], left); if (t <= 0) continue;
     w.res[r] -= t; flow(w, `${r}:-${why}`, t); left -= t; main ??= r;
@@ -2191,7 +2191,7 @@ function finishMeal(w: World, c: Colonist) {
   c.meal = null;
   if (!got) return;
   const meal = MEALS.includes(got) ? got : undefined;
-  c.lastMeal = { cooked: !!meal, table: !!(hall && bdef(hall).seats) && !bedridden(c), loved: !!meal && taste(c, meal) > 0, tier: meal ? TIER[meal] ?? 'plain' : undefined };
+  c.lastMeal = { cooked: !!meal, table: !!(hall && bdef(hall).seats) && !bedridden(c), loved: !!meal && taste(c, meal) > 0, tier: meal ? TIER[meal] ?? 'simple' : undefined };
   (c.ate ??= []).push({ r: got, h: w.hour }); if (c.ate.length > 10) c.ate.shift();
   const bonus = (has(c, 'glutton') ? 4 : 0) + (hasPerk(w, 'communalPot') ? 5 : 0);
   if (meal) {
@@ -2380,7 +2380,7 @@ export function activeNeeds(w: World, standing = standingOf(w)): NeedKey[] {
 }
 const FRESH: ResourceId[] = ['berries', 'apples', 'fish', 'skewers'];
 /** village standing: how much a cooked meal of each tier counts toward the meals need, before the table and favourites */
-export const MEAL_TIER_COMFORT: Record<GoodTier, number> = { plain: 0.3, good: 0.6, fine: 1, feast: 1 };
+export const MEAL_TIER_COMFORT: Record<GoodTier, number> = { simple: 0.3, refined: 0.6, quality: 1, magnificent: 1 };
 /** distinct meals eaten in the last few days */
 const mealKinds = (w: World, c: Colonist, hours: number) => new Set((c.ate ?? []).filter(a => a.h >= w.hour - hours && MEALS.includes(a.r)).map(a => a.r)).size;
 export function comfortParts(w: World, c: Colonist, standing = standingOf(w)): Partial<Record<NeedKey, number>> {
@@ -2397,8 +2397,8 @@ export function comfortParts(w: World, c: Colonist, standing = standingOf(w)): P
       case 'fire': out[k] = w.hearthCold ? 0 : 1; break;
       case 'meals': {
         if (!fed || !m?.cooked) { out[k] = 0; break; }
-        // from village standing, what was eaten matters: plain fare counts a little, a fine meal counts in full
-        out[k] = standing >= 2 ? Math.min(1, MEAL_TIER_COMFORT[m.tier ?? 'good'] * (m.table ? 1 : 0.7) + (m.loved ? 0.1 : 0)) : 0.7 + (m.table ? 0.15 : 0) + (m.loved ? 0.15 : 0);
+        // from village standing, what was eaten matters: simple fare counts a little, a quality meal counts in full
+        out[k] = standing >= 2 ? Math.min(1, MEAL_TIER_COMFORT[m.tier ?? 'refined'] * (m.table ? 1 : 0.7) + (m.loved ? 0.1 : 0)) : 0.7 + (m.table ? 0.15 : 0) + (m.loved ? 0.15 : 0);
         break;
       }
       case 'variety': { const n = mealKinds(w, c, 72); out[k] = later ? (n >= 3 ? 1 : n === 2 ? 0.6 : n === 1 ? 0.2 : 0) : (n >= 2 ? 1 : n === 1 ? 0.4 : 0); break; }

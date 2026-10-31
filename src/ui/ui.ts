@@ -1382,7 +1382,7 @@ const NEED_FIX: Record<NeedKey, string> = {
   shelter: 'beds for everyone, cottages better still',
   food: 'enough food in storage',
   fire: 'wood for the hearth at night',
-  meals: 'cooked meals at a table; finer fare counts more in a village',
+  meals: 'cooked meals at a table; better fare counts more in a village',
   variety: 'a second kind of meal, so nobody eats the same thing for days',
   evenings: 'something to do in the evening: a tavern, a stage',
   health: 'a clinic with a doctor for the sick',
@@ -1399,7 +1399,7 @@ function comfortRows(w: World, c: Colonist) {
     shelter: v('shelter') >= 1 ? (c.bed != null ? 'a bed of their own' : '') : v('shelter') > 0 ? 'a shack (a cottage would be better)' : 'sleeping on the ground',
     food: v('food') >= 1 ? 'fed' : 'hungry',
     fire: v('fire') >= 1 ? 'the hearth is lit' : 'the hearth went cold',
-    meals: v('meals') <= 0 ? 'raw food or going hungry' : standingOf(w) >= 2 && c.lastMeal?.tier ? `${c.lastMeal.tier} fare${c.lastMeal.table ? ' at a table' : ', not at a table'}${c.lastMeal.tier === 'plain' || c.lastMeal.tier === 'good' ? ' · finer fare counts more' : ''}`
+    meals: v('meals') <= 0 ? 'raw food or going hungry' : standingOf(w) >= 2 && c.lastMeal?.tier ? `${c.lastMeal.tier} fare${c.lastMeal.table ? ' at a table' : ', not at a table'}${c.lastMeal.tier === 'simple' || c.lastMeal.tier === 'refined' ? ' · better fare counts more' : ''}`
       : v('meals') >= 1 ? 'a favourite meal at a table' : v('meals') >= 0.85 ? 'a cooked meal at a table' : 'cooked, but not at a table',
     variety: v('variety') >= 1 ? 'a varied table' : v('variety') > 0 ? 'the same meal every day' : 'no proper meals lately',
     evenings: v('evenings') >= 0.8 ? 'well entertained' : v('evenings') > 0.3 ? 'some fun' : 'bored',
