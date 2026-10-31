@@ -629,6 +629,24 @@ h3.group { margin: 14px 0 6px; font-size: 11px; letter-spacing: .1em; text-trans
 .rin { display: inline-flex; align-items: center; gap: 2px; background: none; border: 0; padding: 1px; min-height: 0; color: var(--text); font-size: 12.5px; font-variant-numeric: tabular-nums; border-radius: 6px; }
 .rin .ico { width: 20px; height: 20px; }
 .rin.missing { color: #f3b39f; box-shadow: 0 0 0 1.5px var(--bad); }
+.rin.grp { padding: 1px 4px 1px 2px; background: var(--panel-solid); }
+.rin.grp[aria-expanded=true] { box-shadow: 0 0 0 1.5px var(--accent); }
+.rin.grp.missing[aria-expanded=true] { box-shadow: 0 0 0 1.5px var(--accent); }
+.rin.grp.cut::after { content: ''; width: 5px; height: 5px; border-radius: 999px; background: var(--accent); margin-left: 1px; align-self: flex-start; }
+.rgrp { display: inline-flex; }
+.rgrp .ico { width: 17px; height: 17px; }
+.rgrp .ico + .ico { margin-left: -6px; }
+.ropts { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 0 4px 34px; }
+.ropt { display: inline-flex; align-items: center; gap: 5px; min-height: 36px; padding: 0 9px 0 6px; border-radius: 9px; border: 1px solid var(--line); background: var(--panel-solid); color: var(--text); font-size: 12px; font-variant-numeric: tabular-nums; }
+.ropt .ico { width: 20px; height: 20px; }
+.ropt b { color: var(--muted); font-weight: 600; }
+.ropt .rbox { width: 18px; height: 18px; border-radius: 5px; border: 2px solid #6b706a; display: grid; place-items: center; color: var(--panel-solid); flex: none; }
+.ropt .rbox .glyph { width: 12px; height: 12px; }
+.ropt[aria-checked=true] .rbox { background: var(--good); border-color: var(--good); }
+.ropt[aria-checked=false] { opacity: .6; }
+.ropt.can .ico { opacity: .55; }
+.ropt.never .ico { opacity: .3; filter: grayscale(1); }
+.ropt:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .rbody > .glyph { width: 14px; height: 14px; color: var(--muted); flex: none; }
 .rout { position: relative; display: inline-flex; width: 36px; height: 36px; border-radius: 9px; background: var(--panel-solid); align-items: center; justify-content: center; flex: none; }
 .rout .ico { width: 26px; height: 26px; }

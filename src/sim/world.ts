@@ -2,7 +2,7 @@
 import {
   CLOTHING, BUILDING_BY_ID, BuildingDef, CHARTERS, CharterDef, EVENTS, FIRST_NAMES, JOB_NAMES, JobKind, JOB_KINDS,
   MEALS, PERKS, RAW_FOODS, ResourceId, SHIRTS, SKINS, SURNAMES, TRAITS, TRAIT_BY_ID, BUILDINGS, buildWork,
-  JOB_EVENTS, JobEventDef, ILLNESSES, RESOURCES, Recipe, InputKey, CATEGORIES, isCategory, membersOf, inputName, recipeRate, SITES, SiteId, MEAL_MOOD,
+  JOB_EVENTS, JobEventDef, ILLNESSES, RESOURCES, Recipe, InputKey, CATEGORIES, isGroup, membersOf, inputName, recipeRate, SITES, SiteId, MEAL_MOOD,
   CharterMetric, RESEARCH, RESEARCH_BY_ID, BRANCHES_AFTER, PRICE, TRADERS, TRADER_BY_ID, LORE_BOOST, GUILD_BOOST, Tier, EventDef,
 } from './content';
 import { planInputBatch } from './batching';
@@ -110,6 +110,8 @@ export interface Building {
   high: boolean;
   /** workshops: indices of recipes the player has switched off */
   off?: number[];
+  /** workshops: single options of a category or slot input the player has switched off, as "slot:good" */
+  skip?: string[];
   recipeOrder?: number[];
   productionLimits?: Partial<Record<ResourceId, number>>;
   /** buildings built in stages (the Crown's Hall): which stage is under way */
@@ -281,6 +283,12 @@ function hasBuilt(w: World, def: string) { return w.buildings.some(b => b.def ==
 // ---------- Recipes ----------
 export const recipesOf = (b: Building): Recipe[] => bdef(b).recipes ?? [];
 export const recipeOn = (b: Building, i: number) => !b.off?.includes(i);
+/** is this good allowed to fill this category or slot input here? */
+export const optionOn = (b: Building, key: InputKey, r: ResourceId) => !b.skip?.includes(`${key}:${r}`);
+/** the goods that may fill an input at this building: every member of a category or slot the player hasn't switched off */
+export function optionsOf(b: Building, key: InputKey): ResourceId[] {
+  return isGroup(key) ? (b.skip?.length ? membersOf(key).filter(r => optionOn(b, key, r)) : membersOf(key)) : [key as ResourceId];
+}
 /** switched-on recipes, best first (most stars, then the order the building lists them) */
 export function orderedRecipes(b: Building): { r: Recipe; i: number }[] {
   const order=b.recipeOrder;
@@ -294,10 +302,11 @@ export function enabledRecipes(b: Building, w?: World): Recipe[] {
   return orderedRecipes(b).filter(x=>recipeOn(b,x.i)&&(!w||productionAllowed(w,b,x.r))).map(x=>x.r);
 }
 /** how much of an input (one good, or any good in a category) sits in a workshop's inbox */
-export function inInbox(b: Building, key: InputKey) { return isCategory(key) ? membersOf(key).reduce((n, x) => n + (b.inbox[x] ?? 0), 0) : (b.inbox[key] ?? 0); }
+export function inInbox(b: Building, key: InputKey) { return isGroup(key) ? optionsOf(b, key).reduce((n, x) => n + (b.inbox[x] ?? 0), 0) : (b.inbox[key] ?? 0); }
 /** how much of an input a workshop could get: its inbox plus storage, keeping the wood reserve */
 function obtainable(w: World, b: Building, key: InputKey) {
-  return membersOf(key).reduce((n, x) => n + w.res[x] + (b.inbox[x] ?? 0), 0) - (membersOf(key).includes('wood') ? woodReserve(w) : 0);
+  const ms = optionsOf(b, key);
+  return ms.reduce((n, x) => n + w.res[x] + (b.inbox[x] ?? 0), 0) - (ms.includes('wood') ? woodReserve(w) : 0);
 }
 const recipeReady = (w: World, b: Building, r: Recipe) => w.recipeBatching !== false ? !Object.keys(r.inputs).length || !!workshopInputPlan(w,b,r,1,true) : Object.keys(r.inputs).every(k => obtainable(w, b, k as InputKey) >= 1);
 /** The recipe a workshop is working toward: the best switched-on one whose ingredients can be had, else the best switched-on one. */
@@ -874,7 +883,7 @@ function researchSupply(w: World, b: Building): SupplyTask[] {
   const out: SupplyTask[] = [];
   for (const [key, n] of Object.entries(researchStillNeeds(w)) as [InputKey, number][]) {
     const members = membersOf(key);
-    const r = isCategory(key) ? [...members].sort((p, q) => w.res[q] - w.res[p])[0] : key;
+    const r = isGroup(key) ? [...members].sort((p, q) => w.res[q] - w.res[p])[0] : key;
     const coming = alive(w).reduce((m, c) => m + (c.task?.kind === 'supply' && c.task.to === b.uid && members.includes(c.task.res) ? c.task.amount : 0), 0);
     const avail = r === 'wood' ? Math.max(0, w.res.wood - woodReserve(w)) : w.res[r];
     const want = n - coming;
@@ -973,6 +982,7 @@ export type Command =
   | { type: 'productionLimit'; building: number; output: ResourceId; limit: number | null }
   | { type: 'recipePriority'; building: number; recipe: number; delta: -1 | 1 }
   | { type: 'toggleRecipe'; building: number; recipe: number; on: boolean }
+  | { type: 'toggleOption'; building: number; key: InputKey; good: ResourceId; on: boolean }
   | { type: 'buy'; res: ResourceId; n: number }
   | { type: 'sell'; res: ResourceId; n: number }
   | { type: 'buyBlueprint'; id: string }
@@ -1071,6 +1081,16 @@ export function apply(w: World, cmd: Command): string | null {
       if (!cmd.on) off.push(cmd.recipe);
       b.off = off.sort((x, y) => x - y); w.version++;
       // anyone fetching ingredients for a recipe that's now off will notice when they arrive
+      return null;
+    }
+    case 'toggleOption': {
+      const b = buildingByUid(w, cmd.building);
+      if (!b || !isGroup(cmd.key) || !membersOf(cmd.key).includes(cmd.good) || !recipesOf(b).some(r => cmd.key in r.inputs)) return 'No such ingredient option.';
+      const id = `${cmd.key}:${cmd.good}`, skip = (b.skip ?? []).filter(x => x !== id);
+      if (!cmd.on) skip.push(id);
+      if (skip.length) b.skip = skip.sort(); else delete b.skip;
+      w.version++;
+      // goods already in the inbox for a switched-off option are hauled back to storage
       return null;
     }
     case 'cancel': {
@@ -1623,6 +1643,7 @@ export function blockedReason(w: World, b: Building): string | null {
   const rec = currentRecipe(w, b);
   if (!rec) return enabledRecipes(b).length ? 'Warehouse stock targets are met.' : 'Every recipe here is switched off.';
   for (const key of Object.keys(rec.inputs) as InputKey[]) {
+    if (isGroup(key) && !optionsOf(b, key).length) return `Every kind of ${inputName(key)} is switched off here.`;
     if (obtainable(w, b, key) < 1) {
       const name = inputName(key);
       const HINTS: Partial<Record<string, string>> = { fish: ' Build a fishing dock.', planks: ' Build a sawmill.', clay: ' Dig it at a clay pit by the clay bank.', reeds: ' Switch a fishing dock to cutting reeds.', wood: ` Keep more than ${woodReserve(w)} wood.`, apples: ' Pick apples at an orchard hut.', grain: ' Grow it on a grain field.', honey: ' Keep bees at an apiary.' };
@@ -1712,7 +1733,7 @@ function chooseTask(w: World, c: Colonist): Task | null {
   }
   // Unused inputs belong in shared storage, rather than occupying a workshop forever.
   if(w.recipeBatching!==false)for(const b of built(w))if(recipesOf(b).length){
-    const rec=currentRecipe(w,b),valid=rec&&workshopInputPlan(w,b,rec,1,true)?new Set(Object.keys(rec.inputs).flatMap(k=>membersOf(k as InputKey))):new Set<ResourceId>();
+    const rec=currentRecipe(w,b),valid=rec&&workshopInputPlan(w,b,rec,1,true)?new Set(Object.keys(rec.inputs).flatMap(k=>optionsOf(b,k as InputKey))):new Set<ResourceId>();
     for(const [res,n]of Object.entries(b.inbox)as[ResourceId,number][])if(n>1e-6&&!valid.has(res)&&storageFree(w,res)>=n&&!taskCount(w,t=>t.kind==='haul'&&t.from===b.uid&&t.res===res)){
       const s=spotOf(b);opts.push({t:{kind:'haul',from:b.uid,res,amount:Math.min(CARRY,n),fromInbox:true},pri:2.1,x:s.x,y:s.y});
     }
@@ -1751,7 +1772,7 @@ export function workshopInputPlan(w: World,b: Building,rec: Recipe,maxOutputs=IN
   available.wood=Math.max(0,available.wood-woodReserve(w));
   const limit=b.productionLimits?.[rec.output];
   const outputs=Math.min(maxOutputs,ignoreOutputRoom?maxOutputs:Math.floor(OUTBOX_CAP-sum(b.outbox)+1e-8),limit==null?maxOutputs:Math.max(0,Math.ceil(limit-w.res[rec.output])));
-  return planInputBatch(rec.inputs,held,available,INPUT_CAPACITY,outputs);
+  return planInputBatch(rec.inputs,held,available,INPUT_CAPACITY,outputs,k=>optionsOf(b,k));
 }
 
 /** ingredient deliveries a workshop needs right now */
@@ -1762,7 +1783,7 @@ function supplyNeeds(w: World, b: Building, rec: Recipe | undefined = currentRec
   if(w.recipeBatching!==false){
     const plan=workshopInputPlan(w,b,rec);if(!plan)return out;
     const held={...b.inbox};for(const c of alive(w))if(c.task?.kind==='supply'&&c.task.to===b.uid&&c.carrying)held[c.carrying.res]=(held[c.carrying.res]??0)+c.carrying.amount;
-    if((planInputBatch(rec.inputs,held,{},INPUT_CAPACITY,INPUT_BATCH_OUTPUTS)?.outputs??0)>=INPUT_REFILL_AT)return out;
+    if((planInputBatch(rec.inputs,held,{},INPUT_CAPACITY,INPUT_BATCH_OUTPUTS,k=>optionsOf(b,k))?.outputs??0)>=INPUT_REFILL_AT)return out;
     for(const [res,n]of Object.entries(plan.deliveries)as[ResourceId,number][]){
       const coming=alive(w).reduce((total,c)=>total+(c.task?.kind==='supply'&&c.task.to===b.uid&&c.task.res===res&&!c.carrying?c.task.amount:0),0);
       const amount=Math.min(CARRY,n-coming);if(amount>1e-7)out.push({kind:'supply',to:b.uid,res,amount});
@@ -1770,9 +1791,10 @@ function supplyNeeds(w: World, b: Building, rec: Recipe | undefined = currentRec
     return out;
   }
   for (const key of Object.keys(rec.inputs) as InputKey[]) {
-    const members = membersOf(key);
+    const members = optionsOf(b, key);
+    if (!members.length) continue;
     // for "any raw food" and the like, fetch whichever kind storage has most of
-    const r = isCategory(key) ? [...members].sort((p, q) => w.res[q] - w.res[p])[0] : key;
+    const r = isGroup(key) ? [...members].sort((p, q) => w.res[q] - w.res[p])[0] : key;
     const have = inInbox(b, key);
     const coming = alive(w).reduce((n, c) => n + (c.task?.kind === 'supply' && c.task.to === b.uid && members.includes(c.task.res) ? c.task.amount : 0), 0);
     const avail = r === 'wood' ? Math.max(0, w.res.wood - woodReserve(w)) : w.res[r];
@@ -1979,7 +2001,7 @@ function arrive(w: World, c: Colonist) {
         c.carrying = { res: t.res, amount: amt }; t.amount = amt;
       } else {
         const rec=currentRecipe(w,to);
-        const acceptsInput=w.recipeBatching===false || !recipesOf(to).length || (!!rec && Object.keys(rec.inputs).some(k=>membersOf(k as InputKey).includes(t.res)) && !!workshopInputPlan(w,to,rec,1,true));
+        const acceptsInput=w.recipeBatching===false || !recipesOf(to).length || (!!rec && Object.keys(rec.inputs).some(k=>optionsOf(to,k as InputKey).includes(t.res)) && !!workshopInputPlan(w,to,rec,1,true));
         const room=w.recipeBatching===false||!recipesOf(to).length?Infinity:Math.max(0,INPUT_CAPACITY-sum(to.inbox));
         const delivered=acceptsInput?Math.min(c.carrying.amount,room):0;
         if(delivered>0)to.inbox[t.res]=(to.inbox[t.res]??0)+delivered;
@@ -2039,8 +2061,8 @@ function produce(w: World, dt: number) {
       if (amount <= 0) continue;
       for (const [r, per] of Object.entries(rec.inputs)) {
         let need = amount * (per as number);
-        if (isCategory(r)) {
-          for (const x of [...membersOf(r)].sort((p, q) => (b.inbox[q] ?? 0) - (b.inbox[p] ?? 0))) { const t = Math.min(b.inbox[x] ?? 0, need); b.inbox[x] = (b.inbox[x] ?? 0) - t; need -= t; flow(w, `${x}:-${b.def}`, t); }
+        if (isGroup(r)) {
+          for (const x of [...optionsOf(b, r)].sort((p, q) => (b.inbox[q] ?? 0) - (b.inbox[p] ?? 0))) { const t = Math.min(b.inbox[x] ?? 0, need); b.inbox[x] = (b.inbox[x] ?? 0) - t; need -= t; flow(w, `${x}:-${b.def}`, t); }
         } else { b.inbox[r as ResourceId] = (b.inbox[r as ResourceId] ?? 0) - need; flow(w, `${r}:-${b.def}`, need); }
       }
       b.outbox[rec.output] = (b.outbox[rec.output] ?? 0) + amount;
