@@ -1,6 +1,6 @@
 // Goods icons in the map's style: flat shapes, no outlines, a base colour with a shaded side and a highlight, and a soft
 // ground shadow. Each is inline SVG on a 24×24 grid, so it's crisp at any size and needs no image files.
-import type { ResourceId, Category } from '../sim/content';
+import type { ResourceId, Category, SlotId } from '../sim/content';
 
 const hex = (n: number) => `#${Math.max(0, Math.min(0xffffff, n)).toString(16).padStart(6, '0')}`;
 /** the renderer's shade(): multiply each channel, so 0.75 is the shadow side and 1.15 a highlight */
@@ -127,7 +127,24 @@ const ART: Record<ResourceId, () => string> = {
       + pa('M12 9.5h6c1.6 2.6 2 6.5.8 9.2-.5 1-1.5 1.5-2.6 1.5H12z', sh(c, 0.84)) + pa('M7.6 9.6l-1-3.2c1.6.6 3.4-.2 5.4.4 2-.6 3.8.2 5.4-.4l-1 3.2z', sh(c, 0.93))
       + re(7.2, 8.8, 9.6, 1.4, '#a07a4c', 0.7) + ci(10, 14.8, 2.2, sh(c, 0.92)) + ci(10, 14.8, 1.1, '#c4a46a');
   },
+  acornMeal: () => {
+    // a small sack of coarse meal with acorns at its foot
+    const c = '#c8a878', nut = '#9a6a34', cap = '#6a5034';
+    const acorn = (x: number, y: number) => el(x, y + 0.6, 1.7, 2, nut) + el(x + 0.5, y + 0.9, 0.9, 1.4, sh(nut, 0.8)) + el(x, y - 0.9, 2, 1, cap) + re(x - 0.3, y - 2.6, 0.6, 1.2, cap, 0.3);
+    return shadow(8) + pa('M7 10c-1.4 2.4-1.8 6-.7 8.4.4.9 1.3 1.4 2.3 1.4h6.8c1 0 1.9-.5 2.3-1.4 1.1-2.4.7-6-.7-8.4z', c)
+      + pa('M12 10h5c1.4 2.4 1.8 6 .7 8.4-.4.9-1.3 1.4-2.3 1.4H12z', sh(c, 0.84)) + pa('M8.4 10.1l-.9-2.9c1.4.5 3-.2 4.5.3 1.5-.5 3.1.2 4.5-.3l-.9 2.9z', sh(c, 0.93))
+      + re(8, 9.4, 8, 1.3, '#7a5a3a', 0.6) + ci(10.8, 14.6, 0.5, sh(c, 0.7)) + ci(13, 16.2, 0.5, sh(c, 0.7)) + ci(11.6, 17.4, 0.4, sh(c, 0.7))
+      + acorn(5.2, 18.4) + acorn(19, 18.8);
+  },
   // ---- meals ----
+  hotpot: () => {
+    // a lidded clay pot with steam and a ladle handle
+    const pot = '#9a4e2e', lid = '#b8643a';
+    return shadow(9) + pa('M4.5 11.5h15l-1 6.2c-.3 1.7-1.8 2.8-3.5 2.8H9c-1.7 0-3.2-1.1-3.5-2.8z', pot) + pa('M12 11.5h7.5l-1 6.2c-.3 1.7-1.8 2.8-3.5 2.8H12z', sh(pot, 0.8))
+      + re(3.6, 10.6, 16.8, 1.8, sh(pot, 1.12), 0.9) + re(2.6, 12.6, 2.6, 1.6, sh(pot, 0.9), 0.8) + re(18.8, 12.6, 2.6, 1.6, sh(pot, 0.7), 0.8)
+      + pa('M5.4 10.6c.6-2.6 3.4-4 6.6-4s6 1.4 6.6 4z', lid) + pa('M12 6.6c3.2 0 6 1.4 6.6 4H12z', sh(lid, 0.82)) + el(12, 6.4, 1.6, 0.9, sh(lid, 0.7))
+      + ln('M15.4 8.4l3.6-3.8', '#c8a066', 1.2) + re(6.2, 14, 1.2, 3.6, sh(pot, 1.3), 0.6, ' opacity=".6"') + steam(8.2, 5.4);
+  },
   stew: () => {
     const bowl = '#8a5a34', s = '#d98a3c';
     return shadow(9) + pa('M3.5 12h17c0 4.6-3.6 8.2-8.5 8.2S3.5 16.6 3.5 12z', bowl) + pa('M12 12h8.5c0 4.6-3.6 8.2-8.5 8.2z', sh(bowl, 0.78))
@@ -180,6 +197,14 @@ const ART: Record<ResourceId, () => string> = {
       + pa('M16.6 11.4h1.2c1.4 0 2.4 1 2.4 2.3s-1 2.3-2.4 2.3h-1.6v-1.5h1.5c.6 0 1-.4 1-.8s-.4-.8-1-.8h-1.1z', sh(cup, 0.85))
       + pa('M5.6 10.5h12c0 4-2.4 7.6-6 7.6s-6-3.6-6-7.6z', cup) + pa('M11.6 10.5h6c0 4-2.4 7.6-6 7.6z', sh(cup, 0.85)) + el(11.6, 10.5, 6, 1.6, t) + el(10.6, 10.3, 3, 0.7, sh(t, 1.25)) + steam(9.6, 7.4);
   },
+  mulled: () => {
+    // a clay mug of dark red mulled drink with a cinnamon stick and an orange slice
+    const mug = '#8a5a3a', d = '#8a2a2a';
+    return shadow(8) + pa('M16.4 10.4h1.6c1.6 0 2.6 1.3 2.6 3s-1 3-2.6 3h-1.6v-1.7h1.4c.7 0 1.1-.6 1.1-1.3s-.4-1.3-1.1-1.3h-1.4z', sh(mug, 0.85))
+      + re(5.4, 9, 11.4, 11, mug, 2) + re(11.1, 9, 5.7, 11, sh(mug, 0.78), 1.8) + re(6.6, 10.4, 1.3, 8, sh(mug, 1.3), 0.6, ' opacity=".6"')
+      + el(11.1, 9.2, 5.7, 1.7, d) + el(9.8, 9, 2.6, 0.6, sh(d, 1.4)) + ln('M12.6 9.4l3.6-5.2', '#a0602a', 1.6) + ln('M12.9 8.6l3.1-4.4', '#c07a3a', 0.6)
+      + ci(8.6, 8.7, 1.9, '#e8902a') + ci(8.6, 8.7, 1.3, '#f2b04a') + steam(9.4, 5.6);
+  },
   // ---- remedies ----
   poultice: () => {
     // a rolled linen bandage with a sprig tucked in
@@ -198,7 +223,8 @@ const ART: Record<ResourceId, () => string> = {
 };
 
 /** "any meal", "any drink" and the like use a representative good */
-const CATEGORY_ICON: Record<Category, ResourceId> = { rawFood: 'berries', meal: 'stew', drink: 'ale', fine: 'planks', remedy: 'tonic' };
+const CATEGORY_ICON: Record<Category | SlotId, ResourceId> = { rawFood: 'berries', meal: 'stew', drink: 'ale', fine: 'planks', remedy: 'tonic',
+  pastry: 'flour', filling: 'berries', thickener: 'flour', base: 'fish', brew: 'ale', spice: 'herbs' };
 
 /** each building's signature object, in the same style: what you'd spot first on its lot */
 const BUILDING_ART: Record<string, () => string> = {
@@ -457,7 +483,7 @@ const EXTRA_ART: Record<string, () => string> = {
   },
 };
 export function icon(id: ResourceId | Category | string, cls = '', title?: string): string {
-  const art = EXTRA_ART[id] ?? BUILDING_ART[id] ?? ART[(id in ART ? id : CATEGORY_ICON[id as Category]) as ResourceId];
+  const art = EXTRA_ART[id] ?? BUILDING_ART[id] ?? ART[(id in ART ? id : CATEGORY_ICON[id as Category | SlotId]) as ResourceId];
   if (!art) return '';
   return `<svg class="ico${cls ? ` ${cls}` : ''}" viewBox="0 0 24 24" ${title ? `role="img" aria-label="${title}"` : 'aria-hidden="true"'}>${art()}</svg>`;
 }
