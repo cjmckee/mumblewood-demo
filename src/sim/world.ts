@@ -1009,6 +1009,7 @@ export type Command =
   | { type: 'recipePriority'; building: number; recipe: number; delta: -1 | 1 }
   | { type: 'toggleRecipe'; building: number; recipe: number; on: boolean }
   | { type: 'toggleOption'; building: number; key: InputKey; good: ResourceId; on: boolean }
+  | { type: 'releaseStash'; building: number }
   | { type: 'buy'; res: ResourceId; n: number }
   | { type: 'sell'; res: ResourceId; n: number }
   | { type: 'buyBlueprint'; id: string }
@@ -1109,6 +1110,17 @@ export function apply(w: World, cmd: Command): string | null {
       // anyone fetching ingredients for a recipe that's now off will notice when they arrive
       return null;
     }
+    case 'releaseStash': {
+      // the larder goes back to storage (in a famine, say); the marquee stays up and can be stocked again
+      const b = buildingByUid(w, cmd.building);
+      if (!b || b.def !== 'pavilion' || (!b.built && (b.stage ?? 0) < 1)) return 'Nothing is stashed there.';
+      for (const [r, n] of Object.entries(b.delivered)) w.res[r as ResourceId] += n ?? 0;
+      for (const c of alive(w)) if (c.task && 'site' in c.task && c.task.site === b.uid) dropTask(w, c);
+      b.delivered = {}; b.built = false; b.stage = 1; b.progress = 0; w.version++;
+      reconcileStock(w);
+      addLog(w, 'The pavilion\u2019s larder is opened and everything goes back to storage. The bunting stays up.');
+      return null;
+    }
     case 'toggleOption': {
       const b = buildingByUid(w, cmd.building);
       if (!b || !isGroup(cmd.key) || !membersOf(cmd.key).includes(cmd.good) || !recipesOf(b).some(r => cmd.key in r.inputs)) return 'No such ingredient option.';
@@ -1170,6 +1182,7 @@ export function apply(w: World, cmd: Command): string | null {
       const f = (w.feast ??= { called: false, readyAt: 0, done: false });
       if (f.called) return 'The feast is already called for tonight.';
       if (w.hour < f.readyAt) return `Everyone is still full from the last one. Try again in ${Math.ceil(f.readyAt - w.hour)} hours.`;
+      if (!pavilionOf(w)?.built) return 'Stock the feast pavilion\u2019s larder first.';
       f.called = true;
       addLog(w, hourOfDay(w) < 18 ? 'The founders\u2019 feast is called for tonight at dusk. Someone irons a tablecloth.' : 'The founders\u2019 feast is called for tomorrow at dusk. Someone irons a tablecloth.', 'good');
       return null;
@@ -1211,7 +1224,7 @@ function resolveDecision(w: World, option: number): string | null {
       const def = charterDef(id)!;
       addLog(w, `New charter from the Crown: ${def.name}.`);
       // a monument charter hands over its blueprint
-      for (const m of def.metric.kind === 'all' ? def.metric.parts : [def.metric]) if (m.kind === 'monument' && !w.owned.includes(m.def)) { w.owned.push(m.def); addLog(w, `The Crown sends plans for ${BUILDING_BY_ID[m.def].name}. Find it a good spot.`, 'good'); }
+      for (const m of def.metric.kind === 'all' ? def.metric.parts : [def.metric]) if ((m.kind === 'monument' || m.kind === 'longTable') && !w.owned.includes(m.kind === 'monument' ? m.def : 'pavilion')) { const id = m.kind === 'monument' ? m.def : 'pavilion'; w.owned.push(id); addLog(w, `The Crown sends plans for ${m.kind === 'monument' ? BUILDING_BY_ID[id].name : 'a feast pavilion'}. Find it a good spot.`, 'good'); }
       // drafts that wait for the first charter start now, with an offer that knows what the charter needs
       if (w.draftsFrom == null) { w.draftsFrom = day(w); w.decisions.push(blueprintDecision(w)); }
       break;
@@ -2829,6 +2842,15 @@ function metricValue(w: World, m: CharterMetric, slot: number): { value: number;
     }
     case 'longTable': {
       if (w.feast?.done) return { value: 1, target: 1, label: 'The founders\u2019 feast was a triumph' };
+      const pav = pavilionOf(w);
+      if (!pav) return { value: 0, target: 1, label: 'Place the feast pavilion' };
+      if (!pav.built) {
+        // stocking: how full the larder is; raising the marquee counts for the first tenth
+        const need = costOf(pav), left = remainingCost(pav), total = sum(need), got = (pav.stage ?? 0) >= 1 ? total - sum(left) : 0;
+        const larder = larderOf(pav), meals = FEAST_MEALS.reduce((n, r) => n + (larder[r] ?? 0), 0), drinks = FEAST_DRINKS.reduce((n, r) => n + (larder[r] ?? 0), 0);
+        return { value: (pav.stage ?? 0) >= 1 ? 0.1 + 0.85 * got / Math.max(1, total) : 0.05, target: 1,
+          label: (pav.stage ?? 0) >= 1 ? `larder ${Math.floor(meals)} / ${m.pop} suppers, ${Math.floor(drinks)} / ${m.pop} drinks` : 'raising the feast pavilion' };
+      }
       const f = feastCheck(w);
       return { value: Math.min(0.99, Math.min(f.served, m.pop) / m.pop * (f.ok ? 1 : 0.95)), target: 1, label: `${f.served} / ${m.pop} would be served · ${f.seats} seats${f.sulkers ? ` · ${f.sulkers} sulking` : ''}${w.feast?.called ? ' · called for dusk' : ''}` };
     }
@@ -2879,47 +2901,66 @@ function runFestival(w: World) {
 
 /** the founders' feast serves magnificent meals, with a refined drink or better (several kinds, so tastes can be met) */
 export const FEAST_MEALS = atLeast(MEALS, 'magnificent'), FEAST_DRINKS = atLeast(CATEGORIES.drink.members, 'refined');
-/** a dry run of the founders' feast: who would come, who would get a magnificent meal and a refined drink they don't dislike */
+/** the feast pavilion: placed, raised, stocking its larder, or stocked and ready as the feast hall */
+export const pavilionOf = (w: World) => w.buildings.find(b => b.def === 'pavilion');
+/** what's in the pavilion's larder: goods delivered while it's being stocked, kept when it's ready */
+export const larderOf = (b: Building | undefined): Partial<Record<ResourceId, number>> => (b && (b.built || (b.stage ?? 0) >= 1) ? b.delivered : {});
+/**
+ * One serving for a guest from the larder: a whole one of a good they don't dislike, favourites first, topped up from
+ * other goods they'd take when deliveries left fractions (9.5 ale and 4.5 mulled is 14 drinks, not 13). Returns the
+ * main good served, and takes it from the larder only when `take`.
+ */
+function serving(larder: Partial<Record<ResourceId, number>>, c: Colonist, goods: ResourceId[], take: boolean): ResourceId | undefined {
+  const ok = [...goods].filter(r => (larder[r] ?? 0) > 1e-9 && taste(c, r) >= 0).sort((a, b) => taste(c, b) - taste(c, a) || (larder[b] ?? 0) - (larder[a] ?? 0));
+  if (ok.reduce((n, r) => n + (larder[r] ?? 0), 0) < 1 - 1e-6) return undefined;
+  const main = ok.find(r => (larder[r] ?? 0) >= 1 - 1e-6) ?? ok[0];
+  if (take) { let need = 1; for (const r of [main, ...ok.filter(x => x !== main)]) { const t = Math.min(need, larder[r] ?? 0); larder[r] = (larder[r] ?? 0) - t; need -= t; if (need <= 1e-9) break; } }
+  return main;
+}
+const feastTarget = (w: World) => (charterDef(w.charter)?.metric as { pop?: number } | undefined)?.pop ?? 14;
+/** a dry run of the founders' feast: who would come, and who would get a supper and a drink they don't dislike from the larder */
 export function feastCheck(w: World) {
   const people = alive(w).filter(c => !bedridden(c));
   const sulkers = people.filter(c => c.sulking).length;
   const guests = people.filter(c => !c.sulking);
-  const seats = built(w).reduce((n, b) => n + (bdef(b).seats ?? 0), 0);
-  const stock = { ...w.res };
-  const pickFor = (c: Colonist, goods: ResourceId[]) => [...goods].filter(r => stock[r] >= 1 && taste(c, r) >= 0).sort((a, b) => taste(c, b) - taste(c, a) || stock[b] - stock[a])[0];
+  const pav = pavilionOf(w), ready = !!pav?.built;
+  const seats = ready ? bdef(pav!).feastSeats ?? 0 : 0;
+  const stock = { ...larderOf(pav) };
   let served = 0; const hungry: Colonist[] = [];
   for (const c of guests) {
-    const meal = pickFor(c, FEAST_MEALS), drink = pickFor(c, FEAST_DRINKS);
-    if (meal && drink) { stock[meal] -= 1; stock[drink] -= 1; served++; } else hungry.push(c);
+    if (serving(stock, c, FEAST_MEALS, false) && serving(stock, c, FEAST_DRINKS, false)) { serving(stock, c, FEAST_MEALS, true); serving(stock, c, FEAST_DRINKS, true); served++; } else hungry.push(c);
   }
-  const target = (charterDef(w.charter)?.metric as { pop?: number } | undefined)?.pop ?? 14;
+  const target = feastTarget(w);
   const seated = Math.min(served, seats);
-  return { guests: guests.length, sulkers, seats, served: seated, hungry: hungry.length, ok: !sulkers && !hungry.length && seats >= guests.length && served >= target };
+  return { guests: guests.length, sulkers, seats, served: seated, hungry: hungry.length, ready, ok: ready && seated >= target };
 }
 function runFeast(w: World) {
   const f = w.feast!; f.called = false;
-  const people = alive(w).filter(c => !bedridden(c));
-  const guests = people.filter(c => !c.sulking);
-  const sulkers = people.length - guests.length;
-  const seats = built(w).reduce((n, b) => n + (bdef(b).seats ?? 0), 0);
+  const pav = pavilionOf(w);
+  if (!pav?.built) { addLog(w, 'The founders\u2019 feast is off: the pavilion\u2019s larder isn\u2019t stocked.', 'bad'); return; }
+  const larder = pav.delivered, seats = bdef(pav).feastSeats ?? 0;
+  const guests = alive(w).filter(c => !bedridden(c) && !c.sulking);
+  const sulkers = alive(w).filter(c => !bedridden(c)).length - guests.length;
   let served = 0, unserved = 0;
   for (const c of guests) {
-    const pickFor = (goods: ResourceId[]) => [...goods].filter(r => w.res[r] >= 1 && taste(c, r) >= 0).sort((a, b) => taste(c, b) - taste(c, a) || w.res[b] - w.res[a])[0];
-    const meal = pickFor(FEAST_MEALS), drink = pickFor(FEAST_DRINKS);
+    const can = served < seats && !!serving(larder, c, FEAST_MEALS, false) && !!serving(larder, c, FEAST_DRINKS, false);
+    const meal = can ? serving(larder, c, FEAST_MEALS, true) : undefined, drink = can ? serving(larder, c, FEAST_DRINKS, true) : undefined;
     if (meal && drink) {
-      w.res[meal] -= 1; w.res[drink] -= 1; flow(w, `${meal}:-feast`, 1); flow(w, `${drink}:-feast`, 1); served++;
+      flow(w, `${meal}:-feast`, 1); flow(w, `${drink}:-feast`, 1); served++;
       addMemory(w, c, 'feast', taste(c, meal) > 0 && taste(c, drink) > 0 ? 'A feast of my favourites' : 'The founders\u2019 feast', taste(c, meal) > 0 && taste(c, drink) > 0 ? 10 : 7, 48);
     } else { unserved++; addMemory(w, c, 'feast', 'Went without at the feast', -5, 24); }
   }
-  reconcileStock(w);
-  const target = (charterDef(w.charter)?.metric as { pop?: number } | undefined)?.pop ?? 14;
+  for (const r of Object.keys(larder) as ResourceId[]) if ((larder[r] ?? 0) < 1e-6) delete larder[r];
+  const target = feastTarget(w);
+  if (served >= target) { f.done = true; f.last = 'triumph'; addLog(w, `The founders\u2019 feast: ${served} settlers at one long table in the pavilion, every plate a ploughman\u2019s supper. The Crown\u2019s envoy cries a little.`, 'good'); return; }
   const short: string[] = [];
   if (sulkers) short.push(`${sulkers} sulked behind the woodpile instead`);
-  if (unserved) short.push(`${unserved} got no magnificent meal and good drink they would have`);
-  if (seats < guests.length) short.push(`${guests.length - seats} had to stand`);
-  if (served < target) short.push(`only ${served} of the ${target} the Crown asked for sat down to eat`);
-  if (!short.length) { f.done = true; f.last = 'triumph'; addLog(w, `The founders\u2019 feast: ${served} settlers at one long table, every plate something they like. The Crown\u2019s envoy cries a little.`, 'good'); }
-  else { f.readyAt = w.hour + 72; f.last = short.join('; '); addLog(w, `The founders\u2019 feast fell short: ${short.join('; ')}. Everyone who ate is cheerful, though. It can be called again in three days.`, 'bad'); }
+  if (unserved) short.push(`${unserved} got no supper and drink they would have`);
+  short.push(`only ${served} of the ${target} the Crown asked for sat down to eat`);
+  f.readyAt = w.hour + 72; f.last = short.join('; ');
+  // what's left stays in the larder, and the pavilion goes back to stocking
+  pav.built = false; pav.stage = 1; pav.progress = 0; w.version++;
+  addLog(w, `The founders\u2019 feast fell short: ${short.join('; ')}. Everyone who ate is cheerful, though. Restock the pavilion and call it again in three days.`, 'bad');
 }
 export function avgBeauty(w: World) { const a = alive(w); return a.length ? a.reduce((s, c) => s + c.beauty, 0) / a.length : 0; }
 /** the current charter's conditions one by one (a single condition for a one-part charter): for tools that ask what's holding it up */
