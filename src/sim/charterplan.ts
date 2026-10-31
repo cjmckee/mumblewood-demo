@@ -1,7 +1,7 @@
 // What a charter would take from where the colony stands: each condition, how close it is, and for goods the shortest
 // chain of buildings still missing (build one you own, study it, or draft it). Read-only; used by the charter offer.
 import { BUILDINGS, BUILDING_BY_ID, CATEGORIES, CharterMetric, MEALS, RESEARCH, RESOURCES, ResourceId, membersOf, InputKey, RENOWN, TIER } from './content';
-import { World, alive, avgMood, beds, built, charterDef, hasPerk, siteOk, tallyOf, renownOf, FEAST_MEALS, FEAST_DRINKS } from './world';
+import { World, alive, avgMood, beds, built, charterDef, hasPerk, siteOk, stockName, tallyOf, renownOf, FEAST_MEALS, FEAST_DRINKS } from './world';
 import { START } from './scenario';
 
 /** how a missing building would be got: placed (already known), studied at the desk, or drafted */
@@ -71,10 +71,7 @@ function buildingRoute(w: World, def: string): { cost: number; steps: RouteStep[
   return { cost, steps };
 }
 
-function goodsName(goods: ResourceId[]) {
-  for (const c of Object.values(CATEGORIES)) if (c.members.length === goods.length && c.members.every(m => goods.includes(m))) return c.name;
-  return goods.map(resName).join(' or ');
-}
+const goodsName = (goods: ResourceId[]) => stockName(goods);
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 function preview(w: World, m: CharterMetric): ConditionPreview[] {
@@ -96,7 +93,8 @@ function preview(w: World, m: CharterMetric): ConditionPreview[] {
     }
     case 'tally': {
       const have = Math.floor(tallyOf(w, m.how, m.resources));
-      return [{ text: `${m.amount} ${goodsName(m.resources)} ${m.how}`, have: w.charter ? `${have} so far` : `${Math.floor(m.resources.reduce((n, r) => n + w.res[r], 0))} stored`, met: false, route: asRoute(routeAny(w, m.resources)) }];
+      // offered: counting starts when it's picked, so there's nothing to show yet; under way: the count so far
+      return [{ text: `${m.amount} ${goodsName(m.resources)} ${m.how}`, have: w.charter ? `${have} so far` : '', met: false, route: asRoute(routeAny(w, m.resources)) }];
     }
     case 'renown': {
       const goods = (m.category === 'meal' ? MEALS : CATEGORIES.drink.members).filter(r => RENOWN[TIER[r] ?? 'simple'] > 0);

@@ -2767,7 +2767,12 @@ function triggerEvent(w: World) {
 
 /** what a stock condition counts, in words: a category's name when it's the whole category, otherwise the goods */
 const STOCK_PLURAL: Partial<Record<ResourceId, string>> = { pie: 'pies', tonic: 'tonics', poultice: 'poultices' };
-function stockName(goods: ResourceId[]) {
+export function stockName(goods: ResourceId[]) {
+  // a tier and everything above it reads as "quality+ meals", "refined+ drinks"
+  for (const [cat, list] of [['meals', MEALS], ['drinks', CATEGORIES.drink.members]] as const) for (const t of ['refined', 'quality', 'magnificent'] as GoodTier[]) {
+    const tier = atLeast(list, t);
+    if (tier.length > 1 && tier.length === goods.length && tier.every(r => goods.includes(r))) return `${t}+ ${cat}`;
+  }
   const cat = Object.values(CATEGORIES).find(c => c.members.length === goods.length && c.members.every(m => goods.includes(m)));
   return cat ? cat.name : goods.map(r => STOCK_PLURAL[r] ?? RESOURCES.find(x => x.id === r)!.name.toLowerCase()).join(' or ');
 }
