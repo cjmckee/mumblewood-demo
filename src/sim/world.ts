@@ -1754,6 +1754,32 @@ export function workshopInputPlan(w: World,b: Building,rec: Recipe,maxOutputs=IN
   return planInputBatch(rec.inputs,held,available,INPUT_CAPACITY,outputs);
 }
 
+/** how many outputs' worth of ingredients a workshop holds, counting what's being carried in */
+function heldOutputs(w: World, b: Building, rec: Recipe) {
+  const held = { ...b.inbox };
+  for (const c of alive(w)) if (c.task?.kind === 'supply' && c.task.to === b.uid && c.carrying) held[c.carrying.res] = (held[c.carrying.res] ?? 0) + c.carrying.amount;
+  return planInputBatch(rec.inputs, held, {}, INPUT_CAPACITY, INPUT_BATCH_OUTPUTS)?.outputs ?? 0;
+}
+/** a dry workshop's worker takes over a delivery a laborer claimed but hasn't picked up, when the laborer's trip is far longer */
+function overtakeSupply(w: World, c: Colonist, b: Building, ratio: number): SupplyTask | undefined {
+  const at = spotOf(b);
+  for (const o of alive(w)) {
+    const t = o.task;
+    if (o === c || o.job != null || o.carrying || t?.kind !== 'supply' || t.to !== b.uid) continue;
+    const theirs = buildingByUid(w, t.via ?? null) ?? fetchSource(w, t.res, o, at), mine = fetchSource(w, t.res, c, at);
+    if (!theirs || !mine || (mine.stock[t.res] ?? 0) < 1) continue;
+    const their = dist(o, spotOf(theirs)) + dist(spotOf(theirs), at), my = dist(c, spotOf(mine)) + dist(spotOf(mine), at);
+    if (their > ratio * my) { o.task = null; return { kind: 'supply', to: b.uid, res: t.res, amount: t.amount }; }
+  }
+  return undefined;
+}
+/** on the way to fetch ingredients, carry the workshop's finished goods to storage first (the fetch follows from there) */
+function outputRun(w: World, c: Colonist, b: Building): Task | null {
+  const [r, n] = (Object.entries(b.outbox) as [ResourceId, number][]).sort((p, q) => (q[1] ?? 0) - (p[1] ?? 0))[0] ?? [];
+  if (!r || (n ?? 0) < 2 || storageFree(w, r) < 1 || taskCount(w, t => t.kind === 'haul' && t.from === b.uid && t.res === r)) return null;
+  return { kind: 'haul', from: b.uid, res: r, amount: Math.min(CARRY, n) };
+}
+
 /** ingredient deliveries a workshop needs right now */
 type SupplyTask = Extract<Task, { kind: 'supply' }>;
 function supplyNeeds(w: World, b: Building, rec: Recipe | undefined = currentRecipe(w, b)): SupplyTask[] {
@@ -1891,11 +1917,14 @@ function activityFor(w: World, c: Colonist): Activity {
     }
     // the scholar fetches the project's goods if nobody has brought them
     if (!c.task && job.def === 'desk' && w.research?.current) { const need = researchSupply(w, job)[0]; if (need) c.task = need; }
-    // nobody brought ingredients: fetch them yourself
+    // running low on ingredients: fetch them yourself, taking finished goods along on the way
     const rec = currentRecipe(w, job);
-    if (!c.task && rec && Object.keys(rec.inputs).length && !canCook(w, job, rec)) {
-      const need = supplyNeeds(w, job, rec)[0];
-      if (need) c.task = need;
+    if (!c.task && rec && Object.keys(rec.inputs).length) {
+      const ss = START.selfSupply, dry = !canCook(w, job, rec);
+      if (dry || (ss.topUpAt > 0 && w.recipeBatching !== false && heldOutputs(w, job, rec) < ss.topUpAt)) {
+        const need = supplyNeeds(w, job, rec)[0] ?? (dry && ss.overtake > 0 ? overtakeSupply(w, c, job, ss.overtake) : undefined);
+        if (need) c.task = (ss.roundTrip && outputRun(w, c, job)) || need;
+      }
     }
     if (c.task) return 'hauling';
     return 'working';
@@ -1958,8 +1987,15 @@ function arrive(w: World, c: Colonist) {
         source![t.res] = Math.max(0, avail - amt); c.carrying = { res: t.res, amount: amt }; t.via = undefined;
       } else {
         // storage full: it gets dumped on the pile anyway
-        putIn(w, buildingByUid(w, t.via ?? null) ?? storeTarget(w, c.carrying.res, c), c.carrying.res, c.carrying.amount);
+        const store = buildingByUid(w, t.via ?? null) ?? storeTarget(w, c.carrying.res, c);
+        putIn(w, store, c.carrying.res, c.carrying.amount);
         c.carrying = null; c.task = null;
+        // a worker who just stored their own goods brings back ingredients the workshop is short of, from here if it has them
+        const job = from && t.from === c.job ? from : undefined, rec = job && currentRecipe(w, job);
+        if (START.selfSupply.roundTrip && job && rec && Object.keys(rec.inputs).length) {
+          const need = supplyNeeds(w, job, rec)[0];
+          if (need) { if (store && (store.stock[need.res] ?? 0) >= 1) need.via = store.uid; c.task = need; }
+        }
       }
     }
     else if (t.kind === 'supply') {

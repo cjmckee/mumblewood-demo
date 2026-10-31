@@ -21,6 +21,7 @@ if (process.env.FESTIVAL_AT) BOT.festivalAt = Number(process.env.FESTIVAL_AT);
 if (process.env.CHARTER_RELIEF) START.relief.charter = Number(process.env.CHARTER_RELIEF);
 // seasons: PREP_FROM / PREP_FULL / PREP_SHARE (winter stores), WINTER_FORAGE (forager yield in winter), CHILL (chance a cold night gives a chill)
 if (process.env.PREP_FROM) START.seasons.prep.from = Number(process.env.PREP_FROM);
+if (process.env.SELF_SUPPLY) Object.assign(START.selfSupply, JSON.parse(process.env.SELF_SUPPLY)); // e.g. '{"topUpAt":0,"overtake":0,"roundTrip":false}' is the old way
 if (process.env.PREP_FULL) START.seasons.prep.full = Number(process.env.PREP_FULL);
 if (process.env.PREP_SHARE) START.seasons.prep.share = Number(process.env.PREP_SHARE);
 if (process.env.WINTER_FORAGE) START.seasons.yield.forager.winter = Number(process.env.WINTER_FORAGE);
