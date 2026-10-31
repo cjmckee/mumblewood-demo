@@ -123,7 +123,7 @@ export const SLOTS: Partial<Record<string, { name: string; members: ResourceId[]
   filling: { name: 'pie filling', members: ['berries', 'apples', 'honey', 'mushrooms'] },
   thickener: { name: 'thickener', members: ['flour', 'acornMeal', 'bread'] },
   base: { name: 'hotpot base', members: ['fish', 'mushrooms'] },
-  brew: { name: 'a good drink', members: ['ale', 'cider', 'mead'] },
+  brew: { name: 'refined drink', members: ['ale', 'cider', 'mead'] },
   spice: { name: 'spice or fruit', members: ['herbs', 'honey', 'berries'] },
 };
 /** a category or a slot: an input that more than one good can fill */
