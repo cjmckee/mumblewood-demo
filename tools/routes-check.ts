@@ -1,7 +1,7 @@
 // Forces each drink route on a map that has its site, staffs it, and checks the drinks come out of the right recipe.
 // Also checks: flower beds raise an apiary's output; maps never offer a gatherer for a site they lack.
 // Usage: npx tsx tools/routes-check.ts
-import { CATEGORIES } from '../src/sim/content';
+import { CATEGORIES, BUILDING_BY_ID } from '../src/sim/content';
 import { createWorld, debugGrow, apply, runHours, findSpot, built, workersAt, alive, World, efficiencyAt, currentRecipe, canPlace, reconcileStock, WALKING_WOUNDED } from '../src/sim/world';
 
 let failed = 0;
@@ -56,6 +56,8 @@ for (const r of routes) {
 {
   const w = worldWith('grove');
   const b = put(w, 'brewery'), p = put(w, 'ciderpress');
+  // mulling also takes berries as a flavouring; keep it out of the berries-per-ale count
+  for (const x of [b, p]) x.off = (BUILDING_BY_ID[x.def].recipes ?? []).flatMap((r, i) => r.output === 'mulled' ? [i] : []);
   for (const c of alive(w)) apply(w, { type: 'assign', colonist: c.id, building: null });
   staff(w, b, 1); staff(w, p, 1);
   run(w, 48);

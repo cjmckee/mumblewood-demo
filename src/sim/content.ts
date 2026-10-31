@@ -1,6 +1,6 @@
 // All game content lives here as plain data. The sim reads it; nothing here knows about rendering.
 
-export type ResourceId = 'flax' | 'cloth' | 'hides' | 'leather' | 'coats' | 'wood' | 'berries' | 'fish' | 'mushrooms' | 'apples' | 'grain' | 'honey' | 'clay' | 'reeds' | 'herbs' | 'flour' | 'stew' | 'pie' | 'smokedFish' | 'bread' | 'skewers' | 'poultice' | 'tonic' | 'tea' | 'planks' | 'bricks' | 'wicker' | 'ale' | 'cider' | 'mead';
+export type ResourceId = 'flax' | 'cloth' | 'hides' | 'leather' | 'coats' | 'wood' | 'berries' | 'fish' | 'mushrooms' | 'apples' | 'grain' | 'honey' | 'clay' | 'reeds' | 'herbs' | 'flour' | 'acornMeal' | 'stew' | 'pie' | 'hotpot' | 'smokedFish' | 'bread' | 'skewers' | 'poultice' | 'tonic' | 'tea' | 'planks' | 'bricks' | 'wicker' | 'ale' | 'cider' | 'mead' | 'mulled';
 /** raw: edible as is; ingredient: needs processing (grain, honey); luxury: drinks; remedy: used by the clinic */
 export const RESOURCES: { id: ResourceId; name: string; kind: 'raw' | 'ingredient' | 'meal' | 'material' | 'luxury' | 'remedy' }[] = [
   { id: 'flax', name: 'Flax', kind: 'ingredient' },
@@ -22,8 +22,10 @@ export const RESOURCES: { id: ResourceId; name: string; kind: 'raw' | 'ingredien
   { id: 'reeds', name: 'Reeds', kind: 'ingredient' },
   { id: 'herbs', name: 'Herbs', kind: 'ingredient' },
   { id: 'flour', name: 'Flour', kind: 'ingredient' },
+  { id: 'acornMeal', name: 'Acorn meal', kind: 'ingredient' },
   { id: 'stew', name: 'Stew', kind: 'meal' },
   { id: 'pie', name: 'Pie', kind: 'meal' },
+  { id: 'hotpot', name: 'Hotpot', kind: 'meal' },
   { id: 'smokedFish', name: 'Smoked fish', kind: 'meal' },
   { id: 'bread', name: 'Bread', kind: 'meal' },
   { id: 'skewers', name: 'Skewers', kind: 'meal' },
@@ -31,6 +33,7 @@ export const RESOURCES: { id: ResourceId; name: string; kind: 'raw' | 'ingredien
   { id: 'cider', name: 'Cider', kind: 'luxury' },
   { id: 'mead', name: 'Mead', kind: 'luxury' },
   { id: 'tea', name: 'Herb tea', kind: 'luxury' },
+  { id: 'mulled', name: 'Mulled cup', kind: 'luxury' },
   { id: 'poultice', name: 'Poultice', kind: 'remedy' },
   { id: 'tonic', name: 'Tonic', kind: 'remedy' },
 ];
@@ -38,7 +41,24 @@ export const RESOURCES: { id: ResourceId; name: string; kind: 'raw' | 'ingredien
 export const CLOTHING = { lifetimeHours: 40 * 24, coldMoodMultiplier: 0.5, chillRiskMultiplier: 0.5 };
 
 export const RAW_FOODS: ResourceId[] = ['berries', 'fish', 'mushrooms', 'apples'];
-export const MEALS: ResourceId[] = ['pie', 'skewers', 'smokedFish', 'bread', 'stew'];
+/** meals, best first: with no favourite, a settler takes the first one in store */
+export const MEALS: ResourceId[] = ['pie', 'hotpot', 'skewers', 'smokedFish', 'bread', 'stew'];
+/**
+ * The goods ladder. Plain goods come from one raw good; good ones from one chain of two or three steps; fine ones
+ * from two chains meeting in one recipe; feast ones from two good-tier goods. The higher the tier, the more mood a
+ * meal or drink gives and the more it counts toward comfort, so running more chains is what makes a town content.
+ */
+export type GoodTier = 'plain' | 'good' | 'fine' | 'feast';
+export const TIER: Partial<Record<ResourceId, GoodTier>> = {
+  stew: 'plain', tea: 'plain',
+  bread: 'good', smokedFish: 'good', skewers: 'good', ale: 'good', cider: 'good', mead: 'good',
+  pie: 'fine', hotpot: 'fine', mulled: 'fine',
+};
+export const TIER_RANK: Record<GoodTier, number> = { plain: 0, good: 1, fine: 2, feast: 3 };
+/** mood from a meal or drink of each tier, before tastes and traits */
+export const TIER_MOOD: Record<GoodTier, number> = { plain: 3, good: 6, fine: 10, feast: 13 };
+/** the trader never carries fine or feast goods: those have to be made here */
+export const tradeable = (r: ResourceId) => TIER_RANK[TIER[r] ?? 'plain'] < TIER_RANK.fine;
 /**
  * What the caravan charges for one of each good, in gold. It pays back a share of that when it buys (SELL_SHARE),
  * more at the autumn fair: raw goods are cheap, and the more work a good holds the more it's worth.
@@ -46,8 +66,8 @@ export const MEALS: ResourceId[] = ['pie', 'skewers', 'smokedFish', 'bread', 'st
 export const PRICE: Record<ResourceId, number> = {
   flax: 2, hides: 3, cloth: 6, leather: 6, coats: 14,
   wood: 2, berries: 2, fish: 2, mushrooms: 2, apples: 2, grain: 2, clay: 2, reeds: 2, herbs: 2, honey: 4, flour: 4,
-  planks: 5, bricks: 5, wicker: 4, stew: 5, smokedFish: 5, bread: 6, skewers: 6, pie: 7,
-  ale: 7, cider: 7, tea: 6, mead: 9, poultice: 10, tonic: 14,
+  acornMeal: 4, planks: 5, bricks: 5, wicker: 4, stew: 5, smokedFish: 5, bread: 6, skewers: 6, pie: 10, hotpot: 10,
+  ale: 7, cider: 7, tea: 6, mead: 9, mulled: 12, poultice: 10, tonic: 14,
 };
 /**
  * The traders who drive the caravan. Each carries a few of the goods they deal in (never all of them, never much), now
@@ -59,14 +79,16 @@ export const TRADERS: TraderDef[] = [
   { id: 'timber', name: 'the timber merchant', who: 'A broad woman with a broader axe, and a wagon that is mostly planks.', sells: ['wood', 'planks', 'bricks', 'wicker', 'clay', 'reeds'], blueprints: ['sawmill', 'kiln', 'carpenter', 'claypit'], wants: ['stew', 'bread', 'smokedFish', 'ale'], markup: 1.1 },
   { id: 'vintner', name: 'the vintner', who: 'He tastes everything twice "for quality" and hums between sips.', sells: ['ale', 'cider', 'mead', 'tea', 'grain', 'apples', 'honey'], blueprints: ['brewery', 'ciderpress', 'apiary', 'orchard', 'tavern'], wants: ['apples', 'grain', 'honey', 'berries'], markup: 1.15 },
   { id: 'grocer', name: 'the fishwife', who: 'Loud, cheerful, and smells powerfully of yesterday’s catch.', sells: ['fish', 'smokedFish', 'berries', 'mushrooms', 'apples', 'stew'], blueprints: ['dock', 'smokehouse', 'cellar'], wants: ['wood', 'reeds', 'herbs'], markup: 1.1 },
-  { id: 'baker', name: 'the baker’s cart', who: 'Two flour-dusted siblings who finish each other’s sentences, badly.', sells: ['flour', 'bread', 'pie', 'grain', 'berries', 'honey'], blueprints: ['mill', 'bakery', 'pieoven', 'field'], wants: ['wood', 'apples', 'berries'], markup: 1.1 },
+  { id: 'baker', name: 'the baker’s cart', who: 'Two flour-dusted siblings who finish each other’s sentences, badly.', sells: ['flour', 'acornMeal', 'bread', 'grain', 'berries', 'honey'], blueprints: ['mill', 'bakery', 'pieoven', 'field'], wants: ['wood', 'apples', 'berries'], markup: 1.1 },
   { id: 'herbalist', name: 'the herbalist', who: 'She talks to her jars. Some of them, she says, talk back.', sells: ['herbs', 'poultice', 'tonic', 'tea', 'honey'], blueprints: ['apothecary', 'herbgarden', 'apiary'], wants: ['honey', 'herbs', 'mushrooms'], markup: 1.15 },
   { id: 'clothier', name: 'the clothier', who: 'A travelling tailor with a wagon of suspiciously fashionable winter layers.', sells: ['flax', 'cloth', 'hides', 'leather', 'coats'], blueprints: ['flaxfield', 'weaver', 'trapper', 'tanner', 'tailor'], wants: ['bread', 'pie', 'ale', 'herbs'], markup: 1.2 },
   { id: 'pedlar', name: 'a pedlar', who: 'He sells a bit of everything and none of it is quite what you wanted.', sells: [], blueprints: [], wants: [], markup: 1.25 },
 ];
 export const TRADER_BY_ID: Record<string, TraderDef> = Object.fromEntries(TRADERS.map(t => [t.id, t]));
 /** mood from eating each meal, before tastes and traits */
-export const MEAL_MOOD: Partial<Record<ResourceId, number>> = { pie: 8, skewers: 7, smokedFish: 6, bread: 6, stew: 5 };
+export const MEAL_MOOD: Partial<Record<ResourceId, number>> = Object.fromEntries(MEALS.map(r => [r, TIER_MOOD[TIER[r] ?? 'plain']]));
+/** mood from a drink at the tavern, before tastes and traits */
+export const DRINK_MOOD: Partial<Record<ResourceId, number>> = Object.fromEntries((['ale', 'cider', 'mead', 'tea', 'mulled'] as ResourceId[]).map(r => [r, TIER_MOOD[TIER[r] ?? 'plain']]));
 
 export type JobKind = 'chopping' | 'foraging' | 'fishing' | 'cooking' | 'crafting' | 'brewing' | 'serving' | 'medicine' | 'studying';
 export const JOB_NAMES: Record<JobKind, string> = {
@@ -85,7 +107,7 @@ export type Category = 'rawFood' | 'meal' | 'drink' | 'fine' | 'remedy';
 export const CATEGORIES: Record<Category, { name: string; members: ResourceId[] }> = {
   rawFood: { name: 'raw food', members: RAW_FOODS },
   meal: { name: 'meals', members: MEALS },
-  drink: { name: 'drinks', members: ['ale', 'cider', 'mead', 'tea'] },
+  drink: { name: 'drinks', members: ['ale', 'cider', 'mead', 'tea', 'mulled'] },
   fine: { name: 'fine materials', members: ['planks', 'bricks', 'wicker'] },
   remedy: { name: 'remedies', members: ['tonic', 'poultice'] },
 };
@@ -94,10 +116,16 @@ export const CATEGORIES: Record<Category, { name: string; members: ResourceId[] 
  * meal; "filling": berries, apples or honey), as in Against the Storm. A slot works like a category in a recipe, but
  * it only means something to recipes; needs, costs and charters use categories. Each building can switch single
  * options of a slot (or category) input off, so a player can keep apples out of one oven's pies.
- * Slots arrive with the goods ladder; the table starts empty.
  */
-export type SlotId = never;
-export const SLOTS: Partial<Record<string, { name: string; members: ResourceId[] }>> = {};
+export type SlotId = 'pastry' | 'filling' | 'thickener' | 'base' | 'brew' | 'spice';
+export const SLOTS: Partial<Record<string, { name: string; members: ResourceId[] }>> & Record<SlotId, { name: string; members: ResourceId[] }> = {
+  pastry: { name: 'pastry', members: ['flour', 'acornMeal'] },
+  filling: { name: 'pie filling', members: ['berries', 'apples', 'honey', 'mushrooms'] },
+  thickener: { name: 'thickener', members: ['flour', 'acornMeal', 'bread'] },
+  base: { name: 'hotpot base', members: ['fish', 'mushrooms'] },
+  brew: { name: 'a good drink', members: ['ale', 'cider', 'mead'] },
+  spice: { name: 'spice or fruit', members: ['herbs', 'honey', 'berries'] },
+};
 /** a category or a slot: an input that more than one good can fill */
 export type Group = Category | SlotId;
 /** what a recipe input names: one good, or any good in a category or slot */
@@ -110,8 +138,8 @@ export const inputName = (k: InputKey) => (isCategory(k) ? CATEGORIES[k].name : 
 /** output units per worker-hour at work speed 1, for a ★★★ recipe */
 export const BASE_RATE: Record<ResourceId, number> = {
   flax: 1.2, hides: 0.8, cloth: 0.6, leather: 0.6, coats: 0.25,
-  wood: 1.6, berries: 1.3, fish: 1.5, mushrooms: 1.5, apples: 1.4, grain: 1.6, honey: 1.0, clay: 1.5, reeds: 1.4, herbs: 1.3, flour: 1.4,
-  stew: 1.2, pie: 0.9, smokedFish: 1.2, bread: 1.1, skewers: 1.0, poultice: 0.8, tonic: 0.6, tea: 0.9, planks: 1.0, bricks: 0.9, wicker: 1.0, ale: 0.8, cider: 0.9, mead: 0.7,
+  wood: 1.6, berries: 1.3, fish: 1.5, mushrooms: 1.5, apples: 1.4, grain: 1.6, honey: 1.0, clay: 1.5, reeds: 1.4, herbs: 1.3, flour: 1.4, acornMeal: 1.0,
+  stew: 1.2, pie: 0.9, hotpot: 1.0, mulled: 0.8, smokedFish: 1.2, bread: 1.1, skewers: 1.0, poultice: 0.8, tonic: 0.6, tea: 0.9, planks: 1.0, bricks: 0.9, wicker: 1.0, ale: 0.8, cider: 0.9, mead: 0.7,
 };
 /**
  * How good a building is at a recipe. Stars set speed (★★★ full, ★★ 0.8×, ★ 0.6×); each recipe also states its own
@@ -178,7 +206,7 @@ export const BUILDINGS: BuildingDef[] = [
   { id: 'stockpile', name: 'Stockpile', blurb: 'An open patch of ground for goods. Holds 150. Food left out here spoils.', cost: {}, w: 2, h: 2, slots: 0, storage: 150, walkable: true, wall: 0x8a7a5a, roof: 0x8a7a5a, height: 0 },
   { id: 'leanto', name: 'Shack', blurb: 'Sleeps 2. Drafty, but it counts as a roof.', cost: { wood: 8 }, w: 1, h: 1, slots: 0, beds: 2, bedQuality: 'basic', wall: 0x8a6e4f, roof: 0x7d8f55, height: 0.6 },
   { id: 'woodcutter', name: 'Woodcutter', blurb: 'Fells trees. Can instead rough-saw planks slowly at 3 wood each; a sawmill is faster and uses less wood. Works best near trees.', cost: { wood: 8 }, w: 1, h: 1, slots: 2, job: 'chopping', needs: 'trees', recipes: [{ inputs: {}, output: 'wood', stars: 3 }, ROUGH_PLANK_RECIPE], wall: 0x7a5a3c, roof: 0x5c7a3e, height: 0.7 },
-  { id: 'forager', name: 'Forager hut', blurb: 'Picks berries. Works best right next to berry bushes.', cost: { wood: 8 }, w: 1, h: 1, slots: 2, job: 'foraging', needs: 'bushes', recipes: [{ inputs: {}, output: 'berries', stars: 3 }, { inputs: {}, output: 'herbs', stars: 1 }], wall: 0x8c6b4a, roof: 0xa0465a, height: 0.7 },
+  { id: 'forager', name: 'Forager hut', blurb: 'Picks berries. Can gather herbs, or pound acorns into a coarse meal for pastry, slowly. Works best right next to berry bushes.', cost: { wood: 8 }, w: 1, h: 1, slots: 2, job: 'foraging', needs: 'bushes', recipes: [{ inputs: {}, output: 'berries', stars: 3 }, { inputs: {}, output: 'herbs', stars: 1 }, { inputs: {}, output: 'acornMeal', stars: 1 }], wall: 0x8c6b4a, roof: 0xa0465a, height: 0.7 },
   { id: 'dining', name: 'Dining hall', blurb: 'Tables and benches for 6. Eating here beats eating in the dirt, as long as someone keeps it clean.', cost: { wood: 20 }, w: 2, h: 2, slots: 0, seats: 6, wall: 0x9a7a58, roof: 0x8a4a3a, height: 0.9 },
   { id: 'storehouse', name: 'Storehouse', blurb: 'Holds 250 goods under a roof. Food stored here doesn\u2019t spoil.', cost: { wood: 25 }, w: 2, h: 2, slots: 0, storage: 250, keepsFresh: true, wall: 0x7a6a58, roof: 0x5a6a7a, height: 1.0 },
 
@@ -191,19 +219,19 @@ export const BUILDINGS: BuildingDef[] = [
 
   { id: 'dock', name: 'Fishing dock', blurb: 'Fish, plentiful and mildly judgmental. Can cut reeds instead, slowly. Must touch water.', cost: { wood: 15 }, w: 1, h: 2, slots: 2, job: 'fishing', needs: 'water', recipes: [{ inputs: {}, output: 'fish', stars: 3 }, { inputs: {}, output: 'reeds', stars: 1 }], wall: 0x6d5844, roof: 0x3d7b9a, height: 0.6, draftable: true },
   { id: 'cellar', name: 'Mushroom cellar', blurb: 'Dark, damp, productive. Like a bard.', cost: { wood: 12, fine: 5 }, w: 1, h: 1, slots: 2, job: 'foraging', recipes: [{ inputs: {}, output: 'mushrooms', stars: 3 }], wall: 0x5d5448, roof: 0x8d7aa8, height: 0.5, draftable: true },
-  { id: 'kitchen', name: 'Stew kitchen', blurb: 'Turns any raw food into stew. Can smoke fish or bake bread, badly. Someone has to carry the ingredients in.', cost: { wood: 18 }, w: 2, h: 1, slots: 2, job: 'cooking', recipes: [{ inputs: { rawFood: 0.9 }, output: 'stew', stars: 3 }, { inputs: { fish: 1.1 }, output: 'smokedFish', stars: 1 }, { inputs: { flour: 0.9 }, output: 'bread', stars: 1 }], wall: 0x8a6448, roof: 0xc4703a, height: 0.8 },
-  { id: 'pieoven', name: 'Pie oven', blurb: 'Berries plus wood make pie. Pie is the best thing that has ever happened.', cost: { wood: 12, fine: 8 }, w: 1, h: 1, slots: 2, job: 'cooking', recipes: [{ inputs: { berries: 1.2, wood: 0.5 }, output: 'pie', stars: 3 }, { inputs: { flour: 0.75 }, output: 'bread', stars: 2 }], wall: 0x9b7452, roof: 0xd6a33c, height: 0.8, draftable: true },
-  { id: 'smokehouse', name: 'Smokehouse', blurb: 'Fish goes in, better fish comes out. Also grills mushroom-and-herb skewers.', cost: { wood: 15 }, w: 1, h: 1, slots: 2, job: 'cooking', recipes: [{ inputs: { fish: 0.7 }, output: 'smokedFish', stars: 3 }, { inputs: { mushrooms: 0.6, herbs: 0.3 }, output: 'skewers', stars: 2 }], wall: 0x5f4d3f, roof: 0x8a8a8a, height: 0.9, draftable: true },
+  { id: 'kitchen', name: 'Stew kitchen', blurb: 'Turns any raw food into stew. Can make a hotpot, and smoke fish or bake bread, badly. Someone has to carry the ingredients in.', cost: { wood: 18 }, w: 2, h: 1, slots: 2, job: 'cooking', recipes: [{ inputs: { rawFood: 0.9 }, output: 'stew', stars: 3 }, { inputs: { fish: 1.1 }, output: 'smokedFish', stars: 1 }, { inputs: { flour: 0.9 }, output: 'bread', stars: 1 }, { inputs: { base: 0.7, thickener: 0.6 }, output: 'hotpot', stars: 2 }], wall: 0x8a6448, roof: 0xc4703a, height: 0.8 },
+  { id: 'pieoven', name: 'Pie oven', blurb: 'Pastry and a filling make pie. Pie is the best thing that has ever happened.', cost: { wood: 12, fine: 8 }, w: 1, h: 1, slots: 2, job: 'cooking', recipes: [{ inputs: { pastry: 0.6, filling: 0.7 }, output: 'pie', stars: 3 }, { inputs: { flour: 0.75 }, output: 'bread', stars: 2 }], wall: 0x9b7452, roof: 0xd6a33c, height: 0.8, draftable: true },
+  { id: 'smokehouse', name: 'Smokehouse', blurb: 'Fish goes in, better fish comes out. Also grills mushroom-and-herb skewers, and simmers the best hotpot.', cost: { wood: 15 }, w: 1, h: 1, slots: 2, job: 'cooking', recipes: [{ inputs: { fish: 0.7 }, output: 'smokedFish', stars: 3 }, { inputs: { mushrooms: 0.6, herbs: 0.3 }, output: 'skewers', stars: 2 }, { inputs: { base: 0.55, thickener: 0.5 }, output: 'hotpot', stars: 3 }], wall: 0x5f4d3f, roof: 0x8a8a8a, height: 0.9, draftable: true },
   { id: 'mill', name: 'Mill', blurb: 'Grinds grain into flour, the first half of a loaf.', cost: { wood: 16, fine: 4 }, w: 2, h: 1, slots: 2, job: 'crafting', recipes: [{ inputs: { grain: 1.5 }, output: 'flour', stars: 3 }], wall: 0xa08a68, roof: 0x7a6a4a, height: 1.1, draftable: true },
-  { id: 'bakery', name: 'Bakery', blurb: 'Bread from flour. Can bake pie, and grind its own flour if there\u2019s no mill.', cost: { wood: 15, fine: 6 }, w: 2, h: 1, slots: 2, job: 'cooking', recipes: [{ inputs: { flour: 0.6 }, output: 'bread', stars: 3 }, { inputs: { berries: 1.5, wood: 0.6 }, output: 'pie', stars: 2 }, { inputs: { grain: 2 }, output: 'flour', stars: 1 }], wall: 0xb08a5a, roof: 0xc0603a, height: 0.9, draftable: true },
+  { id: 'bakery', name: 'Bakery', blurb: 'Bread from flour. Can bake pie, and grind its own flour if there\u2019s no mill.', cost: { wood: 15, fine: 6 }, w: 2, h: 1, slots: 2, job: 'cooking', recipes: [{ inputs: { flour: 0.6 }, output: 'bread', stars: 3 }, { inputs: { pastry: 0.75, filling: 0.9 }, output: 'pie', stars: 2 }, { inputs: { grain: 2 }, output: 'flour', stars: 1 }], wall: 0xb08a5a, roof: 0xc0603a, height: 0.9, draftable: true },
   { id: 'herbgarden', name: 'Herb garden', blurb: 'Neat rows of herbs, and a few berries in the corner. Grows anywhere.', cost: { wood: 8 }, w: 1, h: 1, slots: 2, job: 'foraging', recipes: [{ inputs: {}, output: 'herbs', stars: 3 }, { inputs: {}, output: 'berries', stars: 1 }], wall: 0x7a8a4a, roof: 0x5a8a3a, height: 0.4, draftable: true },
   { id: 'apothecary', name: 'Apothecary', blurb: 'Poultices and tonics for the clinic, and herb tea for anyone. The doctor uses remedies from storage.', cost: { wood: 12, fine: 4 }, w: 1, h: 1, slots: 1, job: 'medicine', recipes: [{ inputs: { herbs: 2 }, output: 'poultice', stars: 3 }, { inputs: { herbs: 1.5 }, output: 'tea', stars: 2 }, { inputs: { honey: 1, herbs: 1.25 }, output: 'tonic', stars: 2 }], wall: 0xc8c0a8, roof: 0x4a7a5a, height: 0.9, draftable: true },
   { id: 'sawmill', name: 'Sawmill', blurb: 'Wood becomes planks. Planks become nicer buildings.', cost: { wood: 20 }, w: 2, h: 1, slots: 2, job: 'crafting', recipes: [{ inputs: { wood: 2 }, output: 'planks', stars: 3 }], wall: 0x7c6148, roof: 0xb08a5a, height: 0.8, draftable: true },
   { id: 'kiln', name: 'Brick kiln', blurb: 'Fires clay into bricks, burning a little wood. Bricks build anything planks do.', cost: { wood: 15 }, w: 1, h: 1, slots: 2, job: 'crafting', recipes: [{ inputs: { clay: 2, wood: 0.5 }, output: 'bricks', stars: 3 }], wall: 0x9a5a40, roof: 0x5a4a44, height: 0.9, draftable: true },
   { id: 'carpenter', name: 'Carpenter\u2019s shed', blurb: 'Weaves reeds into wicker, or saws planks the slow way.', cost: { wood: 14 }, w: 1, h: 1, slots: 2, job: 'crafting', recipes: [{ inputs: { reeds: 2 }, output: 'wicker', stars: 3 }, { inputs: { wood: 2.5 }, output: 'planks', stars: 2 }], wall: 0x8a6c48, roof: 0xa08a50, height: 0.8, draftable: true },
   { id: 'claypit', name: 'Clay pit', blurb: 'Digs clay out of the bank by the water. Has to sit by a clay bank.', cost: { wood: 8 }, w: 1, h: 1, slots: 2, job: 'foraging', needs: 'clay', recipes: [{ inputs: {}, output: 'clay', stars: 3 }], wall: 0x8a6040, roof: 0x6a5040, height: 0.5, draftable: true },
-  { id: 'brewery', name: 'Brewery', blurb: 'Best with grain. Can make mead, and berry ale if it must. Ale becomes poor decisions.', cost: { wood: 15, fine: 8 }, w: 2, h: 1, slots: 2, job: 'brewing', recipes: [{ inputs: { grain: 1.5 }, output: 'ale', stars: 3 }, { inputs: { honey: 2.5 }, output: 'mead', stars: 2 }, { inputs: { berries: 3 }, output: 'ale', stars: 1 }], wall: 0x7a5640, roof: 0x9c5b2f, height: 0.9, draftable: true },
-  { id: 'ciderpress', name: 'Cider press', blurb: 'Squashes apples into cider. Also does a decent berry ale, and mead in a pinch.', cost: { wood: 18 }, w: 1, h: 1, slots: 2, job: 'brewing', recipes: [{ inputs: { apples: 2 }, output: 'cider', stars: 3 }, { inputs: { berries: 2.5 }, output: 'ale', stars: 2 }, { inputs: { honey: 3 }, output: 'mead', stars: 1 }], wall: 0x8a6a3c, roof: 0x8aa040, height: 0.8, draftable: true },
+  { id: 'brewery', name: 'Brewery', blurb: 'Best with grain. Can make mead, berry ale if it must, and mull a good drink with spice. Ale becomes poor decisions.', cost: { wood: 15, fine: 8 }, w: 2, h: 1, slots: 2, job: 'brewing', recipes: [{ inputs: { grain: 1.5 }, output: 'ale', stars: 3 }, { inputs: { honey: 2.5 }, output: 'mead', stars: 2 }, { inputs: { berries: 3 }, output: 'ale', stars: 1 }, { inputs: { brew: 1, spice: 0.4 }, output: 'mulled', stars: 2 }], wall: 0x7a5640, roof: 0x9c5b2f, height: 0.9, draftable: true },
+  { id: 'ciderpress', name: 'Cider press', blurb: 'Squashes apples into cider. Also does a decent berry ale, mead in a pinch, and the best mulled cup.', cost: { wood: 18 }, w: 1, h: 1, slots: 2, job: 'brewing', recipes: [{ inputs: { apples: 2 }, output: 'cider', stars: 3 }, { inputs: { berries: 2.5 }, output: 'ale', stars: 2 }, { inputs: { honey: 3 }, output: 'mead', stars: 1 }, { inputs: { brew: 0.8, spice: 0.3 }, output: 'mulled', stars: 3 }], wall: 0x8a6a3c, roof: 0x8aa040, height: 0.8, draftable: true },
   { id: 'orchard', name: 'Orchard hut', blurb: 'Picks apples. Needs an apple grove close by. Apples are food, or cider.', cost: { wood: 10 }, w: 1, h: 1, slots: 2, job: 'foraging', needs: 'apples', recipes: [{ inputs: {}, output: 'apples', stars: 3 }], wall: 0x8c6b4a, roof: 0xb8452f, height: 0.7, draftable: true },
   { id: 'apiary', name: 'Apiary', blurb: 'Bees make honey from wildflowers. Flower beds nearby count as extra meadow.', cost: { wood: 12 }, w: 1, h: 1, slots: 2, job: 'foraging', needs: 'flowers', recipes: [{ inputs: {}, output: 'honey', stars: 3 }], wall: 0xc8a050, roof: 0x7a5a2a, height: 0.6, draftable: true },
   { id: 'field', name: 'Grain field', blurb: 'Rows of barley. Has to sit on good soil, and the better the soil the better the harvest.', cost: { wood: 10 }, w: 2, h: 2, slots: 2, job: 'foraging', needs: 'soil', recipes: [{ inputs: {}, output: 'grain', stars: 3 }], wall: 0x8a7a40, roof: 0xd8c060, height: 0.15, draftable: true },
@@ -519,7 +547,7 @@ export const CHARTERS: CharterDef[] = [
   { id: 'rested', tier: 1, name: 'Fed and rested', desc: '6 colonists, everyone in a bed, and a full day where every meal is cooked and eaten at a table.', metric: { kind: 'all', parts: [pop(6), { kind: 'everyoneBed' }, { kind: 'allTable', hours: 24, cooked: true }] }, helpers: ['cottage', 'dock', 'smokehouse'] },
   // tier 2: more people, harder to please, and a 3-step chain or two 2-step chains
   { id: 'bread', tier: 2, name: 'Daily bread', desc: '10 colonists, 20 bread in storage, and a 24-hour average mood of 55+. Grain, then flour, then bread.', metric: { kind: 'all', parts: [pop(10), { kind: 'stock', resources: ['bread'], amount: 20 }, mood(55)] }, helpers: ['field', 'mill', 'bakery'], sites: ['soil'] },
-  { id: 'piesky', tier: 2, name: 'Pie in the sky', desc: '10 colonists, 20 pies in storage, and a 24-hour average mood of 55+. Berries and flour make a pie.', metric: { kind: 'all', parts: [pop(10), { kind: 'stock', resources: ['pie'], amount: 20 }, mood(55)] }, helpers: ['pieoven', 'field', 'mill', 'bakery'], sites: ['soil'] },
+  { id: 'piesky', tier: 2, name: 'Pie in the sky', desc: '10 colonists, 20 pies in storage, and a 24-hour average mood of 55+. Pastry and a filling make a pie.', metric: { kind: 'all', parts: [pop(10), { kind: 'stock', resources: ['pie'], amount: 20 }, mood(55)] }, helpers: ['pieoven', 'bakery', 'mill', 'field'] },
   { id: 'twokitchens', tier: 2, name: 'Two kitchens', desc: '10 colonists, 2 kinds of meal with 15 of each in storage, and a 24-hour average mood of 55+.', metric: { kind: 'all', parts: [pop(10), { kind: 'variety', category: 'meal', kinds: 2, each: 15 }, mood(55)] }, helpers: ['smokehouse', 'pieoven', 'bakery', 'dock'] },
   { id: 'roof', tier: 2, name: 'Raise the roof', desc: '10 colonists, 3 cottages, 15 drinks in storage, and a 24-hour average mood of 55+.', metric: { kind: 'all', parts: [pop(10), { kind: 'built', def: 'cottage', amount: 3 }, { kind: 'stock', resources: CATEGORIES.drink.members, amount: 15 }, mood(55)] }, helpers: ['cottage', 'sawmill', 'brewery', 'ciderpress'] },
   { id: 'hearty', tier: 2, name: 'Hale and hearty', desc: '10 colonists, 12 tonics in storage, and nobody sick or hurt for a full day.', metric: { kind: 'all', parts: [pop(10), { kind: 'stock', resources: ['tonic'], amount: 12 }, { kind: 'healthy', hours: 24 }] }, helpers: ['apothecary', 'apiary', 'herbgarden'], sites: ['meadow'] },

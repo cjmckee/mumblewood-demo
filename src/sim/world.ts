@@ -2,7 +2,7 @@
 import {
   CLOTHING, BUILDING_BY_ID, BuildingDef, CHARTERS, CharterDef, EVENTS, FIRST_NAMES, JOB_NAMES, JobKind, JOB_KINDS,
   MEALS, PERKS, RAW_FOODS, ResourceId, SHIRTS, SKINS, SURNAMES, TRAITS, TRAIT_BY_ID, BUILDINGS, buildWork,
-  JOB_EVENTS, JobEventDef, ILLNESSES, RESOURCES, Recipe, InputKey, CATEGORIES, isGroup, membersOf, inputName, recipeRate, SITES, SiteId, MEAL_MOOD,
+  JOB_EVENTS, JobEventDef, ILLNESSES, RESOURCES, Recipe, InputKey, CATEGORIES, isGroup, membersOf, inputName, recipeRate, SITES, SiteId, MEAL_MOOD, DRINK_MOOD, TIER, TIER_RANK, GoodTier, tradeable,
   CharterMetric, RESEARCH, RESEARCH_BY_ID, BRANCHES_AFTER, PRICE, TRADERS, TRADER_BY_ID, LORE_BOOST, GUILD_BOOST, Tier, EventDef,
 } from './content';
 import { planInputBatch } from './batching';
@@ -74,7 +74,7 @@ export interface Colonist {
   /** a skilled settler at the edge of camp asks this much gold to join */
   fee?: number;
   /** the last thing they ate, for comfort: a cooked meal or raw food, at a table, something they love */
-  lastMeal?: { cooked: boolean; table: boolean; loved: boolean };
+  lastMeal?: { cooked: boolean; table: boolean; loved: boolean; tier?: GoodTier };
   /** the last few things they ate and when (for meal variety and fresh food) */
   ate?: { r: ResourceId; h: number }[];
   /** First request for a clinic bed; retained while a displaced patient waits. */
@@ -321,8 +321,8 @@ export function drinkTotal(w: World) { return CATEGORIES.drink.members.reduce((n
 /** take drinks out of storage, the most plentiful first; returns what was taken */
 function takeDrink(w: World, n: number, why: string, c?: Colonist): ResourceId | null {
   let left = n, main: ResourceId | null = null;
-  // a drinker reaches for the one they love and leaves the one they dislike; otherwise the most plentiful goes first
-  const order = [...CATEGORIES.drink.members].sort((p, q) => (c ? taste(c, q) - taste(c, p) : 0) || w.res[q] - w.res[p]);
+  // a drinker reaches for the one they love and leaves the one they dislike; otherwise the finest, then the most plentiful
+  const order = [...CATEGORIES.drink.members].sort((p, q) => (c ? taste(c, q) - taste(c, p) : 0) || TIER_RANK[TIER[q] ?? 'plain'] - TIER_RANK[TIER[p] ?? 'plain'] || w.res[q] - w.res[p]);
   for (const r of order) {
     const t = Math.min(w.res[r], left); if (t <= 0) continue;
     w.res[r] -= t; flow(w, `${r}:-${why}`, t); left -= t; main ??= r;
@@ -332,7 +332,6 @@ function takeDrink(w: World, n: number, why: string, c?: Colonist): ResourceId |
   return main;
 }
 /** mood from the first drink of the evening, by kind */
-const DRINK_MOOD: Partial<Record<ResourceId, number>> = { ale: 6, cider: 6, mead: 8, tea: 5 };
 export function flow(w: World, key: string, n: number) { if (w.flows) w.flows[key] = (w.flows[key] ?? 0) + n; }
 export function storageCap(w: World) { return built(w).reduce((n, b) => n + (bdef(b).storage ?? 0), 0); }
 export function stored(w: World) { return sum(w.res); }
@@ -770,7 +769,7 @@ export function createWorld(seed: number, options: { colonists?: number; startDa
   const w: World = {
     recipeBatching: true, startDate, seed, rngState: seed >>> 0, hour: 6,
     colonists: [], buildings: [], terrain: [], paths: [],
-    res: { flax: 0, cloth: 0, hides: 0, leather: 0, coats: 0, wood: 0, berries: 0, fish: 0, mushrooms: 0, stew: 0, pie: 0, smokedFish: 0, planks: 0, ale: 0, apples: 0, grain: 0, honey: 0, cider: 0, mead: 0, clay: 0, reeds: 0, bricks: 0, wicker: 0, herbs: 0, flour: 0, bread: 0, skewers: 0, poultice: 0, tonic: 0, tea: 0, ...sc.res },
+    res: { flax: 0, cloth: 0, hides: 0, leather: 0, coats: 0, wood: 0, berries: 0, fish: 0, mushrooms: 0, stew: 0, pie: 0, smokedFish: 0, planks: 0, ale: 0, apples: 0, grain: 0, honey: 0, cider: 0, mead: 0, clay: 0, reeds: 0, bricks: 0, wicker: 0, herbs: 0, flour: 0, bread: 0, skewers: 0, poultice: 0, tonic: 0, tea: 0, acornMeal: 0, hotpot: 0, mulled: 0, ...sc.res },
     owned: [...sc.unlocked], perks: [], gold: sc.trade.gold, caravan: null,
     charterTier: 1, charter: null, charterHours: 0, chartersDone: [],
     decisions: [], log: [], opinions: {}, status: 'playing', strain: 0, nextEventHour: 24 * 1.6, sites: [], rerolls: 0,
@@ -2192,13 +2191,13 @@ function finishMeal(w: World, c: Colonist) {
   c.meal = null;
   if (!got) return;
   const meal = MEALS.includes(got) ? got : undefined;
-  c.lastMeal = { cooked: !!meal, table: !!(hall && bdef(hall).seats) && !bedridden(c), loved: !!meal && taste(c, meal) > 0 };
+  c.lastMeal = { cooked: !!meal, table: !!(hall && bdef(hall).seats) && !bedridden(c), loved: !!meal && taste(c, meal) > 0, tier: meal ? TIER[meal] ?? 'plain' : undefined };
   (c.ate ??= []).push({ r: got, h: w.hour }); if (c.ate.length > 10) c.ate.shift();
   const bonus = (has(c, 'glutton') ? 4 : 0) + (hasPerk(w, 'communalPot') ? 5 : 0);
   if (meal) {
     c.hunger = 100; w.stats.mealsEaten++;
     const v = (MEAL_MOOD[meal] ?? 5) + bonus;
-    const label = ({ pie: 'Ate pie', smokedFish: 'Ate smoked fish', stew: 'Ate a hot stew', bread: 'Ate fresh bread', skewers: 'Ate skewers' } as Partial<Record<ResourceId, string>>)[meal] ?? `Ate ${goodName(meal)}`;
+    const label = ({ pie: 'Ate pie', hotpot: 'Ate a hearty hotpot', smokedFish: 'Ate smoked fish', stew: 'Ate a hot stew', bread: 'Ate fresh bread', skewers: 'Ate skewers' } as Partial<Record<ResourceId, string>>)[meal] ?? `Ate ${goodName(meal)}`;
     addMemory(w, c, 'meal', label, v, 14);
     tasteMemory(w, c, meal);
   } else {
@@ -2380,6 +2379,8 @@ export function activeNeeds(w: World, standing = standingOf(w)): NeedKey[] {
   return [...STANDING_NEEDS[standing], ...extra];
 }
 const FRESH: ResourceId[] = ['berries', 'apples', 'fish', 'skewers'];
+/** village standing: how much a cooked meal of each tier counts toward the meals need, before the table and favourites */
+export const MEAL_TIER_COMFORT: Record<GoodTier, number> = { plain: 0.3, good: 0.6, fine: 1, feast: 1 };
 /** distinct meals eaten in the last few days */
 const mealKinds = (w: World, c: Colonist, hours: number) => new Set((c.ate ?? []).filter(a => a.h >= w.hour - hours && MEALS.includes(a.r)).map(a => a.r)).size;
 export function comfortParts(w: World, c: Colonist, standing = standingOf(w)): Partial<Record<NeedKey, number>> {
@@ -2396,7 +2397,8 @@ export function comfortParts(w: World, c: Colonist, standing = standingOf(w)): P
       case 'fire': out[k] = w.hearthCold ? 0 : 1; break;
       case 'meals': {
         if (!fed || !m?.cooked) { out[k] = 0; break; }
-        out[k] = standing >= 2 ? 0.5 + (m.table ? 0.35 : 0) + (m.loved ? 0.15 : 0) : 0.7 + (m.table ? 0.15 : 0) + (m.loved ? 0.15 : 0);
+        // from village standing, what was eaten matters: plain fare counts a little, a fine meal counts in full
+        out[k] = standing >= 2 ? Math.min(1, MEAL_TIER_COMFORT[m.tier ?? 'good'] * (m.table ? 1 : 0.7) + (m.loved ? 0.1 : 0)) : 0.7 + (m.table ? 0.15 : 0) + (m.loved ? 0.15 : 0);
         break;
       }
       case 'variety': { const n = mealKinds(w, c, 72); out[k] = later ? (n >= 3 ? 1 : n === 2 ? 0.6 : n === 1 ? 0.2 : 0) : (n >= 2 ? 1 : n === 1 ? 0.4 : 0); break; }
@@ -2968,7 +2970,7 @@ function caravanWares(w: World, trader: string): Pick<Caravan, 'stock' | 'bluepr
   const t = START.trade, def = TRADER_BY_ID[trader], stock: Caravan['stock'] = {};
   const between = ([a, b]: [number, number]) => a + Math.floor(nextRand(w) * (b - a + 1));
   // the pedlar carries anything, a little of it
-  const sells = def.sells.length ? def.sells : RESOURCES.map(r => r.id);
+  const sells = (def.sells.length ? def.sells : RESOURCES.map(r => r.id)).filter(tradeable);
   for (const r of shuffle(w, sells).slice(0, between(t.kinds))) stock[r] = { n: between(t.each), price: favour(w, PRICE[r] * def.markup) };
   const pool = (def.blueprints.length ? def.blueprints : BUILDINGS.filter(d => d.draftable).map(d => d.id)).filter(id => !w.owned.includes(id) && siteOk(w, BUILDING_BY_ID[id]));
   const blueprints = pool.length && nextRand(w) < t.blueprintChance ? [{ id: pick(w, pool), price: favour(w, t.blueprint) }] : [];
