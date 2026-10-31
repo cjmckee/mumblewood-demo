@@ -29,7 +29,7 @@ check(steps(known?.route).includes('build:kitchen'), `after research the kitchen
 
 // a map without a meadow can never make tonics
 const noMeadow = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(s => createWorld(s)).find(x => !x.sites.includes('meadow'))!;
-const tonic = charterPreview(noMeadow, 'hearty').conditions.find(c => c.text === '12 tonics used');
+const tonic = charterPreview(noMeadow, 'hearty').conditions.find(c => c.text === '12 tonics made');
 check(tonic?.route?.state === 'never', 'tonics without a meadow: not on this map');
 
 // variety lists a route per kind

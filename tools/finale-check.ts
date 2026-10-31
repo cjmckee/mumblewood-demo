@@ -85,41 +85,67 @@ const untilHour = (w: World, h: number, each: () => void = () => {}) => { for (l
   void laborers; void BUILDING_BY_ID;
 }
 
-// ---- the Long Table ----
+// ---- the Long Table: the feast pavilion's larder, then the feast ----
+/** a raised pavilion with its larder stocked as given (built once it's full) */
+function pavilion(w: World, larder: Partial<Record<string, number>>, full = true) {
+  if (!w.owned.includes('pavilion')) w.owned.push('pavilion');
+  const s = findSpot(w, 'pavilion', 16, 16, true)!; ok(apply(w, { type: 'place', def: 'pavilion', x: s.x, y: s.y }) === null, 'the pavilion can be placed');
+  const b = w.buildings.at(-1)!; b.stage = 1; b.delivered = { ...larder } as typeof b.delivered; b.built = full;
+  return b;
+}
 {
   const w = createWorld(81); clear(w);
-  w.charter = 'longtable';
-  ok(apply(w, { type: 'callFeast' }) === null, 'the feast can be called');
+  w.decisions = [{ kind: 'charter', tier: 3, options: ['longtable', 'hall'] }]; apply(w, { type: 'resolve', option: 0 });
+  ok(w.owned.includes('pavilion'), 'picking the Long Table brings the feast pavilion');
+  ok(apply(w, { type: 'callFeast' }) !== null, 'the feast can\u2019t be called before the pavilion is stocked');
+  ok(/Place the feast pavilion/.test(charterProgress(w)?.label ?? ''), 'the card says to place it');
+  const half = pavilion(w, { supper: 9, ale: 14 }, false);
+  ok(/larder 9 \/ 14 suppers, 14 \/ 14 drinks/.test(charterProgress(w)?.label ?? ''), `the card shows the larder (${charterProgress(w)?.label})`);
+  // released, with goods back in storage
+  const before = w.res.supper;
+  ok(apply(w, { type: 'releaseStash', building: half.uid }) === null && w.res.supper === before + 9 && !Object.keys(half.delivered).length, 'releasing the larder puts it back in storage');
+  w.buildings = w.buildings.filter(b => b !== half);
+  // too few people: it falls short, the leftovers stay in the larder, and it waits three days
+  const p = pavilion(w, { supper: 14, ale: 14 });
+  ok(apply(w, { type: 'callFeast' }) === null, 'with a stocked pavilion the feast can be called');
   ok(apply(w, { type: 'callFeast' }) !== null, 'calling it twice is refused');
-  // too few people: it falls short and can't be called again for three days
-  w.res.stew = 50; w.res.pie = 50; w.res.ale = 50; w.res.cider = 50;
   untilHour(w, 19);
   ok(!w.feast!.done && w.feast!.readyAt > w.hour + 60, `a feast with 3 settlers falls short and waits 3 days (${w.feast!.last})`);
+  ok(!p.built && (p.stage ?? 0) === 1 && (p.delivered.supper ?? 0) === 14 - (w.flows['supper:-feast'] ?? 0), `the rest stays in the larder and the pavilion goes back to stocking (${p.delivered.supper} left)`);
   ok(apply(w, { type: 'callFeast' }) !== null, 'it can’t be called again right away');
-  // a full table: 14 settlers, seats, two kinds of meal and drink
+  // a full table: 14 settlers, the larder full
   const w2 = createWorld(82); clear(w2);
   w2.charter = 'longtable';
   const donor = createWorld(83);
   let n = 0;
   while (alive(w2).length < 14) { const c = { ...structuredClone(donor.colonists[n % donor.colonists.length]), id: 1000 + n, partner: null, job: null, bed: null }; w2.colonists.push(c); n++; }
-  for (const id of ['dining', 'dining', 'dining']) { w2.owned.push('dining'); const s = findSpot(w2, id, 16, 16, true)!; apply(w2, { type: 'place', def: id, x: s.x, y: s.y }); }
-  for (const b of w2.buildings) if (b.def === 'dining') { b.built = true; b.progress = 99; }
-  for (const r of MEALS) w2.res[r] = 30;
-  w2.res.ale = 30; w2.res.cider = 30; w2.res.mead = 30; w2.res.tea = 30; w2.res.mulled = 30;
+  pavilion(w2, { supper: 14, ale: 5, cider: 5, mulled: 5 });
   for (const c of alive(w2)) { c.sulking = false; c.mood = 60; c.illness = null; }
   const f = feastCheck(w2);
-  ok(f.ok, `with 14 settlers, ${f.seats} seats and every meal and drink, the check says ready (${f.served} served)`);
+  ok(f.ok, `with 14 settlers and a full larder, the check says ready (${f.served} served, ${f.seats} seats)`);
   ok(apply(w2, { type: 'callFeast' }) === null, 'the feast is called');
+  w2.res.stew = 80;
   untilHour(w2, 19, () => { for (const c of alive(w2)) { c.sulking = false; c.illness = null; c.mood = Math.max(c.mood, 40); } });
   ok(!!w2.feast!.done, `the feast succeeds (${w2.feast!.last})`);
   ok(w2.status === 'won' || w2.chartersDone.includes('longtable'), `the Long Table charter completes (status ${w2.status})`);
-  // tastes matter: with one drink, the people who dislike it go without
+  // tastes matter: with only cider in the larder, the one settler who dislikes it goes without
   const w3 = createWorld(82); clear(w3); w3.charter = 'longtable';
-  w3.res.cider = 50; w3.res.stew = 50; w3.res.supper = 50;
+  pavilion(w3, { supper: 14, cider: 14 });
   alive(w3)[0].tastes = { loves: ['supper', 'ale'], dislikes: ['stew', 'cider'] };
   for (const c of alive(w3).slice(1)) c.tastes = { loves: ['supper', 'cider'], dislikes: ['stew', 'mead'] };
   const dislikeCider = alive(w3).filter(c => c.tastes.dislikes.includes('cider')).length;
   ok(dislikeCider === 1 && feastCheck(w3).hungry === 1, `with only cider, the one settler who dislikes it can't be served (${feastCheck(w3).hungry} unserved)`);
+  // deliveries leave fractions: 9.5 ale and 4.5 mulled cups are still 14 drinks
+  const w5 = createWorld(82); clear(w5); w5.charter = 'longtable';
+  let k = 0; while (alive(w5).length < 14) { w5.colonists.push({ ...structuredClone(donor.colonists[k % donor.colonists.length]), id: 2000 + k, partner: null, job: null, bed: null }); k++; }
+  for (const c of alive(w5)) { c.sulking = false; c.illness = null; c.tastes = { loves: ['supper', 'ale'], dislikes: ['stew', 'cider'] }; }
+  pavilion(w5, { supper: 14, ale: 9.5, mulled: 4.5 });
+  ok(feastCheck(w5).served === 14, `a larder of 9.5 ale and 4.5 mulled cups serves 14 (${feastCheck(w5).served})`);
+  // nothing in the larder is eaten before the feast
+  const w4 = createWorld(84); clear(w4); w4.charter = 'longtable'; for (const c of alive(w4)) c.hunger = 10;
+  const p4 = pavilion(w4, { supper: 14, ale: 14 }); w4.res.supper = 0; w4.res.stew = 10; w4.res.berries = 30;
+  for (let h = 0; h < 48; h++) { runHours(w4, 1); clear(w4); }
+  ok(p4.delivered.supper === 14, 'settlers don\u2019t eat from the larder');
   void built; void charterProgress;
 }
 

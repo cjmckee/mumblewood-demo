@@ -7,7 +7,7 @@ import {
   recipesOf, recipeOn, optionOn, optionsOf, currentRecipe, orderedRecipes, INPUT_CAPACITY, OUTBOX_CAP, siteOk, rerollCost, REROLL_STEP, stockOf, recipeReach, charterHelpers, charterDef,
   costOf, researchLeft, researchStillNeeds, desks, feastCheck, festivalPreview, mealTotal, drinkTotal,
   comfortParts, comfortOf, colonyComfort, comfortGaps, strainPerDay, footprint, activeNeeds, standingOf, STANDINGS, NeedKey, winterFuelPerDay,
-  sellPrice, renownOf, charterCounted, charterRequirements, basicsDone, researchOpen, edibleTotal, storePrio, colonyName, nameFrom, NAME_MAX,
+  sellPrice, renownOf, pavilionOf, larderOf, FEAST_MEALS, charterCounted, charterRequirements, basicsDone, researchOpen, edibleTotal, storePrio, colonyName, nameFrom, NAME_MAX,
 } from '../sim/world';
 import { charterPreview, metricRoutes, Route } from '../sim/charterplan';
 import { START } from '../sim/scenario';
@@ -206,6 +206,8 @@ export class UI {
   onProfile: () => void = () => {};
   private lastCoach = '';
   private picking: number | null = null; // errand id whose colonist picker is open
+  /** the pavilion whose larder release is waiting for a second tap */
+  private releaseArm: number | null = null;
   private festivalOpen = false;
   /** a saved run was found on boot: the game waits on the welcome-back card */
   resumeOpen = false;
@@ -467,6 +469,12 @@ export class UI {
       case 'place-rotate': this.rotatePlacing(); break;
       case 'paths': this.view.pathMode = true; this.view.placing = null; this.open = false; this.detail = null; break;
       case 'paths-done': this.view.pathMode = false; this.open = true; this.tab = 'build'; break;
+      case 'release-stash': {
+        // a second tap confirms: the larder goes back to storage
+        const uid = Number(arg);
+        if (this.releaseArm !== uid) { this.releaseArm = uid; this.lastSheet = ''; break; }
+        this.releaseArm = null; const err = this.send({ type: 'releaseStash', building: uid }); if (err) this.toast(err); else this.toast('The larder is back in storage.'); break;
+      }
       case 'cancel-site': { const err = this.send({ type: 'cancel', building: Number(arg) }); if (err) this.toast(err); this.detail = null; this.view.selected = null; break; }
       case 'assign': { const [cid, bid] = arg.split(':').map(x => (x === 'none' ? null : Number(x))); const err = this.send({ type: 'assign', colonist: cid!, building: bid }); if (err) this.toast(err); break; }
       case 'store-preset': { const [bid, m] = arg.split(':'); this.send({ type: 'storageFilter', building: Number(bid), allow: m === 'food' ? FOODS : m === 'goods' ? GOODS : null }); break; }
@@ -584,6 +592,7 @@ export class UI {
     const feastBtn = ch?.metric.kind === 'longTable' && !w.feast?.done ? (() => {
       const f = feastCheck(w); const wait = Math.max(0, Math.ceil((w.feast?.readyAt ?? 0) - w.hour));
       return w.feast?.called ? '<span class="chip feast on">Feast called for dusk</span>' : wait ? `<span class="chip feast">Next feast in ${wait}h</span>`
+        : !f.ready ? (pavilionOf(w) ? `<button type="button" class="chip feast" data-act="catalog-help" data-arg="pavilion">${icon('pavilion')}Stock the pavilion</button>` : `<button type="button" class="chip feast" data-act="catalog-help" data-arg="pavilion">${icon('pavilion')}Place the pavilion</button>`)
         : `<button type="button" class="chip feast${f.ok ? ' ready' : ''}" data-act="feast">${f.ok ? 'Call the feast' : 'Call the feast anyway'}</button>`;
     })() : '';
     const strain = Math.round(w.strain);
@@ -675,12 +684,20 @@ export class UI {
         : m.kind === 'allTable' ? [icon('dining'), `${r.value}/${r.target}h`]
         : m.kind === 'healthy' ? [icon('clinic'), `${r.value}/${r.target}h`]
         : m.kind === 'monument' ? [icon(m.def), `${Math.min(Math.floor(r.value), r.target)}/${r.target}`]
-        : m.kind === 'longTable' ? [icon('dining'), w.feast?.done ? '✓' : `${feastCheck(w).served}/${m.pop}`]
+        : m.kind === 'longTable' ? [icon('pavilion'), w.feast?.done ? '✓' : pavilionOf(w)?.built ? `${feastCheck(w).served}/${m.pop}` : `${Math.floor(FEAST_MEALS.reduce((n, x) => n + (larderOf(pavilionOf(w))[x] ?? 0), 0))}/${m.pop}`]
         : ['', esc(r.label)];
       const chip = `<button type="button" class="rchip${met ? ' met' : ''}" data-act="${act}" data-arg="${arg}" title="${esc(r.label)}" aria-label="${esc(r.label)}">${ico}<b>${text}</b></button>`;
       const tiles = met ? '' : routes(metricRoutes(w, m));
       return tiles ? `<span class="req">${chip}<span class="rarrow" aria-hidden="true">›</span>${tiles}</span>` : `<span class="req">${chip}</span>`;
     }).join('')}</div>`;
+  }
+
+  /** the feast pavilion's "release the larder" button, which asks once more before it empties the larder */
+  private releaseButton(w: World, b: Building) {
+    if (b.def !== 'pavilion' || !Object.values(larderOf(b)).some(n => (n ?? 0) >= 1)) return '';
+    const armed = this.releaseArm === b.uid;
+    void w;
+    return `<button type="button" class="ghost${armed ? ' danger' : ''}" data-act="release-stash" data-arg="${b.uid}">${armed ? 'Tap again: everything goes back to storage' : 'Release the larder'}</button>`;
   }
 
   private helpCard(w: World) {
@@ -989,7 +1006,7 @@ export class UI {
         ${def.moodGate ? `<p class="${alive(w).filter(c => c.mood >= def.moodGate!).length ? 'prefs' : 'warnline'}">${alive(w).filter(c => c.mood >= def.moodGate!).length} of ${alive(w).length} colonists are at mood ${def.moodGate}+ and willing to work on it${laborers(w).filter(c => c.mood >= def.moodGate!).length ? `, ${laborers(w).filter(c => c.mood >= def.moodGate!).length} of them laborers` : ', but none of them are laborers'}.</p>` : ''}
         <h3>Materials delivered</h3><ul class="thoughts">${mats || '<li><span>No materials needed</span></li>'}</ul>
         <h3>Work</h3><p class="prefs">${Math.round(b.progress * 10) / 10} of ${siteWork(b)} builder-hours. ${builders.length ? `${builders.map(c => personLink(c)).join(', ')} on it now.` : laborers(w).length ? 'Laborers will get to it.' : 'Nobody is free. Take someone off a job to make them a laborer.'}</p>
-        <button type="button" class="ghost" data-act="review-jobs">Review laborers →</button><button type="button" class="ghost danger" data-act="cancel-site" data-arg="${b.uid}">Cancel and return materials</button></div>`;
+        <button type="button" class="ghost" data-act="review-jobs">Review laborers →</button>${this.releaseButton(w, b)}<button type="button" class="ghost danger" data-act="cancel-site" data-arg="${b.uid}">Cancel and return materials</button></div>`;
     }
     const workers = workersAt(w, b.uid);
     const recs = recipesOf(b), cur = currentRecipe(w, b);
@@ -1034,7 +1051,8 @@ export class UI {
     const waiting = admissions ? alive(w).filter(c=>bedridden(c)&&!admissions.has(c.id)) : [];
     const waitLine = waiting.length ? `<p class="warnline">Waiting for beds: ${waiting.map(c=>`${personLink(c)} · ${Math.round(c.illness!.severity)}`).join(', ')}</p>` : '';
     const patients = def.patients ? `<p class="prefs">Patients: ${patientsAt(w,b).map(c=>`${personLink(c)} · ${esc(c.illness!.name)} ${Math.round(c.illness!.severity)}${c.goalReached ? '' : ' · arriving'}`).join(', ') || 'None'}</p>${START.clinicTriage ? '<p class="muted">Fatal illnesses take priority. Treatment needs a healthy doctor.</p>' : ''}` : '';
-    let staff = (blocked ? `<p class="warnline">${esc(blocked)}</p>` : '') + effLine + inboxLine + patients + waitLine + remedyLine + (b.def === 'desk' ? this.deskLines(w) : '');
+    const larderLine = def.id === 'pavilion' ? `<h3>Larder</h3><ul class="thoughts">${Object.entries(larderOf(b)).filter(([, n]) => (n ?? 0) >= 1).map(([r, n]) => `<li>${icon(r)}<span>${Math.floor(n ?? 0)} ${esc(goodLabel(r as InputKey))}</span></li>`).join('') || '<li><span>Empty</span></li>'}</ul>${this.releaseButton(w, b)}` : '';
+    let staff = larderLine + (blocked ? `<p class="warnline">${esc(blocked)}</p>` : '') + effLine + inboxLine + patients + waitLine + remedyLine + (b.def === 'desk' ? this.deskLines(w) : '');
     if (def.slots) {
       const cur = workers.map(c => `<div class="row static">${avatar(c)}<span class="who">${personLink(c,false)}<small>${def.job ? `${SKILL_NAMES[def.job]} ${Math.floor(c.skills[def.job])} · ` : ''}${def.job === c.likes ? 'loves this job' : def.job === c.dislikes ? 'hates this job' : 'doesn’t mind it'}</small></span><button type="button" class="ghost" data-act="assign" data-arg="${c.id}:none">Remove</button></div>`).join('');
       const cand = workers.length < def.slots ? alive(w).filter(c => c.job !== b.uid).sort((a, z) => (def.job ? z.skills[def.job] - a.skills[def.job] : 0) + (Number(z.likes === def.job) - Number(a.likes === def.job)) * 2).map(c => {
