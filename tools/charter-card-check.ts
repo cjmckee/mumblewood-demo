@@ -36,7 +36,7 @@ check(tonic?.route?.state === 'never', 'tonics without a meadow: not on this map
 const tasting = charterPreview(w, 'tasting').conditions.find(c => c.text.startsWith('40 renown from 3 kinds of drink'));
 check((tasting?.routes?.length ?? 0) === 3, `three drink routes are listed (${tasting?.routes?.map(r => r.good)})`);
 
-// while a charter is under way, its panel gets the same routes: bread on a fresh map needs an oven (acorn meal can come from the forager)
+// while a charter is under way, its panel gets the same routes: bread on a fresh map needs an oven (acorn meal can come from the kitchen)
 const f = createWorld(777);
 const breadParts = (charterDefOf('bread').metric as { kind: 'all'; parts: any[] }).parts;
 const breadRoute = metricRoutes(f, breadParts.find(p => p.kind === 'tally'))[0]?.route;

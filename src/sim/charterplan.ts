@@ -183,3 +183,14 @@ export function metricRoutes(w: World, m: CharterMetric): { good?: InputKey; rou
     default: return [];
   }
 }
+
+/**
+ * The blueprints the current charter's cheapest routes are still waiting on a draft for (a mill for the dough), so
+ * the next blueprint draft can offer one. Without this a charter whose only route runs through one blueprint can
+ * wait on luck all game.
+ */
+export function draftLinks(w: World): string[] {
+  const def = w.charter ? charterDef(w.charter) : undefined; if (!def) return [];
+  const parts = def.metric.kind === 'all' ? def.metric.parts : [def.metric];
+  return [...new Set(parts.flatMap(p => metricRoutes(w, p)).flatMap(x => x.route.steps.filter(s => s.how === 'draft').map(s => s.def)))];
+}

@@ -127,6 +127,13 @@ const ART: Record<ResourceId, () => string> = {
       + pa('M12 9.5h6c1.6 2.6 2 6.5.8 9.2-.5 1-1.5 1.5-2.6 1.5H12z', sh(c, 0.84)) + pa('M7.6 9.6l-1-3.2c1.6.6 3.4-.2 5.4.4 2-.6 3.8.2 5.4-.4l-1 3.2z', sh(c, 0.93))
       + re(7.2, 8.8, 9.6, 1.4, '#a07a4c', 0.7) + ci(10, 14.8, 2.2, sh(c, 0.92)) + ci(10, 14.8, 1.1, '#c4a46a');
   },
+  acorns: () => {
+    // three acorns in their cups, with an oak leaf
+    const nut = '#9a6a34', cap = '#6a5034';
+    const acorn = (x: number, y: number, r: number) => `<g transform="translate(${x} ${y}) rotate(${r})">${el(0, 1.2, 2.9, 3.4, nut)}${el(0.9, 1.6, 1.5, 2.4, sh(nut, 0.8))}${el(-0.9, 0.4, 0.8, 1.4, sh(nut, 1.25))}${el(0, -1.6, 3.3, 1.7, cap)}${el(0, -2, 2.6, 0.9, sh(cap, 1.2))}${re(-0.4, -4.4, 0.8, 2, cap, 0.4)}</g>`;
+    return shadow(9) + leaf(16.4, 8.4, -30, '#6a8a3a') + `<g transform="translate(16.4 8.4) rotate(-30) scale(1.7)">${el(0, 0, 2.6, 1.3, '#6a8a3a')}${el(0.4, -0.3, 1.6, 0.6, sh('#6a8a3a', 1.18))}</g>`
+      + acorn(8, 15.4, -18) + acorn(14.2, 16.6, 14) + acorn(11.4, 11.2, 4);
+  },
   acornMeal: () => {
     // a small sack of coarse meal with acorns at its foot
     const c = '#c8a878', nut = '#9a6a34', cap = '#6a5034';

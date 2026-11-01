@@ -49,7 +49,8 @@ interface Run {
 }
 const out: Run[] = [];
 for (let i = 0; i < runs; i++) {
-  const seed = 1000 + i * 7919;
+  // SEED_FROM=30 runs the next batch of seeds, to split a long batch across processes
+  const seed = 1000 + (i + Number(process.env.SEED_FROM ?? 0)) * 7919;
   const w: World = createWorld(seed);
   let r = seed;
   const rand = () => ((r = (r * 1103515245 + 12345) >>> 0) / 4294967296);
