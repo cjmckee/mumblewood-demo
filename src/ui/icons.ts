@@ -134,16 +134,75 @@ const ART: Record<ResourceId, () => string> = {
     return shadow(9) + leaf(16.4, 8.4, -30, '#6a8a3a') + `<g transform="translate(16.4 8.4) rotate(-30) scale(1.7)">${el(0, 0, 2.6, 1.3, '#6a8a3a')}${el(0.4, -0.3, 1.6, 0.6, sh('#6a8a3a', 1.18))}</g>`
       + acorn(8, 15.4, -18) + acorn(14.2, 16.6, 14) + acorn(11.4, 11.2, 4);
   },
-  acornMeal: () => {
-    // a small sack of coarse meal with acorns at its foot
-    const c = '#c8a878', nut = '#9a6a34', cap = '#6a5034';
-    const acorn = (x: number, y: number) => el(x, y + 0.6, 1.7, 2, nut) + el(x + 0.5, y + 0.9, 0.9, 1.4, sh(nut, 0.8)) + el(x, y - 0.9, 2, 1, cap) + re(x - 0.3, y - 2.6, 0.6, 1.2, cap, 0.3);
-    return shadow(8) + pa('M7 10c-1.4 2.4-1.8 6-.7 8.4.4.9 1.3 1.4 2.3 1.4h6.8c1 0 1.9-.5 2.3-1.4 1.1-2.4.7-6-.7-8.4z', c)
-      + pa('M12 10h5c1.4 2.4 1.8 6 .7 8.4-.4.9-1.3 1.4-2.3 1.4H12z', sh(c, 0.84)) + pa('M8.4 10.1l-.9-2.9c1.4.5 3-.2 4.5.3 1.5-.5 3.1.2 4.5-.3l-.9 2.9z', sh(c, 0.93))
-      + re(8, 9.4, 8, 1.3, '#7a5a3a', 0.6) + ci(10.8, 14.6, 0.5, sh(c, 0.7)) + ci(13, 16.2, 0.5, sh(c, 0.7)) + ci(11.6, 17.4, 0.4, sh(c, 0.7))
-      + acorn(5.2, 18.4) + acorn(19, 18.8);
-  },
   // ---- meals ----
+  mash: () => {
+    // a wooden tub of warm mash with grains floating in it
+    const tub = '#8a6038', m = '#c8a060';
+    return shadow(9) + pa('M4.4 10.6h15.2l-1.2 8c-.2 1.2-1.2 2-2.4 2H8c-1.2 0-2.2-.8-2.4-2z', tub) + pa('M12 10.6h7.6l-1.2 8c-.2 1.2-1.2 2-2.4 2H12z', sh(tub, 0.78))
+      + ln('M5.4 14.4h13.2M5.9 17.6h12.2', sh(tub, 0.62), 0.9) + el(12, 10.6, 7.6, 2.2, m) + el(11, 10.3, 4.4, 1, sh(m, 1.15))
+      + ci(8.6, 10.6, 0.6, sh(m, 0.75)) + ci(13.6, 11, 0.6, sh(m, 0.75)) + ci(15.8, 10.2, 0.5, sh(m, 0.75)) + steam(9.6, 7.6);
+  },
+  must: () => {
+    // a squat jug of fresh-pressed fruit juice with a berry and an apple beside it
+    const jug = '#d8cbb0', j = '#a04a6a';
+    return shadow(9) + pa('M7 8.6h8.4l1.2 3.6c.6 2-.2 5.8-1 7.4-.4.6-1 .8-1.6.8H8.4c-.6 0-1.2-.2-1.6-.8-.8-1.6-1.6-5.4-1-7.4z', jug)
+      + pa('M11.2 8.6h4.2l1.2 3.6c.6 2-.2 5.8-1 7.4-.4.6-1 .8-1.6.8h-2.8z', sh(jug, 0.8)) + el(11.2, 8.6, 4.2, 1.2, j) + el(10.4, 8.4, 2, 0.5, sh(j, 1.35))
+      + pa('M15.4 9.6c1.6-.2 2.6.6 2.6 2s-1 2.6-2.4 2.8', 'none', ' stroke="' + sh(jug, 0.8) + '" stroke-width="1.2"') + ci(18.6, 18.6, 1.9, '#d2452f') + ci(4.6, 19, 1.3, '#c04a6a');
+  },
+  driedMushrooms: () => {
+    // mushroom slices threaded on a string to dry
+    const cap = '#8a6a5a', stem = '#e0d2b4';
+    const slice = (x: number, y: number) => pa(`M${x - 2.6} ${y}c0-2.2 1.2-3.2 2.6-3.2s2.6 1 2.6 3.2z`, cap) + re(x - 0.9, y - 0.2, 1.8, 2.6, stem, 0.6) + pa(`M${x} ${y - 3.2}c1.4 0 2.6 1 2.6 3.2H${x}z`, sh(cap, 0.8));
+    return shadow(9) + ln('M2.6 6.4c4 3 14.8 3 18.8 0', '#c8b48a', 0.8) + slice(6.4, 10.6) + slice(12, 11.6) + slice(17.6, 10.6) + ln('M2.6 6.4v12', '#7a5a3a', 0.9) + ln('M21.4 6.4v12', '#7a5a3a', 0.9);
+  },
+  porridge: () => {
+    // a bowl of oat porridge with a drizzle of honey
+    const bowl = '#c8b89a', p = '#e8d8b0';
+    return shadow(9) + pa('M3.5 12h17c0 4.6-3.6 8.2-8.5 8.2S3.5 16.6 3.5 12z', bowl) + pa('M12 12h8.5c0 4.6-3.6 8.2-8.5 8.2z', sh(bowl, 0.8))
+      + el(12, 12, 8.5, 2.6, p) + el(11, 11.6, 5.4, 1.4, sh(p, 1.06)) + ln('M7.6 11.6c2 1.2 4.6-.8 6.6.2s2.4-.4 3.2-.6', '#e8a21c', 1) + ci(14.6, 12.4, 0.8, '#c04a6a')
+      + re(4.6, 13.2, 14.8, 1, sh(bowl, 1.2), 0.5, ' opacity=".7"') + steam(9.6, 8.6);
+  },
+  spirits: () => {
+    // a small clear bottle with a cork
+    const g = '#d8e4e0', d = '#d8c8a0';
+    return shadow(6) + re(10.4, 3.4, 3.2, 2.6, '#a0703e', 0.6) + re(10.8, 5.6, 2.4, 3, g, 0.4) + pa('M8.2 10.4c0-1.4 1.6-2 3.8-2s3.8.6 3.8 2v8.4c0 1-.8 1.6-1.8 1.6h-4c-1 0-1.8-.6-1.8-1.6z', g)
+      + pa('M8.4 13.4h7.2v5.4c0 1-.8 1.6-1.8 1.6h-3.6c-1 0-1.8-.6-1.8-1.6z', d) + pa('M12 13.4h3.6v5.4c0 1-.8 1.6-1.8 1.6H12z', sh(d, 0.85))
+      + re(9.2, 10.2, 1, 7.6, '#fff', 0.5, ' opacity=".55"');
+  },
+  cordial: () => {
+    // a round bottle of red cordial with a ribbon at the neck
+    const glass = '#e0d8d8', c = '#c0406a';
+    return shadow(7) + re(10.6, 3.2, 2.8, 2.4, '#a0703e', 0.6) + re(10.9, 5.4, 2.2, 3.4, glass, 0.4) + ci(12, 14.4, 6, glass) + pa('M6.2 14.6a5.8 5.8 0 0 0 11.6 0z', c)
+      + pa('M12 14.6h5.8a5.8 5.8 0 0 1-5.8 5.8z', sh(c, 0.78)) + el(12, 14.6, 5.8, 1, sh(c, 1.25)) + pa('M10.6 7.6l-2.6 1.2 1 .8M13.4 7.6l2.6 1.2-1 .8', '#e8b84a')
+      + el(9.4, 11.6, 1.1, 1.8, '#fff', ' opacity=".55" transform="rotate(30 9.4 11.6)"');
+  },
+  hippocras: () => {
+    // a tall goblet of dark spiced wine with a cinnamon stick
+    const cup = '#c8b07a', d = '#7a1e30';
+    return shadow(7) + el(12, 19.6, 5, 1.3, sh(cup, 0.8)) + re(11.1, 14.5, 1.8, 5, cup) + re(12, 14.5, 0.9, 5, sh(cup, 0.8))
+      + pa('M5.5 5.5h13c0 5-2.6 9.2-6.5 9.2S5.5 10.5 5.5 5.5z', cup) + pa('M12 5.5h6.5c0 5-2.6 9.2-6.5 9.2z', sh(cup, 0.8))
+      + el(12, 5.6, 6.5, 1.8, d) + el(10.6, 5.4, 3, 0.7, sh(d, 1.5)) + ln('M13.8 5.4l2.8-4', '#a0602a', 1.4) + re(6.8, 7, 1.2, 3.8, sh(cup, 1.3), 0.6);
+  },
+  fishpie: () => {
+    // a deep pie dish under a golden crust, with a fish tail poking out
+    const c = '#d8a85a', dish = '#7a5a8a';
+    return shadow(9) + el(12, 15.6, 9, 3.6, dish) + re(3.2, 12.4, 17.6, 3.4, sh(dish, 0.85)) + el(12, 12.4, 8.8, 3.4, c) + el(12, 12, 6.4, 2, sh(c, 1.12))
+      + pa('M15.8 9.6l4.4-3.2-.4 2.8 2 .4-3.8 2.4z', '#9c8c7a') + pa('M15.8 9.6l2.2 1.4-1.6.8z', sh('#9c8c7a', 0.8)) + ln('M8 11.6l2 1.2M11 10.6l1.8 1.4', sh(c, 0.75), 0.8) + steam(7.8, 9);
+  },
+  banquet: () => {
+    // a tall raised pie with a crimped crown of pastry and a sprig on top
+    const c = '#e8b84a', dish = '#b8a070';
+    return shadow(9) + el(12, 18.4, 9, 2.6, dish) + re(5, 9.4, 14, 8.6, sh(c, 0.85)) + re(12, 9.4, 7, 8.6, sh(c, 0.7)) + el(12, 9.4, 7, 2.2, c)
+      + pa('M5 9.4l1.4-2.6 1.4 2 1.4-2.4 1.4 2.2 1.4-2.6 1.4 2.6 1.4-2.2 1.4 2.4 1.4-2 1.4 2.6z', sh(c, 1.15)) + ln('M6.2 13h11.6M6.2 15.6h11.6', sh(c, 0.6), 0.6)
+      + ci(12, 9.2, 1.1, '#a8324a') + leaf(13.6, 7.4, -30, '#5e8f42');
+  },
+  platter: () => {
+    // an oval platter of braised skewers in a dark glaze
+    const plate = '#e0d8c8', g = '#8a3a2a', meat = '#9a6a4a';
+    const stick = (y: number, x: number) => ln(`M${x} ${y}l13 -3.4`, '#c8a066', 0.9) + el(x + 4, y - 1, 1.8, 1.4, meat) + el(x + 7.4, y - 1.9, 1.8, 1.4, '#6a8d3a') + el(x + 10.6, y - 2.8, 1.8, 1.4, meat);
+    return shadow(10) + el(12, 15.6, 10, 4, sh(plate, 0.8)) + el(12, 15, 10, 3.8, plate) + el(12, 15.2, 7.6, 2.6, g) + el(11, 14.8, 4, 1, sh(g, 1.35))
+      + stick(15.4, 4.4) + stick(17.6, 5.4);
+  },
   hotpot: () => {
     // a lidded clay pot with steam and a ladle handle
     const pot = '#9a4e2e', lid = '#b8643a';
@@ -207,12 +266,6 @@ const ART: Record<ResourceId, () => string> = {
       + el(12, 6.6, 6.5, 1.8, m) + el(10.6, 6.4, 3, 0.7, sh(m, 1.3)) + pa('M15.6 7.6c.6 1.4.4 2.6 0 3.4-.5.9-1.3.6-1.2-.3.1-.7.4-1.4.2-3z', '#e8a21c')
       + re(6.8, 8, 1.2, 3.6, sh(cup, 1.3), 0.6);
   },
-  tea: () => {
-    const cup = '#e9e4d8', t = '#8aa84a';
-    return shadow(9) + el(12, 18.6, 8.4, 1.8, sh(cup, 0.82)) + el(12, 18.2, 8.4, 1.6, cup)
-      + pa('M16.6 11.4h1.2c1.4 0 2.4 1 2.4 2.3s-1 2.3-2.4 2.3h-1.6v-1.5h1.5c.6 0 1-.4 1-.8s-.4-.8-1-.8h-1.1z', sh(cup, 0.85))
-      + pa('M5.6 10.5h12c0 4-2.4 7.6-6 7.6s-6-3.6-6-7.6z', cup) + pa('M11.6 10.5h6c0 4-2.4 7.6-6 7.6z', sh(cup, 0.85)) + el(11.6, 10.5, 6, 1.6, t) + el(10.6, 10.3, 3, 0.7, sh(t, 1.25)) + steam(9.6, 7.4);
-  },
   mulled: () => {
     // a clay mug of dark red mulled drink with a cinnamon stick and an orange slice
     const mug = '#8a5a3a', d = '#8a2a2a';
@@ -240,7 +293,7 @@ const ART: Record<ResourceId, () => string> = {
 
 /** "any meal", "any drink" and the like use a representative good */
 const CATEGORY_ICON: Record<Category | SlotId, ResourceId> = { rawFood: 'berries', meal: 'stew', drink: 'ale', fine: 'planks', remedy: 'tonic',
-  dough: 'flour', filling: 'berries', thickener: 'flour', base: 'fish', side: 'smokedFish', brew: 'ale', spice: 'herbs', toast: 'ale' };
+  grist: 'grain', fruit: 'berries', sweet: 'honey', spice: 'herbs', cured: 'smokedFish', brew: 'ale', feastMeal: 'banquet', feastDrink: 'hippocras' };
 
 /** each building's signature object, in the same style: what you'd spot first on its lot */
 const BUILDING_ART: Record<string, () => string> = {
@@ -378,6 +431,28 @@ const BUILDING_ART: Record<string, () => string> = {
       + re(11.2, 5.4, 1.6, 6, '#7a7a72') + ln('M11.2 6.6l1.6 1M11.2 8.4l1.6 1M11.2 10.2l1.6 1', '#5a5a52', 0.5) + re(8, 11.2, 8, 1.6, sh(wood, 1.15))
       + pa('M5.6 13h12.8l-1 7H6.6z', wood) + pa('M14.4 13h4l-1 7h-3z', sh(wood, 0.75)) + ln('M6.2 16.4h11.6', sh(wood, 0.65), 0.7)
       + ci(9.4, 12.2, 1.6, '#d2452f') + ci(12.4, 12, 1.5, '#b8c25a') + ci(15, 12.3, 1.4, '#d2452f') + pa('M14 15l-.6 2.6h1.2z', '#e8c070');
+  },
+  malthouse: () => {
+    // a kiln house with a tall vented roof, and a sack of grist at the door
+    const wall = '#9a7e5c', roof = '#6e5a3e', sack = '#d8c8a0';
+    return shadow(10) + re(4, 11, 13, 9.4, wall) + re(11, 11, 6, 9.4, sh(wall, 0.8)) + pa('M3 11.4L10.5 5.4 18 11.4z', roof) + pa('M10.5 5.4L18 11.4h-7.5z', sh(roof, 0.8))
+      + pa('M8.6 6.4l1.9-3 1.9 3z', sh(roof, 0.9)) + re(9.6, 1.6, 1.8, 1.8, sh(roof, 0.7)) + ln('M10.4 1c-.8-.8.8-1.2 0-2', '#d8d0c4', 0.7, ' opacity=".8"')
+      + pa('M8.4 20.4v-4c0-1 2.4-1 2.4 0v4z', '#3a2a1c') + pa('M16.4 20.6c-1.2 0-1.6-1.6-1.4-3.2.2-1.6 1-2.6 2.6-2.6s2.4 1 2.6 2.6c.2 1.6-.2 3.2-1.4 3.2z', sack)
+      + pa('M17.6 14.8c1.6 0 2.4 1 2.6 2.6.2 1.6-.2 3.2-1.4 3.2h-1.2z', sh(sack, 0.82)) + ci(17.6, 15.2, 0.6, '#d8c060');
+  },
+  stillhouse: () => {
+    // a copper pot still with its swan neck and a dripping coil
+    const cu = '#b87333';
+    return shadow(9) + pa('M4.6 19.6c-.6-4.4 1.4-8.6 5.8-8.6s6.4 4.2 5.8 8.6z', cu) + pa('M10.4 11c4.4 0 6.4 4.2 5.8 8.6h-4c.6-3.6 0-7-1.8-8.6z', sh(cu, 0.78))
+      + re(9, 7.6, 2.8, 3.6, sh(cu, 1.1), 1) + ln('M10.4 7.8c0-3 3-4.6 6-3.6 2 .6 3 2.2 3 4.4v5', sh(cu, 0.9), 1.4) + ln('M17.2 13.6h4M17.2 15.2h4M17.2 16.8h4', '#8a8a82', 1)
+      + re(18.2, 17.6, 2, 2.6, '#d8e4e0', 0.4) + ci(19.2, 17.2, 0.5, '#d8c8a0') + el(8, 14.6, 1.2, 2.4, sh(cu, 1.35), ' opacity=".6"');
+  },
+  oakhut: () => {
+    // a little hut under a broad oak, a basket of acorns in front
+    const crown = '#3d5f2c', wall = '#7a5e3e', nut = '#9a6a34';
+    return shadow(10) + re(13.4, 9, 2.4, 11, '#4a3626') + el(14.6, 7.6, 8, 5.6, crown) + el(12, 6.4, 4.6, 3.2, sh(crown, 1.15)) + el(18, 8.6, 3.4, 2.4, sh(crown, 0.85))
+      + re(3.4, 13.6, 8, 6.6, wall) + re(8, 13.6, 3.4, 6.6, sh(wall, 0.8)) + pa('M2.6 14l4.8-4 4.8 4z', '#6b7a3a') + pa('M5.6 20.2v-3c0-.8 1.8-.8 1.8 0v3z', '#2e2218')
+      + pa('M15.4 17.4h5.4l-.6 3h-4.2z', '#c8a868') + el(16.8, 17.2, 1, 0.8, nut) + el(18.6, 17, 1, 0.8, nut) + el(17.6, 16.4, 1, 0.8, sh(nut, 1.15));
   },
   orchard: () => {
     const lad = '#9a7044', c = '#c8a868';

@@ -243,7 +243,7 @@ export const INBOX_TARGET = 12; // Legacy comparison mode only.
 export const INPUT_CAPACITY = 24;
 export const INPUT_BATCH_OUTPUTS = 12;
 export const INPUT_REFILL_AT = 2;
-export const T_GRASS = 0, T_TREE = 1, T_BUSH = 2, T_WATER = 3, T_APPLE = 4, T_FLOWERS = 5, T_SOIL = 6, T_CLAY = 7;
+export const T_GRASS = 0, T_TREE = 1, T_BUSH = 2, T_WATER = 3, T_APPLE = 4, T_FLOWERS = 5, T_SOIL = 6, T_CLAY = 7, T_OAK = 8;
 
 // ---------- Helpers ----------
 export const day = (w: World) => Math.floor(w.hour / 24) + 1;
@@ -325,7 +325,7 @@ export function drinkTotal(w: World) { return CATEGORIES.drink.members.reduce((n
 function takeDrink(w: World, n: number, why: string, c?: Colonist): ResourceId | null {
   let left = n, main: ResourceId | null = null;
   // a drinker reaches for the one they love and leaves the one they dislike; otherwise the highest tier, then the most plentiful
-  const order = [...CATEGORIES.drink.members].sort((p, q) => (c ? taste(c, q) - taste(c, p) : 0) || TIER_RANK[TIER[q] ?? 'simple'] - TIER_RANK[TIER[p] ?? 'simple'] || w.res[q] - w.res[p]);
+  const order = [...CATEGORIES.drink.members].sort((p, q) => (c ? taste(c, q) - taste(c, p) : 0) || TIER_RANK[TIER[q] ?? 'processed'] - TIER_RANK[TIER[p] ?? 'processed'] || w.res[q] - w.res[p]);
   for (const r of order) {
     const t = Math.min(w.res[r], left); if (t <= 0) continue;
     w.res[r] -= t; flow(w, `${r}:-${why}`, t); left -= t; main ??= r;
@@ -354,7 +354,7 @@ export function renownOf(w: World, category: 'meal' | 'drink') {
   const goods = category === 'meal' ? MEALS : CATEGORIES.drink.members;
   let points = 0; const kinds: ResourceId[] = [];
   for (const r of goods) {
-    const per = RENOWN[TIER[r] ?? 'simple'], n = w.tally?.[how][r] ?? 0;
+    const per = RENOWN[TIER[r] ?? 'processed'], n = w.tally?.[how][r] ?? 0;
     points += per * n;
     if (per > 0 && n >= RENOWN_KIND_MIN) kinds.push(r);
   }
@@ -461,7 +461,8 @@ function genTerrain(w: World) {
   // every colony starts on wood and berries, so one grove and one thick berry patch are always close by
   for (let i = 0; i < 3; i++) { const g = i === 0 ? around(7, 8.5) : around(7, 11); blob(g.x, g.y, 2.6 + nextRand(w), T_TREE, 0.75); }
   for (let i = 0; i < 3; i++) { const g = i === 0 ? around(5.5, 6.5) : around(5.5, 10); blob(g.x, g.y, i === 0 ? 2.1 : 1.7, T_BUSH, i === 0 ? 1 : 0.8); }
-  // two of the three resource sites, each on open grass, so every map leaves out one route to drinks
+  // two of the five resource sites, each on open grass: a site makes one slot's ingredient quicker to gather, and every
+  // slot has a way to fill it on any map
   const order = SITES.map(s => ({ s, k: nextRand(w) })).sort((a, b) => a.k - b.k).map(x => x.s.id).slice(0, 2);
   const onGrass = (cx: number, cy: number, r: number, v: number, density: number) => {
     for (let x = Math.floor(cx - r - 1); x <= cx + r + 1; x++) for (let y = Math.floor(cy - r - 1); y <= cy + r + 1; y++) {
@@ -474,6 +475,7 @@ function genTerrain(w: World) {
     if (id === 'grove') onGrass(g.x, g.y, 2.2, T_APPLE, 0.75);
     if (id === 'meadow') onGrass(g.x, g.y, 2.6, T_FLOWERS, 0.9);
     if (id === 'soil') onGrass(g.x, g.y, 2.8, T_SOIL, 1);
+    if (id === 'oaks') onGrass(g.x, g.y, 2.3, T_OAK, 0.7);
     if (id === 'clay') {
       // clay lines a stretch of the pond's shore: grass tiles next to water, around one point on the bank
       const shore: { x: number; y: number }[] = [];
@@ -540,6 +542,7 @@ export function efficiencyAt(w: World, defId: string, x: number, y: number, rot 
   if (d.needs === 'trees') { const n = count(T_TREE, 4); return { eff: Math.max(0.15, Math.min(1, n / 14)), count: n, label: `${n} trees nearby` }; }
   if (d.needs === 'bushes') { const n = count(T_BUSH, 2.6); return { eff: Math.max(0.15, Math.min(1, n / 6)), count: n, label: `${n} berry bushes nearby` }; }
   if (d.needs === 'apples') { const n = count(T_APPLE, 2.6); return { eff: Math.max(0.15, Math.min(1, n / 6)), count: n, label: `${n} apple trees nearby` }; }
+  if (d.needs === 'oaks') { const n = count(T_OAK, 2.6); return { eff: Math.max(0.15, Math.min(1, n / 6)), count: n, label: `${n} oaks nearby` }; }
   if (d.needs === 'flowers') {
     // flower beds count as two tiles of meadow each, so a player can plant a meadow where there isn't one
     const beds = w.buildings.filter(b => b.built && b.def === 'flowerbed' && Math.hypot(b.x + 0.5 - cx, b.y + 0.5 - cy) <= 3).length;
@@ -615,6 +618,7 @@ export function canPlace(w: World, defId: string, x: number, y: number, rot = 0)
     if (t === T_TREE) return { ok: false, reason: 'There are trees in the way.' };
     if (t === T_BUSH) return { ok: false, reason: 'There are berry bushes in the way.' };
     if (t === T_APPLE) return { ok: false, reason: 'There are apple trees in the way.' };
+    if (t === T_OAK) return { ok: false, reason: 'There are oaks in the way.' };
     if (t === T_FLOWERS) return { ok: false, reason: 'The wildflower meadow is in the way.' };
     if (t === T_CLAY) return { ok: false, reason: 'The clay bank is in the way.' };
   }
@@ -797,7 +801,7 @@ export function createWorld(seed: number, options: { colonists?: number; startDa
   const w: World = {
     recipeBatching: true, startDate, seed, rngState: seed >>> 0, hour: 6,
     colonists: [], buildings: [], terrain: [], paths: [],
-    res: { flax: 0, cloth: 0, hides: 0, leather: 0, coats: 0, wood: 0, berries: 0, fish: 0, mushrooms: 0, stew: 0, pie: 0, smokedFish: 0, planks: 0, ale: 0, apples: 0, grain: 0, honey: 0, cider: 0, mead: 0, clay: 0, reeds: 0, bricks: 0, wicker: 0, herbs: 0, flour: 0, bread: 0, skewers: 0, poultice: 0, tonic: 0, tea: 0, acorns: 0, acornMeal: 0, hotpot: 0, mulled: 0, supper: 0, ...sc.res },
+    res: { flax: 0, cloth: 0, hides: 0, leather: 0, coats: 0, wood: 0, berries: 0, fish: 0, mushrooms: 0, stew: 0, pie: 0, smokedFish: 0, planks: 0, ale: 0, apples: 0, grain: 0, honey: 0, cider: 0, mead: 0, clay: 0, reeds: 0, bricks: 0, wicker: 0, herbs: 0, flour: 0, bread: 0, skewers: 0, poultice: 0, tonic: 0, acorns: 0, mash: 0, must: 0, driedMushrooms: 0, porridge: 0, hotpot: 0, mulled: 0, spirits: 0, cordial: 0, hippocras: 0, supper: 0, fishpie: 0, banquet: 0, platter: 0, ...sc.res },
     owned: [...sc.unlocked], perks: [], gold: sc.trade.gold, caravan: null,
     charterTier: 1, charter: null, charterHours: 0, chartersDone: [],
     decisions: [], log: [], opinions: {}, status: 'playing', strain: 0, nextEventHour: 24 * 1.6, sites: [], rerolls: 0,
@@ -939,7 +943,7 @@ function researchHourly(w: World, b: Building, c: Colonist, dt: number) {
 }
 
 /** the site a gatherer needs on the map, if any */
-const SITE_FOR: Partial<Record<NonNullable<BuildingDef['needs']>, SiteId>> = { apples: 'grove', flowers: 'meadow', soil: 'soil', clay: 'clay' };
+const SITE_FOR: Partial<Record<NonNullable<BuildingDef['needs']>, SiteId>> = { apples: 'grove', flowers: 'meadow', soil: 'soil', clay: 'clay', oaks: 'oaks' };
 /** this map has what the building gathers from (every map has trees, bushes and water) */
 export function siteOk(w: World, d: BuildingDef) { const s = d.needs && SITE_FOR[d.needs]; return !s || w.sites.includes(s); }
 /** a building the colony owns, or could own, gathers this good on this map */
@@ -2280,13 +2284,13 @@ function finishMeal(w: World, c: Colonist) {
   c.meal = null;
   if (!got) return;
   const meal = MEALS.includes(got) ? got : undefined;
-  c.lastMeal = { cooked: !!meal, table: !!(hall && bdef(hall).seats) && !bedridden(c), loved: !!meal && taste(c, meal) > 0, tier: meal ? TIER[meal] ?? 'simple' : undefined };
+  c.lastMeal = { cooked: !!meal, table: !!(hall && bdef(hall).seats) && !bedridden(c), loved: !!meal && taste(c, meal) > 0, tier: meal ? TIER[meal] ?? 'processed' : undefined };
   (c.ate ??= []).push({ r: got, h: w.hour }); if (c.ate.length > 10) c.ate.shift();
   const bonus = (has(c, 'glutton') ? 4 : 0) + (hasPerk(w, 'communalPot') ? 5 : 0);
   if (meal) {
     c.hunger = 100; w.stats.mealsEaten++;
     const v = (MEAL_MOOD[meal] ?? 5) + bonus;
-    const label = ({ supper: 'Ate a ploughman\u2019s supper', pie: 'Ate pie', hotpot: 'Ate a hearty hotpot', smokedFish: 'Ate smoked fish', stew: 'Ate a hot stew', bread: 'Ate fresh bread', skewers: 'Ate skewers' } as Partial<Record<ResourceId, string>>)[meal] ?? `Ate ${goodName(meal)}`;
+    const label = ({ banquet: 'Ate a banquet pie', platter: 'Ate a braised platter', supper: 'Ate a ploughman\u2019s supper', fishpie: 'Ate fish pie', pie: 'Ate fruit pie', hotpot: 'Ate a hearty hotpot', smokedFish: 'Ate smoked fish', driedMushrooms: 'Chewed dried mushrooms', stew: 'Ate a hot stew', bread: 'Ate fresh bread', porridge: 'Ate warm porridge', skewers: 'Ate skewers' } as Partial<Record<ResourceId, string>>)[meal] ?? `Ate ${goodName(meal)}`;
     addMemory(w, c, 'meal', label, v, 14);
     tasteMemory(w, c, meal);
   } else {
@@ -2469,9 +2473,9 @@ export function activeNeeds(w: World, standing = standingOf(w)): NeedKey[] {
 }
 const FRESH: ResourceId[] = ['berries', 'apples', 'fish', 'skewers'];
 /** village standing: how much a cooked meal of each tier counts toward the meals need, before the table and favourites */
-export const MEAL_TIER_COMFORT: Record<GoodTier, number> = { simple: 0.3, refined: 0.6, quality: 1, magnificent: 1 };
+export const MEAL_TIER_COMFORT: Record<GoodTier, number> = { processed: 0.3, simple: 0.5, refined: 0.75, quality: 1, magnificent: 1 };
 /** settlement standing: a cooked meal of each tier, before the table and favourites (stew is fine; better is a bonus) */
-export const SETTLEMENT_MEAL_COMFORT: Record<GoodTier, number> = { simple: 0.75, refined: 0.85, quality: 1, magnificent: 1 };
+export const SETTLEMENT_MEAL_COMFORT: Record<GoodTier, number> = { processed: 0.7, simple: 0.8, refined: 0.9, quality: 1, magnificent: 1 };
 /** distinct meals eaten in the last few days */
 const mealKinds = (w: World, c: Colonist, hours: number) => new Set((c.ate ?? []).filter(a => a.h >= w.hour - hours && MEALS.includes(a.r)).map(a => a.r)).size;
 export function comfortParts(w: World, c: Colonist, standing = standingOf(w)): Partial<Record<NeedKey, number>> {
@@ -2832,10 +2836,10 @@ function triggerEvent(w: World) {
 }
 
 /** what a stock condition counts, in words: a category's name when it's the whole category, otherwise the goods */
-const STOCK_PLURAL: Partial<Record<ResourceId, string>> = { pie: 'pies', tonic: 'tonics', poultice: 'poultices' };
+const STOCK_PLURAL: Partial<Record<ResourceId, string>> = { pie: 'fruit pies', fishpie: 'fish pies', banquet: 'banquet pies', platter: 'braised platters', supper: 'ploughman\u2019s suppers', tonic: 'tonics', poultice: 'poultices', cordial: 'cordials' };
 export function stockName(goods: ResourceId[]) {
   // a tier and everything above it reads as "quality+ meals", "refined+ drinks"
-  for (const [cat, list] of [['meals', MEALS], ['drinks', CATEGORIES.drink.members]] as const) for (const t of ['refined', 'quality', 'magnificent'] as GoodTier[]) {
+  for (const [cat, list] of [['meals', MEALS], ['drinks', CATEGORIES.drink.members]] as const) for (const t of ['simple', 'refined', 'quality', 'magnificent'] as GoodTier[]) {
     const tier = atLeast(list, t);
     if (tier.length > 1 && tier.length === goods.length && tier.every(r => goods.includes(r))) return `${t}+ ${cat}`;
   }
@@ -2902,7 +2906,7 @@ function metricValue(w: World, m: CharterMetric, slot: number): { value: number;
         const need = costOf(pav), left = remainingCost(pav), total = sum(need), got = (pav.stage ?? 0) >= 1 ? total - sum(left) : 0;
         const larder = larderOf(pav), meals = FEAST_MEALS.reduce((n, r) => n + (larder[r] ?? 0), 0), drinks = FEAST_DRINKS.reduce((n, r) => n + (larder[r] ?? 0), 0);
         return { value: (pav.stage ?? 0) >= 1 ? 0.1 + 0.85 * got / Math.max(1, total) : 0.05, target: 1,
-          label: (pav.stage ?? 0) >= 1 ? `larder ${Math.floor(meals)} / ${m.pop} suppers, ${Math.floor(drinks)} / ${m.pop} drinks` : 'raising the feast pavilion' };
+          label: (pav.stage ?? 0) >= 1 ? `larder ${Math.floor(meals)} / ${m.pop} magnificent meals, ${Math.floor(drinks)} / ${m.pop} quality drinks` : 'raising the feast pavilion' };
       }
       const f = feastCheck(w);
       return { value: Math.min(0.99, Math.min(f.served, m.pop) / m.pop * (f.ok ? 1 : 0.95)), target: 1, label: `${f.served} / ${m.pop} would be served · ${f.seats} seats${f.sulkers ? ` · ${f.sulkers} sulking` : ''}${w.feast?.called ? ' · called for dusk' : ''}` };
@@ -2953,7 +2957,7 @@ function runFestival(w: World) {
 }
 
 /** the founders' feast serves magnificent meals, with a refined drink or better (several kinds, so tastes can be met) */
-export const FEAST_MEALS = atLeast(MEALS, 'magnificent'), FEAST_DRINKS = atLeast(CATEGORIES.drink.members, 'refined');
+export const FEAST_MEALS = atLeast(MEALS, 'magnificent'), FEAST_DRINKS = atLeast(CATEGORIES.drink.members, 'quality');
 /** the feast pavilion: placed, raised, stocking its larder, or stocked and ready as the feast hall */
 export const pavilionOf = (w: World) => w.buildings.find(b => b.def === 'pavilion');
 /** what's in the pavilion's larder: goods delivered while it's being stocked, kept when it's ready */
@@ -2978,7 +2982,7 @@ export function feastUnservedDrinks(w: World): Colonist[] {
   return alive(w).filter(c => !c.sulking && !bedridden(c)).filter(c => !serving(pool, c, FEAST_DRINKS, true));
 }
 const feastTarget = (w: World) => (charterDef(w.charter)?.metric as { pop?: number } | undefined)?.pop ?? 14;
-/** a dry run of the founders' feast: who would come, and who would get a supper and a drink they don't dislike from the larder */
+/** a dry run of the founders' feast: who would come, and who would get a magnificent meal and a quality drink they don't dislike from the larder */
 export function feastCheck(w: World) {
   const people = alive(w).filter(c => !bedridden(c));
   const sulkers = people.filter(c => c.sulking).length;
@@ -3012,10 +3016,10 @@ function runFeast(w: World) {
   }
   for (const r of Object.keys(larder) as ResourceId[]) if ((larder[r] ?? 0) < 1e-6) delete larder[r];
   const target = feastTarget(w);
-  if (served >= target) { f.done = true; f.last = 'triumph'; addLog(w, `The founders\u2019 feast: ${served} settlers at one long table in the pavilion, every plate a ploughman\u2019s supper. The Crown\u2019s envoy cries a little.`, 'good'); return; }
+  if (served >= target) { f.done = true; f.last = 'triumph'; addLog(w, `The founders\u2019 feast: ${served} settlers at one long table in the pavilion, every plate a magnificent one. The Crown\u2019s envoy cries a little.`, 'good'); return; }
   const short: string[] = [];
   if (sulkers) short.push(`${sulkers} sulked behind the woodpile instead`);
-  if (unserved) short.push(`${unserved} got no supper and drink they would have`);
+  if (unserved) short.push(`${unserved} got no meal and drink they would have`);
   short.push(`only ${served} of the ${target} the Crown asked for sat down to eat`);
   f.readyAt = w.hour + 72; f.last = short.join('; ');
   // what's left stays in the larder, and the pavilion goes back to stocking
@@ -3106,7 +3110,7 @@ export function charterCounted(w: World): ResourceId[] {
     if (p.kind === 'stock') p.resources.forEach(r => out.add(r));
     if (p.kind === 'variety') CATEGORIES[p.category].members.forEach(r => out.add(r));
     if (p.kind === 'tally') p.resources.forEach(r => out.add(r));
-    if (p.kind === 'renown') (p.category === 'meal' ? MEALS : CATEGORIES.drink.members).filter(r => RENOWN[TIER[r] ?? 'simple'] > 0).forEach(r => out.add(r));
+    if (p.kind === 'renown') (p.category === 'meal' ? MEALS : CATEGORIES.drink.members).filter(r => RENOWN[TIER[r] ?? 'processed'] > 0).forEach(r => out.add(r));
     if (p.kind === 'longTable') [...FEAST_MEALS, ...FEAST_DRINKS].forEach(r => out.add(r));
     if (p.kind === 'monument') { const b = w.buildings.find(x => x.def === p.def && !x.built); if (b) for (const k of Object.keys(remainingCost(b))) membersOf(k as InputKey).forEach(r => out.add(r)); }
   }

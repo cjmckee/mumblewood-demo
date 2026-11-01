@@ -6,7 +6,7 @@ import { World, feastUnservedDrinks, orderedRecipes, costOf, tallyOf, renownOf, 
 import { seasonOf } from './seasons';
 import { draftLinks } from './charterplan';
 
-const BLUEPRINT_PRIORITY = ['sawmill', 'pieoven', 'dock', 'cottage', 'brewery', 'ciderpress', 'tavern', 'kiln', 'claypit', 'carpenter', 'orchard', 'field', 'apiary', 'smokehouse', 'cellar', 'stage', 'bathhouse', 'bakery', 'apothecary', 'herbgarden', 'mill', 'tailor', 'weaver', 'flaxfield', 'tanner', 'trapper'];
+const BLUEPRINT_PRIORITY = ['sawmill', 'pieoven', 'dock', 'cottage', 'brewery', 'ciderpress', 'tavern', 'kiln', 'claypit', 'carpenter', 'orchard', 'field', 'apiary', 'smokehouse', 'cellar', 'stage', 'bathhouse', 'bakery', 'malthouse', 'mill', 'stillhouse', 'apothecary', 'herbgarden', 'oakhut', 'tailor', 'weaver', 'flaxfield', 'tanner', 'trapper'];
 const DRINK_MAKERS = ['brewery', 'ciderpress'];
 /** workshops that make planks, bricks or wicker */
 const FINE_MAKERS = ['sawmill', 'kiln', 'carpenter'];
@@ -155,14 +155,8 @@ function manageRecipes(w: World) {
     let on = aimed.some(Boolean) ? aimed : recs.map((r, i) => !plenty(r.output) || !can[i]);
     if (!on.some((x, i) => x && can[i])) on = recs.map(() => true);
     // the staple stays on while meals are short: a kitchen aimed at hotpot still makes stew when people are hungry
-    if (BOT.dailyQuality && mealTotal(w) < pop * 2) on = on.map((x, i) => x || (TIER[recs[i].output] === 'simple' && MEALS.includes(recs[i].output) && can[i]));
+    if (BOT.dailyQuality && mealTotal(w) < pop * 2) on = on.map((x, i) => x || (recs[i].output === 'stew' && can[i]));
     on.forEach((x, i) => { if (x !== recipeOn(b, i)) apply(w, { type: 'toggleRecipe', building: b.uid, recipe: i, on: x }); });
-    // acorns, when there are some, are ground first, up to a small stock: otherwise a kitchen never stops making stew
-    const grind = recs.findIndex(r => r.output === 'acornMeal');
-    if (grind >= 0 && on[grind]) {
-      if (b.productionLimits?.acornMeal == null) apply(w, { type: 'productionLimit', building: b.uid, output: 'acornMeal', limit: 10 });
-      for (let n = 0; n < recs.length && orderedRecipes(b)[0].i !== grind; n++) apply(w, { type: 'recipePriority', building: b.uid, recipe: grind, delta: -1 });
-    }
   }
 }
 /** the parts of the current charter (an all-at-once charter has several) */
@@ -188,10 +182,10 @@ const moodCharter = (w: World) => partsOf(w).some(p => ['avgMood', 'monument', '
 /** what each charter leans on, for staffing */
 const FOCUS: Record<string, string[]> = {
   settled: ['kitchen', 'rawFood'], woodsmoke: ['smokehouse', 'rawFood'], firstplanks: ['sawmill', 'kiln', 'claypit', 'woodcutter'], rested: ['kitchen', 'rawFood', 'woodcutter'],
-  bread: ['field', 'mill', 'bakery'], piesky: ['field', 'mill', 'pieoven', 'rawFood'], twokitchens: ['kitchen', 'smokehouse', 'pieoven', 'bakery', 'rawFood'],
+  bread: ['mill', 'malthouse', 'bakery'], piesky: ['mill', 'malthouse', 'pieoven', 'bakery'], twokitchens: ['kitchen', 'smokehouse', 'pieoven', 'bakery', 'rawFood'],
   roof: ['sawmill', 'kiln', 'drinks', 'field', 'apiary'], hearty: ['apothecary', 'herbgarden', 'apiary', 'clinic'],
   menu: ['kitchen', 'smokehouse', 'pieoven', 'bakery', 'rawFood'], tasting: ['drinks', 'apothecary', 'herbgarden', 'field', 'apiary'],
-  hall: ['sawmill', 'kiln', 'claypit', 'woodcutter', 'kitchen', 'drinks', 'field'], longtable: ['kitchen', 'drinks', 'smokehouse', 'pieoven', 'bakery', 'field', 'tavern', 'rawFood'],
+  hall: ['sawmill', 'kiln', 'claypit', 'woodcutter', 'smokehouse', 'pieoven', 'drinks'], longtable: ['sawmill', 'drinks', 'smokehouse', 'pieoven', 'bakery', 'mill', 'malthouse', 'rawFood'],
 };
 /** research the bot wants first: what fixes today's problems, then the rest in a sensible order */
 const RESEARCH_ORDER = ['cookery', 'messhall', 'physick', 'warehousing', 'gardening', 'masonry'];
@@ -294,7 +288,7 @@ export function charterEffort(w: World, id: string): Record<string, number> {
       break;
     }
     case 'renown': {
-      const goods = (p.category === 'meal' ? MEALS : CATEGORIES.drink.members).filter(r => RENOWN[TIER[r] ?? 'simple'] > 0);
+      const goods = (p.category === 'meal' ? MEALS : CATEGORIES.drink.members).filter(r => RENOWN[TIER[r] ?? 'processed'] > 0);
       const costs = goods.map(r => goodCost(w, r) + 1).sort((a, b) => a - b).slice(0, p.kinds);
       add(`${p.kinds} kinds of ${p.category} for renown`, costs.reduce((a, b) => a + b, 0) + p.amount / 20);
       break;
@@ -498,7 +492,7 @@ export function autoDecide(w: World, style: 'greedy' | 'random' = 'greedy', rand
       const helpers = charterHelpers(w.charter);
       // the one blueprint the charter's cheapest route is still missing (a mill for the dough) beats any helper
       const links = draftLinks(w);
-      const feedable = (id: string) => id !== 'smokehouse' || w.owned.includes('dock');
+      const feedable = (id: string) => id !== 'smokehouse' || w.owned.includes('dock') || w.owned.includes('cellar');
       // a blueprint that needs planks is dead weight until there's a sawmill; a tavern without a brewery serves nothing
       const usableParts = (id: string): Record<string, number> => ({
         'needs planks, nothing makes them': BUILDING_BY_ID[id].cost.fine && !FINE_MAKERS.some(f => w.owned.includes(f) && usableHere(w, f)) && !FINE_MAKERS.includes(id) ? 6 : 0,
@@ -861,7 +855,7 @@ export function autoBuild(w: World) {
       if (!w.owned.includes(id)) { skip(id, 'not unlocked or drafted'); continue; }
       if (missing.length && !['hall', 'pavilion'].includes(id) && !deadlineChain.includes(id) && !missing.includes(id) && !firstNeeds.includes(id) && !(id === 'stockpile' && storageFree(w, 'wood') < 15)) { skip(id, `waiting: wood goes to the charter's chain first (${missing.join(', ')})`); continue; }
       const def = BUILDING_BY_ID[id];
-      if (id === 'smokehouse' && !w.buildings.some(b => b.def === 'dock')) { skip(id, 'no dock to feed it'); continue; }
+      if (id === 'smokehouse' && !w.buildings.some(b => b.def === 'dock' || b.def === 'cellar')) { skip(id, 'no dock or cellar to feed it'); continue; }
       if (def.recipes && !usableHere(w, id)) { skip(id, 'nothing owned can feed it'); continue; }
       if (id === 'pieoven' && !w.buildings.some(b => FINE_MAKERS.includes(b.def)) && stockOf(w, 'fine') < 8) { skip(id, 'no planks or plank maker'); continue; }
       // while saving a resource, only spend it on beds and on producers that make more of it
@@ -939,7 +933,7 @@ export function staffWants(w: World): Record<string, number> {
   // a second meal route once food and wood are comfortable: one cook on the first pie oven, smokehouse or bakery that can be fed
   const comfy = foodTotal(w) >= pop * 4 && w.res.wood >= 25;
   // daily fare: once meals are plentiful, a cook on the first kitchen that can make a quality meal for everyone
-  const daily = BOT.dailyQuality && mealTotal(w) >= pop * 1.5 ? ['pieoven', 'smokehouse', 'bakery'].find(id => built(w).some(b => b.def === id && recipesOf(b).some(r => TIER[r.output] === 'quality' && Object.keys(r.inputs).every(k => membersOf(k as InputKey).some(m => suppliable(w, m, 3)))))) : undefined;
+  const daily = BOT.dailyQuality && mealTotal(w) >= pop * 1.5 ? ['pieoven', 'smokehouse', 'bakery'].find(id => built(w).some(b => b.def === id && recipesOf(b).some(r => TIER[r.output] === 'refined' && MEALS.includes(r.output) && Object.keys(r.inputs).every(k => membersOf(k as InputKey).some(m => suppliable(w, m, 3)))))) : undefined;
   const second = (BOT.variety && comfy ? ['pieoven', 'smokehouse', 'bakery'].find(id => built(w).some(b => b.def === id && plannedRecipe(w, b) && MEALS.includes(plannedRecipe(w, b)!.output))) : undefined) ?? daily;
   const hall = w.buildings.find(b => b.def === 'hall' && !b.built);
   const charterDrinks = (ch === 'roof' && drinkTotal(w) < 18) || ch === 'tasting' || (hall && (hall.stage ?? 0) >= 1) || (ch === 'longtable' && drinkTotal(w) < pop * 1.5);
@@ -959,13 +953,16 @@ export function staffWants(w: World): Record<string, number> {
     claypit: stockOf(w, 'fine') < planksWanted(w) && plannedUses(w, 'clay') ? 2 : 0,
     // a varied table: bread from flour, skewers from herbs, remedies for the clinic
     bakery: built(w).some(b => b.def === 'bakery') && (mealTotal(w) < pop * 3 || ['menu', 'bread', 'twokitchens'].includes(ch) || second === 'bakery') ? 1 + (['menu', 'bread'].includes(ch) ? 1 : 0) : 0,
-    mill: built(w).some(b => b.def === 'bakery') && plannedUses(w, 'flour') ? 1 : 0,
+    mill: plannedUses(w, 'flour') || plannedUses(w, 'mash') ? 1 + (['bread', 'piesky'].includes(ch) ? 1 : 0) : 0,
+    // the malthouse mashes and grinds like the mill, dries mushrooms, and cooks porridge while meals are short
+    malthouse: built(w).some(b => b.def === 'malthouse') && (plannedUses(w, 'flour') || plannedUses(w, 'mash') || plannedUses(w, 'driedMushrooms') || mealTotal(w) < pop * 2) ? 1 + (['bread', 'piesky', 'goodtable'].includes(ch) ? 1 : 0) : 0,
+    oakhut: plannedUses(w, 'acorns') ? 1 : 0,
     apothecary: built(w).some(b => b.def === 'apothecary') && (alive(w).some(c => c.illness) || stockOf(w, 'remedy') < 6 || ['tasting', 'hearty'].includes(ch)) ? 1 : 0,
     herbgarden: built(w).some(b => b.def === 'apothecary') || ch === 'menu' ? 1 : 0,
     // gatherers for a drink maker's best recipe work as long as the drink makers do
-    field: (drinksWanted || built(w).some(b => b.def === 'mill' || b.def === 'bakery')) && plannedUses(w, 'grain') ? 2 : 0,
+    field: plannedUses(w, 'grain') ? 2 : 0,
     apiary: (drinksWanted || ch === 'hearty') && plannedUses(w, 'honey') ? 1 : 0,
-    smokehouse: w.res.fish > 20 || ['menu', 'twokitchens', 'woodsmoke'].includes(ch) || second === 'smokehouse' ? 1 + (ch === 'woodsmoke' ? 1 : 0) : 0,
+    smokehouse: w.res.fish > 20 || w.res.mushrooms > 20 || ['menu', 'twokitchens', 'woodsmoke', 'hall', 'longtable'].includes(ch) || second === 'smokehouse' ? 1 + (ch === 'woodsmoke' ? 1 : 0) : 0,
     tavern: built(w).some(b => b.def === 'tavern') && (bank <= 0 || (BOT.summerService && seasonOf(w).season === 'summer')) ? 1 : 0,
     ...Object.fromEntries(clothingChain(w).map(id => [id, clothingJob(w) === id ? 1 : 0])),
     clinic: alive(w).some(c => bedridden(c)) ? 1 : 0,
@@ -974,9 +971,12 @@ export function staffWants(w: World): Record<string, number> {
 /** drinks still to put by for a finale that serves them (the Long Table, the Hall's topping-out); 0 when there's enough */
 export function drinksToBank(w: World) {
   const pop = alive(w).length;
-  if (w.charter === 'longtable') return Math.max(0, pop + 2 - drinkTotal(w));
+  // the finales take quality drinks, and the braised platter a mulled cup: the tavern stays shut until they're put by
+  const quality = stockOf(w, 'feastDrink') + w.res.mulled;
+  if (w.charter === 'longtable') { const pav = w.buildings.find(b => b.def === 'pavilion'); return pav?.built ? 0 : Math.max(0, pop + 4 - quality); }
   const hall = w.buildings.find(b => b.def === 'hall' && !b.built);
-  if (BOT.bankHall && w.charter === 'hall' && hall && (hall.stage ?? 0) >= 2) return Math.max(0, 27 - drinkTotal(w));
+  if (w.charter === 'hall' && hall && (hall.stage ?? 0) >= 1) return Math.max(0, (remainingCost(hall).feastDrink ?? 14) + 4 - quality);
+  void pop;
   return 0;
 }
 /** fine materials (planks, bricks, wicker) the colony could spend right now: owned blueprints not yet built, plus what sites still need */
@@ -1091,7 +1091,7 @@ export function staffPlan(w: World, explain = false): Map<number, number> {
   for (const k of clothingChain(w)) give(k, 1);
   // 3. everything else, round-robin so no one kind eats the budget
   stage = 'round-robin extras';
-  for (let round = 2; round <= 6; round++) for (const k of ['woodcutter', 'rawFood', 'kitchen', 'sawmill', 'kiln', 'claypit', 'tavern', 'drinks', 'field', 'apiary', 'pieoven', 'smokehouse', 'bakery', 'mill', 'apothecary', 'herbgarden']) give(k, round);
+  for (let round = 2; round <= 6; round++) for (const k of ['woodcutter', 'rawFood', 'kitchen', 'sawmill', 'kiln', 'claypit', 'tavern', 'drinks', 'field', 'oakhut', 'apiary', 'pieoven', 'smokehouse', 'bakery', 'mill', 'malthouse', 'apothecary', 'herbgarden']) give(k, round);
   }
   // spread each kind's workers over its buildings. Single kinds go first, then the groups (raw food, drinks, plank
   // makers) fill the slots left, best yield this season first, so a worker given to the orchard for cider isn't undone
@@ -1263,11 +1263,11 @@ export function autoFoodRules(w: World) {
   }
   // Fed and rested: raw food stays in storage while there are meals enough, so every meal is a cooked one
   if (w.charter === 'rested' && mealTotal(w) >= pop * 1.5) keep.push(...RAW_FOODS);
-  // the finales want suppers: keep the bread and refined sides they're plated from out of people's mouths, so they
-  // reach the bakery, while there's other food enough (the starvation guard below still releases them).
-  const site = w.buildings.find(b => (b.def === 'hall' || b.def === 'pavilion') && !b.built && 'supper' in costOf(b));
-  const suppers = (w.charter === 'longtable' || w.charter === 'hall') && !!site && (remainingCost(site).supper ?? 0) > w.res.supper;
-  if (BOT.supperRules && suppers && rawFor(2, 1.2)) keep.push('bread', ...SLOTS.side.members);
+  // the finales want magnificent meals: keep what they're made from (and the meals themselves) out of people's mouths,
+  // so it reaches the ovens and the site, while there's other food enough (the starvation guard below still releases it)
+  const site = w.buildings.find(b => (b.def === 'hall' || b.def === 'pavilion') && !b.built && 'feastMeal' in costOf(b));
+  const feast = (w.charter === 'longtable' || w.charter === 'hall') && !!site && (remainingCost(site).feastMeal ?? 0) > stockOf(w, 'feastMeal');
+  if (BOT.supperRules && feast && rawFor(2, 1.2)) keep.push('bread', 'skewers', 'hotpot', 'fishpie', ...SLOTS.cured.members, ...SLOTS.feastMeal.members);
   // never let anyone starve for a charter: while what's left to eat is under 1.5 each, release the kept food with the
   // most in store (so a big pile of stew goes back on the menu before the pies anyone is saving)
   const open = () => [...MEALS, ...RAW_FOODS].filter(f => !keep.includes(f)).reduce((n, f) => n + w.res[f], 0);

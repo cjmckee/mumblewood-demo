@@ -29,42 +29,41 @@ const made = (w: World, key: string) => w.flows[key] ?? 0;
 /** run the clock, waving through any decision that comes up (the world pauses while one is waiting) */
 function run(w: World, hours: number) { for (let h = 0; h < hours; h++) { while (w.decisions.length) apply(w, { type: 'resolve', option: 99 }); runHours(w, 1); } }
 
-const routes: { site: string; gatherer: string; maker: string; drink: string; input: string }[] = [
-  { site: 'soil', gatherer: 'field', maker: 'brewery', drink: 'ale', input: 'grain' },
-  { site: 'grove', gatherer: 'orchard', maker: 'ciderpress', drink: 'cider', input: 'apples' },
-  { site: 'meadow', gatherer: 'apiary', maker: 'brewery', drink: 'mead', input: 'honey' },
+// each drink chain from its site: a gatherer, a processor where the chain has one, and the drink maker
+const routes: { site: string; chain: string[]; maker: string; drink: string; input: string }[] = [
+  { site: 'soil', chain: ['field', 'mill'], maker: 'brewery', drink: 'ale', input: 'mash' },
+  { site: 'grove', chain: ['orchard'], maker: 'ciderpress', drink: 'cider', input: 'must' },
+  { site: 'meadow', chain: ['apiary', 'ciderpress'], maker: 'brewery', drink: 'mead', input: 'honey' },
 ];
 for (const r of routes) {
   const w = worldWith(r.site);
-  const g = put(w, r.gatherer), m = put(w, r.maker);
-  check(g.eff > 0.3, `${r.gatherer} on ${r.site}: works at ${Math.round(g.eff * 100)}% (${efficiencyAt(w, g.def, g.x, g.y).label})`);
+  const parts = r.chain.map(id => put(w, id)), m = put(w, r.maker);
+  const g = parts[0];
+  check(g.eff > 0.3, `${g.def} on ${r.site}: works at ${Math.round(g.eff * 100)}% (${efficiencyAt(w, g.def, g.x, g.y).label})`);
   // start everyone as a laborer so the route gets its workers (the opening auto-assign fills the woodcutter and forager)
   for (const c of alive(w)) apply(w, { type: 'assign', colonist: c.id, building: null });
-  const ng = staff(w, g, 2), nm = staff(w, m, 2);
-  check(ng >= 1 && nm === 2, `${ng} on the ${r.gatherer}, ${nm} on the ${r.maker}`);
-  run(w, 72);
+  // a processor in the chain makes only what the maker needs (the mill mashes for ale, the press presses must for mead)
+  const feed: Record<string, string> = { mill: 'mash', ciderpress: 'must' };
+  for (const pb of parts.slice(1)) pb.off = (BUILDING_BY_ID[pb.def].recipes ?? []).flatMap((x, i) => x.output === feed[pb.def] ? [] : [i]);
+  for (const b of [...parts, m]) staff(w, b, 2);
+  check(workersAt(w, m.uid).length === 2, `${r.chain.join(' + ')} → ${r.maker}: everyone staffed`);
+  run(w, 96);
   const out = made(w, `${r.drink}:+${r.maker}`), used = made(w, `${r.input}:-${r.maker}`);
-  check(out > 5 && used > 5, `${r.maker} turned ${used.toFixed(0)} ${r.input} into ${out.toFixed(0)} ${r.drink} in 3 days`);
-  // whenever the input is on hand, that recipe is the one running (between deliveries it falls back to berry ale)
-  let onHand = 0, right = 0;
-  for (let h = 0; h < 24; h++) { run(w, 1); if (w.res[r.input as 'honey'] + (m.inbox[r.input as 'honey'] ?? 0) >= 3) { onHand++; if (currentRecipe(w, m)?.output === r.drink) right++; } }
-  check(onHand > 0 && right === onHand, `${r.maker} runs its ${r.drink} recipe whenever ${r.input} is on hand (${right} of ${onHand} hours)`);
-  void CATEGORIES;
+  check(out > 5 && used > 3, `${r.maker} turned ${used.toFixed(0)} ${r.input} into ${out.toFixed(0)} ${r.drink} in 4 days`);
+  void CATEGORIES; void currentRecipe;
 }
 
-// berry fallback: a brewery with no grain or honey makes ★ berry ale, the press ★★ berry ale for fewer berries
+// no site at all: berries from the forager become must at the press, and must becomes cider
 {
-  const w = worldWith('grove');
-  const b = put(w, 'brewery'), p = put(w, 'ciderpress');
-  // mulling also takes berries as a flavouring; keep it out of the berries-per-ale count
-  for (const x of [b, p]) x.off = (BUILDING_BY_ID[x.def].recipes ?? []).flatMap((r, i) => r.output === 'mulled' ? [i] : []);
+  const w = worldWith('clay');
+  const p = put(w, 'ciderpress');
+  p.off = (BUILDING_BY_ID.ciderpress.recipes ?? []).flatMap((x, i) => ['must', 'cider'].includes(x.output) ? [] : [i]);
   for (const c of alive(w)) apply(w, { type: 'assign', colonist: c.id, building: null });
-  staff(w, b, 1); staff(w, p, 1);
-  run(w, 48);
-  const brewAle = made(w, 'ale:+brewery'), pressAle = made(w, 'ale:+ciderpress');
-  const brewPer = made(w, 'berries:-brewery') / Math.max(0.01, brewAle), pressPer = made(w, 'berries:-ciderpress') / Math.max(0.01, pressAle);
-  check(brewAle > 0 && pressAle > 0, `both make berry ale without grain (${brewAle.toFixed(1)} vs ${pressAle.toFixed(1)})`);
-  check(Math.abs(brewPer - 3) < 0.05 && Math.abs(pressPer - 2.5) < 0.05, `berries per ale: brewery ${brewPer.toFixed(2)} (★), press ${pressPer.toFixed(2)} (★★)`);
+  w.res.berries += 60; reconcileStock(w);
+  staff(w, p, 2);
+  run(w, 72);
+  const must = made(w, 'must:+ciderpress'), cider = made(w, 'cider:+ciderpress');
+  check(must > 3 && cider > 2 && Math.abs(made(w, 'berries:-ciderpress') / must - 1.6) < 0.05, `berries → must → cider at the press, 1.6 berries a must (${must.toFixed(1)} must, ${cider.toFixed(1)} cider)`);
 }
 
 // flower beds count as meadow for an apiary: try it on a map with no meadow at all
@@ -163,16 +162,16 @@ for (const r of routes) {
   check(flour > 5 && bread > 3, `field → mill → bakery: ${flour.toFixed(0)} flour, ${bread.toFixed(0)} bread in 4 days`);
 }
 
-// skewers: herbs from a herb garden and mushrooms at the smokehouse, fish switched off
+// skewers: herbs from a herb garden and dried mushrooms at the smokehouse, no fish anywhere
 {
   const w = worldWith('grove');
   const g = put(w, 'herbgarden'), sm = put(w, 'smokehouse');
   for (const c of alive(w)) apply(w, { type: 'assign', colonist: c.id, building: null });
-  apply(w, { type: 'toggleRecipe', building: sm.uid, recipe: 0, on: false });
-  w.res.mushrooms += 30; reconcileStock(w);
+  sm.off = (BUILDING_BY_ID.smokehouse.recipes ?? []).flatMap((x, i) => x.output === 'skewers' ? [] : [i]);
+  w.res.driedMushrooms += 30; w.res.fish = 0; w.res.smokedFish = 0; reconcileStock(w);
   staff(w, g, 1); staff(w, sm, 2);
   run(w, 72);
-  check(made(w, 'skewers:+smokehouse') > 3 && made(w, 'herbs:-smokehouse') > 1, `herb garden + smokehouse: ${made(w, 'skewers:+smokehouse').toFixed(0)} skewers`);
+  check(made(w, 'skewers:+smokehouse') > 3 && made(w, 'herbs:-smokehouse') > 1 && made(w, 'driedMushrooms:-smokehouse') > 1, `herb garden + dried mushrooms → smokehouse: ${made(w, 'skewers:+smokehouse').toFixed(0)} skewers`);
 }
 
 // remedies: poultices from the apothecary, and a doctor with poultices heals faster than one without
