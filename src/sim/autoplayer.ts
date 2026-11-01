@@ -2,7 +2,7 @@
 // It reads the active charter and plays towards it, the way a person would.
 import { BUILDING_BY_ID, BUILDINGS, CATEGORIES, CharterMetric, RESEARCH_BY_ID, EVENTS, ResourceId, MEALS, RAW_FOODS, RESOURCES, Recipe, InputKey, membersOf, recipeRate, LORE_BOOST, GUILD_BOOST, RENOWN, TIER, SLOTS } from './content';
 import { assess, Concern, defsOf, KIND_DEFS } from './advisor';
-import { World, feastUnservedDrinks, costOf, tallyOf, renownOf, FEAST_MEALS, FEAST_DRINKS, workshopInputPlan, apply, alive, beds, mealTotal, sites, findSpot, CENTER, avgMood, built, MAP_SIZE, pathAt, terrainAt, T_WATER, bdef, workersAt, blockedReason, opinion, Building, Colonist, hourOfDay, charterProgress, buildingByUid, storageFree, storages, FOODS, GOODS, bedridden, foodTotal, currentRecipe, drinkTotal, siteOk, enabledRecipes, recipesOf, rerollCost, stockOf, usableHere, charterDef, charterHelpers, feastCheck, desks, researchLeft, festivalPreview, edibleTotal, doorTile, centerOf, winterStores, storageCap, stored, lastDay, lastDayHours, remainingCost, seasonYield, recipeOn, spotOf, canPlace, coversPath, efficiencyAt, footprint, BUILD_MIN, BUILD_MAX, blockedGrid, storePrio } from './world';
+import { World, feastUnservedDrinks, orderedRecipes, costOf, tallyOf, renownOf, FEAST_MEALS, FEAST_DRINKS, workshopInputPlan, apply, alive, beds, mealTotal, sites, findSpot, CENTER, avgMood, built, MAP_SIZE, pathAt, terrainAt, T_WATER, bdef, workersAt, blockedReason, opinion, Building, Colonist, hourOfDay, charterProgress, buildingByUid, storageFree, storages, FOODS, GOODS, bedridden, foodTotal, currentRecipe, drinkTotal, siteOk, enabledRecipes, recipesOf, rerollCost, stockOf, usableHere, charterDef, charterHelpers, feastCheck, desks, researchLeft, festivalPreview, edibleTotal, doorTile, centerOf, winterStores, storageCap, stored, lastDay, lastDayHours, remainingCost, seasonYield, recipeOn, spotOf, canPlace, coversPath, efficiencyAt, footprint, BUILD_MIN, BUILD_MAX, blockedGrid, storePrio } from './world';
 import { seasonOf } from './seasons';
 import { draftLinks } from './charterplan';
 
@@ -94,20 +94,6 @@ const MOOD_BUILDINGS = ['tavern', 'brewery', 'ciderpress', 'pieoven', 'bathhouse
  * that; otherwise it skips anything there's already plenty of.
  */
 /** Experimental fallback: use one starting hut, protect wood, prefer usable drafted makers. */
-/**
- * The forager hut that gathers acorns, if any: only while there's a mill to grind acorn meal for something that
- * wants it, there's no grain or flour to use instead, and there's food enough (or a second hut) to spare it.
- */
-export function acornGatherer(w: World): number | undefined {
-  if (!BOT.acorns) return undefined;
-  // a built mill is enough: it stands idle (blocked) until there are acorns, so waiting for a miller would wait for ever
-  const milling = built(w).some(b => b.def === 'mill');
-  const wanted = built(w).some(b => { const r = plannedRecipe(w, b); return !!r && Object.keys(r.inputs).some(k => membersOf(k as InputKey).includes('acornMeal')); });
-  if (!milling || !wanted || w.res.grain + w.res.flour >= 6 || w.res.acorns + w.res.acornMeal * 2 >= 24) return undefined;
-  const huts = built(w).filter(b => b.def === 'forager');
-  if (!huts.length || (huts.length < 2 && foodTotal(w) < alive(w).length * 4)) return undefined;
-  return huts[huts.length - 1].uid;
-}
 export function roughPlankMaker(w: World): number | undefined {
   if (!BOT.roughPlanks || !BUILDING_BY_ID.woodcutter.recipes?.some(r => r.output === 'planks')) return;
   if ((w.flows['planks:+woodcutter'] ?? 0) >= BOT.roughPlankBudget) return;
@@ -150,15 +136,12 @@ function manageRecipes(w: World) {
     if (p.kind === 'monument' && BOT.supperRules) { const b = w.buildings.find(x => x.def === p.def && !x.built); if (b) for (const [k, n] of Object.entries(remainingCost(b))) for (const r of membersOf(k as InputKey)) if (w.res[r] < (n ?? 0)) wanted.add(r); }
   }
   // daily fare: once there are meals enough, the better kitchens make quality meals for everyone, not just for charters
-  if (BOT.dailyQuality && mealTotal(w) >= pop * 1.5) for (const r of MEALS.filter(m => TIER[m] === 'quality')) if (w.res[r] < pop) wanted.add(r);
+  // (but not during a finale, when those kitchens are busy with its suppers)
+  const finale = partsOf(w).some(p => p.kind === 'monument' || p.kind === 'longTable');
+  if (BOT.dailyQuality && !finale && mealTotal(w) >= pop * 1.5) for (const r of MEALS.filter(m => TIER[m] === 'quality')) if (w.res[r] < pop) wanted.add(r);
   const plenty = (r: ResourceId) => w.res[r] >= Math.max(30, pop * 3);
   for (const b of built(w)) {
     const recs = recipesOf(b); if (recs.length < 2) continue;
-    // one forager hut gathers acorns while the mill needs them; the others never do
-    if (b.def === 'forager' && recs.some(r => r.output === 'acorns') && BOT.acorns) {
-      const acorn = acornGatherer(w) === b.uid;
-      if (acorn) { recs.forEach((r, i) => { const on = r.output === 'acorns'; if (on !== recipeOn(b, i)) apply(w, { type: 'toggleRecipe', building: b.uid, recipe: i, on }); }); continue; }
-    }
     if (b.def === 'woodcutter' && recs.some(r => r.output === 'planks')) {
       recs.forEach((r,i) => { const on = b.uid === rough ? r.output === 'planks' : r.output === 'wood'; if (on !== recipeOn(b,i)) apply(w,{type:'toggleRecipe',building:b.uid,recipe:i,on}); });
       continue;
@@ -171,10 +154,15 @@ function manageRecipes(w: World) {
     const aimed = recs.map((r, i) => aimed0[i] || (can[i] && feeds.has(r.output) && w.res[r.output] < 8));
     let on = aimed.some(Boolean) ? aimed : recs.map((r, i) => !plenty(r.output) || !can[i]);
     if (!on.some((x, i) => x && can[i])) on = recs.map(() => true);
-    if (b.def === 'forager' && BOT.acorns) on = on.map((x, i) => x && recs[i].output !== 'acorns');
     // the staple stays on while meals are short: a kitchen aimed at hotpot still makes stew when people are hungry
     if (BOT.dailyQuality && mealTotal(w) < pop * 2) on = on.map((x, i) => x || (TIER[recs[i].output] === 'simple' && MEALS.includes(recs[i].output) && can[i]));
     on.forEach((x, i) => { if (x !== recipeOn(b, i)) apply(w, { type: 'toggleRecipe', building: b.uid, recipe: i, on: x }); });
+    // acorns, when there are some, are ground first, up to a small stock: otherwise a kitchen never stops making stew
+    const grind = recs.findIndex(r => r.output === 'acornMeal');
+    if (grind >= 0 && on[grind]) {
+      if (b.productionLimits?.acornMeal == null) apply(w, { type: 'productionLimit', building: b.uid, output: 'acornMeal', limit: 10 });
+      for (let n = 0; n < recs.length && orderedRecipes(b)[0].i !== grind; n++) apply(w, { type: 'recipePriority', building: b.uid, recipe: grind, delta: -1 });
+    }
   }
 }
 /** the parts of the current charter (an all-at-once charter has several) */
@@ -425,7 +413,7 @@ export function charterChain(w: World): string[] {
  * Experiment switches for the balance tools. `advisor` makes the bot play from what's on screen (the complaint
  * panel) instead of its own rules; it's off by default because, so far, it plays worse (see the project doc).
  */
-export const BOT = { acorns: true, dailyQuality: true, supperRules: true, urgentClinic: true, clinicWoodBuffer: 10, seasonalStaffing: true, feasibleVariety: true, summerBank: false, summerService: false, fineInputs: true, plannedRoughDemand: true, chainGatherers: false, roughPlanks: true, roughPlankBudget: 12, roughWoodStart: 35, roughWoodStop: 20, roughKeepWinterReserve: false, clothingReserve: false, clothingDeadline: false, clothingBatch: false, researchFeasible: false, populationTargets: false, randomize: [] as string[], trade: true, shopsByStore: false, layout: true, hutPull: 0.3, recipes: true, rateStaffing: false, unlockChain: true, ruleGap: true, hallMood: true, varietyRules: true, bankDrinks: true, bankHall: false, chainBeforeWinter: true, effortPick: true, moodFestival: true, festival: true, festivalAt: 8, comfortsFirst: false, recruitCap: 0, recruitExtra: 4, comforts: true, foodDepot: 'food' as false | 'food' | 'meals', laborersPer: 3.5, advisor: false, gate: true, ranked: true, comfort: 'strict' as 'strict' | 'econ' | 'none', rescue: false, rescueAt: 40, moodBlock: false, reroll: true, variety: false, routes: false, off: [] as string[], skip: [] as string[] };
+export const BOT = { dailyQuality: true, supperRules: true, urgentClinic: true, clinicWoodBuffer: 10, seasonalStaffing: true, feasibleVariety: true, summerBank: false, summerService: false, fineInputs: true, plannedRoughDemand: true, chainGatherers: false, roughPlanks: true, roughPlankBudget: 12, roughWoodStart: 35, roughWoodStop: 20, roughKeepWinterReserve: false, clothingReserve: false, clothingDeadline: false, clothingBatch: false, researchFeasible: false, populationTargets: false, randomize: [] as string[], trade: true, shopsByStore: false, layout: true, hutPull: 0.3, recipes: true, rateStaffing: false, unlockChain: true, ruleGap: true, hallMood: true, varietyRules: true, bankDrinks: true, bankHall: false, chainBeforeWinter: true, effortPick: true, moodFestival: true, festival: true, festivalAt: 8, comfortsFirst: false, recruitCap: 0, recruitExtra: 4, comforts: true, foodDepot: 'food' as false | 'food' | 'meals', laborersPer: 3.5, advisor: false, gate: true, ranked: true, comfort: 'strict' as 'strict' | 'econ' | 'none', rescue: false, rescueAt: 40, moodBlock: false, reroll: true, variety: false, routes: false, off: [] as string[], skip: [] as string[] };
 
 // ---------- Explaining the bot ----------
 /** one thing the bot decided and why: each option with its score broken into parts, or a staffing or build step */
@@ -971,7 +959,7 @@ export function staffWants(w: World): Record<string, number> {
     claypit: stockOf(w, 'fine') < planksWanted(w) && plannedUses(w, 'clay') ? 2 : 0,
     // a varied table: bread from flour, skewers from herbs, remedies for the clinic
     bakery: built(w).some(b => b.def === 'bakery') && (mealTotal(w) < pop * 3 || ['menu', 'bread', 'twokitchens'].includes(ch) || second === 'bakery') ? 1 + (['menu', 'bread'].includes(ch) ? 1 : 0) : 0,
-    mill: (built(w).some(b => b.def === 'bakery') && plannedUses(w, 'flour')) || (BOT.acorns && plannedUses(w, 'acornMeal')) ? 1 : 0,
+    mill: built(w).some(b => b.def === 'bakery') && plannedUses(w, 'flour') ? 1 : 0,
     apothecary: built(w).some(b => b.def === 'apothecary') && (alive(w).some(c => c.illness) || stockOf(w, 'remedy') < 6 || ['tasting', 'hearty'].includes(ch)) ? 1 : 0,
     herbgarden: built(w).some(b => b.def === 'apothecary') || ch === 'menu' ? 1 : 0,
     // gatherers for a drink maker's best recipe work as long as the drink makers do

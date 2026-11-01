@@ -1,7 +1,7 @@
 // The goods ladder: tiers, the quality goods' slots and routes on every map, and that each route really produces.
 // npx tsx tools/ladder-check.ts
 import assert from 'node:assert/strict';
-import { BUILDINGS, MEAL_MOOD, DRINK_MOOD, TIER, TIER_MOOD, TRADERS, membersOf, InputKey, ResourceId, SiteId, tradeable, CATEGORIES, MEALS } from '../src/sim/content';
+import { BUILDINGS, BUILDING_BY_ID, MEAL_MOOD, DRINK_MOOD, TIER, TIER_MOOD, TRADERS, membersOf, InputKey, ResourceId, SiteId, tradeable, CATEGORIES, MEALS } from '../src/sim/content';
 import { createWorld, findSpot, apply, alive, runHours, reconcileStock, debugGrow, siteOk, comfortParts, World, Building, MEAL_TIER_COMFORT } from '../src/sim/world';
 
 let n = 0; const ok = (cond: unknown, msg: string) => { assert(cond, msg); n++; };
@@ -74,8 +74,26 @@ function shop(seed: number, def: string, recipeOn: number, stock: Partial<Record
 {
   const w = shop(5, 'forager', 2, {});
   ok((w.flows['acorns:+forager'] ?? 0) > 1, 'a forager can gather acorns');
-  const m = shop(5, 'mill', 1, { acorns: 30, grain: 0 });
-  ok((m.flows['acornMeal:+mill'] ?? 0) > 2 && (m.flows['acorns:-mill'] ?? 0) > 0, 'the mill grinds acorns into acorn meal');
+  // acorn meal never needs the mill: the kitchen pounds it slowly, the apothecary's mortar and the bakery grind it too
+  for (const [def, i] of [['kitchen', 4], ['apothecary', 3], ['bakery', 4]] as [string, number][]) {
+    const m = shop(5, def, i, { acorns: 30, grain: 0 });
+    ok((m.flows[`acornMeal:+${def}`] ?? 0) > 1 && (m.flows[`acorns:-${def}`] ?? 0) > 0, `the ${def} grinds acorns into acorn meal`);
+  }
+  ok(!(BUILDING_BY_ID.mill.recipes ?? []).some(r => r.output === 'acornMeal'), 'the mill is for flour only');
+}
+// no one blueprint gates a win: on every map, the finales' goods can still be made without any single draftable building
+{
+  const finale: ResourceId[] = ['supper', 'mulled'];
+  let worst = '';
+  for (let i = 0; i < SITE_IDS.length; i++) for (let j = i + 1; j < SITE_IDS.length; j++) {
+    const w = createWorld(3); w.sites = [SITE_IDS[i], SITE_IDS[j]];
+    for (const x of BUILDINGS.filter(d => d.draftable)) {
+      const keep = BUILDINGS.filter(d => d.id !== x.id);
+      const can = (r: ResourceId, depth = 4): boolean => depth >= 0 && keep.some(d => siteOk(w, d) && (d.recipes ?? []).some(rec => rec.output === r && (Object.keys(rec.inputs) as InputKey[]).every(k => membersOf(k).some(m => can(m, depth - 1)))));
+      for (const r of finale) if (!can(r)) worst += ` ${r} needs the ${x.id} on ${w.sites.join('+')};`;
+    }
+  }
+  ok(!worst, `no single blueprint is needed for suppers or mulled cups on any map${worst ? ':' + worst : ''}`);
 }
 
 // 5. Comfort at village standing follows the tier of the last meal.
