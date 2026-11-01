@@ -6,9 +6,9 @@ function fixture(){const w=createWorld(42);w.nextEventHour=1e9;for(const c of al
 function put(w:World,id:string){w.owned.push(id);const s=findSpot(w,id);assert(s);assert.equal(apply(w,{type:'place',def:id,...s}),null);const b=w.buildings.at(-1)!;b.built=true;return b;}
 function run(w:World,hours:number){for(let h=0;h<hours;h++){while(w.decisions.length)apply(w,{type:'resolve',option:99});runHours(w,1);}}
 {
- const w=fixture(),oven=put(w,'pieoven');oven.off=[1];w.res.wood=40;w.res.berries=0;w.res.stew=60;reconcileStock(w);apply(w,{type:'assign',colonist:alive(w)[0].id,building:oven.uid});run(w,12);
- assert.equal(oven.inbox.wood??0,0,'missing berries: no orphan wood is collected');
- w.res.berries=30;reconcileStock(w);const plan=workshopInputPlan(w,oven,currentRecipe(w,oven)!)!;assert.equal(plan.outputs,12);assert(Math.abs(plan.deliveries.wood!-6)<1e-6);
+ const w=fixture(),oven=put(w,'pieoven');oven.off=[1];w.res.berries=40;w.res.flour=0;w.res.stew=60;reconcileStock(w);apply(w,{type:'assign',colonist:alive(w)[0].id,building:oven.uid});run(w,12);
+ assert.equal(oven.inbox.berries??0,0,'missing pastry: no orphan filling is collected');
+ w.res.flour=30;reconcileStock(w);const plan=workshopInputPlan(w,oven,currentRecipe(w,oven)!)!;assert.equal(plan.outputs,12);assert(Math.abs(plan.deliveries.flour!-7.2)<1e-6);
  run(w,12);assert((w.flows['pie:+pieoven']??0)>0,'complete recipe gets supplied and produces');assert(Object.values(oven.inbox).reduce((n,x)=>n+(x??0),0)<=INPUT_CAPACITY+1e-6,'input capacity is shared');
 }
 {
@@ -18,26 +18,26 @@ function run(w:World,hours:number){for(let h=0;h<hours;h++){while(w.decisions.le
  assert.equal(currentRecipe(w,b)?.output,'stew','a different workshop has its own target');
  w.res.stew=9;a.outbox.stew=50;assert.equal(currentRecipe(w,a)?.output,'stew','finished output does not count toward warehouse-only target');
  assert.equal(apply(w,{type:'productionLimit',building:a.uid,output:'stew',limit:null}),null);
- assert.equal(apply(w,{type:'recipePriority',building:a.uid,recipe:1,delta:-1}),null);assert.equal(orderedRecipes(a)[0].i,1);assert.equal(currentRecipe(w,a)?.output,'smokedFish','explicit priority overrides stars');
+ while(orderedRecipes(a)[0].i!==1)assert.equal(apply(w,{type:'recipePriority',building:a.uid,recipe:1,delta:-1}),null);assert.equal(orderedRecipes(a)[0].i,1);assert.equal(currentRecipe(w,a)?.output,'smokedFish','explicit priority overrides stars');
  assert(apply(w,{type:'productionLimit',building:a.uid,output:'stew',limit:-1}));assert(apply(w,{type:'productionLimit',building:a.uid,output:'wood',limit:1}));
 }
 {
- const w=fixture(),oven=put(w,'pieoven');oven.off=[0,1];oven.inbox.wood=12;const before=w.res.wood;run(w,12);
- assert.equal(oven.inbox.wood??0,0,'disabled recipes return unused inputs physically');assert(w.res.wood>before,'returned inputs re-enter warehouse stock');
+ const w=fixture(),oven=put(w,'pieoven');oven.off=[0,1];oven.inbox.flour=12;const before=w.res.flour;run(w,12);
+ assert.equal(oven.inbox.flour??0,0,'disabled recipes return unused inputs physically');assert(w.res.flour>before,'returned inputs re-enter warehouse stock');
 }
 {
- const w=fixture(),oven=put(w,'pieoven');oven.off=[1];w.res.berries=30;w.res.wood=40;reconcileStock(w);
- const c=alive(w)[0];c.task={kind:'supply',to:oven.uid,res:'wood',amount:12};c.carrying={res:'wood',amount:12};w.res.wood-=12;
+ const w=fixture(),oven=put(w,'pieoven');oven.off=[1];w.res.berries=30;w.res.flour=40;reconcileStock(w);
+ const c=alive(w)[0];c.task={kind:'supply',to:oven.uid,res:'flour',amount:12};c.carrying={res:'flour',amount:12};w.res.flour-=12;
  apply(w,{type:'toggleRecipe',building:oven.uid,recipe:0,on:false});run(w,12);
- assert.equal(oven.inbox.wood??0,0,'an in-flight ingredient for a disabled recipe is returned rather than parked');
+ assert.equal(oven.inbox.flour??0,0,'an in-flight ingredient for a disabled recipe is returned rather than parked');
  assert.equal(c.carrying,null,'return trip completes');
 }
 {
- const w=fixture(),oven=put(w,'pieoven');oven.off=[1];oven.inbox={berries:7.2,wood:3};oven.outbox.pie=15;
- run(w,1);assert.deepEqual(oven.inbox,{berries:7.2,wood:3},'a full output buffer does not make valid input stock obsolete');
+ const w=fixture(),oven=put(w,'pieoven');oven.off=[1];oven.inbox={berries:7.2,flour:3};oven.outbox.pie=15;
+ run(w,1);assert.deepEqual(oven.inbox,{berries:7.2,flour:3},'a full output buffer does not make valid input stock obsolete');
 }
 {
- const w=fixture(),oven=put(w,'pieoven');oven.off=[1];w.res.wood=40;w.res.berries=40;w.res.stew=20;reconcileStock(w);apply(w,{type:'assign',colonist:alive(w)[0].id,building:oven.uid});
+ const w=fixture(),oven=put(w,'pieoven');oven.off=[1];w.res.flour=40;w.res.berries=40;w.res.stew=20;reconcileStock(w);apply(w,{type:'assign',colonist:alive(w)[0].id,building:oven.uid});
  for(let t=0;t<24*6;t++){while(w.decisions.length)apply(w,{type:'resolve',option:99});tick(w);assert(Object.values(oven.inbox).reduce((n,x)=>n+(x??0),0)<=INPUT_CAPACITY+1e-6,'concurrent deliveries respect shared capacity');assert(Object.values(oven.outbox).reduce((n,x)=>n+(x??0),0)<=15+1e-6,'finished output respects shared capacity');}
 }
 {

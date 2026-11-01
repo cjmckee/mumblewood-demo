@@ -42,7 +42,7 @@ for (const [device,width,height] of [['desktop',1440,900],['phone',390,844],['sm
   await p.locator('[data-act=food][data-arg=bread]').click();
   check(await state(()=>!window.__game.world.forbidden.includes('bread')),`${device}: reserved bread can be released`);
   check(await state(()=>{
-    const g=window.__game; const b=g.world.buildings.find(b=>b.def==='forager');b.off=[0,1];g.ui.tab='build';g.ui.detail=null;g.ui.buildMode='manage';g.ui.render(true);
+    const g=window.__game; const b=g.world.buildings.find(b=>b.def==='forager');b.off=[0,1,2];g.ui.tab='build';g.ui.detail=null;g.ui.buildMode='manage';g.ui.render(true);
     return document.querySelector('.sheet-body').innerText.includes('Recipes off');
   }),`${device}: recipes off is not mislabeled as missing ingredients`);
   check(await state(()=>{
