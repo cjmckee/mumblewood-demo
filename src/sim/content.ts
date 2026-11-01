@@ -125,7 +125,7 @@ export const CATEGORIES: Record<Category, { name: string; members: ResourceId[] 
  * it only means something to recipes; needs, costs and charters use categories. Each building can switch single
  * options of a slot (or category) input off, so a player can keep apples out of one oven's pies.
  */
-export type SlotId = 'dough' | 'filling' | 'thickener' | 'base' | 'side' | 'brew' | 'spice';
+export type SlotId = 'dough' | 'filling' | 'thickener' | 'base' | 'side' | 'brew' | 'spice' | 'toast';
 export const SLOTS: Partial<Record<string, { name: string; members: ResourceId[] }>> & Record<SlotId, { name: string; members: ResourceId[] }> = {
   dough: { name: 'flour or acorn meal', members: ['flour', 'acornMeal'] },
   filling: { name: 'pie filling', members: ['berries', 'apples', 'honey', 'mushrooms'] },
@@ -134,6 +134,8 @@ export const SLOTS: Partial<Record<string, { name: string; members: ResourceId[]
   side: { name: 'a refined side', members: ['smokedFish', 'skewers'] },
   brew: { name: 'refined drink', members: ['ale', 'cider', 'mead'] },
   spice: { name: 'spice or fruit', members: ['herbs', 'honey', 'berries'] },
+  /** the founders' feast: a refined drink or better */
+  toast: { name: 'refined drinks', members: ['ale', 'cider', 'mead', 'mulled'] },
 };
 /** a category or a slot: an input that more than one good can fill */
 export type Group = Category | SlotId;
@@ -208,6 +210,8 @@ export interface BuildingDef {
   stages?: { label: string; cost: Partial<Record<InputKey, number>>; work: number }[];
   /** only colonists at or above this mood will haul for or build it */
   moodGate?: number;
+  /** seats at the founders' feast, once it's built (the feast pavilion) */
+  feastSeats?: number;
 }
 
 export const BUILDINGS: BuildingDef[] = [
@@ -258,6 +262,9 @@ export const BUILDINGS: BuildingDef[] = [
   { id: 'hall', name: 'The Crown\u2019s Hall', blurb: 'The building that makes Mumblewood a town. Built in three stages. Nobody grumpy lays a stone for the Crown: only colonists at mood 55 or more will haul for it or build it.', cost: { fine: 60 }, w: 3, h: 3, slots: 0, beauty: 6, moodGate: 55,
     stages: [{ label: 'Foundations and walls', cost: { fine: 60 }, work: 24 }, { label: 'Feeding the masons', cost: { supper: 30 }, work: 16 }, { label: 'Topping out', cost: { mulled: 25 }, work: 10 }],
     wall: 0xc8b48a, roof: 0x8a3a3a, height: 1.4 },
+  { id: 'pavilion', name: 'Feast pavilion', blurb: 'The Crown sends a marquee for the founders\u2019 feast. Raise it, then stock its larder with a ploughman\u2019s supper and a drink for every guest. Once the larder is full it becomes the feast hall. Nothing in it spoils, and nobody touches it before the feast.', cost: { wood: 20 }, w: 3, h: 2, slots: 0, beauty: 3, feastSeats: 24,
+    stages: [{ label: 'Raising the marquee', cost: { wood: 20 }, work: 10 }, { label: 'Stocking the larder', cost: { supper: 14, toast: 14 }, work: 2 }],
+    wall: 0xe8dcc0, roof: 0xc0443a, height: 1.0 },
 ];
 /** builder-hours of work to finish a building */
 export const buildWork = (d: BuildingDef) => (d.decor ? 1.5 : Math.max(3, d.w * d.h * 2.5));
@@ -566,10 +573,10 @@ export const CHARTERS: CharterDef[] = [
   { id: 'twokitchens', tier: 2, name: 'Two kitchens', desc: '10 colonists, 40 renown at table from 2 kinds of meal, and a 24-hour average mood of 55+. Each refined meal eaten earns 1 renown, quality 2, magnificent 4.', metric: { kind: 'all', parts: [pop(10), { kind: 'renown', category: 'meal', kinds: 2, amount: 40 }, mood(55)] }, helpers: ['smokehouse', 'pieoven', 'bakery', 'dock'] },
   { id: 'roof', tier: 2, name: 'Raise the roof', desc: '10 colonists, 3 cottages, 30 refined drinks or better drunk, and a 24-hour average mood of 55+.', metric: { kind: 'all', parts: [pop(10), { kind: 'built', def: 'cottage', amount: 3 }, { kind: 'tally', how: 'drunk', resources: atLeast(CATEGORIES.drink.members, 'refined'), amount: 30 }, mood(55)] }, helpers: ['cottage', 'sawmill', 'brewery', 'ciderpress'] },
   { id: 'taproom', tier: 2, name: 'The cellar', desc: '10 colonists, 40 refined drinks or better drunk, and a 24-hour average mood of 55+.', metric: { kind: 'all', parts: [pop(10), { kind: 'tally', how: 'drunk', resources: atLeast(CATEGORIES.drink.members, 'refined'), amount: 40 }, mood(55)] }, helpers: ['brewery', 'ciderpress', 'tavern', 'apiary', 'orchard'] },
-  { id: 'hearty', tier: 2, name: 'Hale and hearty', desc: '10 colonists, 12 tonics used by the doctor, and nobody sick or hurt for a full day.', metric: { kind: 'all', parts: [pop(10), { kind: 'tally', how: 'used', resources: ['tonic'], amount: 12 }, { kind: 'healthy', hours: 24 }] }, helpers: ['apothecary', 'apiary', 'herbgarden'], sites: ['meadow'] },
+  { id: 'hearty', tier: 2, name: 'Hale and hearty', desc: '10 colonists, 12 tonics made, and nobody sick or hurt for a full day.', metric: { kind: 'all', parts: [pop(10), { kind: 'tally', how: 'made', resources: ['tonic'], amount: 12 }, { kind: 'healthy', hours: 24 }] }, helpers: ['apothecary', 'apiary', 'herbgarden'], sites: ['meadow'] },
   { id: 'menu', tier: 2, name: 'A varied table', desc: '10 colonists, 60 renown at table from 3 kinds of meal, and a 24-hour average mood of 55+. Each refined meal eaten earns 1 renown, quality 2, magnificent 4.', metric: { kind: 'all', parts: [pop(10), { kind: 'renown', category: 'meal', kinds: 3, amount: 60 }, mood(55)] }, helpers: ['smokehouse', 'pieoven', 'bakery'] },
   { id: 'tasting', tier: 2, name: 'Something for everyone', desc: '10 colonists, 40 renown from 3 kinds of drink, and a 24-hour average mood of 55+. Each refined drink earns 1 renown, quality 2.', metric: { kind: 'all', parts: [pop(10), { kind: 'renown', category: 'drink', kinds: 3, amount: 40 }, mood(55)] }, helpers: ['ciderpress', 'apothecary', 'brewery'] },
   // tier 3: the finale; only a happy town can finish it, and it needs magnificent fare
   { id: 'hall', tier: 3, name: 'The Crown’s Hall', desc: 'Build the Crown’s Hall with 12 or more colonists. Three stages: 60 planks or bricks, 30 ploughman’s suppers for the masons, then 25 mulled cups for the topping-out. Only colonists at mood 55+ will work on it.', metric: { kind: 'all', parts: [pop(12), { kind: 'monument', def: 'hall' }] }, helpers: ['sawmill', 'kiln', 'bakery', 'smokehouse', 'ciderpress'] },
-  { id: 'longtable', tier: 3, name: 'The Long Table', desc: 'Call a founders’ feast. At dusk 14 or more colonists sit down at once, each served a magnificent meal and a refined drink or better that they don’t dislike. Sulkers won’t come, and everyone needs a seat.', metric: { kind: 'longTable', pop: 14 }, helpers: ['tavern', 'bakery', 'smokehouse', 'ciderpress', 'brewery'] },
+  { id: 'longtable', tier: 3, name: 'The Long Table', desc: 'The Crown sends a feast pavilion. Stock its larder with 14 ploughman’s suppers and 14 refined drinks, then call the founders’ feast: 14 or more colonists sit down at dusk, each served a supper and a drink they don’t dislike. Sulkers won’t come.', metric: { kind: 'longTable', pop: 14 }, helpers: ['bakery', 'smokehouse', 'ciderpress', 'brewery', 'tavern'] },
 ];

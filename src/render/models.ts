@@ -581,6 +581,39 @@ export const MODELS: Record<string, (c: ModelCtx) => Model> = {
     );
     return parts;
   },
+  /** the feast pavilion: a plank floor, then a striped marquee over long tables, then laden tables, bunting and lanterns */
+  pavilion: c => {
+    const s = c.stage, canvas = c.def.wall, stripe = c.def.roof;
+    const parts: Part[] = [{ ...box(0.1, 0.1, 2.9, 1.9, 0, 3, 0x9a7a52, 0xb08a5e), layer: -5 }];
+    if (s < 1) return [...parts, ...[0.2, 2.8].flatMap(u => [0.2, 1.8].map(v => box(u - 0.03, v - 0.03, u + 0.03, v + 0.03, 3, 30, TIMBER)))];
+    const h = 30, at: [number, number] = [1.5, 1];
+    // poles, then the long tables and benches under the canvas
+    parts.push(...[0.2, 1.5, 2.8].flatMap(u => [0.2, 1.8].map(v => ({ ...box(u - 0.03, v - 0.03, u + 0.03, v + 0.03, 3, h, TIMBER), at: [u, v] as [number, number] }))));
+    for (const v of [0.7, 1.3]) {
+      parts.push({ ...box(0.45, v - 0.09, 2.55, v + 0.09, 11, 13, 0x9a6a40, 0xb07a4a), layer: 1, at: [1.5, v] });
+      parts.push(...[0.5, 2.5].map(u => ({ ...box(u - 0.02, v - 0.06, u + 0.02, v + 0.06, 3, 11, 0x6a4a30), at: [u, v] as [number, number] })));
+      parts.push(...[-0.18, 0.18].map(d => ({ ...box(0.45, v + d - 0.04, 2.55, v + d + 0.04, 3, 8, 0x7a5232, 0x8a6240), at: [1.5, v + d] as [number, number] })));
+      // stocked: every place laid with a supper and a cup
+      if (s >= 3) parts.push(...[0.7, 1.1, 1.5, 1.9, 2.3].flatMap((u, i) => [
+        { ...column(u, v - 0.04, 0.06, 13, 14.5, 0xe8dcc0, 0xc89048, 8), layer: 2, at: [u, v] as [number, number] },
+        { ...column(u + 0.12, v + 0.05, 0.03, 13, 17, [0xd6a33c, 0xa8423a][i % 2], [0xf0e0b0, 0x8a2a2a][i % 2], 6), layer: 2.1, at: [u + 0.12, v] as [number, number] },
+      ]));
+    }
+    // the striped canvas roof, ridged along its length
+    // red and cream stripes: the roof in slices across its length, with the gable ends from the whole
+    const [ends] = gableRoof(0.1, 0.1, 2.9, 1.9, h, 16, stripe, canvas, 'u');
+    const roof = gableRoof(0.1, 0.1, 2.9, 1.9, h, 16, stripe, canvas, 'u')[1];
+    roof.polys = [];
+    for (let i = 0; i < 8; i++) roof.polys.push(...gableRoof(0.1 + i * 0.35, 0.1, 0.1 + (i + 1) * 0.35, 1.9, h, 16, i % 2 ? canvas : stripe, canvas, 'u')[1].polys);
+    parts.push({ ...ends, at }, { ...roof, at }, { ...box(0.1, 1.88, 2.9, 1.92, h - 6, h, stripe), at: [1.5, 1.95], layer: 3 });
+    for (let u = 0.25; u < 2.9; u += 0.35) parts.push({ ...flatV([[u, h - 6], [u + 0.15, h - 6], [u + 0.075, h - 10]], 1.93, canvas), at: [u, 1.96], layer: 3.1 });
+    if (s >= 3) {
+      // bunting between the front poles and a lantern at each
+      for (let u = 0.25; u < 2.75; u += 0.2) parts.push({ ...flatV([[u, h - 1], [u + 0.12, h - 1], [u + 0.06, h - 5]], 1.97, [0xd66a9a, 0xf2d24a, 0x6aa8d8, 0xe8e0f0][Math.round(u * 5) % 4], false), at: [u, 2], layer: 4 });
+      parts.push(...[0.2, 1.5, 2.8].map(u => ({ ...column(u, 1.86, 0.04, h - 10, h - 5, c.night ? 0xffd27a : 0xc8a04a, c.night ? 0xfff0b0 : 0xd8b860, 6), at: [u, 1.9] as [number, number], layer: 4 })));
+    }
+    return parts;
+  },
   /** a bench, its back to the back of its tile */
   bench: () => [
     ...[[0.2, 0.46], [0.8, 0.46], [0.2, 0.6], [0.8, 0.6]].map(([u, v]) => box(u - 0.025, v - 0.025, u + 0.025, v + 0.025, 0, 7, 0x5a4029)),

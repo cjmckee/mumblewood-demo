@@ -233,7 +233,7 @@ const ART: Record<ResourceId, () => string> = {
 
 /** "any meal", "any drink" and the like use a representative good */
 const CATEGORY_ICON: Record<Category | SlotId, ResourceId> = { rawFood: 'berries', meal: 'stew', drink: 'ale', fine: 'planks', remedy: 'tonic',
-  dough: 'flour', filling: 'berries', thickener: 'flour', base: 'fish', side: 'smokedFish', brew: 'ale', spice: 'herbs' };
+  dough: 'flour', filling: 'berries', thickener: 'flour', base: 'fish', side: 'smokedFish', brew: 'ale', spice: 'herbs', toast: 'ale' };
 
 /** each building's signature object, in the same style: what you'd spot first on its lot */
 const BUILDING_ART: Record<string, () => string> = {
@@ -440,6 +440,13 @@ const BUILDING_ART: Record<string, () => string> = {
     return shadow(9) + pa('M3.4 18.4L2.4 7.6l4.6 4.2L12 4.2l5 7.6 4.6-4.2-1 10.8z', gold) + pa('M12 4.2l5 7.6 4.6-4.2-1 10.8H12z', sh(gold, 0.82))
       + re(3.2, 17, 17.6, 3, sh(gold, 0.9), 0.6) + re(3.2, 17, 17.6, 1, sh(gold, 1.2), 0.5) + ci(12, 18.5, 1.1, '#c04a4a') + ci(7, 18.5, 0.9, '#3a6aa8') + ci(17, 18.5, 0.9, '#3a6aa8')
       + ci(2.4, 7.4, 1.2, gold) + ci(12, 3.8, 1.3, gold) + ci(21.6, 7.4, 1.2, gold) + ci(12, 11.6, 1, '#c04a4a');
+  },
+  pavilion: () => {
+    // a striped marquee with a pennant and the front flaps tied back
+    const red = '#c0443a', white = '#ece2cc';
+    return shadow(10) + pa('M3 19V11.6L12 6l9 5.6V19z', white) + pa('M12 6l9 5.6V19h-9z', sh(white, 0.86))
+      + pa('M3 11.6L12 6v13H9.2V10.2l-3 1.8V19H3z', red) + pa('M12 6l9 5.6V19h-3.2v-7l-2.8-1.8V19H12z', sh(red, 0.82))
+      + pa('M9.6 19c.4-3 1.2-5.4 2.4-6.6 1.2 1.2 2 3.6 2.4 6.6z', '#5a3a24') + ln('M12 6V2.4', '#5a3a24', 0.9) + pa('M12 2.4l3.4 1-3.4 1z', '#e8b84a');
   },
   stockpile: () => {
     const c = '#b08a5a';

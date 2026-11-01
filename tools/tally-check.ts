@@ -2,7 +2,8 @@
 // npx tsx tools/tally-check.ts
 import assert from 'node:assert/strict';
 import { CHARTERS, BUILDINGS, MEALS, CATEGORIES, TIER, ResourceId, SiteId, InputKey, membersOf, CharterMetric } from '../src/sim/content';
-import { createWorld, apply, alive, runHours, debugGrow, reconcileStock, flow, tallyOf, renownOf, charterProgress, findSpot, siteOk, FEAST_MEALS, FEAST_DRINKS, World } from '../src/sim/world';
+import { createWorld, apply, alive, runHours, debugGrow, reconcileStock, flow, tallyOf, renownOf, charterProgress, findSpot, siteOk, FEAST_MEALS, FEAST_DRINKS, World, recipesOf, recipeOn } from '../src/sim/world';
+import { autoBuild, autoFoodRules } from '../src/sim/autoplayer';
 
 let n = 0; const ok = (cond: unknown, msg: string) => { assert(cond, msg); n++; };
 const clear = (w: World) => { while (w.decisions.length) apply(w, { type: 'resolve', option: 99 }); };
@@ -76,6 +77,27 @@ for (let i = 0; i < 4; i++) for (let j = i + 1; j < 4; j++) {
 {
   const w = createWorld(39); debugGrow(w, 40);
   ok(alive(w).every(c => !c.tastes.dislikes.includes('supper')), 'no settler dislikes the ploughman’s supper');
+}
+
+// 7. The bot, during the Long Table: a bakery aimed at suppers keeps baking the bread they need, and bread and
+//    sides are kept for the pavilion's suppers while there's other food. The pavilion keeps the suppers themselves.
+{
+  const w = createWorld(41); w.nextEventHour = 1e9; debugGrow(w, 14); w.charter = 'longtable'; w.decisions = [];
+  for (const id of ['bakery', 'smokehouse']) { if (!w.owned.includes(id)) w.owned.push(id); const spot = findSpot(w, id); assert(spot); apply(w, { type: 'place', def: id, ...spot }); w.buildings.at(-1)!.built = true; }
+  w.owned.push('pavilion'); const ps = findSpot(w, 'pavilion'); assert(ps); apply(w, { type: 'place', def: 'pavilion', ...ps }); const pav = w.buildings.at(-1)!; pav.stage = 1; pav.delivered = {};
+  w.res.berries = 200; w.res.flour = 30; w.res.fish = 30; w.res.bread = 0; w.res.supper = 2; w.res.stew = 40; reconcileStock(w);
+  autoBuild(w);
+  const bakery = w.buildings.find(b => b.def === 'bakery')!, recs = recipesOf(bakery);
+  const on = (out: string) => recs.some((r, i) => r.output === out && recipeOn(bakery, i));
+  ok(on('supper') && on('bread'), `the bakery makes suppers and still bakes their bread (${recs.filter((r, i) => recipeOn(bakery, i)).map(r => r.output)})`);
+  autoFoodRules(w);
+  ok(['bread', 'smokedFish', 'skewers'].every(r => w.forbidden.includes(r as never)) && !w.forbidden.includes('supper'), `bread and sides are kept for the pavilion's suppers; suppers themselves aren't held back (${w.forbidden})`);
+  ok(!w.forbidden.includes('stew'), 'everything else is still eaten');
+}
+// 8. Hale and hearty can be finished without anyone falling ill.
+{
+  const hearty = CHARTERS.find(c => c.id === 'hearty')!;
+  ok(parts(hearty.metric).every(p => !(p.kind === 'tally' && p.how === 'used')), 'Hale and hearty counts tonics made, since its other condition is a day with nobody sick');
 }
 
 console.log(`tally: ${n} checks passed`);
