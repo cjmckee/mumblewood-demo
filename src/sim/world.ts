@@ -321,11 +321,14 @@ export function currentRecipe(w: World, b: Building): Recipe | undefined {
 export function stockOf(w: World, key: InputKey) { return membersOf(key).reduce((n, r) => n + w.res[r], 0); }
 /** total drinks in storage (ale, and later cider, mead…) */
 export function drinkTotal(w: World) { return CATEGORIES.drink.members.reduce((n, r) => n + w.res[r], 0); }
+/** drinks the tavern, bards and weddings may pour: storage less the ones reserved by the drink rules */
+export function drinkableTotal(w: World) { return CATEGORIES.drink.members.filter(r => !w.forbidden.includes(r)).reduce((n, r) => n + w.res[r], 0); }
 /** take drinks out of storage, the most plentiful first; returns what was taken */
 function takeDrink(w: World, n: number, why: string, c?: Colonist): ResourceId | null {
   let left = n, main: ResourceId | null = null;
   // a drinker reaches for the one they love and leaves the one they dislike; otherwise the highest tier, then the most plentiful
-  const order = [...CATEGORIES.drink.members].sort((p, q) => (c ? taste(c, q) - taste(c, p) : 0) || TIER_RANK[TIER[q] ?? 'processed'] - TIER_RANK[TIER[p] ?? 'processed'] || w.res[q] - w.res[p]);
+  // reserved drinks (the drink rules) aren't served
+  const order = CATEGORIES.drink.members.filter(r => !w.forbidden.includes(r)).sort((p, q) => (c ? taste(c, q) - taste(c, p) : 0) || TIER_RANK[TIER[q] ?? 'processed'] - TIER_RANK[TIER[p] ?? 'processed'] || w.res[q] - w.res[p]);
   for (const r of order) {
     const t = Math.min(w.res[r], left); if (t <= 0) continue;
     w.res[r] -= t; flow(w, `${r}:-${why}`, t); left -= t; main ??= r;
@@ -1536,13 +1539,13 @@ function applyEventEffect(w: World, effect: string) {
     case 'payFood20': takeFood(w, 20); addLog(w, 'The goblin stamps something and leaves. Nobody can read the stamp.'); break;
     case 'graffiti': everyone(w, 'graffiti', 'Goblin graffiti everywhere', -6, 48); addLog(w, 'By morning, every wall says something rude in Goblin.', 'bad'); break;
     case 'bardPlay':
-      if (drinkTotal(w) >= 6) { takeDrink(w, 6, 'bard'); everyone(w, 'bard', 'Heard a wonderful ballad', 6, 24); const e = ease(w, 0.08); addLog(w, `The ballad is long, but it rhymes. Everyone cries a little.${e ? ` Strain eases by ${e}.` : ''}`, 'good'); }
+      if (drinkableTotal(w) >= 6) { takeDrink(w, 6, 'bard'); everyone(w, 'bard', 'Heard a wonderful ballad', 6, 24); const e = ease(w, 0.08); addLog(w, `The ballad is long, but it rhymes. Everyone cries a little.${e ? ` Strain eases by ${e}.` : ''}`, 'good'); }
       else addLog(w, 'There wasn’t enough to drink. The bard plays one note and leaves.', 'bad');
       break;
     case 'pigeonBribe': w.res.berries = Math.max(0, w.res.berries - 15); addLog(w, 'The pigeons accept the berries and sign a peace treaty.'); break;
     case 'pigeonRiot': w.res.berries = Math.floor(w.res.berries * 0.6); addLog(w, 'The pigeons riot. The berry stores are a crime scene.', 'bad'); break;
     case 'wedding': {
-      if (mealTotal(w) >= 8 && drinkTotal(w) >= 5) {
+      if (mealTotal(w) >= 8 && drinkableTotal(w) >= 5) {
         let n = 8; for (const r of MEALS) { const t = Math.min(w.res[r], n); w.res[r] -= t; n -= t; }
         takeDrink(w, 5, 'wedding'); everyone(w, 'wedding', 'What a lovely wedding', 7, 48);
         const e = ease(w, 0.1);
@@ -1690,6 +1693,9 @@ export function blockedReason(w: World, b: Building): string | null {
   if (!recipesOf(b).length || !b.built) return null;
   const rec = currentRecipe(w, b);
   if (!rec) return enabledRecipes(b).length ? 'Warehouse stock targets are met.' : 'Every recipe here is switched off.';
+  // ingredients it can be brought count, fractions included: 0.75 spirits in the inbox and 0.05 in storage make a
+  // cordial, and calling that "blocked" left the workshop with no worker to make the spirits it was waiting on
+  if (recipeReady(w, b, rec)) return null;
   for (const key of Object.keys(rec.inputs) as InputKey[]) {
     if (isGroup(key) && !optionsOf(b, key).length) return `Every kind of ${inputName(key)} is switched off here.`;
     if (obtainable(w, b, key) < 1) {
@@ -1768,6 +1774,22 @@ function chooseTask(w: World, c: Colonist): Task | null {
       if (amount >= 1 || (amount > 0 && amount >= due - 0.001)) opts.push({ t: { kind: 'deliver', site: b.uid, res: r, amount }, pri: 3, x: s.x, y: s.y });
     }
     if (!missing && Object.keys(left).length === 0 && taskCount(w, t => t.kind === 'build' && t.site === b.uid) < 3) opts.push({ t: { kind: 'build', site: b.uid }, pri: 3.5, x: s.x, y: s.y });
+  }
+  // a stocked pavilion still takes a serving for a guest its larder can't suit: someone who came after it was
+  // stocked and can't stand the only drink in it. One whole serving each, of a kind they'd take.
+  const pav = pavilionOf(w);
+  if (pav?.built && !w.feast?.done && !w.feast?.called) {
+    const s = spotOf(pav);
+    const guests = alive(w).filter(x => !x.sulking && !bedridden(x));
+    for (const goods of [FEAST_MEALS, FEAST_DRINKS]) {
+      const larder: Partial<Record<ResourceId, number>> = {};
+      for (const r of goods) larder[r] = (pav.delivered[r] ?? 0) + enroute(w, pav.uid, r);
+      const unserved = guests.filter(x => !serving(larder, x, goods, true));
+      for (const x of unserved) {
+        const r = goods.filter(g => taste(x, g) >= 0 && constructionStock(w, pav, g) >= 1).sort((a, b) => taste(x, b) - taste(x, a) || w.res[b] - w.res[a])[0];
+        if (r) { opts.push({ t: { kind: 'deliver', site: pav.uid, res: r, amount: 1 }, pri: 3, x: s.x, y: s.y }); break; }
+      }
+    }
   }
   // hauling finished goods to storage
   for (const b of built(w)) {
@@ -2426,7 +2448,7 @@ function computeThoughts(w: World, c: Colonist): Thought[] {
   if (has(c, 'butterfly') && !c.hadCompanyLastNight) add('Lonely evening', -6);
   if (has(c, 'sunny')) add('Sunny disposition', 5);
   if (has(c, 'lazy')) add('Doesn’t work too hard', 3);
-  if (has(c, 'tippler') && drinkTotal(w) < 1) add('Nothing to drink in the stores', -4);
+  if (has(c, 'tippler') && drinkableTotal(w) < 1) add('Nothing to drink in the stores', -4);
   if (hasBuilt(w, 'bathhouse') && w.res.wood > 0) add('Feeling fresh from the bathhouse', has(c, 'grumbler') ? 5 : 3);
   if (hasPerk(w, 'saintsDay')) add("Saint Pomfrey's blessing", 6);
   if (hasPerk(w, 'overtime')) add('The overtime bell', -3);
@@ -2684,7 +2706,7 @@ function hourly(w: World) {
       const atTavern=tavern?.built && tavern.def==='tavern';
       // One paid serving per evening; later hours are ordinary social time.
       const serving=knows(w,'cellaring')?0.2:0.3;
-      if (atTavern && !c.drankTonight && drinkTotal(w) + 1e-8 >= serving) {
+      if (atTavern && !c.drankTonight && drinkableTotal(w) + 1e-8 >= serving) {
         const r = takeDrink(w, serving, 'drunk', c); c.fun += 18;
         if (r) {
           c.drankTonight = true;
@@ -2924,7 +2946,7 @@ export function festivalPreview(w: World) {
   const guests = alive(w).filter(c => !bedridden(c));
   const stock = { ...w.res };
   let fed = 0, drank = 0, loved = 0;
-  const pickFor = (c: Colonist, goods: ResourceId[]) => [...goods].filter(r => stock[r] >= 1).sort((a, b) => taste(c, b) - taste(c, a) || stock[b] - stock[a])[0];
+  const pickFor = (c: Colonist, goods: ResourceId[]) => [...goods].filter(r => stock[r] >= 1 && !w.forbidden.includes(r)).sort((a, b) => taste(c, b) - taste(c, a) || stock[b] - stock[a])[0];
   for (const c of guests) {
     const meal = pickFor(c, MEALS); if (!meal) continue;
     stock[meal] -= 1; fed++;
@@ -2940,7 +2962,7 @@ function runFestival(w: World) {
   const p = festivalPreview(w);
   const guests = alive(w).filter(c => !bedridden(c));
   for (const c of guests) {
-    const pickFor = (goods: ResourceId[]) => [...goods].filter(r => w.res[r] >= 1).sort((a, b) => taste(c, b) - taste(c, a) || w.res[b] - w.res[a])[0];
+    const pickFor = (goods: ResourceId[]) => [...goods].filter(r => w.res[r] >= 1 && !w.forbidden.includes(r)).sort((a, b) => taste(c, b) - taste(c, a) || w.res[b] - w.res[a])[0];
     const meal = pickFor(MEALS);
     if (!meal) { addMemory(w, c, 'festival', 'Nothing left for me at the festival', -3, 24); continue; }
     w.res[meal] -= 1; flow(w, `${meal}:-festival`, 1);

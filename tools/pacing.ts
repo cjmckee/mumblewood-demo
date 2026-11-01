@@ -2,12 +2,14 @@
 // strain grow. Targets: charter 1 by day 10-16, charter 2 by day 28-36, a win by day 50-60.
 // Usage: npx tsx tools/pacing.ts [runs=60] [maxDays=90]   (VERBOSE=1 prints every run)
 import { createWorld, tick, day, alive, avgMood, TICKS_PER_HOUR, World, charterDef, colonyComfort, comfortGaps } from '../src/sim/world';
-import { autoDecide, autoBuild, BOT } from '../src/sim/autoplayer';
+import { autoDecide, autoBuild, BOT, ROUTE_AVOID } from '../src/sim/autoplayer';
 import { START } from '../src/sim/scenario';
 import { BUILDINGS } from '../src/sim/content';
 // STYLE=random: the control, which makes every choice (charters, blueprints, research, cornerstones, recruits, events, trading) at random
 const STYLE = (process.env.STYLE ?? 'greedy') as 'greedy' | 'random';
 // experiment knobs: STRAIN_K, DRAFT_EVERY, RECRUIT_CAP (bot), LABORERS_PER (bot)
+// AVOID=apothecary:cordial,pieoven — finale routes that may not use these workshops or steps
+if (process.env.AVOID) ROUTE_AVOID.push(...process.env.AVOID.split(','));
 if (process.env.STRAIN_K) START.strain.rate = Number(process.env.STRAIN_K);
 if (process.env.DRAFT_EVERY) START.draftEvery = Number(process.env.DRAFT_EVERY);
 if (process.env.RECRUIT_CAP) BOT.recruitCap = Number(process.env.RECRUIT_CAP);
@@ -67,6 +69,8 @@ for (let i = 0; i < runs; i++) {
   while (w.status === 'playing' && day(w) <= maxDays) {
     watch(); autoDecide(w, STYLE, rand); watch();
     for (let t = 0; t < TICKS_PER_HOUR; t++) { tick(w); if (w.decisions.length) { watch(); autoDecide(w, STYLE, rand); } watch(); }
+    // an avoided workshop never makes it into the colony, however it was offered (a draft, the caravan, a charter)
+    if (ROUTE_AVOID.length) w.owned = w.owned.filter(id => !ROUTE_AVOID.includes(id));
     autoBuild(w);
     if (Math.round(w.hour) % 24 === 12 && marks.includes(day(w))) { run.pop[day(w)] = alive(w).length; run.strain[day(w)] = Math.round(w.strain); run.mood[day(w)] = Math.round(avgMood(w)); run.comfort[day(w)] = Math.round(colonyComfort(w) * 100); run.gaps[day(w)] = Object.fromEntries(comfortGaps(w).map(g => [g.need, Math.round(g.avg * 100)])); }
   }

@@ -2,7 +2,7 @@
 // and the bot takes it. Daily bread with no mill or malthouse waits on one of them: only they grind flour.
 // Also: a feast larder is stocked for its guests.
 // Usage: npx tsx tools/draft-link-check.ts
-import { createWorld, apply, runHours, World, alive, feastUnservedDrinks, findSpot, recipesOf, recipeOn, Building } from '../src/sim/world';
+import { createWorld, apply, runHours, World, alive, feastUnservedDrinks, findSpot, recipesOf, recipeOn, Building, feastCheck, FEAST_MEALS, FEAST_DRINKS } from '../src/sim/world';
 import { draftLinks } from '../src/sim/charterplan';
 import { autoDecide, autoBuild } from '../src/sim/autoplayer';
 
@@ -60,14 +60,14 @@ function breadTown(): World {
   check(feastUnservedDrinks(w).length === 0, 'with some cordial on hand too, everyone has a drink they’d take');
 }
 /** a town on the Long Table with the given workshops built and the pavilion stocking its larder */
-function feastTown(defs: string[], larder: Record<string, number>): { w: World; at: (id: string) => Building; pav: Building } {
+function feastTown(defs: string[], larder: Record<string, number>, ready = false): { w: World; at: (id: string) => Building; pav: Building } {
   const w = createWorld(81);
   while (w.decisions.length) apply(w, { type: 'resolve', option: 0 });
   w.charter = 'longtable';
   for (const id of [...defs, 'pavilion']) {
     if (!w.owned.includes(id)) w.owned.push(id);
     const s = findSpot(w, id, 16, 16, true)!; apply(w, { type: 'place', def: id, x: s.x, y: s.y });
-    const b = w.buildings.at(-1)!; b.built = id !== 'pavilion'; if (id === 'pavilion') { b.stage = 1; b.delivered = { ...larder } as typeof b.delivered; }
+    const b = w.buildings.at(-1)!; b.built = id !== 'pavilion' || ready; if (id === 'pavilion') { b.stage = 1; b.delivered = { ...larder } as typeof b.delivered; }
   }
   const at = (id: string) => w.buildings.find(b => b.def === id)!;
   return { w, at, pav: at('pavilion') };
@@ -91,6 +91,26 @@ function feastTown(defs: string[], larder: Record<string, number>): { w: World; 
   w.res.cordial = 20; w.res.hippocras = 5;
   for (let h = 0; h < 24 && (pav.delivered.hippocras ?? 0) < 1; h++) runHours(w, 1);
   check((pav.delivered.hippocras ?? 0) >= 0.999, `the guest who dislikes cordial gets a whole hippocras (${(pav.delivered.hippocras ?? 0).toFixed(2)} delivered)`);
+}
+{
+  // a stocked larder of nothing but cordial, and a newcomer who can't stand it: a hippocras is carried in for them
+  const { w, pav } = feastTown([], { banquet: 14, cordial: 14 }, true);
+  for (const c of alive(w)) { c.tastes = { loves: [], dislikes: [] }; c.sulking = false; }
+  const late = alive(w)[0]; late.tastes.dislikes = ['cordial'];
+  const before = feastCheck(w).hungry;
+  w.res.hippocras = 3;
+  for (let h = 0; h < 24 && (pav.delivered.hippocras ?? 0) < 1; h++) runHours(w, 1);
+  check(before === 1 && (pav.delivered.hippocras ?? 0) >= 0.999 && (pav.delivered.hippocras ?? 0) < 1.5 && feastCheck(w).hungry === 0,
+    `a stocked pavilion takes one hippocras for the guest who dislikes cordial (${before} unserved before, ${feastCheck(w).hungry} after, ${(pav.delivered.hippocras ?? 0).toFixed(2)} delivered)`);
+}
+{
+  // nobody refuses a magnificent meal, and nobody dislikes more than one drink: a larder with both quality drinks suits anyone
+  let n = 0, bad = 0;
+  for (let s = 1; s <= 60; s++) for (const c of createWorld(s * 101).colonists) {
+    n++;
+    if (c.tastes.dislikes.some(r => FEAST_MEALS.includes(r)) || c.tastes.dislikes.filter(r => FEAST_DRINKS.includes(r)).length > 1) bad++;
+  }
+  check(bad === 0, `of ${n} settlers, ${bad} would refuse every magnificent meal or both quality drinks`);
 }
 console.log(failed ? `\n${failed} failed` : '\nall passed');
 if (failed) process.exit(1);
