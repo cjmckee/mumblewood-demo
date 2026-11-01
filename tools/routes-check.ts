@@ -213,7 +213,7 @@ for (const r of routes) {
   check(!!lover || !!hater, 'found colonists with a taste for or against bread');
 }
 
-// the variety charter: 3 kinds of meal, 10 of each
+// the variety charter: 60 renown at table from 3 kinds of meal (refined 1, quality 2, magnificent 4; stew earns none)
 {
   const w = worldWith('grove');
   // A varied table also asks for 10 colonists and a 24-hour average mood of 55
@@ -221,12 +221,13 @@ for (const r of routes) {
   w.charter = 'menu'; w.chartersDone = []; w.charterHolds = [];
   const cheer = () => { for (const c of alive(w)) { c.mood = 70; c.moodTarget = 70; } w.moodLog = Array(24).fill(70); };
   cheer();
-  w.res.stew = 12; w.res.bread = 11; w.res.skewers = 4; reconcileStock(w);
+  // plenty of renown, but from two kinds, and stew doesn't count as a third
+  w.tally = { eaten: { stew: 40, bread: 20, pie: 20 }, drunk: {}, made: {}, used: {} };
   run(w, 1);
   const pending = w.charter === 'menu';
-  w.res.skewers = 12; reconcileStock(w); cheer();
+  w.tally.eaten.skewers = 6; cheer();
   run(w, 1);
-  check(pending && w.chartersDone.includes('menu'), 'A varied table waits for a third kind, then completes');
+  check(pending && w.chartersDone.includes('menu'), 'A varied table waits for a third kind with renown, then completes');
 }
 void built;
 console.log(failed ? `${failed} failed` : 'all passed');

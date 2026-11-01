@@ -145,6 +145,15 @@ const ART: Record<ResourceId, () => string> = {
       + pa('M5.4 10.6c.6-2.6 3.4-4 6.6-4s6 1.4 6.6 4z', lid) + pa('M12 6.6c3.2 0 6 1.4 6.6 4H12z', sh(lid, 0.82)) + el(12, 6.4, 1.6, 0.9, sh(lid, 0.7))
       + ln('M15.4 8.4l3.6-3.8', '#c8a066', 1.2) + re(6.2, 14, 1.2, 3.6, sh(pot, 1.3), 0.6, ' opacity=".6"') + steam(8.2, 5.4);
   },
+  supper: () => {
+    // a board with a crusty loaf, a smoked fish and a wedge of cheese
+    const board = '#a0703e', loaf = '#c89048', fishC = '#9c7a5a', cheese = '#f0c24a';
+    return shadow(10) + el(12, 16.4, 10, 3.4, sh(board, 0.8)) + el(12, 15.6, 10, 3.2, board) + el(10, 15.2, 6.6, 1.6, sh(board, 1.15), ' opacity=".6"')
+      + pa('M4.6 14.2c0-3.2 2.4-5.4 5.4-5.4s5.4 2.2 5.4 5.4c0 1.4-.8 2-2 2H6.6c-1.2 0-2-.6-2-2z', loaf) + pa('M10 8.8c3 0 5.4 2.2 5.4 5.4 0 1.4-.8 2-2 2H10z', sh(loaf, 0.8))
+      + ln('M6.8 11.6l1.2 1.8M9.4 10.4l1.2 2M12 10.6l1 1.8', sh(loaf, 1.3), 1.1)
+      + `<g transform="translate(13.4 11.8) rotate(-18) scale(.5)">${fish(fishC, '#c8ab88', true)}</g>`
+      + pa('M15.4 16.6l4.6-3.4.4 3.6z', cheese) + pa('M15.4 16.6h5l-.4-3.4z', sh(cheese, 0.86), ' opacity=".7"') + ci(17.8, 15.6, 0.45, sh(cheese, 0.75));
+  },
   stew: () => {
     const bowl = '#8a5a34', s = '#d98a3c';
     return shadow(9) + pa('M3.5 12h17c0 4.6-3.6 8.2-8.5 8.2S3.5 16.6 3.5 12z', bowl) + pa('M12 12h8.5c0 4.6-3.6 8.2-8.5 8.2z', sh(bowl, 0.78))
@@ -224,7 +233,7 @@ const ART: Record<ResourceId, () => string> = {
 
 /** "any meal", "any drink" and the like use a representative good */
 const CATEGORY_ICON: Record<Category | SlotId, ResourceId> = { rawFood: 'berries', meal: 'stew', drink: 'ale', fine: 'planks', remedy: 'tonic',
-  pastry: 'flour', filling: 'berries', thickener: 'flour', base: 'fish', brew: 'ale', spice: 'herbs' };
+  dough: 'flour', filling: 'berries', thickener: 'flour', base: 'fish', side: 'smokedFish', brew: 'ale', spice: 'herbs' };
 
 /** each building's signature object, in the same style: what you'd spot first on its lot */
 const BUILDING_ART: Record<string, () => string> = {

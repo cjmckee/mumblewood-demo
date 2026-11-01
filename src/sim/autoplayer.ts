@@ -1,8 +1,8 @@
 // A heuristic player, used by the balance harness to play thousands of runs headlessly.
 // It reads the active charter and plays towards it, the way a person would.
-import { BUILDING_BY_ID, BUILDINGS, CATEGORIES, CharterMetric, RESEARCH_BY_ID, EVENTS, ResourceId, MEALS, RAW_FOODS, RESOURCES, Recipe, InputKey, membersOf, recipeRate, LORE_BOOST, GUILD_BOOST } from './content';
+import { BUILDING_BY_ID, BUILDINGS, CATEGORIES, CharterMetric, RESEARCH_BY_ID, EVENTS, ResourceId, MEALS, RAW_FOODS, RESOURCES, Recipe, InputKey, membersOf, recipeRate, LORE_BOOST, GUILD_BOOST, RENOWN, TIER } from './content';
 import { assess, Concern, defsOf, KIND_DEFS } from './advisor';
-import { World, workshopInputPlan, apply, alive, beds, mealTotal, sites, findSpot, CENTER, avgMood, built, MAP_SIZE, pathAt, terrainAt, T_WATER, bdef, workersAt, blockedReason, opinion, Building, Colonist, hourOfDay, charterProgress, buildingByUid, storageFree, storages, FOODS, GOODS, bedridden, foodTotal, currentRecipe, drinkTotal, siteOk, enabledRecipes, recipesOf, rerollCost, stockOf, usableHere, charterDef, charterHelpers, feastCheck, desks, researchLeft, festivalPreview, edibleTotal, doorTile, centerOf, winterStores, storageCap, stored, lastDay, lastDayHours, remainingCost, seasonYield, recipeOn, spotOf, canPlace, coversPath, efficiencyAt, footprint, BUILD_MIN, BUILD_MAX, blockedGrid, storePrio } from './world';
+import { World, tallyOf, renownOf, FEAST_MEALS, FEAST_DRINKS, workshopInputPlan, apply, alive, beds, mealTotal, sites, findSpot, CENTER, avgMood, built, MAP_SIZE, pathAt, terrainAt, T_WATER, bdef, workersAt, blockedReason, opinion, Building, Colonist, hourOfDay, charterProgress, buildingByUid, storageFree, storages, FOODS, GOODS, bedridden, foodTotal, currentRecipe, drinkTotal, siteOk, enabledRecipes, recipesOf, rerollCost, stockOf, usableHere, charterDef, charterHelpers, feastCheck, desks, researchLeft, festivalPreview, edibleTotal, doorTile, centerOf, winterStores, storageCap, stored, lastDay, lastDayHours, remainingCost, seasonYield, recipeOn, spotOf, canPlace, coversPath, efficiencyAt, footprint, BUILD_MIN, BUILD_MAX, blockedGrid, storePrio } from './world';
 import { seasonOf } from './seasons';
 
 const BLUEPRINT_PRIORITY = ['sawmill', 'pieoven', 'dock', 'cottage', 'brewery', 'ciderpress', 'tavern', 'kiln', 'claypit', 'carpenter', 'orchard', 'field', 'apiary', 'smokehouse', 'cellar', 'stage', 'bathhouse', 'bakery', 'apothecary', 'herbgarden', 'mill', 'tailor', 'weaver', 'flaxfield', 'tanner', 'trapper'];
@@ -124,7 +124,7 @@ function manageRecipes(w: World) {
     if (p.kind === 'stock' && p.resources.reduce((n, r) => n + w.res[r], 0) < p.amount) for (const r of p.resources) wanted.add(r);
     if (p.kind === 'variety') for (const r of CATEGORIES[p.category].members) if (w.res[r] < p.each) wanted.add(r);
     // the founders' feast: a choice of drinks, so nobody is left with only one they dislike
-    if (p.kind === 'longTable') for (const r of CATEGORIES.drink.members) if (w.res[r] < 6) wanted.add(r);
+    if (p.kind === 'longTable') { for (const r of FEAST_DRINKS) if (w.res[r] < 6) wanted.add(r); for (const r of FEAST_MEALS) if (w.res[r] < alive(w).length) wanted.add(r); }
   }
   const plenty = (r: ResourceId) => w.res[r] >= Math.max(30, pop * 3);
   for (const b of built(w)) {
@@ -141,7 +141,23 @@ function manageRecipes(w: World) {
   }
 }
 /** the parts of the current charter (an all-at-once charter has several) */
-const partsOf = (w: World): CharterMetric[] => { const m = charterDef(w.charter)?.metric; return !m ? [] : m.kind === 'all' ? m.parts : [m]; };
+const partsOf = (w: World): CharterMetric[] => { const m = charterDef(w.charter)?.metric; return (!m ? [] : m.kind === 'all' ? m.parts : [m]).map(p => planPart(w, p)); };
+/**
+ * Tally and renown conditions, as the bot plans for them. A tally ("30 pies eaten") becomes a small stock to keep
+ * making: enough for a round of eating, not the whole count, since eating is what fills it. Renown becomes "a few of
+ * each of several kinds". The food rules never hold these back: they count when they're eaten.
+ */
+function planPart(w: World, p: CharterMetric): CharterMetric {
+  if (p.kind === 'tally') {
+    const left = Math.max(0, p.amount - tallyOf(w, p.how, p.resources));
+    return { kind: 'stock', resources: p.resources, amount: p.how === 'made' ? left + p.resources.reduce((n, r) => n + w.res[r], 0) : Math.min(left, Math.max(4, Math.ceil(alive(w).length * 0.6))) };
+  }
+  if (p.kind === 'renown') {
+    const { points, kinds } = renownOf(w, p.category);
+    return points >= p.amount && kinds.length >= p.kinds ? { kind: 'stock', resources: [], amount: 0 } : { kind: 'variety', category: p.category, kinds: p.kinds, each: 4 };
+  }
+  return p;
+}
 /** a charter that needs contented people: one with a mood condition, or a finale */
 const moodCharter = (w: World) => partsOf(w).some(p => ['avgMood', 'monument', 'longTable'].includes(p.kind));
 /** what each charter leans on, for staffing */
@@ -215,14 +231,14 @@ export function goodCost(w: World, r: ResourceId, depth = 3): number {
 const cheapest = (w: World, goods: ResourceId[]) => Math.min(...goods.map(g => goodCost(w, g)));
 /** for the founders' feast: kinds of meal and drink the colony makes now, and the settlers none of them would suit */
 function feastGaps(w: World) {
-  const making = (cat: 'meal' | 'drink') => CATEGORIES[cat].members.filter(r => w.res[r] >= 1 || goodCost(w, r) === 0);
+  const making = (cat: 'meal' | 'drink') => (cat === 'meal' ? FEAST_MEALS : FEAST_DRINKS).filter(r => w.res[r] >= 1 || goodCost(w, r) === 0);
   const meals = making('meal'), drinks = making('drink');
   const unsuited = (goods: ResourceId[]) => alive(w).filter(c => !goods.some(g => !c.tastes.dislikes.includes(g)));
   return { meals, drinks, noMeal: unsuited(meals), noDrink: unsuited(drinks) };
 }
 /** the next kind that would suit the most unsuited settlers, cheapest first */
 function nextKind(w: World, cat: 'meal' | 'drink', have: ResourceId[], people: Colonist[]) {
-  const options = CATEGORIES[cat].members.filter(r => !have.includes(r) && goodCost(w, r) < 50);
+  const options = (cat === 'meal' ? FEAST_MEALS : FEAST_DRINKS).filter(r => !have.includes(r) && goodCost(w, r) < 50);
   return options.sort((a, b) => people.filter(c => !c.tastes.dislikes.includes(b)).length - people.filter(c => !c.tastes.dislikes.includes(a)).length || goodCost(w, a) - goodCost(w, b))[0];
 }
 /** how far a charter is from done, part by part: the bot picks the charter with the least left to do */
@@ -247,6 +263,17 @@ export function charterEffort(w: World, id: string): Record<string, number> {
       add(`${p.kinds} kinds of ${p.category}`, costs.reduce((a, b) => a + b, 0));
       break;
     }
+    case 'tally': {
+      // a tally fills as fast as the town enjoys the goods, so the chain matters more than the count
+      if (tallyOf(w, p.how, p.resources) < p.amount) add(`${p.how}: ${p.resources.length > 3 ? 'them' : p.resources.join('/')}`, cheapest(w, p.resources) + 2 + p.amount / 20);
+      break;
+    }
+    case 'renown': {
+      const goods = (p.category === 'meal' ? MEALS : CATEGORIES.drink.members).filter(r => RENOWN[TIER[r] ?? 'simple'] > 0);
+      const costs = goods.map(r => goodCost(w, r) + 1).sort((a, b) => a - b).slice(0, p.kinds);
+      add(`${p.kinds} kinds of ${p.category} for renown`, costs.reduce((a, b) => a + b, 0) + p.amount / 20);
+      break;
+    }
     case 'built': {
       const n = built(w).filter(b => b.def === p.def).length;
       if (n < p.amount) add(`${p.amount - n} more ${p.def}s`, (p.amount - n) * 0.7 + (w.owned.includes(p.def) ? 0 : 3) + (BUILDING_BY_ID[p.def].cost.fine ? cheapest(w, CATEGORIES.fine.members) : 0));
@@ -256,7 +283,7 @@ export function charterEffort(w: World, id: string): Record<string, number> {
     case 'allTable': add('a table for everyone', built(w).some(b => b.def === 'dining') ? 0.5 : w.owned.includes('dining') ? 1.5 : 2.5); if (p.cooked) add('cooked meals for everyone', cheapest(w, MEALS) + 1); break;
     case 'healthy': add('a day with nobody sick', 1); break;
     case 'monument': {
-      add('the Hall: planks, meals, drinks', cheapest(w, CATEGORIES.fine.members) + cheapest(w, MEALS) + cheapest(w, CATEGORIES.drink.members) + 3);
+      add('the Hall: planks, suppers, mulled cups', cheapest(w, CATEGORIES.fine.members) + cheapest(w, FEAST_MEALS) + cheapest(w, FEAST_DRINKS) + 3);
       // only happy settlers will build it, so a glum town has a long way to go first
       const gate = BUILDING_BY_ID[p.def].moodGate ?? 0;
       if (BOT.hallMood && gate) add(`only settlers at mood ${gate}+ build it (mood is ${Math.round(mood)})`, Math.max(0, gate + 5 - mood) / 2);
@@ -296,7 +323,7 @@ function charterGoods(w: World): ResourceId[] {
     if (p.kind === 'longTable') {
       // what the feast is missing: a meal and a drink at all, then the kinds that suit the people nothing on hand suits
       const g = feastGaps(w);
-      if (!g.meals.length) out.push(...MEALS.filter(makeable).slice(0, 1)); else out.push(...g.meals);
+      if (!g.meals.length) out.push(...FEAST_MEALS.filter(makeable).slice(0, 1)); else out.push(...g.meals);
       if (!g.drinks.length) { const d = nextKind(w, 'drink', [], alive(w)); if (d) out.push(d); } else out.push(...g.drinks);
       const nd = g.noDrink.length ? nextKind(w, 'drink', g.drinks, g.noDrink) : undefined; if (nd) out.push(nd);
       const nm = g.noMeal.length ? nextKind(w, 'meal', g.meals, g.noMeal) : undefined; if (nm) out.push(nm);
@@ -525,7 +552,7 @@ function charterShort(w: World): Partial<Record<ResourceId, number>> {
       const members = CATEGORIES[p.category].members, full = members.filter(r => w.res[r] >= p.each).length;
       for (const r of members.filter(r => w.res[r] < p.each).sort((a, b) => w.res[b] - w.res[a]).slice(0, Math.max(0, p.kinds - full))) add(r, p.each - w.res[r]);
     }
-    if (p.kind === 'longTable') { for (const r of CATEGORIES.drink.members) add(r, Math.ceil(pop / 2) - w.res[r]); for (const r of MEALS) add(r, Math.ceil(pop / 2) - w.res[r]); }
+    if (p.kind === 'longTable') { for (const r of FEAST_DRINKS) add(r, Math.ceil(pop / 2) - w.res[r]); for (const r of FEAST_MEALS) add(r, pop - w.res[r]); }
     if (p.kind === 'monument') { const b = w.buildings.find(x => x.def === p.def && !x.built); if (b) for (const [k, n] of Object.entries(remainingCost(b))) for (const r of membersOf(k as InputKey)) add(r, (n ?? 0) - w.res[r]); }
   }
   return out;
@@ -1190,9 +1217,6 @@ export function autoFoodRules(w: World) {
   const pop = alive(w).length;
   const raw = rawStock(w);
   const keep: ResourceId[] = [];
-  if (w.charter === 'piesky') keep.push('pie');
-  if (w.charter === 'bread') keep.push('bread');
-  if (w.charter === 'woodsmoke') keep.push('smokedFish');
   const rawEaters = concernsOf(w).find(c => c.id === 'raw')?.people ?? 0;
   const close = (charterProgress(w)?.ratio ?? 0) >= 0.6;
   const relaxed = close || rawEaters < pop / 3 || !BOT.advisor || BOT.off.includes('relaxFoodRules');
@@ -1200,7 +1224,6 @@ export function autoFoodRules(w: World) {
   // flip back and forth as the pile wobbles around one line
   const keeping = MEALS.some(m => w.forbidden.includes(m));
   const rawFor = (start: number, stop: number) => raw > pop * (BOT.ruleGap && keeping ? stop : start);
-  if (w.charter === 'settled' && rawFor(3, 1.8) && relaxed) keep.push(...MEALS);
   // a varied table: keep back only the kinds being built up, and only until each has its share; the rest is eaten as usual
   const vpart = varietyPart(w);
   if (vpart && rawFor(2, 1.2) && (relaxed || !BOT.varietyRules)) {
