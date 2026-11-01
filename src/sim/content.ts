@@ -89,11 +89,23 @@ export const CATEGORIES: Record<Category, { name: string; members: ResourceId[] 
   fine: { name: 'fine materials', members: ['planks', 'bricks', 'wicker'] },
   remedy: { name: 'remedies', members: ['tonic', 'poultice'] },
 };
-/** what a recipe input names: one good, or any good in a category */
-export type InputKey = ResourceId | Category;
+/**
+ * Recipe slots: one input that takes any of several goods, usually from different chains ("pastry": flour or acorn
+ * meal; "filling": berries, apples or honey), as in Against the Storm. A slot works like a category in a recipe, but
+ * it only means something to recipes; needs, costs and charters use categories. Each building can switch single
+ * options of a slot (or category) input off, so a player can keep apples out of one oven's pies.
+ * Slots arrive with the goods ladder; the table starts empty.
+ */
+export type SlotId = never;
+export const SLOTS: Partial<Record<string, { name: string; members: ResourceId[] }>> = {};
+/** a category or a slot: an input that more than one good can fill */
+export type Group = Category | SlotId;
+/** what a recipe input names: one good, or any good in a category or slot */
+export type InputKey = ResourceId | Group;
 export const isCategory = (k: string): k is Category => k in CATEGORIES;
-export const membersOf = (k: InputKey): ResourceId[] => (isCategory(k) ? CATEGORIES[k].members : [k]);
-export const inputName = (k: InputKey) => (isCategory(k) ? CATEGORIES[k].name : RESOURCES.find(r => r.id === k)!.name.toLowerCase());
+export const isGroup = (k: string): k is Group => k in CATEGORIES || !!SLOTS[k];
+export const membersOf = (k: InputKey): ResourceId[] => (isCategory(k) ? CATEGORIES[k].members : SLOTS[k]?.members ?? [k as ResourceId]);
+export const inputName = (k: InputKey) => (isCategory(k) ? CATEGORIES[k].name : SLOTS[k]?.name ?? RESOURCES.find(r => r.id === k)!.name.toLowerCase());
 
 /** output units per worker-hour at work speed 1, for a ★★★ recipe */
 export const BASE_RATE: Record<ResourceId, number> = {

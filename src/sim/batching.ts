@@ -7,14 +7,16 @@ export function planInputBatch(
   available: Partial<Record<ResourceId, number>>,
   capacity: number,
   maxOutputs: number,
+  /** the goods that may fill each input; a building can switch options of a category or slot off */
+  optionsFor: (key: InputKey) => ResourceId[] = membersOf,
 ): InputBatch | undefined {
-  const keys = (Object.keys(inputs) as InputKey[]).sort((a,b) => membersOf(a).length-membersOf(b).length || a.localeCompare(b));
+  const keys = (Object.keys(inputs) as InputKey[]).sort((a,b) => optionsFor(a).length-optionsFor(b).length || a.localeCompare(b));
   const heldUnits = Object.values(held).reduce((n,x)=>n+(x??0),0);
   for(let outputs=Math.floor(maxOutputs+1e-8);outputs>=1;outputs--){
     const own={...held}, stock={...available};const deliveries:InputBatch['deliveries']={};let possible=true;
     for(const key of keys){
       let need=(inputs[key]??0)*outputs;
-      const members=membersOf(key);
+      const members=optionsFor(key);
       // Already buffered goods first, without borrowing them twice through a category alias.
       for(const r of members){const n=Math.min(need,own[r]??0);own[r]=(own[r]??0)-n;need-=n;}
       for(const r of [...members].sort((a,b)=>(stock[b]??0)-(stock[a]??0)||a.localeCompare(b))){

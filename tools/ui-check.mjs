@@ -83,6 +83,19 @@ for (const [device,width,height] of [['desktop',1440,900],['phone',390,844],['sm
   await p.locator('[data-act=recipe-priority][data-arg$=":1:-1"]').click();
   check(await state(()=>window.__game.world.buildings.find(b=>b.def==='woodcutter').recipeOrder?.[0]===1),`${device}: recipe priority controls still reorder production`);
   await p.evaluate(()=>{const b=window.__game.world.buildings.find(b=>b.def==='woodcutter');b.recipeOrder=undefined;b.productionLimits={}});
+  // a category or slot input opens its options; each is a square checkbox that switches that good off here
+  await p.evaluate(()=>{
+    const g=window.__game,w=g.world;if(!w.owned.includes('kitchen'))w.owned.push('kitchen');
+    for(let y=18;y<46&&!w.buildings.some(b=>b.def==='kitchen');y++)for(let x=18;x<46&&!w.buildings.some(b=>b.def==='kitchen');x++){const n=w.buildings.length;g.ui.send({type:'place',def:'kitchen',x,y});if(w.buildings.length>n)w.buildings.at(-1).built=true;}
+    const k=w.buildings.find(b=>b.def==='kitchen');g.ui.tab='build';g.ui.open=true;g.ui.detail={kind:'building',id:k.uid};g.ui.render(true);
+  });
+  await p.locator('.rin.grp').first().click();
+  check(await state(()=>document.querySelectorAll('.ropt[role=checkbox]').length===4&&document.querySelector('.rin.grp').getAttribute('aria-expanded')==='true'),`${device}: raw food opens its four options`);
+  await p.locator('.ropt[data-arg$=":rawFood:fish"]').click();
+  check(await state(()=>{const k=window.__game.world.buildings.find(b=>b.def==='kitchen');return k.skip?.join()==='rawFood:fish'&&document.querySelector('.ropt[data-arg$=":rawFood:fish"]').getAttribute('aria-checked')==='false'&&document.querySelector('.rin.grp').classList.contains('cut');}),`${device}: an option switches off and the input shows it`);
+  await p.locator('.ropt[data-arg$=":rawFood:fish"]').click();await p.locator('.rin.grp').first().click();
+  check(await state(()=>window.__game.world.buildings.find(b=>b.def==='kitchen').skip===undefined&&!document.querySelector('.ropt')),`${device}: switching back on clears it, and the options close`);
+  await p.evaluate(()=>{const g=window.__game,w=g.world;w.buildings=w.buildings.filter(b=>b.def!=='kitchen');g.ui.detail=null;g.ui.render(true)});
   check(await state(()=>{
     const g=window.__game;g.ui.open=true;g.ui.tab='issues';g.ui.detail=null;g.world.res.wood=0;g.ui.render(true);
     const c=document.querySelector('[data-act=fix]');if(!c)return false;const before=JSON.stringify(g.world);c.click();return JSON.stringify(g.world)===before && g.ui.tab==='build';
