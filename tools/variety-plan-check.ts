@@ -4,7 +4,7 @@ import {createWorld,apply,findSpot,recipesOf,alive} from '../src/sim/world';
 import {BOT,varietyTargets,autoFoodRules} from '../src/sim/autoplayer';
 const saved={...BOT};
 try{
- const w=createWorld(24757);w.charter='menu';w.owned.push('kitchen','pieoven','smokehouse','dock');w.res.wood=100;w.res.berries=100;w.res.stew=0;
+ const w=createWorld(24757);w.charter='menu';w.owned.push('kitchen','pieoven','smokehouse','dock','mill');w.res.wood=100;w.res.berries=100;w.res.stew=0;
  for(const id of ['kitchen','pieoven','smokehouse']){const spot=findSpot(w,id);assert(spot);assert.equal(apply(w,{type:'place',def:id,...spot}),null);w.buildings.at(-1)!.built=true;}
  // the kitchen makes only smoked fish; the smokehouse only skewers, which need mushrooms nothing here gathers
  for(const b of w.buildings)if(b.def==='kitchen')b.off=recipesOf(b).flatMap((r,i)=>r.output==='smokedFish'?[]:[i]);

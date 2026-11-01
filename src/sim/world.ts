@@ -6,6 +6,7 @@ import {
   CharterMetric, RESEARCH, RESEARCH_BY_ID, BRANCHES_AFTER, PRICE, TRADERS, TRADER_BY_ID, LORE_BOOST, GUILD_BOOST, Tier, EventDef,
 } from './content';
 import { planInputBatch } from './batching';
+import { draftLinks } from './charterplan';
 import { START, Season, SEASONS } from './scenario';
 import { seasonOf, seasonOn, rule, SEASON_NAMES } from './seasons';
 
@@ -796,7 +797,7 @@ export function createWorld(seed: number, options: { colonists?: number; startDa
   const w: World = {
     recipeBatching: true, startDate, seed, rngState: seed >>> 0, hour: 6,
     colonists: [], buildings: [], terrain: [], paths: [],
-    res: { flax: 0, cloth: 0, hides: 0, leather: 0, coats: 0, wood: 0, berries: 0, fish: 0, mushrooms: 0, stew: 0, pie: 0, smokedFish: 0, planks: 0, ale: 0, apples: 0, grain: 0, honey: 0, cider: 0, mead: 0, clay: 0, reeds: 0, bricks: 0, wicker: 0, herbs: 0, flour: 0, bread: 0, skewers: 0, poultice: 0, tonic: 0, tea: 0, acornMeal: 0, hotpot: 0, mulled: 0, supper: 0, ...sc.res },
+    res: { flax: 0, cloth: 0, hides: 0, leather: 0, coats: 0, wood: 0, berries: 0, fish: 0, mushrooms: 0, stew: 0, pie: 0, smokedFish: 0, planks: 0, ale: 0, apples: 0, grain: 0, honey: 0, cider: 0, mead: 0, clay: 0, reeds: 0, bricks: 0, wicker: 0, herbs: 0, flour: 0, bread: 0, skewers: 0, poultice: 0, tonic: 0, tea: 0, acorns: 0, acornMeal: 0, hotpot: 0, mulled: 0, supper: 0, ...sc.res },
     owned: [...sc.unlocked], perks: [], gold: sc.trade.gold, caravan: null,
     charterTier: 1, charter: null, charterHours: 0, chartersDone: [],
     decisions: [], log: [], opinions: {}, status: 'playing', strain: 0, nextEventHour: 24 * 1.6, sites: [], rerolls: 0,
@@ -986,7 +987,11 @@ function blueprintDecision(w: World, avoid: string[] = []): Decision {
   // a charter's route usually takes two of its helpers (a dock and a smokehouse), so the guarantee holds until two are owned
   const ownedHelpers = charterHelpers(w.charter).filter(id => w.owned.includes(id) && usable(id)).length;
   const ownsHelper = ownedHelpers >= Math.min(2, charterHelpers(w.charter).length);
-  if (helpers.length && !ownsHelper && !options.some(o => helpers.includes(o))) options[options.length - 1] = pick(w, helpers);
+  let slot = options.length - 1;
+  if (helpers.length && !ownsHelper && !options.some(o => helpers.includes(o))) { options[slot] = pick(w, helpers); slot--; }
+  // the missing link: when the charter's cheapest route waits on one blueprint (a mill for the dough), the draft offers it
+  const links = draftLinks(w).filter(id => pool.includes(id));
+  if (links.length && slot >= 0 && !options.some(o => links.includes(o))) options[slot] = pick(w, links);
   return { kind: 'blueprint', options };
 }
 
@@ -1743,8 +1748,16 @@ function chooseTask(w: World, c: Colonist): Task | null {
       const need = n - enroute(w, b.uid, k);
       if (need <= 0.001) continue;
       missing = true;
-      // "fine materials": bring whichever kind storage has most of
-      const r = [...membersOf(k)].sort((p, q) => w.res[q] - w.res[p])[0];
+      // "fine materials": bring whichever kind storage has most of. A feast larder is stocked for the guests instead:
+      // the kind the most guests it can't serve yet would take, so the few who can't stand ale still get a cup
+      const guests = bdef(b).feastSeats ? alive(w).filter(x => !x.sulking && !bedridden(x)) : null;
+      const larder: Partial<Record<ResourceId, number>> = {};
+      for (const m of membersOf(k)) larder[m] = (b.delivered?.[m] ?? 0) + enroute(w, b.uid, m);
+      const unserved = guests ? guests.filter(x => !serving(larder, x, membersOf(k), true)) : [];
+      const pull = (m: ResourceId) => unserved.filter(x => taste(x, m) >= 0).length;
+      const r = [...membersOf(k)].sort((p, q) => Number(constructionStock(w, b, q) >= 1) - Number(constructionStock(w, b, p) >= 1) || pull(q) - pull(p) || w.res[q] - w.res[p])[0];
+      // nobody left unserved would take it, but something here is making a kind they would: wait for that
+      if (guests && unserved.length && pull(r) <= 0 && membersOf(k).some(m => pull(m) > 0 && built(w).some(x => enabledRecipes(x).some(e => e.output === m)))) continue;
       const amount = Math.min(CARRY, need, constructionStock(w, b, r));
       if (amount >= 1 || (amount > 0 && amount >= need - 0.001)) opts.push({ t: { kind: 'deliver', site: b.uid, res: r, amount }, pri: 3, x: s.x, y: s.y });
     }
@@ -2421,6 +2434,8 @@ export function activeNeeds(w: World, standing = standingOf(w)): NeedKey[] {
 const FRESH: ResourceId[] = ['berries', 'apples', 'fish', 'skewers'];
 /** village standing: how much a cooked meal of each tier counts toward the meals need, before the table and favourites */
 export const MEAL_TIER_COMFORT: Record<GoodTier, number> = { simple: 0.3, refined: 0.6, quality: 1, magnificent: 1 };
+/** settlement standing: a cooked meal of each tier, before the table and favourites (stew is fine; better is a bonus) */
+export const SETTLEMENT_MEAL_COMFORT: Record<GoodTier, number> = { simple: 0.75, refined: 0.85, quality: 1, magnificent: 1 };
 /** distinct meals eaten in the last few days */
 const mealKinds = (w: World, c: Colonist, hours: number) => new Set((c.ate ?? []).filter(a => a.h >= w.hour - hours && MEALS.includes(a.r)).map(a => a.r)).size;
 export function comfortParts(w: World, c: Colonist, standing = standingOf(w)): Partial<Record<NeedKey, number>> {
@@ -2437,8 +2452,10 @@ export function comfortParts(w: World, c: Colonist, standing = standingOf(w)): P
       case 'fire': out[k] = w.hearthCold ? 0 : 1; break;
       case 'meals': {
         if (!fed || !m?.cooked) { out[k] = 0; break; }
-        // from village standing, what was eaten matters: simple fare counts a little, a quality meal counts in full
-        out[k] = standing >= 2 ? Math.min(1, MEAL_TIER_COMFORT[m.tier ?? 'refined'] * (m.table ? 1 : 0.7) + (m.loved ? 0.1 : 0)) : 0.7 + (m.table ? 0.15 : 0) + (m.loved ? 0.15 : 0);
+        // what was eaten matters from the first charter on: a settlement is happy enough with stew, so better fare is a
+        // bonus there; a village expects more, so stew counts for little and a quality meal counts in full
+        const tierPart = (standing >= 2 ? MEAL_TIER_COMFORT : SETTLEMENT_MEAL_COMFORT)[m.tier ?? 'refined'];
+        out[k] = Math.min(1, tierPart * (m.table ? 1 : standing >= 2 ? 0.7 : 0.8) + (m.loved ? 0.1 : 0));
         break;
       }
       case 'variety': { const n = mealKinds(w, c, 72); out[k] = later ? (n >= 3 ? 1 : n === 2 ? 0.6 : n === 1 ? 0.2 : 0) : (n >= 2 ? 1 : n === 1 ? 0.4 : 0); break; }
@@ -2916,6 +2933,13 @@ function serving(larder: Partial<Record<ResourceId, number>>, c: Colonist, goods
   const main = ok.find(r => (larder[r] ?? 0) >= 1 - 1e-6) ?? ok[0];
   if (take) { let need = 1; for (const r of [main, ...ok.filter(x => x !== main)]) { const t = Math.min(need, larder[r] ?? 0); larder[r] = (larder[r] ?? 0) - t; need -= t; if (need <= 1e-9) break; } }
   return main;
+}
+/** guests the feast pavilion's larder, topped up from storage, still couldn't give a drink they'd take */
+export function feastUnservedDrinks(w: World): Colonist[] {
+  const pav = pavilionOf(w);
+  const pool: Partial<Record<ResourceId, number>> = {};
+  for (const r of FEAST_DRINKS) pool[r] = (pav?.delivered[r] ?? 0) + w.res[r];
+  return alive(w).filter(c => !c.sulking && !bedridden(c)).filter(c => !serving(pool, c, FEAST_DRINKS, true));
 }
 const feastTarget = (w: World) => (charterDef(w.charter)?.metric as { pop?: number } | undefined)?.pop ?? 14;
 /** a dry run of the founders' feast: who would come, and who would get a supper and a drink they don't dislike from the larder */

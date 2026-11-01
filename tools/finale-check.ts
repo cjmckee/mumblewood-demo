@@ -157,8 +157,8 @@ function pavilion(w: World, larder: Partial<Record<string, number>>, full = true
   const c = alive(w)[0];
   c.lastMeal = { cooked: false, table: false, loved: false }; c.hunger = 80; c.fun = 10; c.beauty = -1; c.bed = null; c.illness = null;
   ok(comfortParts(w, c, 1).meals === 0 && comfortParts(w, c, 1).shelter === 0, 'raw food and no bed: meals and shelter at 0');
-  c.lastMeal = { cooked: true, table: true, loved: true };
-  ok(Math.abs((comfortParts(w, c, 1).meals ?? 0) - 1) < 1e-9, 'a favourite meal at a table: meals at 100%');
+  c.lastMeal = { cooked: true, table: true, loved: true, tier: 'quality' };
+  ok(Math.abs((comfortParts(w, c, 1).meals ?? 0) - 1) < 1e-9, 'a favourite quality meal at a table: meals at 100%');
   c.hunger = 10;
   ok(comfortParts(w, c, 1).meals === 0, 'going hungry counts as no meal');
   for (const x of alive(w)) { x.lastMeal = { cooked: false, table: false, loved: false }; x.fun = 0; x.beauty = -1; x.bed = null; x.illness = null; }

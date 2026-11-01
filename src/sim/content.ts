@@ -1,6 +1,6 @@
 // All game content lives here as plain data. The sim reads it; nothing here knows about rendering.
 
-export type ResourceId = 'flax' | 'cloth' | 'hides' | 'leather' | 'coats' | 'wood' | 'berries' | 'fish' | 'mushrooms' | 'apples' | 'grain' | 'honey' | 'clay' | 'reeds' | 'herbs' | 'flour' | 'acornMeal' | 'stew' | 'pie' | 'hotpot' | 'supper' | 'smokedFish' | 'bread' | 'skewers' | 'poultice' | 'tonic' | 'tea' | 'planks' | 'bricks' | 'wicker' | 'ale' | 'cider' | 'mead' | 'mulled';
+export type ResourceId = 'flax' | 'cloth' | 'hides' | 'leather' | 'coats' | 'wood' | 'berries' | 'fish' | 'mushrooms' | 'apples' | 'grain' | 'honey' | 'clay' | 'reeds' | 'herbs' | 'flour' | 'acorns' | 'acornMeal' | 'stew' | 'pie' | 'hotpot' | 'supper' | 'smokedFish' | 'bread' | 'skewers' | 'poultice' | 'tonic' | 'tea' | 'planks' | 'bricks' | 'wicker' | 'ale' | 'cider' | 'mead' | 'mulled';
 /** raw: edible as is; ingredient: needs processing (grain, honey); luxury: drinks; remedy: used by the clinic */
 export const RESOURCES: { id: ResourceId; name: string; kind: 'raw' | 'ingredient' | 'meal' | 'material' | 'luxury' | 'remedy' }[] = [
   { id: 'flax', name: 'Flax', kind: 'ingredient' },
@@ -22,6 +22,7 @@ export const RESOURCES: { id: ResourceId; name: string; kind: 'raw' | 'ingredien
   { id: 'reeds', name: 'Reeds', kind: 'ingredient' },
   { id: 'herbs', name: 'Herbs', kind: 'ingredient' },
   { id: 'flour', name: 'Flour', kind: 'ingredient' },
+  { id: 'acorns', name: 'Acorns', kind: 'ingredient' },
   { id: 'acornMeal', name: 'Acorn meal', kind: 'ingredient' },
   { id: 'stew', name: 'Stew', kind: 'meal' },
   { id: 'pie', name: 'Pie', kind: 'meal' },
@@ -74,7 +75,7 @@ export const tradeable = (r: ResourceId) => TIER_RANK[TIER[r] ?? 'simple'] < TIE
 export const PRICE: Record<ResourceId, number> = {
   flax: 2, hides: 3, cloth: 6, leather: 6, coats: 14,
   wood: 2, berries: 2, fish: 2, mushrooms: 2, apples: 2, grain: 2, clay: 2, reeds: 2, herbs: 2, honey: 4, flour: 4,
-  acornMeal: 4, planks: 5, bricks: 5, wicker: 4, stew: 5, smokedFish: 5, bread: 6, skewers: 6, pie: 10, hotpot: 10, supper: 16,
+  acorns: 2, acornMeal: 4, planks: 5, bricks: 5, wicker: 4, stew: 5, smokedFish: 5, bread: 6, skewers: 6, pie: 10, hotpot: 10, supper: 16,
   ale: 7, cider: 7, tea: 6, mead: 9, mulled: 12, poultice: 10, tonic: 14,
 };
 /**
@@ -149,7 +150,7 @@ export const inputName = (k: InputKey) => (isCategory(k) ? CATEGORIES[k].name : 
 /** output units per worker-hour at work speed 1, for a ★★★ recipe */
 export const BASE_RATE: Record<ResourceId, number> = {
   flax: 1.2, hides: 0.8, cloth: 0.6, leather: 0.6, coats: 0.25,
-  wood: 1.6, berries: 1.3, fish: 1.5, mushrooms: 1.5, apples: 1.4, grain: 1.6, honey: 1.0, clay: 1.5, reeds: 1.4, herbs: 1.3, flour: 1.4, acornMeal: 1.0,
+  wood: 1.6, berries: 1.3, fish: 1.5, mushrooms: 1.5, apples: 1.4, grain: 1.6, honey: 1.0, clay: 1.5, reeds: 1.4, herbs: 1.3, flour: 1.4, acorns: 1.6, acornMeal: 1.4,
   stew: 1.2, pie: 0.9, hotpot: 1.0, supper: 0.9, mulled: 0.8, smokedFish: 1.2, bread: 1.1, skewers: 1.0, poultice: 0.8, tonic: 0.6, tea: 0.9, planks: 1.0, bricks: 0.9, wicker: 1.0, ale: 0.8, cider: 0.9, mead: 0.7,
 };
 /**
@@ -219,7 +220,7 @@ export const BUILDINGS: BuildingDef[] = [
   { id: 'stockpile', name: 'Stockpile', blurb: 'An open patch of ground for goods. Holds 150. Food left out here spoils.', cost: {}, w: 2, h: 2, slots: 0, storage: 150, walkable: true, wall: 0x8a7a5a, roof: 0x8a7a5a, height: 0 },
   { id: 'leanto', name: 'Shack', blurb: 'Sleeps 2. Drafty, but it counts as a roof.', cost: { wood: 8 }, w: 1, h: 1, slots: 0, beds: 2, bedQuality: 'basic', wall: 0x8a6e4f, roof: 0x7d8f55, height: 0.6 },
   { id: 'woodcutter', name: 'Woodcutter', blurb: 'Fells trees. Can instead rough-saw planks slowly at 3 wood each; a sawmill is faster and uses less wood. Works best near trees.', cost: { wood: 8 }, w: 1, h: 1, slots: 2, job: 'chopping', needs: 'trees', recipes: [{ inputs: {}, output: 'wood', stars: 3 }, ROUGH_PLANK_RECIPE], wall: 0x7a5a3c, roof: 0x5c7a3e, height: 0.7 },
-  { id: 'forager', name: 'Forager hut', blurb: 'Picks berries. Can gather herbs, or pound acorns into a coarse meal for baking, slowly. Works best right next to berry bushes.', cost: { wood: 8 }, w: 1, h: 1, slots: 2, job: 'foraging', needs: 'bushes', recipes: [{ inputs: {}, output: 'berries', stars: 3 }, { inputs: {}, output: 'herbs', stars: 1 }, { inputs: {}, output: 'acornMeal', stars: 1 }], wall: 0x8c6b4a, roof: 0xa0465a, height: 0.7 },
+  { id: 'forager', name: 'Forager hut', blurb: 'Picks berries. Can gather herbs or acorns, slowly. Works best right next to berry bushes.', cost: { wood: 8 }, w: 1, h: 1, slots: 2, job: 'foraging', needs: 'bushes', recipes: [{ inputs: {}, output: 'berries', stars: 3 }, { inputs: {}, output: 'herbs', stars: 1 }, { inputs: {}, output: 'acorns', stars: 1 }], wall: 0x8c6b4a, roof: 0xa0465a, height: 0.7 },
   { id: 'dining', name: 'Dining hall', blurb: 'Tables and benches for 6. Eating here beats eating in the dirt, as long as someone keeps it clean.', cost: { wood: 20 }, w: 2, h: 2, slots: 0, seats: 6, wall: 0x9a7a58, roof: 0x8a4a3a, height: 0.9 },
   { id: 'storehouse', name: 'Storehouse', blurb: 'Holds 250 goods under a roof. Food stored here doesn\u2019t spoil.', cost: { wood: 25 }, w: 2, h: 2, slots: 0, storage: 250, keepsFresh: true, wall: 0x7a6a58, roof: 0x5a6a7a, height: 1.0 },
 
@@ -235,7 +236,7 @@ export const BUILDINGS: BuildingDef[] = [
   { id: 'kitchen', name: 'Stew kitchen', blurb: 'Turns any raw food into stew. Can make a hotpot, and smoke fish or bake bread, badly. Someone has to carry the ingredients in.', cost: { wood: 18 }, w: 2, h: 1, slots: 2, job: 'cooking', recipes: [{ inputs: { rawFood: 0.9 }, output: 'stew', stars: 3 }, { inputs: { fish: 1.1 }, output: 'smokedFish', stars: 1 }, { inputs: { dough: 0.9 }, output: 'bread', stars: 1 }, { inputs: { base: 0.7, thickener: 0.6 }, output: 'hotpot', stars: 2 }], wall: 0x8a6448, roof: 0xc4703a, height: 0.8 },
   { id: 'pieoven', name: 'Pie oven', blurb: 'Pastry and a filling make pie. Pie is the best thing that has ever happened.', cost: { wood: 12, fine: 8 }, w: 1, h: 1, slots: 2, job: 'cooking', recipes: [{ inputs: { dough: 0.6, filling: 0.7 }, output: 'pie', stars: 3 }, { inputs: { dough: 0.75 }, output: 'bread', stars: 2 }], wall: 0x9b7452, roof: 0xd6a33c, height: 0.8, draftable: true },
   { id: 'smokehouse', name: 'Smokehouse', blurb: 'Fish goes in, better fish comes out. Also grills mushroom-and-herb skewers, simmers the best hotpot, and can plate a ploughman\u2019s supper.', cost: { wood: 15 }, w: 1, h: 1, slots: 2, job: 'cooking', recipes: [{ inputs: { fish: 0.7 }, output: 'smokedFish', stars: 3 }, { inputs: { mushrooms: 0.6, herbs: 0.3 }, output: 'skewers', stars: 2 }, { inputs: { base: 0.55, thickener: 0.5 }, output: 'hotpot', stars: 3 }, { inputs: { bread: 1, side: 1 }, output: 'supper', stars: 2 }], wall: 0x5f4d3f, roof: 0x8a8a8a, height: 0.9, draftable: true },
-  { id: 'mill', name: 'Mill', blurb: 'Grinds grain into flour, the first half of a loaf.', cost: { wood: 16, fine: 4 }, w: 2, h: 1, slots: 2, job: 'crafting', recipes: [{ inputs: { grain: 1.5 }, output: 'flour', stars: 3 }], wall: 0xa08a68, roof: 0x7a6a4a, height: 1.1, draftable: true },
+  { id: 'mill', name: 'Mill', blurb: 'Grinds grain into flour, the first half of a loaf. Can grind acorns into a coarse meal where nothing grows grain.', cost: { wood: 16, fine: 4 }, w: 2, h: 1, slots: 2, job: 'crafting', recipes: [{ inputs: { grain: 1.5 }, output: 'flour', stars: 3 }, { inputs: { acorns: 1.2 }, output: 'acornMeal', stars: 2 }], wall: 0xa08a68, roof: 0x7a6a4a, height: 1.1, draftable: true },
   { id: 'bakery', name: 'Bakery', blurb: 'Bread from flour or acorn meal, and the ploughman\u2019s supper: a loaf with a refined side. Can bake pie, and grind its own flour if there\u2019s no mill.', cost: { wood: 15, fine: 6 }, w: 2, h: 1, slots: 2, job: 'cooking', recipes: [{ inputs: { dough: 0.6 }, output: 'bread', stars: 3 }, { inputs: { dough: 0.75, filling: 0.9 }, output: 'pie', stars: 2 }, { inputs: { grain: 2 }, output: 'flour', stars: 1 }, { inputs: { bread: 0.8, side: 0.8 }, output: 'supper', stars: 3 }], wall: 0xb08a5a, roof: 0xc0603a, height: 0.9, draftable: true },
   { id: 'herbgarden', name: 'Herb garden', blurb: 'Neat rows of herbs, and a few berries in the corner. Grows anywhere.', cost: { wood: 8 }, w: 1, h: 1, slots: 2, job: 'foraging', recipes: [{ inputs: {}, output: 'herbs', stars: 3 }, { inputs: {}, output: 'berries', stars: 1 }], wall: 0x7a8a4a, roof: 0x5a8a3a, height: 0.4, draftable: true },
   { id: 'apothecary', name: 'Apothecary', blurb: 'Poultices and tonics for the clinic, and herb tea for anyone. The doctor uses remedies from storage.', cost: { wood: 12, fine: 4 }, w: 1, h: 1, slots: 1, job: 'medicine', recipes: [{ inputs: { herbs: 2 }, output: 'poultice', stars: 3 }, { inputs: { herbs: 1.5 }, output: 'tea', stars: 2 }, { inputs: { honey: 1, herbs: 1.25 }, output: 'tonic', stars: 2 }], wall: 0xc8c0a8, roof: 0x4a7a5a, height: 0.9, draftable: true },

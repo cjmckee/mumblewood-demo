@@ -73,7 +73,9 @@ function shop(seed: number, def: string, recipeOn: number, stock: Partial<Record
 }
 {
   const w = shop(5, 'forager', 2, {});
-  ok((w.flows['acornMeal:+forager'] ?? 0) > 1, 'a forager can pound acorn meal');
+  ok((w.flows['acorns:+forager'] ?? 0) > 1, 'a forager can gather acorns');
+  const m = shop(5, 'mill', 1, { acorns: 30, grain: 0 });
+  ok((m.flows['acornMeal:+mill'] ?? 0) > 2 && (m.flows['acorns:-mill'] ?? 0) > 0, 'the mill grinds acorns into acorn meal');
 }
 
 // 5. Comfort at village standing follows the tier of the last meal.
@@ -87,7 +89,8 @@ function shop(seed: number, def: string, recipeOn: number, stock: Partial<Record
   c.lastMeal = { cooked: true, table: true, loved: false };
   ok(comfortParts(w, c).meals === MEAL_TIER_COMFORT.refined, 'a meal from an older save counts as refined');
   w.chartersDone = ['a']; c.lastMeal = { cooked: true, table: true, loved: false, tier: 'simple' };
-  ok(comfortParts(w, c).meals! >= 0.85, 'before village standing, any cooked meal at a table counts as before');
+  const stew1 = comfortParts(w, c).meals!; c.lastMeal = { cooked: true, table: true, loved: false, tier: 'quality' };
+  ok(stew1 === 0.75 && comfortParts(w, c).meals === 1, `a settlement is content with stew (${stew1}) and better fare is a bonus (${comfortParts(w, c).meals})`);
 }
 
 // 6. Traders never carry quality goods.
