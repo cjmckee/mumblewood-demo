@@ -364,7 +364,7 @@ export type CharterMetric =
   | { kind: 'population'; amount: number }
   | { kind: 'avgMood'; amount: number; hours: number }
   | { kind: 'allTable'; hours: number; cooked?: boolean }
-  | { kind: 'variety'; category: Category; kinds: number; each: number }
+  | { kind: 'variety'; category: Category; kinds: number; each: number; /** the bot's plan for renown: only the kinds that earn it */ members?: ResourceId[] }
   // several conditions at once, and the finales
   | { kind: 'all'; parts: CharterMetric[] }
   | { kind: 'built'; def: string; amount: number }

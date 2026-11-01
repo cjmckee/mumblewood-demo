@@ -1762,8 +1762,10 @@ function chooseTask(w: World, c: Colonist): Task | null {
       const r = [...membersOf(k)].sort((p, q) => Number(constructionStock(w, b, q) >= 1) - Number(constructionStock(w, b, p) >= 1) || pull(q) - pull(p) || w.res[q] - w.res[p])[0];
       // nobody left unserved would take it, but something here is making a kind they would: wait for that
       if (guests && unserved.length && pull(r) <= 0 && membersOf(k).some(m => pull(m) > 0 && built(w).some(x => enabledRecipes(x).some(e => e.output === m)))) continue;
-      const amount = Math.min(CARRY, need, constructionStock(w, b, r));
-      if (amount >= 1 || (amount > 0 && amount >= need - 0.001)) opts.push({ t: { kind: 'deliver', site: b.uid, res: r, amount }, pri: 3, x: s.x, y: s.y });
+      // a guest still unserved gets a whole serving, even when the larder is only a fraction short of its count
+      const due = guests && pull(r) > 0 ? Math.max(need, 1) : need;
+      const amount = Math.min(CARRY, due, constructionStock(w, b, r));
+      if (amount >= 1 || (amount > 0 && amount >= due - 0.001)) opts.push({ t: { kind: 'deliver', site: b.uid, res: r, amount }, pri: 3, x: s.x, y: s.y });
     }
     if (!missing && Object.keys(left).length === 0 && taskCount(w, t => t.kind === 'build' && t.site === b.uid) < 3) opts.push({ t: { kind: 'build', site: b.uid }, pri: 3.5, x: s.x, y: s.y });
   }
