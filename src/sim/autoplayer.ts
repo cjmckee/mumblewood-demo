@@ -156,6 +156,8 @@ function manageRecipes(w: World) {
   const routed = new Set<ResourceId>(routes.flatMap(r => r.steps.map(x => x.output)));
   for (const r of routed) wanted.add(r);
   const routedMembers = new Set<ResourceId>([...routedKeys].flatMap(k => membersOf(k as InputKey)));
+  /** route steps, last step first: the order workshops on a route work them in */
+  const routeOrder = routes.flatMap(r => [...r.steps].reverse());
   for (const p of partsOf(w)) {
     // a stock of any of several goods: the shallowest ones the colony can make (ale and cider, not cordial)
     if (p.kind === 'stock' && p.resources.reduce((n, r) => n + w.res[r], 0) < p.amount) {
@@ -220,6 +222,16 @@ function manageRecipes(w: World) {
     // the balance tools' avoided steps stay off, so a forced route is really forced
     if (ROUTE_AVOID.length) on = on.map((x, i) => x && !ROUTE_AVOID.includes(b.def) && !ROUTE_AVOID.includes(`${b.def}:${recs[i].output}`));
     on.forEach((x, i) => { if (x !== recipeOn(b, i)) apply(w, { type: 'toggleRecipe', building: b.uid, recipe: i, on: x }); });
+    // a workshop on a route finishes before it starts: hippocras whenever there's a mulled cup for it, mulled cups
+    // only when there isn't. Its route steps go to the top, the last step first.
+    const mine = routeOrder.filter(x => x.def === b.def).map(x => recs.findIndex(r => r.output === x.output)).filter(i => i >= 0);
+    if (mine.length) {
+      const want = [...mine, ...orderedRecipes(b).map(x => x.i).filter(i => !mine.includes(i))];
+      for (let pos = 0; pos < mine.length; pos++) {
+        let cur = orderedRecipes(b).map(x => x.i);
+        for (let guard = 0; cur.indexOf(want[pos]) > pos && guard < recs.length; guard++) { apply(w, { type: 'recipePriority', building: b.uid, recipe: want[pos], delta: -1 }); cur = orderedRecipes(b).map(x => x.i); }
+      }
+    }
   }
 }
 /** the parts of the current charter (an all-at-once charter has several) */
@@ -491,7 +503,8 @@ export function finaleOwed(w: World): Partial<Record<InputKey, number>> {
     const cost = i === from && b ? remainingCost(b) : st.cost;
     for (const k of FEAST_KEYS) if (cost[k]) out[k] = (out[k] ?? 0) + (cost[k] ?? 0);
   });
-  for (const k of FEAST_KEYS) if (out[k] !== undefined) { out[k] = Math.max(0, out[k]! - stockOf(w, k)); if (out[k]! <= 0.5) delete out[k]; }
+  // whole servings: a larder at 13.87 of 14 still needs one more platter made, not a fraction nobody can carry
+  for (const k of FEAST_KEYS) if (out[k] !== undefined) { out[k] = Math.ceil(Math.max(0, out[k]! - stockOf(w, k)) - 1e-6); if (out[k]! <= 0) delete out[k]; }
   return out;
 }
 /** the cheapest way to `qty` of one of `goods` through what the colony owns */
@@ -529,6 +542,27 @@ export function cheapestRoute(w: World, goods: ResourceId[], qty: number): { goo
   let out: { good: ResourceId; hours: number; steps: RouteStep[] } | undefined;
   for (const g of goods) { const x = way(g, qty, LADDER + 1, []); if (x && (!out || x.hours < out.hours)) out = { good: g, ...x, steps: dedupeSteps(x.steps) }; }
   return out;
+}
+/**
+ * Blueprints that would open a route for a finale category the colony has no way to make yet: one that does it alone,
+ * or else either half of the cheapest pair. These rank with the charter's missing links in a draft.
+ */
+export function finaleLinks(w: World): string[] {
+  const owed = finaleOwed(w), out = new Set<string>();
+  const candidates = BUILDINGS.filter(d => d.draftable && !w.owned.includes(d.id) && !ROUTE_AVOID.includes(d.id) && siteOk(w, d) && (d.recipes ?? []).length).map(d => d.id);
+  const routeWith = (ids: string[], k: InputKey, qty: number) => { const before = w.owned; w.owned = [...before, ...ids]; try { return cheapestRoute(w, membersOf(k), qty); } finally { w.owned = before; } };
+  for (const [k, qty] of Object.entries(owed) as [InputKey, number][]) {
+    if (cheapestRoute(w, membersOf(k), qty)) continue;
+    const singles = candidates.map(id => ({ ids: [id], r: routeWith([id], k, qty) })).filter(x => x.r);
+    if (singles.length) { singles.sort((a, b) => a.r!.hours - b.r!.hours); for (const x of singles.slice(0, 2)) out.add(x.ids[0]); continue; }
+    let best: { ids: string[]; hours: number } | undefined;
+    for (let i = 0; i < candidates.length; i++) for (let j = i + 1; j < candidates.length; j++) {
+      const r = routeWith([candidates[i], candidates[j]], k, qty);
+      if (r && (!best || r.hours < best.hours)) best = { ids: [candidates[i], candidates[j]], hours: r.hours };
+    }
+    if (best) for (const id of best.ids) out.add(id);
+  }
+  return [...out];
 }
 const dedupeSteps = (steps: RouteStep[]) => steps.filter((x, i) => steps.findIndex(y => y.def === x.def && y.output === x.output) === i);
 const ROUTES = new WeakMap<World, { hour: number; routes: FinaleRoute[] }>();
@@ -658,7 +692,7 @@ export function autoDecide(w: World, style: 'greedy' | 'random' = 'greedy', rand
     } else if (d.kind === 'blueprint') {
       const helpers = charterHelpers(w.charter);
       // the one blueprint the charter's cheapest route is still missing (a mill for the dough) beats any helper
-      const links = draftLinks(w);
+      const links = [...draftLinks(w), ...(BOT.finaleRoutes ? finaleLinks(w) : [])];
       const feedable = (id: string) => id !== 'smokehouse' || w.owned.includes('dock') || w.owned.includes('cellar');
       // a blueprint that needs planks is dead weight until there's a sawmill; a tavern without a brewery serves nothing
       const usableParts = (id: string): Record<string, number> => ({
