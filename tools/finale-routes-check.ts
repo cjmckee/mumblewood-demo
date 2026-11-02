@@ -4,6 +4,7 @@
 import { createWorld, apply, World, findSpot, festivalPreview, drinkableTotal } from '../src/sim/world';
 import { cheapestRoute, finaleOwed, finaleRoutes, finaleGoods, ROUTE_AVOID, autoFoodRules } from '../src/sim/autoplayer';
 import { alive } from '../src/sim/world';
+import { FINALE_COLONISTS } from '../src/sim/content';
 
 let failed = 0;
 const check = (ok: boolean, what: string) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}`); if (!ok) failed++; };
@@ -25,9 +26,10 @@ const path = (r?: { steps: { def: string; output: string }[] }) => r ? r.steps.m
 {
   const w = town([]);
   const owed = finaleOwed(w);
-  check(owed.feastMeal === 14 && owed.feastDrink === 14, `before the pavilion goes up, the Long Table owes 14 magnificent meals and 14 quality drinks (${JSON.stringify(owed)})`);
+  const N = FINALE_COLONISTS;
+  check(owed.feastMeal === N && owed.feastDrink === N, `before the pavilion goes up, the Long Table owes ${N} magnificent meals and ${N} quality drinks (${JSON.stringify(owed)})`);
   w.res.banquet = 5;
-  check(finaleOwed(w).feastMeal === 9, 'banquet pies in storage count against what it owes');
+  check(finaleOwed(w).feastMeal === N - 5, 'banquet pies in storage count against what it owes');
 }
 {
   const w = town(['dock', 'smokehouse', 'pieoven', 'bakery', 'mill']);

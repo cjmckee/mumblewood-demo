@@ -231,6 +231,12 @@ export interface BuildingDef {
   feastSeats?: number;
 }
 
+/**
+ * The colony a finale is sized for. Both finales ask for this many colonists, and their bill follows it: a magnificent
+ * meal and a quality drink for each (the Hall's masons, the Long Table's guests). Around 12 keeps individual needs
+ * manageable.
+ */
+export const FINALE_COLONISTS = 12;
 export const BUILDINGS: BuildingDef[] = [
   { id: 'hearth', name: 'Hearth', blurb: 'Where everyone gathers in the evening to gossip. Burns wood at night.', cost: {}, w: 2, h: 2, slots: 0, wall: 0x6b5a4a, roof: 0xe07a2e, height: 0.3 },
   { id: 'stockpile', name: 'Stockpile', blurb: 'An open patch of ground for goods. Holds 150. Food left out here spoils.', cost: {}, w: 2, h: 2, slots: 0, storage: 150, walkable: true, wall: 0x8a7a5a, roof: 0x8a7a5a, height: 0 },
@@ -280,10 +286,10 @@ export const BUILDINGS: BuildingDef[] = [
   // research and the finale (never drafted)
   { id: 'desk', name: 'Research desk', blurb: 'A wobbly table, a candle and a stack of borrowed books. A scholar here works out how to build the things a colony takes for granted.', cost: { wood: 8 }, w: 1, h: 1, slots: 1, job: 'studying', wall: 0x7a5a3a, roof: 0x5a6f8a, height: 0.45 },
   { id: 'hall', name: 'The Crown\u2019s Hall', blurb: 'The building that makes Mumblewood a town. Built in three stages. Nobody grumpy lays a stone for the Crown: only colonists at mood 55 or more will haul for it or build it.', cost: { fine: 30 }, w: 3, h: 3, slots: 0, beauty: 6, moodGate: 55,
-    stages: [{ label: 'Foundations and walls', cost: { fine: 30 }, work: 24 }, { label: 'Feeding the masons', cost: { feastMeal: 14 }, work: 16 }, { label: 'Topping out', cost: { feastDrink: 14 }, work: 10 }],
+    stages: [{ label: 'Foundations and walls', cost: { fine: 30 }, work: 24 }, { label: 'Feeding the masons', cost: { feastMeal: FINALE_COLONISTS }, work: 16 }, { label: 'Topping out', cost: { feastDrink: FINALE_COLONISTS }, work: 10 }],
     wall: 0xc8b48a, roof: 0x8a3a3a, height: 1.4 },
   { id: 'pavilion', name: 'Feast pavilion', blurb: 'The Crown sends a marquee for the founders\u2019 feast. Raise it, then stock its larder with a magnificent meal and a quality drink for every guest. Once the larder is full it becomes the feast hall. Nothing in it spoils, and nobody touches it before the feast.', cost: { fine: 30 }, w: 3, h: 2, slots: 0, beauty: 3, feastSeats: 24,
-    stages: [{ label: 'Raising the marquee', cost: { fine: 30 }, work: 10 }, { label: 'Stocking the larder', cost: { feastMeal: 14, feastDrink: 14 }, work: 2 }],
+    stages: [{ label: 'Raising the marquee', cost: { fine: 30 }, work: 10 }, { label: 'Stocking the larder', cost: { feastMeal: FINALE_COLONISTS, feastDrink: FINALE_COLONISTS }, work: 2 }],
     wall: 0xe8dcc0, roof: 0xc0443a, height: 1.0 },
 ];
 /** builder-hours of work to finish a building */
@@ -598,6 +604,6 @@ export const CHARTERS: CharterDef[] = [
   { id: 'menu', tier: 2, name: 'A varied table', desc: '10 colonists, 60 renown at table from 3 kinds of meal, and a 24-hour average mood of 55+. Each simple meal eaten earns 1 renown, refined 2, quality 3, magnificent 5.', metric: { kind: 'all', parts: [pop(10), { kind: 'renown', category: 'meal', kinds: 3, amount: 60 }, mood(55)] }, helpers: ['smokehouse', 'pieoven', 'bakery'] },
   { id: 'tasting', tier: 2, name: 'Something for everyone', desc: '10 colonists, 40 renown from 3 kinds of drink, and a 24-hour average mood of 55+. Each simple drink earns 1 renown, refined 2, quality 3.', metric: { kind: 'all', parts: [pop(10), { kind: 'renown', category: 'drink', kinds: 3, amount: 40 }, mood(55)] }, helpers: ['ciderpress', 'stillhouse', 'brewery', 'apothecary'] },
   // tier 3: the finale; only a happy town can finish it, and it needs magnificent fare
-  { id: 'hall', tier: 3, name: 'The Crown’s Hall', desc: 'Build the Crown’s Hall with 12 or more colonists. Three stages: 30 planks, bricks or wicker, 14 magnificent meals for the masons, then 14 quality drinks for the topping-out. Only colonists at mood 55+ will work on it.', metric: { kind: 'all', parts: [pop(12), { kind: 'monument', def: 'hall' }] }, helpers: ['sawmill', 'pieoven', 'smokehouse', 'stillhouse', 'apothecary'] },
-  { id: 'longtable', tier: 3, name: 'The Long Table', desc: 'The Crown sends a feast pavilion. Raise it with 30 planks, bricks or wicker, stock its larder with 14 magnificent meals and 14 quality drinks, then call the founders’ feast: 14 or more colonists sit down at dusk, each served a meal and a drink they don’t dislike. Sulkers won’t come.', metric: { kind: 'longTable', pop: 14 }, helpers: ['pieoven', 'smokehouse', 'stillhouse', 'apothecary', 'sawmill'] },
+  { id: 'hall', tier: 3, name: 'The Crown’s Hall', desc: `Build the Crown’s Hall with ${FINALE_COLONISTS} or more colonists. Three stages: 30 planks, bricks or wicker, ${FINALE_COLONISTS} magnificent meals for the masons, then ${FINALE_COLONISTS} quality drinks for the topping-out. Only colonists at mood 55+ will work on it.`, metric: { kind: 'all', parts: [pop(FINALE_COLONISTS), { kind: 'monument', def: 'hall' }] }, helpers: ['sawmill', 'pieoven', 'smokehouse', 'stillhouse', 'apothecary'] },
+  { id: 'longtable', tier: 3, name: 'The Long Table', desc: `The Crown sends a feast pavilion. Raise it with 30 planks, bricks or wicker, stock its larder with ${FINALE_COLONISTS} magnificent meals and ${FINALE_COLONISTS} quality drinks, then call the founders’ feast: ${FINALE_COLONISTS} or more colonists sit down at dusk, each served a meal and a drink they don’t dislike. Sulkers won’t come.`, metric: { kind: 'longTable', pop: FINALE_COLONISTS }, helpers: ['pieoven', 'smokehouse', 'stillhouse', 'apothecary', 'sawmill'] },
 ];

@@ -2,7 +2,7 @@
 // Usage: npx tsx tools/finale-check.ts
 import { createWorld, apply, runHours, findSpot, World, alive, built, desks, workersAt, charterProgress, feastCheck, costOf, laborers, day, festivalPreview, debugGrow, comfortParts, comfortOf, strainPerDay, comfortFactor, activeNeeds } from '../src/sim/world';
 import { seasonOf } from '../src/sim/seasons';
-import { BUILDING_BY_ID, MEALS } from '../src/sim/content';
+import { BUILDING_BY_ID, MEALS, FINALE_COLONISTS } from '../src/sim/content';
 import { START } from '../src/sim/scenario';
 
 let fails = 0;
@@ -81,7 +81,7 @@ const untilHour = (w: World, h: number, each: () => void = () => {}) => { for (l
   while (!hall.built && h < 24 * 20) { for (const c of alive(w)) { c.mood = 70; c.hunger = 90; } w.res.planks = Math.max(w.res.planks, 20); w.res.stew = Math.max(w.res.stew, 20); w.res.banquet = Math.max(w.res.banquet, 20); w.res.hippocras = Math.max(w.res.hippocras, 20); runHours(w, 1); h++; clear(w); }
   ok(hall.built, `content settlers finish all three stages (${h}h, stage ${hall.stage})`);
   ok((hall.stage ?? 0) === 2, 'the Hall went through three stages');
-  ok(costOf({ ...hall, stage: 0 }).fine === 30 && costOf({ ...hall, stage: 1 }).feastMeal === 14 && costOf({ ...hall, stage: 2 }).feastDrink === 14, 'stage costs: 30 fine, 14 magnificent meals, 14 quality drinks');
+  ok(costOf({ ...hall, stage: 0 }).fine === 30 && costOf({ ...hall, stage: 1 }).feastMeal === FINALE_COLONISTS && costOf({ ...hall, stage: 2 }).feastDrink === FINALE_COLONISTS, `stage costs: 30 fine, ${FINALE_COLONISTS} magnificent meals, ${FINALE_COLONISTS} quality drinks: one each for the ${FINALE_COLONISTS} colonists the Hall asks for`);
   void laborers; void BUILDING_BY_ID;
 }
 
@@ -99,8 +99,8 @@ function pavilion(w: World, larder: Partial<Record<string, number>>, full = true
   ok(w.owned.includes('pavilion'), 'picking the Long Table brings the feast pavilion');
   ok(apply(w, { type: 'callFeast' }) !== null, 'the feast can\u2019t be called before the pavilion is stocked');
   ok(/Place the feast pavilion/.test(charterProgress(w)?.label ?? ''), 'the card says to place it');
-  const half = pavilion(w, { banquet: 9, cordial: 14 }, false);
-  ok(/larder 9 \/ 14 magnificent meals, 14 \/ 14 quality drinks/.test(charterProgress(w)?.label ?? ''), `the card shows the larder (${charterProgress(w)?.label})`);
+  const half = pavilion(w, { banquet: 9, cordial: FINALE_COLONISTS }, false);
+  ok(new RegExp(`larder 9 / ${FINALE_COLONISTS} magnificent meals, ${FINALE_COLONISTS} / ${FINALE_COLONISTS} quality drinks`).test(charterProgress(w)?.label ?? ''), `the card shows the larder (${charterProgress(w)?.label})`);
   // released, with goods back in storage
   const before = w.res.banquet;
   ok(apply(w, { type: 'releaseStash', building: half.uid }) === null && w.res.banquet === before + 9 && !Object.keys(half.delivered).length, 'releasing the larder puts it back in storage');
