@@ -34,7 +34,7 @@ export interface Concern {
 }
 
 /** a kind of job ("kitchen", "rawFood") and the buildings that do it */
-export const KIND_DEFS: Record<string, string[]> = { rawFood: ['forager', 'dock', 'cellar', 'orchard'], drinks: ['brewery', 'ciderpress'], sawmill: ['sawmill', 'carpenter'] };
+export const KIND_DEFS: Record<string, string[]> = { rawFood: ['forager', 'dock', 'cellar', 'orchard'], drinks: ['brewery', 'ciderpress', 'stillhouse'], sawmill: ['sawmill', 'carpenter'] };
 export const defsOf = (kind: string) => KIND_DEFS[kind] ?? [kind];
 
 const has = (w: World, id: string) => w.buildings.some(b => b.def === id);

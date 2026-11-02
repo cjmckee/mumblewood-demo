@@ -8,7 +8,7 @@ import type { Colonist } from '../sim/world';
 import { buildingStatus } from '../ui/status';
 import { seasonOf } from '../sim/seasons';
 import type { Season } from '../sim/scenario';
-import { World, Building, MAP_SIZE, BUILD_MIN, BUILD_MAX, CENTER, alive, hourOfDay, workersAt, bdef, siteWork, canPlace, spotOf, built, footprint, doorTile, dims, turnPoint, terrainAt, T_TREE, T_BUSH, T_WATER, T_APPLE, T_FLOWERS, T_SOIL, T_CLAY } from '../sim/world';
+import { World, Building, MAP_SIZE, BUILD_MIN, BUILD_MAX, CENTER, alive, hourOfDay, workersAt, bdef, siteWork, canPlace, spotOf, built, footprint, doorTile, dims, turnPoint, terrainAt, T_TREE, T_BUSH, T_WATER, T_APPLE, T_FLOWERS, T_SOIL, T_CLAY, T_OAK } from '../sim/world';
 
 const TW = 64, TH = 32; // tile width/height in px
 /** world (tile) coordinates to screen; tile (i, j) spans [i, i+1] x [j, j+1] */
@@ -29,7 +29,7 @@ export const RES_COLOR: Record<ResourceId, number> = {
   stew: 0xd98a3c, pie: 0xe6c25a, smokedFish: 0x9c8c7a, ale: 0xd6a33c,
   apples: 0xd2452f, grain: 0xd8c060, honey: 0xe8a21c, cider: 0xb8c25a, mead: 0xb06a2a,
   clay: 0xb0603a, reeds: 0x9aa860, bricks: 0xa8442e, wicker: 0xc8a868,
-  herbs: 0x5a9a4a, flour: 0xe8e0c8, bread: 0xc89048, skewers: 0x9a6a4a, poultice: 0x8ab89a, tonic: 0x6a5aa8, tea: 0x8aa84a, acorns: 0x9a6a34, acornMeal: 0xb08a5a, hotpot: 0xb8643a, supper: 0xd8b070, mulled: 0xa8423a,
+  herbs: 0x5a9a4a, flour: 0xe8e0c8, bread: 0xc89048, skewers: 0x9a6a4a, poultice: 0x8ab89a, tonic: 0x6a5aa8, acorns: 0x9a6a34, mash: 0xc8a060, must: 0xa04a6a, driedMushrooms: 0x8a7a9a, porridge: 0xe0cc9a, hotpot: 0xb8643a, supper: 0xd8b070, fishpie: 0xc89a5a, banquet: 0xe8b84a, platter: 0xb0603a, mulled: 0xa8423a, spirits: 0xd8c8a0, cordial: 0xc0406a, hippocras: 0x8a2a3a,
 };
 
 function shade(c: number, f: number) {
@@ -159,7 +159,29 @@ export class IsoView {
         this.addTree(x + 0.5 + (n - 0.5) * 0.4, y + 0.5 + (hash(y, x) - 0.5) * 0.4, n);
       } else if (t === T_BUSH) this.addBush(x + 0.5, y + 0.5, n);
       else if (t === T_APPLE) this.addAppleTree(x + 0.5 + (n - 0.5) * 0.25, y + 0.5, n);
+      else if (t === T_OAK) this.addOak(x + 0.5 + (n - 0.5) * 0.3, y + 0.5, n);
     }
+  }
+
+  /** an old oak: a thick trunk and a broad, dark crown, acorns showing in autumn */
+  private addOak(x: number, y: number, n: number) {
+    const t = new Graphics();
+    const { sx, sy } = iso(x, y);
+    const r = 15 + n * 3;
+    t.ellipse(sx, sy + 2, 19, 7).fill({ color: 0x000000, alpha: 0.2 });
+    t.rect(sx - 3.5, sy - 16, 7, 18).fill(0x4a3626);
+    const crown = this.season === 'autumn' ? 0x9a6a2a : this.season === 'winter' ? 0xdfe7ec : 0x3d5f2c;
+    if (this.season === 'winter') {
+      for (const [dx, dy] of [[-12, -26], [11, -28], [-4, -36], [6, -20], [-8, -18]]) t.moveTo(sx, sy - 14).lineTo(sx + dx, sy + dy).stroke({ width: 2.5, color: 0x4a3626 });
+      t.ellipse(sx, sy - 29, r * 0.6, r * 0.35).fill({ color: crown, alpha: 0.7 });
+    } else {
+      t.ellipse(sx, sy - 26, r * 1.15, r * 0.85).fill(crown);
+      t.ellipse(sx - 6, sy - 30, r * 0.7, r * 0.5).fill(shade(crown, 1.12));
+      t.ellipse(sx + 7, sy - 23, r * 0.55, r * 0.4).fill(shade(crown, 0.9));
+      if (this.season === 'autumn') for (let i = 0; i < 6; i++) t.circle(sx - r * 0.8 + ((i * 37 + n * 50) % (r * 1.6)), sy - 32 + ((i * 23) % 16), 1.8).fill(0x6b4a24);
+    }
+    t.zIndex = sy;
+    this.objects.addChild(t); this.terrainObjs.push(t);
   }
 
   private addAppleTree(x: number, y: number, n: number) {

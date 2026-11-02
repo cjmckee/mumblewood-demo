@@ -31,7 +31,7 @@ ok(CHARTERS.filter(c => c.tier === 2).every(c => parts(c.metric).some(p => p.kin
 // 3. In play: Settled in fills as meals are eaten, and completes.
 {
   const w = createWorld(33); w.nextEventHour = 1e9; debugGrow(w, 6);
-  w.decisions = [{ kind: 'charter', tier: 1, options: ['settled', 'woodsmoke', 'firstplanks'] }]; apply(w, { type: 'resolve', option: 0 });
+  w.decisions = [{ kind: 'charter', tier: 1, options: ['settled', 'woodsmoke', 'firstplanks'] }]; apply(w, { type: 'resolve', option: 0 }); w.charterOffered = true;
   w.res.stew = 80; w.res.berries = 40; w.res.wood = 60; reconcileStock(w);
   for (const c of alive(w)) { c.hunger = 30; }
   let h = 0;
@@ -45,22 +45,22 @@ ok(CHARTERS.filter(c => c.tier === 2).every(c => parts(c.metric).some(p => p.kin
   const w = createWorld(35); w.charter = 'menu'; w.tally = { eaten: { stew: 50, bread: 10, pie: 10 }, drunk: {}, made: {}, used: {} };
   const r = renownOf(w, 'meal');
   ok(r.points === 10 * 1 + 10 * 2 && r.kinds.join() === 'pie,bread', `stew earns no renown; bread 1, pie 2 (${r.points}, ${r.kinds})`);
-  w.tally.eaten.supper = 3;
-  ok(renownOf(w, 'meal').points === 42 && renownOf(w, 'meal').kinds.length === 2, 'a magnificent meal earns 4, but 3 of a kind don’t count as a kind yet');
+  w.tally.eaten.banquet = 3;
+  ok(renownOf(w, 'meal').points === 45 && renownOf(w, 'meal').kinds.length === 2, 'a magnificent meal earns 5, but 3 of a kind don’t count as a kind yet');
   const label = charterProgress(w)?.label ?? '';
-  ok(/42 \/ 60 renown · 2 \/ 3 kinds/.test(label), `the card says where renown stands (${label})`);
+  ok(/45 \/ 60 renown · 2 \/ 3 kinds/.test(label), `the card says where renown stands (${label})`);
 }
 
-// 5. The magnificent supper: a loaf and a refined side, made on every map, at the bakery and smokehouse.
-const SITE_IDS: SiteId[] = ['grove', 'meadow', 'soil', 'clay'];
+// 5. The finales' goods: magnificent meals and quality drinks, made on every map; the bakery plates a ploughman's supper.
+const SITE_IDS: SiteId[] = ['grove', 'meadow', 'soil', 'clay', 'oaks'];
 function makeable(w: World, r: ResourceId, depth = 5): boolean {
   return depth >= 0 && BUILDINGS.some(d => siteOk(w, d) && (d.recipes ?? []).some(rec => rec.output === r && (Object.keys(rec.inputs) as InputKey[]).every(k => membersOf(k).some(m => makeable(w, m, depth - 1)))));
 }
-ok(FEAST_MEALS.join() === 'supper' && FEAST_MEALS.every(r => TIER[r] === 'magnificent'), 'the feast serves magnificent meals');
-ok(FEAST_DRINKS.length >= 3, `the feast has several drinks to choose from, so tastes can be met (${FEAST_DRINKS})`);
-for (let i = 0; i < 4; i++) for (let j = i + 1; j < 4; j++) {
+ok(FEAST_MEALS.length >= 2 && FEAST_MEALS.every(r => TIER[r] === 'magnificent'), `the feast serves magnificent meals (${FEAST_MEALS})`);
+ok(FEAST_DRINKS.length >= 2 && FEAST_DRINKS.every(r => TIER[r] === 'quality'), `the feast has quality drinks to choose from, so tastes can be met (${FEAST_DRINKS})`);
+for (let i = 0; i < SITE_IDS.length; i++) for (let j = i + 1; j < SITE_IDS.length; j++) {
   const w = createWorld(3); w.sites = [SITE_IDS[i], SITE_IDS[j]];
-  ok(makeable(w, 'supper') && makeable(w, 'mulled'), `suppers and mulled cups can be made on a ${w.sites.join('+')} map`);
+  ok(FEAST_MEALS.every(r => makeable(w, r, 7)) && FEAST_DRINKS.every(r => makeable(w, r, 7)), `every magnificent meal and quality drink can be made on a ${w.sites.join('+')} map`);
 }
 {
   const w = createWorld(37); w.nextEventHour = 1e9; debugGrow(w, 6); w.owned.push('bakery');
@@ -76,23 +76,25 @@ for (let i = 0; i < 4; i++) for (let j = i + 1; j < 4; j++) {
 // 6. Nobody dislikes a magnificent meal, so one kind can serve a whole feast.
 {
   const w = createWorld(39); debugGrow(w, 40);
-  ok(alive(w).every(c => !c.tastes.dislikes.includes('supper')), 'no settler dislikes the ploughman’s supper');
+  ok(alive(w).every(c => FEAST_MEALS.every(r => !c.tastes.dislikes.includes(r))), 'no settler dislikes a magnificent meal');
 }
 
-// 7. The bot, during the Long Table: a bakery aimed at suppers keeps baking the bread they need, and bread and
-//    sides are kept for the pavilion's suppers while there's other food. The pavilion keeps the suppers themselves.
+// 7. The bot, during the Long Table: a pie oven aimed at banquet pies keeps making the fish pies they need, and what
+//    the magnificent meals are made from is kept for the pavilion while there's other food.
 {
   const w = createWorld(41); w.nextEventHour = 1e9; debugGrow(w, 14); w.charter = 'longtable'; w.decisions = [];
-  for (const id of ['bakery', 'smokehouse']) { if (!w.owned.includes(id)) w.owned.push(id); const spot = findSpot(w, id); assert(spot); apply(w, { type: 'place', def: id, ...spot }); w.buildings.at(-1)!.built = true; }
+  for (const id of ['pieoven', 'smokehouse']) { if (!w.owned.includes(id)) w.owned.push(id); const spot = findSpot(w, id); assert(spot); apply(w, { type: 'place', def: id, ...spot }); w.buildings.at(-1)!.built = true; }
   w.owned.push('pavilion'); const ps = findSpot(w, 'pavilion'); assert(ps); apply(w, { type: 'place', def: 'pavilion', ...ps }); const pav = w.buildings.at(-1)!; pav.stage = 1; pav.delivered = {};
-  w.res.berries = 200; w.res.flour = 30; w.res.fish = 30; w.res.bread = 0; w.res.supper = 2; w.res.stew = 40; reconcileStock(w);
+  w.res.berries = 200; w.res.hotpot = 10; w.res.bread = 10; w.res.fish = 30; w.res.fishpie = 0; w.res.banquet = 2; w.res.stew = 40; reconcileStock(w);
   autoBuild(w);
-  const bakery = w.buildings.find(b => b.def === 'bakery')!, recs = recipesOf(bakery);
-  const on = (out: string) => recs.some((r, i) => r.output === out && recipeOn(bakery, i));
-  ok(on('supper') && on('bread'), `the bakery makes suppers and still bakes their bread (${recs.filter((r, i) => recipeOn(bakery, i)).map(r => r.output)})`);
+  const oven = w.buildings.find(b => b.def === 'pieoven')!, recs = recipesOf(oven);
+  const on = (out: string) => recs.some((r, i) => r.output === out && recipeOn(oven, i));
+  ok(on('banquet') && on('fishpie'), `the pie oven makes banquet pies and still bakes their fish pies (${recs.filter((r, i) => recipeOn(oven, i)).map(r => r.output)})`);
   autoFoodRules(w);
-  ok(['bread', 'smokedFish', 'skewers'].every(r => w.forbidden.includes(r as never)) && !w.forbidden.includes('supper'), `bread and sides are kept for the pavilion's suppers; suppers themselves aren't held back (${w.forbidden})`);
-  ok(!w.forbidden.includes('stew'), 'everything else is still eaten');
+  // the reserve is the route's: banquet pies from fish pies from the hotpot in store. Skewers and smoked fish aren't on
+  // it, and the hotpot in store covers it, so bread isn't either: those stay on the menu.
+  ok(['hotpot', 'fishpie', 'banquet'].every(r => w.forbidden.includes(r as never)), `what the route's banquet pies are made from is kept for the pavilion (${w.forbidden})`);
+  ok(!['stew', 'bread', 'skewers', 'smokedFish'].some(r => w.forbidden.includes(r as never)), `everything off the route is still eaten (${w.forbidden})`);
 }
 // 8. Hale and hearty can be finished without anyone falling ill.
 {

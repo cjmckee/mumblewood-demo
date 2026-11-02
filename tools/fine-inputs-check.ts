@@ -4,9 +4,9 @@ import {createWorld,reconcileStock,apply,findSpot} from '../src/sim/world';
 import {BOT,autoBuild,roughPlankMaker,fineMaterialChain} from '../src/sim/autoplayer';
 const saved={...BOT};
 try{
- const w=createWorld(24757);w.owned=['stockpile','leanto','woodcutter','forager','kiln','claypit','pieoven','kitchen']; // pie needs pastry: on a map without soil, acorns ground in the kitchen
+ const w=createWorld(24757);w.owned=['stockpile','leanto','woodcutter','forager','kiln','claypit','pieoven','kitchen','mill']; // fruit pie needs bread: acorns ground at the mill, baked in the kitchen
  w.charter='piesky';w.res.wood=50;w.res.berries=30;w.res.stew=6;reconcileStock(w);
- {const k=findSpot(w,'kitchen')!;apply(w,{type:'place',def:'kitchen',...k});w.buildings.at(-1)!.built=true;} // the kitchen grinds the acorns, already standing
+ {const k=findSpot(w,'kitchen')!;apply(w,{type:'place',def:'kitchen',...k});w.buildings.at(-1)!.built=true;} // the kitchen is already standing
  Object.assign(BOT,{fineInputs:false,plannedRoughDemand:false});
  assert.equal(roughPlankMaker(w),undefined,'baseline waits for a site that cannot yet be placed');
  BOT.plannedRoughDemand=true;

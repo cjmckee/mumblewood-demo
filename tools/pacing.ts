@@ -2,12 +2,19 @@
 // strain grow. Targets: charter 1 by day 10-16, charter 2 by day 28-36, a win by day 50-60.
 // Usage: npx tsx tools/pacing.ts [runs=60] [maxDays=90]   (VERBOSE=1 prints every run)
 import { createWorld, tick, day, alive, avgMood, TICKS_PER_HOUR, World, charterDef, colonyComfort, comfortGaps } from '../src/sim/world';
-import { autoDecide, autoBuild, BOT } from '../src/sim/autoplayer';
+import { autoDecide, autoBuild, BOT, ROUTE_AVOID, pushing } from '../src/sim/autoplayer';
+import { CHARTERS } from '../src/sim/content';
 import { START } from '../src/sim/scenario';
 import { BUILDINGS } from '../src/sim/content';
 // STYLE=random: the control, which makes every choice (charters, blueprints, research, cornerstones, recruits, events, trading) at random
 const STYLE = (process.env.STYLE ?? 'greedy') as 'greedy' | 'random';
 // experiment knobs: STRAIN_K, DRAFT_EVERY, RECRUIT_CAP (bot), LABORERS_PER (bot)
+// AVOID=apothecary:cordial,pieoven — finale routes that may not use these workshops or steps
+// BOT_JSON='{"push":"never"}' — any bot switches, for experiments
+if (process.env.BOT_JSON) Object.assign(BOT, JSON.parse(process.env.BOT_JSON));
+// LONGTABLE_POP=12 — guests the founders' feast needs (the larder stays 14 and 14)
+if (process.env.LONGTABLE_POP) { const m = CHARTERS.find(c => c.id === 'longtable')!.metric as { pop: number }; m.pop = Number(process.env.LONGTABLE_POP); }
+if (process.env.AVOID) ROUTE_AVOID.push(...process.env.AVOID.split(','));
 if (process.env.STRAIN_K) START.strain.rate = Number(process.env.STRAIN_K);
 if (process.env.DRAFT_EVERY) START.draftEvery = Number(process.env.DRAFT_EVERY);
 if (process.env.RECRUIT_CAP) BOT.recruitCap = Number(process.env.RECRUIT_CAP);
@@ -43,6 +50,8 @@ const maxDays = Number(process.argv[3] ?? 90);
 const marks = [5, 10, 20, 30, 40, 50, 60];
 
 interface Run {
+  /** the finale, once a day */
+  fin: { meals: number; mood: number; min: number; push: boolean }[];
   seed: number; status: string; day: number; peak: number; lost: number; deaths: number;
   offered: number | null; picks: { id: string; day: number }[]; dones: { id: string; day: number }[];
   research: { id: string; day: number }[]; owned: number; builtShare: number; story: Record<string, number>; gold: Record<string, number>; caravanGoods: number; caravanBps: number; pop: Record<number, number>; strain: Record<number, number>; mood: Record<number, number>; comfort: Record<number, number>; gaps: Record<number, Record<string, number>>;
@@ -54,7 +63,7 @@ for (let i = 0; i < runs; i++) {
   const w: World = createWorld(seed);
   let r = seed;
   const rand = () => ((r = (r * 1103515245 + 12345) >>> 0) / 4294967296);
-  const run: Run = { seed, status: 'timeout', day: 0, peak: 0, lost: 0, deaths: 0, offered: null, picks: [], dones: [], research: [], owned: 0, builtShare: 0, story: {}, gold: {}, caravanGoods: 0, caravanBps: 0, pop: {}, strain: {}, mood: {}, comfort: {}, gaps: {} };
+  const run: Run = { seed, status: 'timeout', day: 0, peak: 0, lost: 0, deaths: 0, offered: null, picks: [], dones: [], research: [], owned: 0, builtShare: 0, story: {}, gold: {}, caravanGoods: 0, caravanBps: 0, pop: {}, strain: {}, mood: {}, comfort: {}, gaps: {}, fin: [] };
   let lastCharter: string | null = null, doneN = 0, resN = 0;
   const watch = () => {
     if (w.charter && w.charter !== lastCharter) run.picks.push({ id: w.charter, day: day(w) });
@@ -67,7 +76,11 @@ for (let i = 0; i < runs; i++) {
   while (w.status === 'playing' && day(w) <= maxDays) {
     watch(); autoDecide(w, STYLE, rand); watch();
     for (let t = 0; t < TICKS_PER_HOUR; t++) { tick(w); if (w.decisions.length) { watch(); autoDecide(w, STYLE, rand); } watch(); }
+    // an avoided workshop never makes it into the colony, however it was offered (a draft, the caravan, a charter)
+    if (ROUTE_AVOID.length) w.owned = w.owned.filter(id => !ROUTE_AVOID.includes(id));
     autoBuild(w);
+    // during the finale, once a day: meal comfort, mood, the lowest mood, and whether the bot is pushing for the finish
+    if (Math.round(w.hour) % 24 === 12 && ['hall', 'longtable'].includes(w.charter ?? '')) { const ms = alive(w).map(c => c.mood); run.fin.push({ meals: (comfortGaps(w).find(g => g.need === 'meals')?.avg ?? 0) * 100, mood: avgMood(w), min: Math.min(...ms), push: pushing(w) }); }
     if (Math.round(w.hour) % 24 === 12 && marks.includes(day(w))) { run.pop[day(w)] = alive(w).length; run.strain[day(w)] = Math.round(w.strain); run.mood[day(w)] = Math.round(avgMood(w)); run.comfort[day(w)] = Math.round(colonyComfort(w) * 100); run.gaps[day(w)] = Object.fromEntries(comfortGaps(w).map(g => [g.need, Math.round(g.avg * 100)])); }
   }
   watch();
@@ -109,6 +122,9 @@ if (res.size) {
   console.log('research (order. project: runs, median day done):');
   for (const [k, ds] of [...res].sort()) console.log(`  ${k.padEnd(16)} ${String(ds.length).padStart(3)}  day ${f1(med(ds))}`);
 }
+{ const fins = out.filter(x => x.fin.length);
+  const m = (f: (x: { meals: number; mood: number; min: number; push: boolean }) => number) => avg(fins.map(x => avg(x.fin.map(f))));
+  console.log(`during the finale (${fins.length} runs, ${f1(avg(fins.map(x => x.fin.length)))} days): meal comfort ${f1(m(x => x.meals))}% · mood ${f1(m(x => x.mood))} · lowest mood ${f1(m(x => x.min))} · pushing ${f1(m(x => x.push ? 100 : 0))}% of days`); }
 console.log(`by day:   ${marks.map(m => `d${m}`.padStart(6)).join('')}`);
 for (const [label, key] of [['pop', 'pop'], ['strain', 'strain'], ['mood', 'mood'], ['comfort %', 'comfort']] as const) console.log(`${label.padEnd(9)} ${marks.map(m => f1(avg(out.map(x => x[key][m]).filter(v => v != null))).padStart(6)).join('')}`);
 for (const need of ['shelter', 'meals', 'evenings', 'health', 'surroundings']) console.log(`  ${need.padEnd(13)}${marks.map(m => f1(avg(out.map(x => x.gaps[m]?.[need]).filter(v => v != null))).padStart(6)).join('')}`);

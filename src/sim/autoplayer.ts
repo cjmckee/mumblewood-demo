@@ -1,12 +1,12 @@
 // A heuristic player, used by the balance harness to play thousands of runs headlessly.
 // It reads the active charter and plays towards it, the way a person would.
-import { BUILDING_BY_ID, BUILDINGS, CATEGORIES, CharterMetric, RESEARCH_BY_ID, EVENTS, ResourceId, MEALS, RAW_FOODS, RESOURCES, Recipe, InputKey, membersOf, recipeRate, LORE_BOOST, GUILD_BOOST, RENOWN, TIER, SLOTS } from './content';
+import { BUILDING_BY_ID, BUILDINGS, CATEGORIES, CharterMetric, RESEARCH_BY_ID, EVENTS, ResourceId, MEALS, RAW_FOODS, RESOURCES, Recipe, InputKey, membersOf, recipeRate, LORE_BOOST, GUILD_BOOST, RENOWN, TIER, TIER_STAGE, SLOTS, FINALE_COLONISTS } from './content';
 import { assess, Concern, defsOf, KIND_DEFS } from './advisor';
-import { World, feastUnservedDrinks, orderedRecipes, costOf, tallyOf, renownOf, FEAST_MEALS, FEAST_DRINKS, workshopInputPlan, apply, alive, beds, mealTotal, sites, findSpot, CENTER, avgMood, built, MAP_SIZE, pathAt, terrainAt, T_WATER, bdef, workersAt, blockedReason, opinion, Building, Colonist, hourOfDay, charterProgress, buildingByUid, storageFree, storages, FOODS, GOODS, bedridden, foodTotal, currentRecipe, drinkTotal, siteOk, enabledRecipes, recipesOf, rerollCost, stockOf, usableHere, charterDef, charterHelpers, feastCheck, desks, researchLeft, festivalPreview, edibleTotal, doorTile, centerOf, winterStores, storageCap, stored, lastDay, lastDayHours, remainingCost, seasonYield, recipeOn, spotOf, canPlace, coversPath, efficiencyAt, footprint, BUILD_MIN, BUILD_MAX, blockedGrid, storePrio } from './world';
+import { World, feastUnservedDrinks, orderedRecipes, costOf, tallyOf, renownOf, FEAST_MEALS, FEAST_DRINKS, workshopInputPlan, apply, alive, beds, mealTotal, sites, findSpot, CENTER, avgMood, built, MAP_SIZE, pathAt, terrainAt, T_WATER, bdef, workersAt, blockedReason, opinion, Building, Colonist, hourOfDay, charterProgress, buildingByUid, storageFree, storages, FOODS, GOODS, bedridden, foodTotal, currentRecipe, drinkTotal, siteOk, enabledRecipes, recipesOf, rerollCost, stockOf, usableHere, charterDef, charterHelpers, feastCheck, desks, researchLeft, festivalPreview, edibleTotal, doorTile, centerOf, winterStores, storageCap, stored, lastDay, lastDayHours, remainingCost, seasonYield, recipeOn, spotOf, canPlace, coversPath, efficiencyAt, footprint, BUILD_MIN, BUILD_MAX, blockedGrid, storePrio, workHours } from './world';
 import { seasonOf } from './seasons';
 import { draftLinks } from './charterplan';
 
-const BLUEPRINT_PRIORITY = ['sawmill', 'pieoven', 'dock', 'cottage', 'brewery', 'ciderpress', 'tavern', 'kiln', 'claypit', 'carpenter', 'orchard', 'field', 'apiary', 'smokehouse', 'cellar', 'stage', 'bathhouse', 'bakery', 'apothecary', 'herbgarden', 'mill', 'tailor', 'weaver', 'flaxfield', 'tanner', 'trapper'];
+const BLUEPRINT_PRIORITY = ['sawmill', 'pieoven', 'dock', 'cottage', 'brewery', 'ciderpress', 'tavern', 'kiln', 'claypit', 'carpenter', 'orchard', 'field', 'apiary', 'smokehouse', 'cellar', 'stage', 'bathhouse', 'bakery', 'malthouse', 'mill', 'stillhouse', 'apothecary', 'herbgarden', 'oakhut', 'tailor', 'weaver', 'flaxfield', 'tanner', 'trapper'];
 const DRINK_MAKERS = ['brewery', 'ciderpress'];
 /** workshops that make planks, bricks or wicker */
 const FINE_MAKERS = ['sawmill', 'kiln', 'carpenter'];
@@ -60,14 +60,40 @@ const rawStock = (w: World) => RAW_FOODS.reduce((n, r) => n + w.res[r], 0);
 const gatherersOf = (w: World, r: string) => BUILDINGS.filter(d => w.owned.includes(d.id) && siteOk(w, d) && (d.recipes ?? []).some(x => x.output === r && !Object.keys(x.inputs).length)).map(d => d.id);
 /** the best switched-on recipe a workshop could run once its gatherers are going: every input has a built or owned gatherer here */
 function plannedRecipe(w: World, b: Building): Recipe | undefined {
-  return enabledRecipes(b).find(r => Object.keys(r.inputs).every(k => membersOf(k as InputKey).some(m => suppliable(w, m, 2))));
+  return enabledRecipes(b).find(r => Object.keys(r.inputs).every(k => membersOf(k as InputKey).some(m => runnable(w, m))));
 }
-/** a good the colony can get: gathered by something owned, or made by an owned workshop from goods it can get (flour from grain) */
+/**
+ * a good the colony can get: gathered by something owned, or made by an owned workshop from goods it can get
+ * (flour from grain), within `depth` processing steps. The ladder runs five steps from raw to magnificent, so the
+ * steps are worked out once an hour for every good rather than searched each time.
+ */
+const STEPS = new WeakMap<World, { key: string; steps: Map<string, number> }>();
+function stepsTo(w: World): Map<string, number> {
+  const key = `${w.hour}|${w.owned.length}|${w.buildings.length}`;
+  const hit = STEPS.get(w); if (hit && hit.key === key) return hit.steps;
+  const steps = new Map<string, number>();
+  const defs = BUILDINGS.filter(d => w.owned.includes(d.id));
+  for (const d of defs) if (siteOk(w, d)) for (const x of d.recipes ?? []) if (!Object.keys(x.inputs).length) steps.set(x.output, 0);
+  // goods already in the stores count as at hand: twenty sacks of flour bake bread without a mill
+  for (const r of RESOURCES) if ((w.res[r.id] ?? 0) >= 1) steps.set(r.id, 0);
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const d of defs) for (const x of d.recipes ?? []) {
+      const ks = Object.keys(x.inputs); if (!ks.length) continue;
+      let worst = 0;
+      for (const k of ks) { const best = Math.min(...membersOf(k as InputKey).map(m => steps.get(m) ?? Infinity)); worst = Math.max(worst, best); }
+      if (worst < Infinity && worst + 1 < (steps.get(x.output) ?? Infinity)) { steps.set(x.output, worst + 1); changed = true; }
+    }
+  }
+  STEPS.set(w, { key, steps });
+  return steps;
+}
 function suppliable(w: World, r: ResourceId, depth: number): boolean {
-  if (gatherersOf(w, r).length) return true;
-  if (depth <= 0) return false;
-  return BUILDINGS.some(d => w.owned.includes(d.id) && (d.recipes ?? []).some(x => x.output === r && Object.keys(x.inputs).length && Object.keys(x.inputs).every(k => membersOf(k as InputKey).some(m => suppliable(w, m, depth - 1)))));
+  return (stepsTo(w).get(r) ?? Infinity) <= depth;
 }
+/** an input a workshop can run on: some of it in the stores, or a chain the colony owns that makes it */
+const runnable = (w: World, r: ResourceId) => w.res[r] >= 1 || suppliable(w, r, LADDER);
+const LADDER = 5;
 /** gatherers the colony's built workshops are counting on: what their planned recipes take */
 function neededGatherers(w: World): string[] {
   const out = new Set<string>();
@@ -79,7 +105,7 @@ function neededGatherers(w: World): string[] {
   return [...out];
 }
 /** how many of these goods some built workshop could make with what the colony can get */
-const kindsMakeable = (w: World, goods: ResourceId[]) => goods.filter(r => built(w).some(b => enabledRecipes(b).some(x => x.output === r && Object.keys(x.inputs).every(k => membersOf(k as InputKey).some(m => suppliable(w, m, 2)))))).length;
+const kindsMakeable = (w: World, goods: ResourceId[]) => goods.filter(r => built(w).some(b => enabledRecipes(b).some(x => x.output === r && Object.keys(x.inputs).every(k => membersOf(k as InputKey).some(m => runnable(w, m)))))).length;
 /** kinds of meal, drink or fine material that owning this blueprint would let the colony make, that it can't make now */
 function newKinds(w: World, id: string) {
   const goods = [...CATEGORIES.meal.members, ...CATEGORIES.drink.members, ...CATEGORIES.fine.members];
@@ -96,7 +122,9 @@ const MOOD_BUILDINGS = ['tavern', 'brewery', 'ciderpress', 'pieoven', 'bathhouse
 /** Experimental fallback: use one starting hut, protect wood, prefer usable drafted makers. */
 export function roughPlankMaker(w: World): number | undefined {
   if (!BOT.roughPlanks || !BUILDING_BY_ID.woodcutter.recipes?.some(r => r.output === 'planks')) return;
-  if ((w.flows['planks:+woodcutter'] ?? 0) >= BOT.roughPlankBudget) return;
+  // the budget is a nudge toward drafting a proper plank maker; with none drafted, the woodcutter keeps going
+  const makerOwned = FINE_MAKERS.some(id => w.owned.includes(id) && usableHere(w, id));
+  if (makerOwned && (w.flows['planks:+woodcutter'] ?? 0) >= BOT.roughPlankBudget) return;
   if (built(w).some(b => FINE_MAKERS.includes(b.def) && !blockedReason(w, b))) return;
   let needed = sites(w).reduce((sum, b) => sum + (remainingCost(b).fine ?? 0), 0);
   if (BOT.plannedRoughDemand) {
@@ -121,11 +149,28 @@ function manageRecipes(w: World) {
   const pop = alive(w).length;
   const rough = roughPlankMaker(w);
   const wanted = new Set<ResourceId>();
+  // a finale's categories are worked along one chosen route each: its steps' goods, in its own workshops
+  const routes = BOT.finaleRoutes ? finaleRoutes(w) : [];
+  const routedKeys = new Set<string>(routes.map(r => r.key));
+  const routePairs = new Set(routes.flatMap(r => r.steps.map(x => `${x.def}:${x.output}`)));
+  const routed = new Set<ResourceId>(routes.flatMap(r => r.steps.map(x => x.output)));
+  for (const r of routed) wanted.add(r);
+  const routedMembers = new Set<ResourceId>([...routedKeys].flatMap(k => membersOf(k as InputKey)));
+  /** route steps, last step first: the order workshops on a route work them in */
+  const routeOrder = routes.flatMap(r => [...r.steps].reverse());
   for (const p of partsOf(w)) {
-    if (p.kind === 'stock' && p.resources.reduce((n, r) => n + w.res[r], 0) < p.amount) for (const r of p.resources) wanted.add(r);
-    if (p.kind === 'variety') for (const r of CATEGORIES[p.category].members) if (w.res[r] < p.each) wanted.add(r);
+    // a stock of any of several goods: the shallowest ones the colony can make (ale and cider, not cordial)
+    if (p.kind === 'stock' && p.resources.reduce((n, r) => n + w.res[r], 0) < p.amount) {
+      const stage = (r: ResourceId) => TIER_STAGE[TIER[r] ?? 'processed'] ?? 0;
+      const can = p.resources.filter(r => suppliable(w, r, LADDER)), low = Math.min(...can.map(stage));
+      for (const r of can.length ? can.filter(r => stage(r) <= low) : p.resources) wanted.add(r);
+    }
+    if (p.kind === 'variety') for (const r of (p.members ?? CATEGORIES[p.category].members)) if (w.res[r] < p.each) wanted.add(r);
     // the founders' feast: a choice of drinks, so nobody is left with only one they dislike
     if (p.kind === 'longTable') {
+      // the pavilion's larder first: whatever of its magnificent meals and quality drinks are still owed
+      const pav = w.buildings.find(x => x.def === 'pavilion' && !x.built);
+      if (pav) for (const [k, n] of Object.entries(remainingCost(pav))) if (k !== 'fine' && !routedKeys.has(k)) for (const r of membersOf(k as InputKey)) if (w.res[r] < (n ?? 0)) wanted.add(r);
       for (const r of FEAST_MEALS) if (w.res[r] < alive(w).length) wanted.add(r);
       // drinks for the guests nothing on hand suits; a mulled cup isn't made from the last of the ale they'd drink instead
       const unserved = feastUnservedDrinks(w), takes = (r: ResourceId) => unserved.some(c => !c.tastes.dislikes.includes(r));
@@ -133,21 +178,45 @@ function manageRecipes(w: World) {
       if (unserved.length && !takes('mulled') && w.res.mulled >= 6) wanted.delete('mulled');
     }
     // a monument's next stage: its goods (the Hall's suppers, then its mulled cups) get made, not left to chance
-    if (p.kind === 'monument' && BOT.supperRules) { const b = w.buildings.find(x => x.def === p.def && !x.built); if (b) for (const [k, n] of Object.entries(remainingCost(b))) for (const r of membersOf(k as InputKey)) if (w.res[r] < (n ?? 0)) wanted.add(r); }
+    if (p.kind === 'monument' && BOT.supperRules) { const b = w.buildings.find(x => x.def === p.def && !x.built); if (b) for (const [k, n] of Object.entries(remainingCost(b))) if (!routedKeys.has(k)) for (const r of membersOf(k as InputKey)) if (w.res[r] < (n ?? 0)) wanted.add(r); }
   }
   // daily fare: once there are meals enough, the better kitchens make quality meals for everyone, not just for charters
   // (but not during a finale, when those kitchens are busy with its suppers)
   const finale = partsOf(w).some(p => p.kind === 'monument' || p.kind === 'longTable');
-  if (BOT.dailyQuality && !finale && mealTotal(w) >= pop * 1.5) for (const r of MEALS.filter(m => TIER[m] === 'quality')) if (w.res[r] < pop) wanted.add(r);
+  // during a finale (unless pushing for the finish), good food for the table keeps coming, but only off the routes:
+  // nothing a route makes or takes, so the supper cooks don't eat the larder's hotpot
+  const routeGoods = new Set<ResourceId>(routes.flatMap(r => [r.good, ...r.steps.flatMap(x => [x.output, ...stepInputsOf(x)])]));
+  const fareDuring = finale && BOT.finaleFare && routes.length > 0 && !pushing(w);
+  const offRoute = (r: Recipe) => !routeGoods.has(r.output) && Object.keys(r.inputs).every(k => membersOf(k as InputKey).some(m => !routeGoods.has(m)));
+  if (BOT.dailyQuality && (!finale || fareDuring) && mealTotal(w) >= pop * 1.5) {
+    const fare = MEALS.filter(m => fareDuring ? ['refined', 'quality'].includes(TIER[m] ?? '') && !routeGoods.has(m) : TIER[m] === 'quality');
+    for (const r of fare) if (w.res[r] < pop) wanted.add(r);
+  }
   const plenty = (r: ResourceId) => w.res[r] >= Math.max(30, pop * 3);
+  // a category worked along a route isn't also made every other way
+  for (const k of routedKeys) for (const m of membersOf(k as InputKey)) if (!routed.has(m)) wanted.delete(m);
+  // follow the aims back down the ladder: a banquet wanted means fish pie wanted, which means hotpot, which means
+  // smoked fish, in whichever workshop makes them. An input already in the stores (8 or more) stops the walk there.
+  const canRun = (r: Recipe) => Object.keys(r.inputs).every(k => membersOf(k as InputKey).some(m => runnable(w, m)));
+  for (let step = 0; step < LADDER; step++) {
+    let grew = false;
+    for (const b of built(w)) for (const r of recipesOf(b)) {
+      if (!wanted.has(r.output) || routed.has(r.output) || !canRun(r)) continue;
+      for (const k of Object.keys(r.inputs)) {
+        if (stockOf(w, k as InputKey) >= 8) continue;
+        for (const m of membersOf(k as InputKey)) if (!wanted.has(m) && suppliable(w, m, LADDER) && built(w).some(x => recipesOf(x).some(y => y.output === m && Object.keys(y.inputs).length))) { wanted.add(m); grew = true; }
+      }
+    }
+    if (!grew) break;
+  }
   for (const b of built(w)) {
     const recs = recipesOf(b); if (recs.length < 2) continue;
     if (b.def === 'woodcutter' && recs.some(r => r.output === 'planks')) {
       recs.forEach((r,i) => { const on = b.uid === rough ? r.output === 'planks' : r.output === 'wood'; if (on !== recipeOn(b,i)) apply(w,{type:'toggleRecipe',building:b.uid,recipe:i,on}); });
       continue;
     }
-    const can = recs.map(r => Object.keys(r.inputs).every(k => membersOf(k as InputKey).some(m => suppliable(w, m, 2))));
-    const aimed0 = recs.map((r, i) => can[i] && wanted.has(r.output));
+    const can = recs.map(r => Object.keys(r.inputs).every(k => membersOf(k as InputKey).some(m => runnable(w, m))));
+    const aimed0 = recs.map((r, i) => can[i] && wanted.has(r.output) && (!routed.has(r.output) || routePairs.has(`${b.def}:${r.output}`)) && (routed.has(r.output) || !fareDuring || offRoute(r) || !MEALS.includes(r.output)));
     // a recipe here that makes an ingredient of an aimed one stays on while that ingredient runs short: a bakery
     // switched to suppers still bakes the bread they need, and a smokehouse still smokes their fish
     const feeds = new Set(recs.flatMap((r, i) => aimed0[i] ? Object.keys(r.inputs).flatMap(k => membersOf(k as InputKey)) : []));
@@ -155,13 +224,21 @@ function manageRecipes(w: World) {
     let on = aimed.some(Boolean) ? aimed : recs.map((r, i) => !plenty(r.output) || !can[i]);
     if (!on.some((x, i) => x && can[i])) on = recs.map(() => true);
     // the staple stays on while meals are short: a kitchen aimed at hotpot still makes stew when people are hungry
-    if (BOT.dailyQuality && mealTotal(w) < pop * 2) on = on.map((x, i) => x || (TIER[recs[i].output] === 'simple' && MEALS.includes(recs[i].output) && can[i]));
+    if (BOT.dailyQuality && mealTotal(w) < pop * 2) on = on.map((x, i) => x || (recs[i].output === 'stew' && can[i]));
+    // a category worked along a route is made only on the route: no platters in the smokehouse while the route is banquet pies
+    on = on.map((x, i) => x && !(routedMembers.has(recs[i].output) && !routePairs.has(`${b.def}:${recs[i].output}`)));
+    // the balance tools' avoided steps stay off, so a forced route is really forced
+    if (ROUTE_AVOID.length) on = on.map((x, i) => x && !ROUTE_AVOID.includes(b.def) && !ROUTE_AVOID.includes(`${b.def}:${recs[i].output}`));
     on.forEach((x, i) => { if (x !== recipeOn(b, i)) apply(w, { type: 'toggleRecipe', building: b.uid, recipe: i, on: x }); });
-    // acorns, when there are some, are ground first, up to a small stock: otherwise a kitchen never stops making stew
-    const grind = recs.findIndex(r => r.output === 'acornMeal');
-    if (grind >= 0 && on[grind]) {
-      if (b.productionLimits?.acornMeal == null) apply(w, { type: 'productionLimit', building: b.uid, output: 'acornMeal', limit: 10 });
-      for (let n = 0; n < recs.length && orderedRecipes(b)[0].i !== grind; n++) apply(w, { type: 'recipePriority', building: b.uid, recipe: grind, delta: -1 });
+    // a workshop on a route finishes before it starts: hippocras whenever there's a mulled cup for it, mulled cups
+    // only when there isn't. Its route steps go to the top, the last step first.
+    const mine = routeOrder.filter(x => x.def === b.def).map(x => recs.findIndex(r => r.output === x.output)).filter(i => i >= 0);
+    if (mine.length) {
+      const want = [...mine, ...orderedRecipes(b).map(x => x.i).filter(i => !mine.includes(i))];
+      for (let pos = 0; pos < mine.length; pos++) {
+        let cur = orderedRecipes(b).map(x => x.i);
+        for (let guard = 0; cur.indexOf(want[pos]) > pos && guard < recs.length; guard++) { apply(w, { type: 'recipePriority', building: b.uid, recipe: want[pos], delta: -1 }); cur = orderedRecipes(b).map(x => x.i); }
+      }
     }
   }
 }
@@ -179,7 +256,7 @@ function planPart(w: World, p: CharterMetric): CharterMetric {
   }
   if (p.kind === 'renown') {
     const { points, kinds } = renownOf(w, p.category);
-    return points >= p.amount && kinds.length >= p.kinds ? { kind: 'stock', resources: [], amount: 0 } : { kind: 'variety', category: p.category, kinds: p.kinds, each: 4 };
+    return points >= p.amount && kinds.length >= p.kinds ? { kind: 'stock', resources: [], amount: 0 } : { kind: 'variety', category: p.category, kinds: p.kinds, each: 4, members: (p.category === 'meal' ? MEALS : CATEGORIES.drink.members).filter(r => RENOWN[TIER[r] ?? 'processed'] > 0) };
   }
   return p;
 }
@@ -188,10 +265,12 @@ const moodCharter = (w: World) => partsOf(w).some(p => ['avgMood', 'monument', '
 /** what each charter leans on, for staffing */
 const FOCUS: Record<string, string[]> = {
   settled: ['kitchen', 'rawFood'], woodsmoke: ['smokehouse', 'rawFood'], firstplanks: ['sawmill', 'kiln', 'claypit', 'woodcutter'], rested: ['kitchen', 'rawFood', 'woodcutter'],
-  bread: ['field', 'mill', 'bakery'], piesky: ['field', 'mill', 'pieoven', 'rawFood'], twokitchens: ['kitchen', 'smokehouse', 'pieoven', 'bakery', 'rawFood'],
-  roof: ['sawmill', 'kiln', 'drinks', 'field', 'apiary'], hearty: ['apothecary', 'herbgarden', 'apiary', 'clinic'],
+  bread: ['mill', 'malthouse', 'bakery'], piesky: ['mill', 'malthouse', 'pieoven', 'bakery'], twokitchens: ['kitchen', 'smokehouse', 'pieoven', 'bakery', 'rawFood'],
+  roof: ['sawmill', 'kiln', 'drinks', 'tavern', 'field', 'apiary'],
+  // drinks drunk: they're drunk at the tavern, so it stays open while the makers keep it stocked
+  taproom: ['drinks', 'tavern', 'mill', 'malthouse', 'field', 'orchard', 'apiary'], hearty: ['apothecary', 'herbgarden', 'apiary', 'clinic'],
   menu: ['kitchen', 'smokehouse', 'pieoven', 'bakery', 'rawFood'], tasting: ['drinks', 'apothecary', 'herbgarden', 'field', 'apiary'],
-  hall: ['sawmill', 'kiln', 'claypit', 'woodcutter', 'kitchen', 'drinks', 'field'], longtable: ['kitchen', 'drinks', 'smokehouse', 'pieoven', 'bakery', 'field', 'tavern', 'rawFood'],
+  hall: ['sawmill', 'kiln', 'claypit', 'woodcutter', 'smokehouse', 'pieoven', 'drinks'], longtable: ['sawmill', 'drinks', 'smokehouse', 'pieoven', 'bakery', 'mill', 'malthouse', 'rawFood'],
 };
 /** research the bot wants first: what fixes today's problems, then the rest in a sensible order */
 const RESEARCH_ORDER = ['cookery', 'messhall', 'physick', 'warehousing', 'gardening', 'masonry'];
@@ -216,7 +295,7 @@ function researchParts(w: World, id: string): Record<string, number> {
   if (id === 'warehousing' && storages(w).every(b => (bdef(b).storage ?? 0) - Object.values(b.stock).reduce((n, x) => n + (x ?? 0), 0) < 40)) p['storage nearly full'] = 4;
   if (BOT.researchFeasible) {
     const missing = Object.entries(RESEARCH_BY_ID[id].cost).filter(([k, n]) => stockOf(w, k as InputKey) < (n ?? 0));
-    if (missing.some(([k]) => !membersOf(k as InputKey).some(r => suppliable(w, r, 3)))) p['missing goods with no owned production chain'] = -100;
+    if (missing.some(([k]) => !membersOf(k as InputKey).some(r => suppliable(w, r, LADDER)))) p['missing goods with no owned production chain'] = -100;
   }
   void RESEARCH_BY_ID;
   return p;
@@ -284,7 +363,7 @@ export function charterEffort(w: World, id: string): Record<string, number> {
       break;
     }
     case 'variety': {
-      const costs = CATEGORIES[p.category].members.map(r => (w.res[r] >= p.each ? 0 : goodCost(w, r) + 1)).sort((a, b) => a - b).slice(0, p.kinds);
+      const costs = (p.members ?? CATEGORIES[p.category].members).map(r => (w.res[r] >= p.each ? 0 : goodCost(w, r) + 1)).sort((a, b) => a - b).slice(0, p.kinds);
       add(`${p.kinds} kinds of ${p.category}`, costs.reduce((a, b) => a + b, 0));
       break;
     }
@@ -294,7 +373,7 @@ export function charterEffort(w: World, id: string): Record<string, number> {
       break;
     }
     case 'renown': {
-      const goods = (p.category === 'meal' ? MEALS : CATEGORIES.drink.members).filter(r => RENOWN[TIER[r] ?? 'simple'] > 0);
+      const goods = (p.category === 'meal' ? MEALS : CATEGORIES.drink.members).filter(r => RENOWN[TIER[r] ?? 'processed'] > 0);
       const costs = goods.map(r => goodCost(w, r) + 1).sort((a, b) => a - b).slice(0, p.kinds);
       add(`${p.kinds} kinds of ${p.category} for renown`, costs.reduce((a, b) => a + b, 0) + p.amount / 20);
       break;
@@ -334,20 +413,26 @@ export function charterEffort(w: World, id: string): Record<string, number> {
 /** the goods the current charter is waiting on, by its unfinished parts */
 function charterGoods(w: World): ResourceId[] {
   const out: ResourceId[] = [];
-  const makeable = (r: ResourceId) => suppliable(w, r, 3) || BUILDINGS.some(d => w.owned.includes(d.id) && (d.recipes ?? []).some(x => x.output === r));
+  const routedKeys = new Set<string>((BOT.finaleRoutes ? finaleRoutes(w) : []).map(r => r.key));
+  const makeable = (r: ResourceId) => suppliable(w, r, LADDER) || BUILDINGS.some(d => w.owned.includes(d.id) && (d.recipes ?? []).some(x => x.output === r));
   for (const p of partsOf(w)) {
-    if (p.kind === 'stock') out.push(...p.resources.filter(r => w.res[r] < p.amount).sort((a, b) => Number(makeable(b)) - Number(makeable(a))).slice(0, 2));
+    // a count of goods (30 drinks drunk) is cheapest from the shallowest goods: ale before cordial
+    if (p.kind === 'stock') out.push(...p.resources.filter(r => w.res[r] < p.amount).sort((a, b) => Number(makeable(b)) - Number(makeable(a)) || (TIER_STAGE[TIER[a] ?? 'processed'] ?? 0) - (TIER_STAGE[TIER[b] ?? 'processed'] ?? 0)).slice(0, 2));
     if (p.kind === 'variety') {
-      const have = CATEGORIES[p.category].members.filter(r => w.res[r] >= p.each);
-      const rest = CATEGORIES[p.category].members.filter(r => !have.includes(r)).sort((a, b) => Number(makeable(b)) - Number(makeable(a)));
+      const have = (p.members ?? CATEGORIES[p.category].members).filter(r => w.res[r] >= p.each);
+      const rest = (p.members ?? CATEGORIES[p.category].members).filter(r => !have.includes(r)).sort((a, b) => Number(makeable(b)) - Number(makeable(a)));
       out.push(...rest.slice(0, Math.max(0, p.kinds - have.length)));
     }
     if (p.kind === 'built' && BUILDING_BY_ID[p.def].cost.fine) out.push('planks');
     if (p.kind === 'allTable' && p.cooked && mealTotal(w) < alive(w).length * 3) out.push(...MEALS.filter(makeable).slice(0, 1));
-    if (p.kind === 'monument') { const b = w.buildings.find(x => x.def === p.def); const key = Object.keys(b ? (BUILDING_BY_ID[p.def].stages?.[b.stage ?? 0]?.cost ?? {}) : BUILDING_BY_ID[p.def].cost)[0]; if (key) out.push(...membersOf(key as InputKey).filter(makeable).slice(0, 2)); }
+    if (p.kind === 'monument') { const b = w.buildings.find(x => x.def === p.def); const key = Object.keys(b ? (BUILDING_BY_ID[p.def].stages?.[b.stage ?? 0]?.cost ?? {}) : BUILDING_BY_ID[p.def].cost)[0]; if (key && !routedKeys.has(key)) out.push(...membersOf(key as InputKey).filter(makeable).slice(0, 2)); }
+    // the pavilion's larder: magnificent meals and quality drinks, both at once
+    if (p.kind === 'longTable') { const pav = w.buildings.find(x => x.def === 'pavilion' && !x.built); if (pav) for (const [k, n] of Object.entries(remainingCost(pav))) if (k !== 'fine' && !routedKeys.has(k) && (n ?? 0) > stockOf(w, k as InputKey)) out.push(...membersOf(k as InputKey).filter(makeable).slice(0, 2)); }
     if (p.kind === 'longTable') {
       // what the feast is missing: a meal and a drink at all, then the kinds that suit the people nothing on hand suits
       const g = feastGaps(w);
+      // while the larder is being stocked along routes, the routes are the plan
+      if (routedKeys.size && !w.buildings.some(x => x.def === 'pavilion' && x.built)) continue;
       if (!g.meals.length) out.push(...FEAST_MEALS.filter(makeable).slice(0, 1)); else out.push(...g.meals);
       if (!g.drinks.length) { const d = nextKind(w, 'drink', [], alive(w)); if (d) out.push(d); } else out.push(...g.drinks);
       const nd = g.noDrink.length ? nextKind(w, 'drink', g.drinks, g.noDrink) : undefined; if (nd) out.push(nd);
@@ -363,13 +448,13 @@ function chainFor(w: World, goods: ResourceId[]): string[] {
     if (depth < 0 || ['wood', 'berries'].includes(r)) return;
     const makers = BUILDINGS.filter(d => w.owned.includes(d.id) && siteOk(w, d) && (d.recipes ?? []).some(x => x.output === r))
       .map(d => ({ d, rec: (d.recipes ?? []).filter(x => x.output === r).sort((a, b) => b.stars - a.stars)[0] }))
-      .filter(x => Object.keys(x.rec.inputs).every(k => membersOf(k as InputKey).some(m => suppliable(w, m, 3) || ['wood', 'berries'].includes(m))))
+      .filter(x => Object.keys(x.rec.inputs).every(k => membersOf(k as InputKey).some(m => suppliable(w, m, LADDER) || ['wood', 'berries'].includes(m))))
       .sort((a, b) => b.rec.stars - a.rec.stars);
     const m = makers[0]; if (!m) return;
-    for (const k of Object.keys(m.rec.inputs)) { const ms = membersOf(k as InputKey); const pick = ms.find(x => w.res[x] >= 1) ?? ms.find(x => suppliable(w, x, 3)); if (pick) visit(pick, depth - 1); }
+    for (const k of Object.keys(m.rec.inputs)) { const ms = membersOf(k as InputKey); const pick = ms.find(x => w.res[x] >= 1) ?? ms.find(x => suppliable(w, x, LADDER)); if (pick) visit(pick, depth - 1); }
     if (!out.includes(m.d.id)) out.push(m.d.id);
   };
-  for (const g of goods) visit(g, 3);
+  for (const g of goods) visit(g, LADDER);
   return out;
 }
 /** Choose one owned fine-material route, preserving existing workshops and sites. */
@@ -383,7 +468,7 @@ export function fineMaterialChain(w: World): string[] {
       if(!CATEGORIES.fine.members.includes(rec.output))continue;
       const ids:string[]=[];let feasible=true;
       for(const k of Object.keys(rec.inputs)){
-        const options=membersOf(k as InputKey).filter(r=>suppliable(w,r,3)).map(r=>chainFor(w,[r]));
+        const options=membersOf(k as InputKey).filter(r=>suppliable(w,r,LADDER)).map(r=>chainFor(w,[r]));
         if(!options.length){feasible=false;break;}
         options.sort((a,b)=>missing(a)-missing(b)||a.length-b.length);
         ids.push(...options[0]);
@@ -398,12 +483,162 @@ export function fineMaterialChain(w: World): string[] {
 }
 /** the staffing kind a building belongs to ("rawFood" for a forager, "drinks" for a brewery) */
 const kindFor = (id: string) => (['forager', 'dock', 'cellar', 'orchard'].includes(id) ? 'rawFood' : id === 'carpenter' ? 'sawmill' : id);
+// ---------- Finale routes ----------
+/**
+ * A finale asks for a category (12 magnificent meals, 12 quality drinks), and the ladder has several ways to each.
+ * The bot picks one way per category: the chain of (workshop, recipe) steps with the fewest worker-hours for what's
+ * still owed, through what the colony owns, counting what's in the stores. Workshops not yet built cost a setup
+ * allowance. It then works that one chain rather than every recipe that could help, which split the workers
+ * across parallel chains. A route sticks until it's no longer possible or another is much cheaper.
+ */
+export interface RouteStep { def: string; output: ResourceId }
+export interface FinaleRoute { key: InputKey; good: ResourceId; qty: number; hours: number; steps: RouteStep[] }
+/** experiment switch for the balance tools: workshops ("apothecary") or steps ("apothecary:cordial") the planner won't use */
+export const ROUTE_AVOID: string[] = [];
+const SETUP_HOURS = { built: 0, site: 12, owned: 30 };
+const FEAST_KEYS: InputKey[] = ['feastMeal', 'feastDrink'];
+/** what the finale still owes, by category: the stage under way and the stages after it */
+export function finaleOwed(w: World): Partial<Record<InputKey, number>> {
+  const out: Partial<Record<InputKey, number>> = {};
+  const site = w.charter === 'longtable' ? 'pavilion' : w.charter === 'hall' ? 'hall' : null;
+  if (!site) return out;
+  const b = w.buildings.find(x => x.def === site);
+  // a stocked pavilion still owes a drink for each guest nothing in it (or in storage) suits
+  if (b?.built) { if (site === 'pavilion' && !w.feast?.done) { const un = feastUnservedDrinks(w); if (un.length) out.feastDrink = un.length; } return out; }
+  const stages = BUILDING_BY_ID[site].stages ?? [];
+  const from = b?.stage ?? 0;
+  stages.forEach((st, i) => {
+    if (i < from) return;
+    const cost = i === from && b ? remainingCost(b) : st.cost;
+    for (const k of FEAST_KEYS) if (cost[k]) out[k] = (out[k] ?? 0) + (cost[k] ?? 0);
+  });
+  // whole servings: a larder at 13.87 of 14 still needs one more platter made, not a fraction nobody can carry
+  for (const k of FEAST_KEYS) if (out[k] !== undefined) { out[k] = Math.ceil(Math.max(0, out[k]! - stockOf(w, k)) - 1e-6); if (out[k]! <= 0) delete out[k]; }
+  return out;
+}
+/** the cheapest way to `qty` of one of `goods` through what the colony owns */
+export function cheapestRoute(w: World, goods: ResourceId[], qty: number): { good: ResourceId; hours: number; steps: RouteStep[] } | undefined {
+  const avoid = (def: string, out: ResourceId) => ROUTE_AVOID.includes(def) || ROUTE_AVOID.includes(`${def}:${out}`);
+  const setup = (def: string) => built(w).some(b => b.def === def) ? SETUP_HOURS.built : w.buildings.some(b => b.def === def) ? SETUP_HOURS.site : SETUP_HOURS.owned;
+  const defs = BUILDINGS.filter(d => w.owned.includes(d.id) && siteOk(w, d) && (d.recipes ?? []).length);
+  type Way = { hours: number; steps: RouteStep[] };
+  const memo = new Map<string, Way | null>();
+  const way = (g: ResourceId, q: number, depth: number, path: string[]): Way | null => {
+    const need = q - (w.res[g] ?? 0);
+    if (need <= 0) return { hours: 0, steps: [] };
+    if (depth < 0 || path.includes(g)) return null;
+    const key = `${g}|${Math.round(need)}|${depth}`;
+    if (memo.has(key)) return memo.get(key)!;
+    let best: Way | null = null;
+    for (const d of defs) for (const rec of d.recipes ?? []) {
+      if (rec.output !== g || avoid(d.id, g)) continue;
+      let hours = need / recipeRate(rec), steps: RouteStep[] = [{ def: d.id, output: g }];
+      let ok = true;
+      for (const [k, amt] of Object.entries(rec.inputs) as [InputKey, number][]) {
+        let pick: Way | null = null;
+        for (const m of membersOf(k)) { const x = way(m, need * amt, depth - 1, [...path, g]); if (x && (!pick || x.hours < pick.hours)) pick = x; }
+        if (!pick) { ok = false; break; }
+        hours += pick.hours; steps = [...pick.steps, ...steps];
+      }
+      if (!ok) continue;
+      // a workshop's setup is paid once, however many steps it runs: the inputs' ways already paid for theirs
+      if (!steps.slice(0, -1).some(x => x.def === d.id)) hours += setup(d.id);
+      if (!best || hours < best.hours) best = { hours, steps };
+    }
+    memo.set(key, best);
+    return best;
+  };
+  let out: { good: ResourceId; hours: number; steps: RouteStep[] } | undefined;
+  for (const g of goods) { const x = way(g, qty, LADDER + 1, []); if (x && (!out || x.hours < out.hours)) out = { good: g, ...x, steps: dedupeSteps(x.steps) }; }
+  return out;
+}
+/**
+ * Blueprints that would open a route for a finale category the colony has no way to make yet: one that does it alone,
+ * or else either half of the cheapest pair. These rank with the charter's missing links in a draft.
+ */
+export function finaleLinks(w: World): string[] {
+  const owed = finaleOwed(w), out = new Set<string>();
+  const candidates = BUILDINGS.filter(d => d.draftable && !w.owned.includes(d.id) && !ROUTE_AVOID.includes(d.id) && siteOk(w, d) && (d.recipes ?? []).length).map(d => d.id);
+  const routeWith = (ids: string[], k: InputKey, qty: number) => { const before = w.owned; w.owned = [...before, ...ids]; try { return cheapestRoute(w, finaleGoods(w, k), qty); } finally { w.owned = before; } };
+  for (const [k, qty] of Object.entries(owed) as [InputKey, number][]) {
+    const goods = finaleGoods(w, k);
+    if (cheapestRoute(w, goods, qty)) continue;
+    const singles = candidates.map(id => ({ ids: [id], r: routeWith([id], k, qty) })).filter(x => x.r);
+    if (singles.length) { singles.sort((a, b) => a.r!.hours - b.r!.hours); for (const x of singles.slice(0, 2)) out.add(x.ids[0]); continue; }
+    let best: { ids: string[]; hours: number } | undefined;
+    for (let i = 0; i < candidates.length; i++) for (let j = i + 1; j < candidates.length; j++) {
+      const r = routeWith([candidates[i], candidates[j]], k, qty);
+      if (r && (!best || r.hours < best.hours)) best = { ids: [candidates[i], candidates[j]], hours: r.hours };
+    }
+    if (best) for (const id of best.ids) out.add(id);
+  }
+  return [...out];
+}
+/** what a route step's recipe takes: the mulled cups for hippocras */
+export const stepInputsOf = (x: RouteStep): ResourceId[] => (BUILDING_BY_ID[x.def].recipes ?? []).filter(r => r.output === x.output).flatMap(r => Object.keys(r.inputs).flatMap(k => membersOf(k as InputKey)));
+const dedupeSteps = (steps: RouteStep[]) => steps.filter((x, i) => steps.findIndex(y => y.def === x.def && y.output === x.output) === i);
+const ROUTES = new WeakMap<World, { hour: number; routes: FinaleRoute[] }>();
+/** the routes the bot is working toward the finale, one per category still owed, cached per hour */
+export function finaleRoutes(w: World): FinaleRoute[] {
+  const hit = ROUTES.get(w); if (hit && hit.hour === Math.floor(w.hour)) return hit.routes;
+  const owed = finaleOwed(w), routes: FinaleRoute[] = [];
+  const goodsFor = (k: InputKey) => finaleGoods(w, k);
+  for (const [k, qty] of Object.entries(owed) as [InputKey, number][]) {
+    const fresh = cheapestRoute(w, goodsFor(k), qty);
+    const old = hit?.routes.find(r => r.key === k);
+    // keep the old route while it still works and nothing is much cheaper: switching wastes what's half-made
+    const again = old && goodsFor(k).includes(old.good) ? cheapestRouteVia(w, old, qty) : undefined;
+    const pick = again && (!fresh || again.hours <= fresh.hours * 1.3) ? again : fresh;
+    if (pick) routes.push({ key: k, qty, ...pick });
+  }
+  ROUTES.set(w, { hour: Math.floor(w.hour), routes });
+  return routes;
+}
+/**
+ * Pushing for the finish: everyday good food stops and its cooks join the routes. Worth it only near the end, and only
+ * with mood to spare: the Hall's masons work at 55+, and sulkers (below 20) skip the Long Table.
+ */
+export function finaleDaysLeft(w: World): number {
+  const routes = finaleRoutes(w); if (!routes.length) return Infinity;
+  const defs = new Set(routes.flatMap(r => r.steps.map(x => x.def)));
+  const hands = Math.max(2, built(w).filter(b => defs.has(b.def)).reduce((n, b) => n + workersAt(w, b.uid).length, 0));
+  const [wake, dusk] = workHours(w);
+  return routes.reduce((n, r) => n + r.hours, 0) / hands / Math.max(1, dusk - wake);
+}
+export function pushing(w: World): boolean {
+  if (BOT.push === 'never') return false;
+  const owed = Object.keys(finaleOwed(w)).length > 0;
+  if (!owed) return false;
+  if (BOT.push === 'always') return true;
+  if (finaleDaysLeft(w) > BOT.pushDays) return false;
+  const moods = alive(w).filter(c => !bedridden(c)).map(c => c.mood);
+  if (!moods.length) return false;
+  return w.charter === 'hall' ? moods.filter(m => m >= 62).length >= moods.length * 0.6 : Math.min(...moods) >= 35;
+}
+/** the goods that settle what a finale owes in a category: any of them, or, topping up a stocked larder, only drinks the guests still unserved would take */
+export function finaleGoods(w: World, k: InputKey): ResourceId[] {
+  const topUp = k === 'feastDrink' && w.charter === 'longtable' && !!w.buildings.find(x => x.def === 'pavilion')?.built;
+  const unserved = topUp ? feastUnservedDrinks(w) : [];
+  return unserved.length ? membersOf(k).filter(r => unserved.every(c => !c.tastes.dislikes.includes(r))) : membersOf(k);
+}
+/** the same route recosted: the same good from the same final workshop, by whatever way to its inputs is cheapest now */
+function cheapestRouteVia(w: World, r: FinaleRoute, qty: number) {
+  const last = r.steps.at(-1); if (!last) return undefined;
+  const saved = [...ROUTE_AVOID];
+  ROUTE_AVOID.push(...BUILDINGS.filter(d => d.id !== last.def && (d.recipes ?? []).some(x => x.output === r.good)).map(d => `${d.id}:${r.good}`));
+  try { return cheapestRoute(w, [r.good], qty); } finally { ROUTE_AVOID.length = 0; ROUTE_AVOID.push(...saved); }
+}
 /** the chain the current charter needs, cached per hour */
 const chains = new WeakMap<World, { hour: number; ids: string[] }>();
 export function charterChain(w: World): string[] {
   if (!w.charter) return [];
   const c = chains.get(w); if (c && c.hour === Math.floor(w.hour)) return c.ids;
   const ids = chainFor(w, charterGoods(w));
+  // the finale's routes: their workshops, gatherers first, ahead of the rest
+  if (BOT.finaleRoutes) for (const r of finaleRoutes(w)) for (const x of r.steps) if (!ids.includes(x.def)) ids.unshift(x.def);
+  // drinks drunk are drunk at the tavern: it belongs to the chain
+  const m = charterDef(w.charter)?.metric, parts = !m ? [] : m.kind === 'all' ? m.parts : [m];
+  if (parts.some(p => p.kind === 'tally' && p.how === 'drunk') && w.owned.includes('tavern') && !ids.includes('tavern')) ids.push('tavern');
   chains.set(w, { hour: Math.floor(w.hour), ids });
   return ids;
 }
@@ -413,7 +648,7 @@ export function charterChain(w: World): string[] {
  * Experiment switches for the balance tools. `advisor` makes the bot play from what's on screen (the complaint
  * panel) instead of its own rules; it's off by default because, so far, it plays worse (see the project doc).
  */
-export const BOT = { dailyQuality: true, supperRules: true, urgentClinic: true, clinicWoodBuffer: 10, seasonalStaffing: true, feasibleVariety: true, summerBank: false, summerService: false, fineInputs: true, plannedRoughDemand: true, chainGatherers: false, roughPlanks: true, roughPlankBudget: 12, roughWoodStart: 35, roughWoodStop: 20, roughKeepWinterReserve: false, clothingReserve: false, clothingDeadline: false, clothingBatch: false, researchFeasible: false, populationTargets: false, randomize: [] as string[], trade: true, shopsByStore: false, layout: true, hutPull: 0.3, recipes: true, rateStaffing: false, unlockChain: true, ruleGap: true, hallMood: true, varietyRules: true, bankDrinks: true, bankHall: false, chainBeforeWinter: true, effortPick: true, moodFestival: true, festival: true, festivalAt: 8, comfortsFirst: false, recruitCap: 0, recruitExtra: 4, comforts: true, foodDepot: 'food' as false | 'food' | 'meals', laborersPer: 3.5, advisor: false, gate: true, ranked: true, comfort: 'strict' as 'strict' | 'econ' | 'none', rescue: false, rescueAt: 40, moodBlock: false, reroll: true, variety: false, routes: false, off: [] as string[], skip: [] as string[] };
+export const BOT = { dailyQuality: true, supperRules: true, urgentClinic: true, clinicWoodBuffer: 10, seasonalStaffing: true, feasibleVariety: true, summerBank: false, summerService: false, fineInputs: true, plannedRoughDemand: true, chainGatherers: false, roughPlanks: true, roughPlankBudget: 12, roughWoodStart: 35, roughWoodStop: 20, roughKeepWinterReserve: false, clothingReserve: false, clothingDeadline: false, clothingBatch: false, researchFeasible: false, populationTargets: false, randomize: [] as string[], trade: true, shopsByStore: false, layout: true, hutPull: 0.3, recipes: true, rateStaffing: false, unlockChain: true, ruleGap: true, hallMood: true, varietyRules: true, bankDrinks: true, bankHall: false, chainBeforeWinter: true, effortPick: true, moodFestival: true, festival: true, festivalAt: 8, comfortsFirst: false, recruitCap: FINALE_COLONISTS, recruitExtra: 4, comforts: true, foodDepot: 'food' as false | 'food' | 'meals', laborersPer: 3.5, advisor: false, gate: true, ranked: true, comfort: 'strict' as 'strict' | 'econ' | 'none', rescue: false, rescueAt: 40, moodBlock: false, reroll: true, variety: false, routes: false, finaleRoutes: true, routeOnlyReserve: true, finaleFare: true, push: 'rule' as 'rule' | 'never' | 'always', pushDays: 3, off: [] as string[], skip: [] as string[] };
 
 // ---------- Explaining the bot ----------
 /** one thing the bot decided and why: each option with its score broken into parts, or a staffing or build step */
@@ -497,8 +732,8 @@ export function autoDecide(w: World, style: 'greedy' | 'random' = 'greedy', rand
     } else if (d.kind === 'blueprint') {
       const helpers = charterHelpers(w.charter);
       // the one blueprint the charter's cheapest route is still missing (a mill for the dough) beats any helper
-      const links = draftLinks(w);
-      const feedable = (id: string) => id !== 'smokehouse' || w.owned.includes('dock');
+      const links = [...draftLinks(w), ...(BOT.finaleRoutes ? finaleLinks(w) : [])];
+      const feedable = (id: string) => id !== 'smokehouse' || w.owned.includes('dock') || w.owned.includes('cellar');
       // a blueprint that needs planks is dead weight until there's a sawmill; a tavern without a brewery serves nothing
       const usableParts = (id: string): Record<string, number> => ({
         'needs planks, nothing makes them': BUILDING_BY_ID[id].cost.fine && !FINE_MAKERS.some(f => w.owned.includes(f) && usableHere(w, f)) && !FINE_MAKERS.includes(id) ? 6 : 0,
@@ -530,7 +765,7 @@ export function autoDecide(w: World, style: 'greedy' | 'random' = 'greedy', rand
         if (!apply(w, { type: 'reroll' })) { note(w, { kind: 'decision', title: 'Blueprint reroll', lines: [`nothing wanted in ${offered}; ${Math.floor(w.gold)} gold covers the ${rerollCost(w) - 10} reroll`] }); continue; }
       }
       // routes: credit for each new kind of meal, drink or fine material the blueprint makes feedable right away
-      const rank2 = (id: string) => rank(id) - (BOT.routes ? newKinds(w, id) * 3 : 0);
+      const rank2 = (id: string) => rank(id) - (BOT.routes ? newKinds(w, id) * 3 : 0) + (ROUTE_AVOID.includes(id) ? 1000 : 0);
       option = d.options.map(rank2).reduce((best, p, i, arr) => (p < arr[best] ? i : best), 0);
       if (TRACE.on) note(w, { kind: 'decision', title: 'Blueprint pick', better: 'lower', chosen: d.options[option], options: d.options.map(id => ({ id, parts: rankParts(id), score: rank2(id) })) });
     } else if (d.kind === 'perk') {
@@ -577,7 +812,7 @@ function charterShort(w: World): Partial<Record<ResourceId, number>> {
   for (const p of partsOf(w)) {
     if (p.kind === 'stock') { const short = p.amount - p.resources.reduce((n, r) => n + w.res[r], 0); for (const r of p.resources) add(r, short); }
     if (p.kind === 'variety') {
-      const members = CATEGORIES[p.category].members, full = members.filter(r => w.res[r] >= p.each).length;
+      const members = (p.members ?? CATEGORIES[p.category].members), full = members.filter(r => w.res[r] >= p.each).length;
       for (const r of members.filter(r => w.res[r] < p.each).sort((a, b) => w.res[b] - w.res[a]).slice(0, Math.max(0, p.kinds - full))) add(r, p.each - w.res[r]);
     }
     if (p.kind === 'longTable') { for (const r of FEAST_DRINKS) add(r, Math.ceil(pop / 2) - w.res[r]); for (const r of FEAST_MEALS) add(r, pop - w.res[r]); }
@@ -591,7 +826,7 @@ function charterCounts(w: World): Set<ResourceId> {
   if (alive(w).some(c => (c.coatHours ?? 0) <= 0)) out.add('coats');
   for (const p of partsOf(w)) {
     if (p.kind === 'stock') p.resources.forEach(r => out.add(r));
-    if (p.kind === 'variety') CATEGORIES[p.category].members.forEach(r => out.add(r));
+    if (p.kind === 'variety') (p.members ?? CATEGORIES[p.category].members).forEach(r => out.add(r));
     if (p.kind === 'longTable' || p.kind === 'monument') [...MEALS, ...CATEGORIES.drink.members, ...CATEGORIES.fine.members].forEach(r => out.add(r));
   }
   return out;
@@ -861,7 +1096,7 @@ export function autoBuild(w: World) {
       if (!w.owned.includes(id)) { skip(id, 'not unlocked or drafted'); continue; }
       if (missing.length && !['hall', 'pavilion'].includes(id) && !deadlineChain.includes(id) && !missing.includes(id) && !firstNeeds.includes(id) && !(id === 'stockpile' && storageFree(w, 'wood') < 15)) { skip(id, `waiting: wood goes to the charter's chain first (${missing.join(', ')})`); continue; }
       const def = BUILDING_BY_ID[id];
-      if (id === 'smokehouse' && !w.buildings.some(b => b.def === 'dock')) { skip(id, 'no dock to feed it'); continue; }
+      if (id === 'smokehouse' && !w.buildings.some(b => b.def === 'dock' || b.def === 'cellar')) { skip(id, 'no dock or cellar to feed it'); continue; }
       if (def.recipes && !usableHere(w, id)) { skip(id, 'nothing owned can feed it'); continue; }
       if (id === 'pieoven' && !w.buildings.some(b => FINE_MAKERS.includes(b.def)) && stockOf(w, 'fine') < 8) { skip(id, 'no planks or plank maker'); continue; }
       // while saving a resource, only spend it on beds and on producers that make more of it
@@ -939,10 +1174,10 @@ export function staffWants(w: World): Record<string, number> {
   // a second meal route once food and wood are comfortable: one cook on the first pie oven, smokehouse or bakery that can be fed
   const comfy = foodTotal(w) >= pop * 4 && w.res.wood >= 25;
   // daily fare: once meals are plentiful, a cook on the first kitchen that can make a quality meal for everyone
-  const daily = BOT.dailyQuality && mealTotal(w) >= pop * 1.5 ? ['pieoven', 'smokehouse', 'bakery'].find(id => built(w).some(b => b.def === id && recipesOf(b).some(r => TIER[r.output] === 'quality' && Object.keys(r.inputs).every(k => membersOf(k as InputKey).some(m => suppliable(w, m, 3)))))) : undefined;
+  const daily = BOT.dailyQuality && mealTotal(w) >= pop * 1.5 && !pushing(w) ? ['pieoven', 'smokehouse', 'bakery'].find(id => built(w).some(b => b.def === id && recipesOf(b).some(r => TIER[r.output] === 'refined' && MEALS.includes(r.output) && Object.keys(r.inputs).every(k => membersOf(k as InputKey).some(m => suppliable(w, m, LADDER)))))) : undefined;
   const second = (BOT.variety && comfy ? ['pieoven', 'smokehouse', 'bakery'].find(id => built(w).some(b => b.def === id && plannedRecipe(w, b) && MEALS.includes(plannedRecipe(w, b)!.output))) : undefined) ?? daily;
   const hall = w.buildings.find(b => b.def === 'hall' && !b.built);
-  const charterDrinks = (ch === 'roof' && drinkTotal(w) < 18) || ch === 'tasting' || (hall && (hall.stage ?? 0) >= 1) || (ch === 'longtable' && drinkTotal(w) < pop * 1.5);
+  const charterDrinks = (ch === 'roof' && drinkTotal(w) < 18) || (ch === 'taproom' && drinkTotal(w) < pop * 1.5) || ch === 'tasting' || (hall && (hall.stage ?? 0) >= 1) || (ch === 'longtable' && drinkTotal(w) < pop * 1.5);
   // a finale that serves drinks needs them banked: the tavern shuts while they build up, and the brewers get more hands
   const bank = BOT.bankDrinks ? drinksToBank(w) : 0;
   const drinksWanted = bank > 0 ? 4 : charterDrinks ? 2 : drinkTotal(w) < 15 && built(w).some(b => b.def === 'tavern') ? 1 : 0;
@@ -959,13 +1194,16 @@ export function staffWants(w: World): Record<string, number> {
     claypit: stockOf(w, 'fine') < planksWanted(w) && plannedUses(w, 'clay') ? 2 : 0,
     // a varied table: bread from flour, skewers from herbs, remedies for the clinic
     bakery: built(w).some(b => b.def === 'bakery') && (mealTotal(w) < pop * 3 || ['menu', 'bread', 'twokitchens'].includes(ch) || second === 'bakery') ? 1 + (['menu', 'bread'].includes(ch) ? 1 : 0) : 0,
-    mill: built(w).some(b => b.def === 'bakery') && plannedUses(w, 'flour') ? 1 : 0,
+    mill: plannedUses(w, 'flour') || plannedUses(w, 'mash') ? 1 + (['bread', 'piesky'].includes(ch) ? 1 : 0) : 0,
+    // the malthouse mashes and grinds like the mill, dries mushrooms, and cooks porridge while meals are short
+    malthouse: built(w).some(b => b.def === 'malthouse') && (plannedUses(w, 'flour') || plannedUses(w, 'mash') || plannedUses(w, 'driedMushrooms') || mealTotal(w) < pop * 2) ? 1 + (['bread', 'piesky', 'goodtable'].includes(ch) ? 1 : 0) : 0,
+    oakhut: plannedUses(w, 'acorns') ? 1 : 0,
     apothecary: built(w).some(b => b.def === 'apothecary') && (alive(w).some(c => c.illness) || stockOf(w, 'remedy') < 6 || ['tasting', 'hearty'].includes(ch)) ? 1 : 0,
     herbgarden: built(w).some(b => b.def === 'apothecary') || ch === 'menu' ? 1 : 0,
     // gatherers for a drink maker's best recipe work as long as the drink makers do
-    field: (drinksWanted || built(w).some(b => b.def === 'mill' || b.def === 'bakery')) && plannedUses(w, 'grain') ? 2 : 0,
+    field: plannedUses(w, 'grain') ? 2 : 0,
     apiary: (drinksWanted || ch === 'hearty') && plannedUses(w, 'honey') ? 1 : 0,
-    smokehouse: w.res.fish > 20 || ['menu', 'twokitchens', 'woodsmoke'].includes(ch) || second === 'smokehouse' ? 1 + (ch === 'woodsmoke' ? 1 : 0) : 0,
+    smokehouse: w.res.fish > 20 || w.res.mushrooms > 20 || ['menu', 'twokitchens', 'woodsmoke', 'hall', 'longtable'].includes(ch) || second === 'smokehouse' ? 1 + (ch === 'woodsmoke' ? 1 : 0) : 0,
     tavern: built(w).some(b => b.def === 'tavern') && (bank <= 0 || (BOT.summerService && seasonOf(w).season === 'summer')) ? 1 : 0,
     ...Object.fromEntries(clothingChain(w).map(id => [id, clothingJob(w) === id ? 1 : 0])),
     clinic: alive(w).some(c => bedridden(c)) ? 1 : 0,
@@ -974,9 +1212,12 @@ export function staffWants(w: World): Record<string, number> {
 /** drinks still to put by for a finale that serves them (the Long Table, the Hall's topping-out); 0 when there's enough */
 export function drinksToBank(w: World) {
   const pop = alive(w).length;
-  if (w.charter === 'longtable') return Math.max(0, pop + 2 - drinkTotal(w));
+  // the finales take quality drinks, and the braised platter a mulled cup: the tavern stays shut until they're put by
+  const quality = stockOf(w, 'feastDrink') + w.res.mulled;
+  if (w.charter === 'longtable') { const pav = w.buildings.find(b => b.def === 'pavilion'); return pav?.built ? 0 : Math.max(0, pop + 4 - quality); }
   const hall = w.buildings.find(b => b.def === 'hall' && !b.built);
-  if (BOT.bankHall && w.charter === 'hall' && hall && (hall.stage ?? 0) >= 2) return Math.max(0, 27 - drinkTotal(w));
+  if (w.charter === 'hall' && hall && (hall.stage ?? 0) >= 1) return Math.max(0, (remainingCost(hall).feastDrink ?? FINALE_COLONISTS) + 4 - quality);
+  void pop;
   return 0;
 }
 /** fine materials (planks, bricks, wicker) the colony could spend right now: owned blueprints not yet built, plus what sites still need */
@@ -1091,7 +1332,7 @@ export function staffPlan(w: World, explain = false): Map<number, number> {
   for (const k of clothingChain(w)) give(k, 1);
   // 3. everything else, round-robin so no one kind eats the budget
   stage = 'round-robin extras';
-  for (let round = 2; round <= 6; round++) for (const k of ['woodcutter', 'rawFood', 'kitchen', 'sawmill', 'kiln', 'claypit', 'tavern', 'drinks', 'field', 'apiary', 'pieoven', 'smokehouse', 'bakery', 'mill', 'apothecary', 'herbgarden']) give(k, round);
+  for (let round = 2; round <= 6; round++) for (const k of ['woodcutter', 'rawFood', 'kitchen', 'sawmill', 'kiln', 'claypit', 'tavern', 'drinks', 'field', 'oakhut', 'apiary', 'pieoven', 'smokehouse', 'bakery', 'mill', 'malthouse', 'apothecary', 'herbgarden']) give(k, round);
   }
   // spread each kind's workers over its buildings. Single kinds go first, then the groups (raw food, drinks, plank
   // makers) fill the slots left, best yield this season first, so a worker given to the orchard for cider isn't undone
@@ -1230,7 +1471,7 @@ function varietyPart(w: World): { kinds: number; each: number } | null {
 export function varietyTargets(w: World, kinds: number): ResourceId[] {
   const making = new Set(built(w).filter(b => workersAt(w, b.uid).length).map(b => currentRecipe(w, b)?.output).filter((x): x is ResourceId => !!x && MEALS.includes(x)));
   const feasible=(b:Building,r:Recipe)=>!BOT.feasibleVariety
-    || Object.keys(r.inputs).every(k=>membersOf(k as InputKey).some(m=>suppliable(w,m,3)))
+    || Object.keys(r.inputs).every(k=>membersOf(k as InputKey).some(m=>suppliable(w,m,LADDER)))
     || !!workshopInputPlan(w,b,r,1,true);
   const canMake = new Set(built(w).flatMap(b => enabledRecipes(b).filter(r => MEALS.includes(r.output) && feasible(b,r)).map(r => r.output)));
   if(BOT.feasibleVariety){
@@ -1263,11 +1504,17 @@ export function autoFoodRules(w: World) {
   }
   // Fed and rested: raw food stays in storage while there are meals enough, so every meal is a cooked one
   if (w.charter === 'rested' && mealTotal(w) >= pop * 1.5) keep.push(...RAW_FOODS);
-  // the finales want suppers: keep the bread and refined sides they're plated from out of people's mouths, so they
-  // reach the bakery, while there's other food enough (the starvation guard below still releases them).
-  const site = w.buildings.find(b => (b.def === 'hall' || b.def === 'pavilion') && !b.built && 'supper' in costOf(b));
-  const suppers = (w.charter === 'longtable' || w.charter === 'hall') && !!site && (remainingCost(site).supper ?? 0) > w.res.supper;
-  if (BOT.supperRules && suppers && rawFor(2, 1.2)) keep.push('bread', ...SLOTS.side.members);
+  // the finales want magnificent meals: keep what they're made from (and the meals themselves) out of people's mouths,
+  // so it reaches the ovens and the site, while there's other food enough (the starvation guard below still releases it)
+  const site = w.buildings.find(b => (b.def === 'hall' || b.def === 'pavilion') && !b.built && 'feastMeal' in costOf(b));
+  const feast = (w.charter === 'longtable' || w.charter === 'hall') && !!site && (remainingCost(site).feastMeal ?? 0) > stockOf(w, 'feastMeal');
+  const onRoutes = BOT.finaleRoutes && finaleRoutes(w).length > 0;
+  // with a route, only its goods are kept (the reserve is path-specific); without one, the old blanket list
+  if (BOT.supperRules && feast && rawFor(2, 1.2)) keep.push(...(BOT.routeOnlyReserve && onRoutes ? SLOTS.feastMeal.members : ['bread', 'skewers', 'hotpot', 'fishpie', ...SLOTS.cured.members, ...SLOTS.feastMeal.members] as ResourceId[]));
+  // the meals on a finale route are its ingredients, not supper
+  // (and what each step takes: the mulled cups for hippocras, even when the stores already hold enough)
+  const routeGoods = BOT.finaleRoutes ? finaleRoutes(w).flatMap(r => [r.good, ...r.steps.flatMap(x => [x.output, ...stepInputsOf(x)])]) : [];
+  if (feast && rawFor(2, 1.2)) keep.push(...routeGoods.filter(r => MEALS.includes(r)));
   // never let anyone starve for a charter: while what's left to eat is under 1.5 each, release the kept food with the
   // most in store (so a big pile of stew goes back on the menu before the pies anyone is saving)
   const open = () => [...MEALS, ...RAW_FOODS].filter(f => !keep.includes(f)).reduce((n, f) => n + w.res[f], 0);
@@ -1276,6 +1523,14 @@ export function autoFoodRules(w: World) {
   for (const f of [...MEALS, ...RAW_FOODS] as ResourceId[]) {
     const allowed = !keep.includes(f);
     if (allowed === w.forbidden.includes(f)) apply(w, { type: 'foodRule', food: f, allowed });
+  }
+  // drinks: while a finale owes quality drinks (or a route's platter its mulled cup), the drinks on its routes stay
+  // out of the tavern, festivals and weddings. Nobody goes hungry for want of a drink, so nothing forces them out.
+  const owed = BOT.finaleRoutes ? finaleOwed(w) : {};
+  const reserve = new Set<ResourceId>(Object.keys(owed).length ? [...routeGoods, ...(owed.feastDrink ? FEAST_DRINKS : [])].filter(r => CATEGORIES.drink.members.includes(r)) : []);
+  for (const d of CATEGORIES.drink.members) {
+    const allowed = !reserve.has(d);
+    if (allowed === w.forbidden.includes(d)) apply(w, { type: 'foodRule', food: d, allowed });
   }
 }
 

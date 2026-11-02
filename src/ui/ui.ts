@@ -1,5 +1,5 @@
 // DOM overlay: HUD, bottom sheet, decision modals. Talks to the sim only through commands.
-import { LORE_BOOST, EventNeed, EventOption, BUILDINGS, membersOf, isGroup, BUILDING_BY_ID, EVENTS, RESEARCH, RESEARCH_BY_ID, BRANCHES_AFTER, JOB_NAMES, PERK_BY_ID, TRADER_BY_ID, RESOURCES, TRAIT_BY_ID, ResourceId, SKILL_NAMES, JOB_KINDS, JobKind, Recipe, InputKey, inputName, recipeRate, Stars } from '../sim/content';
+import { LORE_BOOST, EventNeed, EventOption, BUILDINGS, membersOf, isGroup, BUILDING_BY_ID, EVENTS, RESEARCH, RESEARCH_BY_ID, BRANCHES_AFTER, JOB_NAMES, PERK_BY_ID, TRADER_BY_ID, RESOURCES, TRAIT_BY_ID, ResourceId, SKILL_NAMES, JOB_KINDS, JobKind, Recipe, InputKey, inputName, recipeRate, Stars, CATEGORIES } from '../sim/content';
 import {
   World, Command, Colonist, alive, avgMood, beds, buildingByUid, charterProgress, colonistById,
   day, hourOfDay, opinion, workersAt, MAX_DEPARTURES, sites, siteWork, remainingCost, storageCap, stored,
@@ -857,10 +857,10 @@ export class UI {
     return `<div class="list-head"><span class="stats"><span title="Colonists">${PERSON_GLYPH}${alive(w).length}</span><span title="Beds">${icon('leanto')}${beds(w)}</span><span title="Laborers: build, haul, clean">${LABORER_GLYPH}${laborers(w).length}</span><span title="Average mood">${MOOD_GLYPH}${Math.round(avgMood(w))}</span></span>
       <button type="button" class="ghost" data-act="auto">Auto-assign jobs</button></div>
       <div class="filters">${selectHtml('colonist-filter', 'Show colonists', this.colonistFilter, [['all','Everyone'],['ill','Ill'],['hungry','Hungry'],['unhoused','No bed'],['sulking','Sulking'],['free','No job']])}${selectHtml('colonist-sort', 'Sort colonists', this.colonistSort, [['mood','Lowest mood'],['name','Name']])}</div>${concernCards(w)}${this.peopleFilter ? '<button type="button" class="ghost" data-act="tab" data-arg="colonists">Show everyone</button>' : ''}<div class="rows">${rows || '<p class="empty">No matching colonists.</p>'}</div>
-      <details data-key="food-rules"><summary id="food-rules">Food rules · ${w.forbidden.length} reserved</summary><p class="muted hint">Reserved food stays available for charters and feasts.</p>
-      <div class="foodrules">${FOODS.map(f => {
-        const on = !w.forbidden.includes(f);
-        return `<button type="button" class="rule${on ? ' on' : ''}" data-act="food" data-arg="${f}" aria-label="${on ? 'Reserve' : 'Allow eating'} ${RESOURCES.find(r=>r.id === f)!.name}" aria-pressed="${on}">${icon(f)}${RESOURCES.find(r => r.id === f)!.name}<small>${on ? '✓ Eat' : '◇ Reserved'} · ${Math.floor(w.res[f])}</small></button>`;
+      <details data-key="food-rules"><summary id="food-rules">Food and drink rules · ${w.forbidden.length} reserved</summary><p class="muted hint">Reserved food and drink stay in storage for charters and feasts: nobody eats them, and the tavern doesn't pour them.</p>
+      <div class="foodrules">${([...FOODS, ...CATEGORIES.drink.members] as ResourceId[]).map(f => {
+        const on = !w.forbidden.includes(f), drink = CATEGORIES.drink.members.includes(f);
+        return `<button type="button" class="rule${on ? ' on' : ''}" data-act="food" data-arg="${f}" aria-label="${on ? 'Reserve' : drink ? 'Allow drinking' : 'Allow eating'} ${RESOURCES.find(r=>r.id === f)!.name}" aria-pressed="${on}">${icon(f)}${RESOURCES.find(r => r.id === f)!.name}<small>${on ? (drink ? '✓ Drink' : '✓ Eat') : '◇ Reserved'} · ${Math.floor(w.res[f])}</small></button>`;
       }).join('')}</div></details>`;
   }
 
@@ -1426,7 +1426,7 @@ function comfortRows(w: World, c: Colonist) {
     shelter: v('shelter') >= 1 ? (c.bed != null ? 'a bed of their own' : '') : v('shelter') > 0 ? 'a shack (a cottage would be better)' : 'sleeping on the ground',
     food: v('food') >= 1 ? 'fed' : 'hungry',
     fire: v('fire') >= 1 ? 'the hearth is lit' : 'the hearth went cold',
-    meals: v('meals') <= 0 ? 'raw food or going hungry' : standingOf(w) >= 1 && c.lastMeal?.tier ? `${c.lastMeal.tier} fare${c.lastMeal.table ? ' at a table' : ', not at a table'}${c.lastMeal.tier === 'simple' || c.lastMeal.tier === 'refined' ? ' · better fare counts more' : ''}`
+    meals: v('meals') <= 0 ? 'raw food or going hungry' : standingOf(w) >= 1 && c.lastMeal?.tier ? `${c.lastMeal.tier} fare${c.lastMeal.table ? ' at a table' : ', not at a table'}${c.lastMeal.tier !== 'quality' && c.lastMeal.tier !== 'magnificent' ? ' · better fare counts more' : ''}`
       : v('meals') >= 1 ? 'a favourite meal at a table' : v('meals') >= 0.85 ? 'a cooked meal at a table' : 'cooked, but not at a table',
     variety: v('variety') >= 1 ? 'a varied table' : v('variety') > 0 ? 'the same meal every day' : 'no proper meals lately',
     evenings: v('evenings') >= 0.8 ? 'well entertained' : v('evenings') > 0.3 ? 'some fun' : 'bored',
@@ -1507,7 +1507,7 @@ function ledger(w: World, selected: InputKey | 'gold' | null = null) {
   const e = economy(w);
   const selectedGood = selected && selected !== 'gold' ? RESOURCES.find(r => r.id === selected) : null;
   const categoryDetail = selected && selected !== 'gold' && !selectedGood ? `<div id="account-${selected}" class="acct"><h3>${icon(selected)} ${esc(inputName(selected))}</h3><div class="actions">${membersOf(selected).map(r=>`<button type="button" class="ghost" data-act="resource" data-arg="${r}">${goodHtml(r,Math.floor(w.res[r]))} →</button>`).join('')}</div></div>` : '';
-  const resourceDetail = selectedGood ? `<div id="resource-${selectedGood.id}" class="acct"><h3>${icon(selectedGood.id)} ${selectedGood.name} · ${Math.floor(w.res[selectedGood.id])}</h3><div class="actions"><button type="button" class="ghost" data-act="source" data-arg="${selectedGood.id}">Sources →</button><button type="button" class="ghost" data-act="workplaces" data-arg="stockpile,storehouse">Storage →</button>${FOODS.includes(selectedGood.id) ? '<button type="button" class="ghost" data-act="food-rules">Food rules →</button>' : ''}</div></div>` : '';
+  const resourceDetail = selectedGood ? `<div id="resource-${selectedGood.id}" class="acct"><h3>${icon(selectedGood.id)} ${selectedGood.name} · ${Math.floor(w.res[selectedGood.id])}</h3><div class="actions"><button type="button" class="ghost" data-act="source" data-arg="${selectedGood.id}">Sources →</button><button type="button" class="ghost" data-act="workplaces" data-arg="stockpile,storehouse">Storage →</button>${FOODS.includes(selectedGood.id) || CATEGORIES.drink.members.includes(selectedGood.id) ? '<button type="button" class="ghost" data-act="food-rules">Food rules →</button>' : ''}</div></div>` : '';
   const show = (a: Account) => a.lines.length > 0 || a.stock >= 1;
   const accounts: [Account, InputKey][] = [[e.food, 'meal'], [e.wood, 'wood'], ...([[e.planks, 'planks'], [e.drinks, 'drink'], [e.remedies, 'remedy']] as [Account, InputKey][]).filter(([a]) => show(a))];
   const jobs = e.jobs.sort((a, z) => (z.slots - z.workers) - (a.slots - a.workers)).map(j => {

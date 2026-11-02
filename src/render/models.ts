@@ -365,6 +365,40 @@ export const MODELS: Record<string, (c: ModelCtx) => Model> = {
       ...appleCrate(0.36, 0.84), ...appleCrate(0.68, 0.86),
     ];
   },
+  /** a kiln house with a tall pyramid vent, grist sacks by the door and mushrooms drying on a rack */
+  malthouse: c => {
+    const roof = c.def.roof;
+    return [
+      ...house(c, { u0: 0.08, v0: 0.1, u1: 1.6, v1: 0.74, kind: 'gableU', rise: 14, doorAt: 0.35 }),
+      { ...cone(ring(1.32, 0.42, 0.2, 4), wallH(c) + 6, [1.32, 0.42, wallH(c) + 24], shade(roof, 0.85)), at: [1.32, 0.42], layer: 2 },
+      puff(1.32, 0.42, wallH(c) + 26, 0.7),
+      ...sack(0.5, 0.88), ...sack(0.66, 0.9),
+      box(1.66, 0.3, 1.94, 0.34, 0, 12, TIMBER), box(1.66, 0.62, 1.94, 0.66, 0, 12, TIMBER),
+      ...mushroom(1.72, 0.48, 0.05, 0x8a6a5a), ...mushroom(1.86, 0.48, 0.05, 0x8a6a5a),
+    ];
+  },
+  /** a small stone still house: a copper pot still with its swan neck, and bottles on a bench */
+  stillhouse: c => {
+    const copper = 0xb87333;
+    return [
+      ...house(c, { u0: 0.08, v0: 0.06, u1: 0.62, v1: 0.6, kind: 'gableV', rise: 12, windows: false, doorAt: 0.5 }),
+      { ...frustum(0.78, 0.5, 0.15, 0.12, 0, 14, copper, shade(copper, 1.1), 10), at: [0.78, 0.5] },
+      { ...dome(0.78, 0.5, 0.12, 14, 7, copper, 10, 3), at: [0.78, 0.5], layer: 1 },
+      { ...column(0.78, 0.5, 0.025, 20, 28, shade(copper, 0.9), copper, 6), at: [0.78, 0.5], layer: 2 },
+      { ...box(0.78, 0.48, 0.9, 0.52, 26, 28, shade(copper, 0.9)), at: [0.84, 0.5], layer: 3 },
+      box(0.2, 0.78, 0.6, 0.92, 0, 6, 0x7a5232, 0x8a6240),
+      ...[0.28, 0.4, 0.52].map((u, i) => ({ ...column(u, 0.85, 0.025, 6, 12, i === 1 ? 0xc0406a : 0xd8e4e0, 0xe8f0f0, 6), layer: 1, at: [u, 0.87] as [number, number] })),
+    ];
+  },
+  /** a gatherer's hut under the oaks, with baskets of acorns */
+  oakhut: c => {
+    const nut = 0x9a6a34;
+    const acornBasket = (u: number, v: number): Part[] => [column(u, v, 0.08, 0, 6, 0xc8a868, shade(0xc8a868, 0.6), 9), ...[[-0.03, -0.02], [0.03, 0], [0, 0.03]].map(([a, b]) => ({ ...dome(u + a, v + b, 0.035, 6, 3, nut, 6, 2), layer: 1, at: [u, v + 0.02] as [number, number] }))];
+    return [
+      ...house(c, { u0: 0.1, v0: 0.1, u1: 0.66, v1: 0.6, kind: 'gableU', rise: 12, windows: false, doorAt: 0.45 }),
+      ...acornBasket(0.3, 0.84), ...acornBasket(0.58, 0.86), ...acornBasket(0.84, 0.72),
+    ];
+  },
   /** a picker's hut with a ladder against it and crates of apples */
   orchard: c => {
     const u0 = 0.08, v0 = 0.08, u1 = 0.62, v1 = 0.58;
