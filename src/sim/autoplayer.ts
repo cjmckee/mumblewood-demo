@@ -649,11 +649,12 @@ export function pushing(w: World): boolean {
   if (!moods.length) return false;
   return w.charter === 'hall' ? moods.filter(m => m >= 62).length >= moods.length * 0.6 : Math.min(...moods) >= 35;
 }
-/** the goods that settle what a finale owes in a category: any of them, or, topping up a stocked larder, only drinks the guests still unserved would take */
+/** the goods that settle what a finale owes in a category: any of them, or, topping up a stocked larder, the drinks the guests still unserved would rather have */
 export function finaleGoods(w: World, k: InputKey): ResourceId[] {
   const topUp = k === 'feastDrink' && w.charter === 'longtable' && !!w.buildings.find(x => x.def === 'pavilion')?.built;
   const unserved = topUp ? feastUnservedDrinks(w) : [];
-  return unserved.length ? membersOf(k).filter(r => unserved.every(c => !c.tastes.dislikes.includes(r))) : membersOf(k);
+  const liked = membersOf(k).filter(r => unserved.every(c => !c.tastes.dislikes.includes(r)));
+  return unserved.length && liked.length ? liked : membersOf(k);
 }
 /** the same route recosted: the same good from the same final workshop, by whatever way to its inputs is cheapest now */
 function cheapestRouteVia(w: World, r: FinaleRoute, qty: number) {

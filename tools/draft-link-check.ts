@@ -49,15 +49,14 @@ function breadTown(): World {
   check(took, 'the bot drafts a mill or malthouse when Daily bread waits on one');
 }
 {
-  // a larder of hippocras, and guests who can't stand it: they're the ones still unserved
+  // a larder of hippocras, and guests who can't stand it: at the founders' feast they drink it anyway
   const w = breadTown();
   for (const c of alive(w)) { c.tastes = { loves: [], dislikes: [] }; c.sulking = false; }
   const haters = alive(w).slice(0, 2); for (const c of haters) c.tastes.dislikes = ['hippocras'];
   w.res.hippocras = 40; w.res.cordial = 0;
-  const un = feastUnservedDrinks(w);
-  check(un.length === 2 && haters.every(c => un.includes(c)), `with only hippocras on hand, the ${un.length} guests who dislike it are the ones left unserved`);
-  w.res.cordial = 5;
-  check(feastUnservedDrinks(w).length === 0, 'with some cordial on hand too, everyone has a drink they’d take');
+  check(feastUnservedDrinks(w).length === 0, 'with only hippocras on hand, the guests who dislike it still have a drink');
+  w.res.hippocras = alive(w).length - 1;
+  check(feastUnservedDrinks(w).length === 1, 'one short of a drink each: one guest is unserved');
 }
 /** a town on the Long Table with the given workshops built and the pavilion stocking its larder */
 function feastTown(defs: string[], larder: Record<string, number>, ready = false): { w: World; at: (id: string) => Building; pav: Building } {
@@ -84,24 +83,21 @@ function feastTown(defs: string[], larder: Record<string, number>, ready = false
   check(!on('pieoven', 'pie') && !on('pieoven', 'platter'), 'and the pie oven isn\u2019t also baking fruit pies, or platters it has no mulled cup for');
 }
 {
-  // the last guest is owed a whole drink: a larder 0.8 short of its count still gets a full serving they'll take
-  const { w, pav } = feastTown([], { banquet: 14, cordial: 13.2 });
+  // a larder one drink short gets a whole one more
+  const { w, pav } = feastTown([], { banquet: 12, cordial: 11 });
   for (const c of alive(w)) { c.tastes = { loves: [], dislikes: [] }; c.sulking = false; }
-  alive(w)[0].tastes.dislikes = ['cordial'];
-  w.res.cordial = 20; w.res.hippocras = 5;
-  for (let h = 0; h < 24 && (pav.delivered.hippocras ?? 0) < 1; h++) runHours(w, 1);
-  check((pav.delivered.hippocras ?? 0) >= 0.999, `the guest who dislikes cordial gets a whole hippocras (${(pav.delivered.hippocras ?? 0).toFixed(2)} delivered)`);
+  w.res.cordial = 20;
+  for (let h = 0; h < 24 && (pav.delivered.cordial ?? 0) < 12; h++) runHours(w, 1);
+  check((pav.delivered.cordial ?? 0) === 12, `a larder one drink short gets one whole cordial (${pav.delivered.cordial} in it)`);
 }
 {
-  // a stocked larder of nothing but cordial, and a newcomer who can't stand it: a hippocras is carried in for them
+  // a stocked larder of nothing but cordial, and a guest who can't stand it: the feast is ready all the same
   const { w, pav } = feastTown([], { banquet: 14, cordial: 14 }, true);
   for (const c of alive(w)) { c.tastes = { loves: [], dislikes: [] }; c.sulking = false; }
-  const late = alive(w)[0]; late.tastes.dislikes = ['cordial'];
-  const before = feastCheck(w).hungry;
+  alive(w)[0].tastes.dislikes = ['cordial'];
   w.res.hippocras = 3;
-  for (let h = 0; h < 24 && (pav.delivered.hippocras ?? 0) < 1; h++) runHours(w, 1);
-  check(before === 1 && (pav.delivered.hippocras ?? 0) >= 0.999 && (pav.delivered.hippocras ?? 0) < 1.5 && feastCheck(w).hungry === 0,
-    `a stocked pavilion takes one hippocras for the guest who dislikes cordial (${before} unserved before, ${feastCheck(w).hungry} after, ${(pav.delivered.hippocras ?? 0).toFixed(2)} delivered)`);
+  runHours(w, 12);
+  check(feastCheck(w).hungry === 0 && !(pav.delivered.hippocras ?? 0), `a guest who dislikes cordial still sits down to one, and no hippocras is carried in (${feastCheck(w).hungry} unserved)`);
 }
 {
   // nobody refuses a magnificent meal, and nobody dislikes more than one drink: a larder with both quality drinks suits anyone

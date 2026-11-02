@@ -1914,24 +1914,22 @@ function chooseTask(w: World, c: Colonist): Task | null {
       if (need <= 0.001) continue;
       missing = true;
       // "fine materials": bring whichever kind storage has most of. A feast larder is stocked for the guests instead:
-      // the kind the most guests it can't serve yet would take, so the few who can't stand ale still get a cup
+      // the kind the most guests it can't serve yet would rather have, though any quality drink will do
       const guests = bdef(b).feastSeats ? alive(w).filter(x => !x.sulking && !bedridden(x)) : null;
       const larder: Partial<Record<ResourceId, number>> = {};
       for (const m of membersOf(k)) larder[m] = (b.delivered?.[m] ?? 0) + enroute(w, b.uid, m);
       const unserved = guests ? guests.filter(x => !serving(larder, x, membersOf(k), true)) : [];
       const pull = (m: ResourceId) => unserved.filter(x => taste(x, m) >= 0).length;
       const r = [...membersOf(k)].sort((p, q) => Number(constructionStock(w, b, q) >= 1) - Number(constructionStock(w, b, p) >= 1) || pull(q) - pull(p) || w.res[q] - w.res[p])[0];
-      // nobody left unserved would take it, but something here is making a kind they would: wait for that
-      if (guests && unserved.length && pull(r) <= 0 && membersOf(k).some(m => pull(m) > 0 && built(w).some(x => enabledRecipes(x).some(e => e.output === m)))) continue;
       // a guest still unserved gets a whole serving, even when the larder is only a fraction short of its count
-      const due = guests && pull(r) > 0 ? Math.max(need, 1) : need;
+      const due = guests && unserved.length ? Math.max(need, 1) : need;
       const amount = Math.min(CARRY, due, constructionStock(w, b, r));
       if (amount >= 1 || (amount > 0 && amount >= due - 0.001)) opts.push({ t: { kind: 'deliver', site: b.uid, res: r, amount }, pri: 3, x: s.x, y: s.y });
     }
     if (!missing && Object.keys(left).length === 0 && taskCount(w, t => t.kind === 'build' && t.site === b.uid) < 3) opts.push({ t: { kind: 'build', site: b.uid }, pri: 3.5, x: s.x, y: s.y });
   }
-  // a stocked pavilion still takes a serving for a guest its larder can't suit: someone who came after it was
-  // stocked and can't stand the only drink in it. One whole serving each, of a kind they'd take.
+  // a stocked pavilion still takes a serving for a guest its larder is short of: someone who came after it was
+  // stocked. One whole serving each, the kind they'd like best.
   const pav = pavilionOf(w);
   if (pav?.built && !w.feast?.done && !w.feast?.called) {
     const s = spotOf(pav);
@@ -1941,7 +1939,7 @@ function chooseTask(w: World, c: Colonist): Task | null {
       for (const r of goods) larder[r] = (pav.delivered[r] ?? 0) + enroute(w, pav.uid, r);
       const unserved = guests.filter(x => !serving(larder, x, goods, true));
       for (const x of unserved) {
-        const r = goods.filter(g => taste(x, g) >= 0 && constructionStock(w, pav, g) >= 1).sort((a, b) => taste(x, b) - taste(x, a) || w.res[b] - w.res[a])[0];
+        const r = goods.filter(g => constructionStock(w, pav, g) >= 1).sort((a, b) => taste(x, b) - taste(x, a) || w.res[b] - w.res[a])[0];
         if (r) { opts.push({ t: { kind: 'deliver', site: pav.uid, res: r, amount: 1 }, pri: 3, x: s.x, y: s.y }); break; }
       }
     }
@@ -3189,18 +3187,18 @@ export const pavilionOf = (w: World) => w.buildings.find(b => b.def === 'pavilio
 /** what's in the pavilion's larder: goods delivered while it's being stocked, kept when it's ready */
 export const larderOf = (b: Building | undefined): Partial<Record<ResourceId, number>> => (b && (b.built || (b.stage ?? 0) >= 1) ? b.delivered : {});
 /**
- * One serving for a guest from the larder: a whole one of a good they don't dislike, favourites first, topped up from
- * other goods they'd take when deliveries left fractions (9.5 ale and 4.5 mulled is 14 drinks, not 13). Returns the
- * main good served, and takes it from the larder only when `take`.
+ * One serving for a guest from the larder: a whole one, favourites first, then anything they don't mind, and one they
+ * dislike only when that's all that's left. At the founders' feast nobody turns down a quality drink; they just enjoy
+ * it less (see runFeast). Returns the main good served, and takes it from the larder only when `take`.
  */
 function serving(larder: Partial<Record<ResourceId, number>>, c: Colonist, goods: ResourceId[], take: boolean): ResourceId | undefined {
-  const ok = [...goods].filter(r => (larder[r] ?? 0) > 1e-9 && taste(c, r) >= 0).sort((a, b) => taste(c, b) - taste(c, a) || (larder[b] ?? 0) - (larder[a] ?? 0));
+  const ok = [...goods].filter(r => (larder[r] ?? 0) > 1e-9).sort((a, b) => taste(c, b) - taste(c, a) || (larder[b] ?? 0) - (larder[a] ?? 0));
   if (ok.reduce((n, r) => n + (larder[r] ?? 0), 0) < 1 - 1e-6) return undefined;
   const main = ok.find(r => (larder[r] ?? 0) >= 1 - 1e-6) ?? ok[0];
   if (take) { let need = 1; for (const r of [main, ...ok.filter(x => x !== main)]) { const t = Math.min(need, larder[r] ?? 0); larder[r] = (larder[r] ?? 0) - t; need -= t; if (need <= 1e-9) break; } }
   return main;
 }
-/** guests the feast pavilion's larder, topped up from storage, still couldn't give a drink they'd take */
+/** guests the feast pavilion's larder, topped up from storage, still couldn't give a quality drink: it's short */
 export function feastUnservedDrinks(w: World): Colonist[] {
   const pav = pavilionOf(w);
   const pool: Partial<Record<ResourceId, number>> = {};
@@ -3216,7 +3214,7 @@ export function feastUnservedMeals(w: World): Colonist[] {
 }
 /** the founders' feast seats everyone who can walk to it, and at least the number the charter asks for: a sulker staying away sinks it */
 const feastTarget = (w: World) => Math.max((charterDef(w.charter)?.metric as { pop?: number } | undefined)?.pop ?? FINALE_COLONISTS, alive(w).filter(c => !bedridden(c)).length);
-/** a dry run of the founders' feast: who would come, and who would get a magnificent meal and a quality drink they don't dislike from the larder */
+/** a dry run of the founders' feast: who would come, and who would get a magnificent meal and a quality drink from the larder */
 export function feastCheck(w: World) {
   const people = alive(w).filter(c => !bedridden(c));
   const sulkers = people.filter(c => c.sulking).length;
@@ -3245,7 +3243,9 @@ function runFeast(w: World) {
     const meal = can ? serving(larder, c, FEAST_MEALS, true) : undefined, drink = can ? serving(larder, c, FEAST_DRINKS, true) : undefined;
     if (meal && drink) {
       flow(w, `${meal}:-feast`, 1); flow(w, `${drink}:-feast`, 1); served++;
-      addMemory(w, c, 'feast', taste(c, meal) > 0 && taste(c, drink) > 0 ? 'A feast of my favourites' : 'The founders\u2019 feast', taste(c, meal) > 0 && taste(c, drink) > 0 ? 10 : 7, 48);
+      // favourites please most; a disliked meal or drink still counts, but it's remembered as the one thing wrong
+      const fav = taste(c, meal) > 0 && taste(c, drink) > 0, grim = taste(c, meal) < 0 || taste(c, drink) < 0;
+      addMemory(w, c, 'feast', fav ? 'A feast of my favourites' : grim ? 'The founders\u2019 feast, shame about the cup' : 'The founders\u2019 feast', fav ? 10 : grim ? 4 : 7, 48);
     } else { unserved++; addMemory(w, c, 'feast', 'Went without at the feast', -5, 24); }
   }
   for (const r of Object.keys(larder) as ResourceId[]) if ((larder[r] ?? 0) < 1e-6) delete larder[r];
@@ -3253,7 +3253,7 @@ function runFeast(w: World) {
   if (served >= target) { f.done = true; f.last = 'triumph'; addLog(w, `The founders\u2019 feast: ${served} settlers at one long table in the pavilion, every plate a magnificent one. The Crown\u2019s envoy cries a little.`, 'good'); return; }
   const short: string[] = [];
   if (sulkers) short.push(`${sulkers} sulked behind the woodpile instead`);
-  if (unserved) short.push(`${unserved} got no meal and drink they would have`);
+  if (unserved) short.push(`${unserved} found the larder empty by the time they sat down`);
   short.push(`only ${served} of the ${target} the Crown asked for sat down to eat`);
   f.readyAt = w.hour + 72; f.last = short.join('; ');
   // what's left stays in the larder, and the pavilion goes back to stocking

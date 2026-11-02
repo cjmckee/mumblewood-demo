@@ -81,16 +81,17 @@ const path = (r?: { steps: { def: string; output: string }[] }) => r ? r.steps.m
   check(!['hippocras', 'mulled', 'ale'].some(d => w.forbidden.includes(d as never)), 'with no finale owed, they’re poured again');
 }
 {
-  // a stocked larder of cordial and a guest who can't stand it: the finale still owes them a drink, and only hippocras will do
+  // a stocked larder of cordial and a guest who can't stand it: they drink it anyway, so nothing more is owed
   const w = town([]);
   w.owned.push('pavilion'); const s = findSpot(w, 'pavilion', 16, 16, true)!; apply(w, { type: 'place', def: 'pavilion', x: s.x, y: s.y });
   const pav = w.buildings.at(-1)!; pav.built = true; pav.stage = 1; pav.delivered = { banquet: 14, cordial: 14 } as typeof pav.delivered;
   for (const c of alive(w)) { c.tastes = { loves: [], dislikes: [] }; c.sulking = false; }
   alive(w)[0].tastes.dislikes = ['cordial'];
   w.res.cordial = 0; w.res.hippocras = 0;
-  check(finaleOwed(w).feastDrink === 1 && finaleGoods(w, 'feastDrink').join() === 'hippocras', `a stocked larder with a guest it can't suit owes one drink, of a kind they'd take (${JSON.stringify(finaleOwed(w))}, ${finaleGoods(w, 'feastDrink')})`);
-  w.res.hippocras = 2;
-  check(!finaleOwed(w).feastDrink, 'with hippocras in storage to carry in, it owes nothing more');
+  check(!finaleOwed(w).feastDrink, `a stocked larder with a guest who dislikes its only drink owes nothing more (${JSON.stringify(finaleOwed(w))})`);
+  // one short instead: the drink owed is any quality drink, the one the short guest would rather have first
+  pav.delivered.cordial = alive(w).length - 1;
+  check(finaleOwed(w).feastDrink === 1 && finaleGoods(w, 'feastDrink').length >= 1, `a larder one drink short owes one (${JSON.stringify(finaleOwed(w))}, ${finaleGoods(w, 'feastDrink')})`);
 }
 {
   // the finale bill follows the colony: a magnificent meal and a quality drink for every colonist, 12 at least
