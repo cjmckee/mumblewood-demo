@@ -311,7 +311,7 @@ export const BUILDINGS: BuildingDef[] = [
     stages: [{ label: 'Foundations and walls', cost: { fine: 30 }, work: 24 }, { label: 'Feeding the masons', cost: { feastMeal: FINALE_COLONISTS }, work: 16 }, { label: 'Topping out', cost: { feastDrink: FINALE_COLONISTS }, work: 10 }],
     wall: 0xc8b48a, roof: 0x8a3a3a, height: 1.4 },
   { id: 'pavilion', name: 'Feast pavilion', blurb: 'The Crown sends a marquee for the founders\u2019 feast. Raise it, then stock its larder with a magnificent meal and a quality drink for every guest. Once the larder is full it becomes the feast hall. Nothing in it spoils, and nobody touches it before the feast.', cost: { fine: 30 }, w: 3, h: 2, slots: 0, beauty: 3, feastSeats: 24,
-    stages: [{ label: 'Raising the marquee', cost: { fine: 30 }, work: 10 }, { label: 'Stocking the larder', cost: { feastMeal: FINALE_COLONISTS, feastDrink: FINALE_COLONISTS }, work: 2 }],
+    stages: [{ label: 'Raising the marquee', cost: { fine: 30 }, work: 24 }, { label: 'Stocking the larder', cost: { feastMeal: FINALE_COLONISTS, feastDrink: FINALE_COLONISTS }, work: 8 }],
     wall: 0xe8dcc0, roof: 0xc0443a, height: 1.0 },
 ];
 /** builder-hours of work to finish a building */

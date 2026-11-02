@@ -176,8 +176,11 @@ export function metricRoutes(w: World, m: CharterMetric): { good?: InputKey; rou
       const stage = BUILDING_BY_ID[m.def].stages?.[b?.stage ?? 0];
       if (!b) return [{ route: asRoute(buildingRoute(w, m.def)) }];
       if (b.built || !stage) return [];
-      const k = Object.keys(stage.cost)[0] as InputKey;
-      return [{ route: asRoute(routeAny(w, membersOf(k))) }];
+      // this stage's goods, then the later stages': the Hall's topping-out drinks need planning (and maybe drafting)
+      // while the masons are still being fed
+      const stages = BUILDING_BY_ID[m.def].stages!.slice(b.stage ?? 0);
+      const keys = [...new Set(stages.flatMap(st => Object.keys(st.cost) as InputKey[]))];
+      return keys.map(k => ({ good: membersOf(k)[0], route: asRoute(routeAny(w, membersOf(k))) }));
     }
     case 'longTable': return [{ good: FEAST_MEALS[0], route: asRoute(routeAny(w, FEAST_MEALS)) }, { good: FEAST_DRINKS[0], route: asRoute(routeAny(w, FEAST_DRINKS)) }];
     default: return [];
