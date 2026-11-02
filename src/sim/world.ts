@@ -1792,11 +1792,15 @@ function chooseTask(w: World, c: Colonist): Task | null {
     }
   }
   // hauling finished goods to storage
+  // goods a building site is still waiting on (two banquet pies for the Hall) go as soon as there's one to carry, not
+  // when a batch of four has piled up: the oven may have stopped at two
+  const siteWants = new Set<ResourceId>();
+  for (const b of sites(w)) for (const [k, n] of Object.entries(remainingCost(b)) as [InputKey, number][]) if (n > stockOf(w, k)) for (const m of membersOf(k)) siteWants.add(m);
   for (const b of built(w)) {
     for (const [r, n] of Object.entries(b.outbox) as [ResourceId, number][]) {
       const low = FOODS.includes(r) && foodTotal(w) < alive(w).length * 3;
       const available = r === 'coats' ? Math.floor(n + 1e-8) : n;
-      const smallBatch = r === 'coats' || (b.def === 'woodcutter' && r === 'planks');
+      const smallBatch = r === 'coats' || (b.def === 'woodcutter' && r === 'planks') || siteWants.has(r);
       if (available < (low || smallBatch ? 1 : 4) || storageFree(w, r) < 1 || taskCount(w, t => t.kind === 'haul' && t.from === b.uid && t.res === r) > 0) continue;
       const s = spotOf(b);
       opts.push({ t: { kind: 'haul', from: b.uid, res: r, amount: Math.min(CARRY, available) }, pri: n >= OUTBOX_CAP ? 3.2 : low ? 3.3 : 2, x: s.x, y: s.y });

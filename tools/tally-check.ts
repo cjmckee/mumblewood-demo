@@ -91,8 +91,10 @@ for (let i = 0; i < SITE_IDS.length; i++) for (let j = i + 1; j < SITE_IDS.lengt
   const on = (out: string) => recs.some((r, i) => r.output === out && recipeOn(oven, i));
   ok(on('banquet') && on('fishpie'), `the pie oven makes banquet pies and still bakes their fish pies (${recs.filter((r, i) => recipeOn(oven, i)).map(r => r.output)})`);
   autoFoodRules(w);
-  ok(['bread', 'hotpot', 'fishpie', 'skewers', 'smokedFish', 'banquet'].every(r => w.forbidden.includes(r as never)), `what the feast's meals are made from is kept for the pavilion (${w.forbidden})`);
-  ok(!w.forbidden.includes('stew'), 'everything else is still eaten');
+  // the reserve is the route's: banquet pies from fish pies from the hotpot in store. Skewers and smoked fish aren't on
+  // it, and the hotpot in store covers it, so bread isn't either: those stay on the menu.
+  ok(['hotpot', 'fishpie', 'banquet'].every(r => w.forbidden.includes(r as never)), `what the route's banquet pies are made from is kept for the pavilion (${w.forbidden})`);
+  ok(!['stew', 'bread', 'skewers', 'smokedFish'].some(r => w.forbidden.includes(r as never)), `everything off the route is still eaten (${w.forbidden})`);
 }
 // 8. Hale and hearty can be finished without anyone falling ill.
 {
