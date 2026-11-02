@@ -56,7 +56,13 @@ export interface Colonist {
   path: { x: number; y: number }[]; goalKey: string; goalReached: boolean;
   hunger: number; fun: number; mood: number; moodTarget: number;
   sulking: boolean; lowMoodHours: number; left: boolean;
+  /** where they're working right now: a building of their trade, picked hourly (see tradeHour). Null: laboring */
   job: number | null; bed: number | null; partner: number | null;
+  /**
+   * their trade: the kind of work they do (cooking, crafting...). They work whichever building of it has work, highest
+   * priority first, and labor (haul, build) when none does. Null: a laborer. Missing in older saves: read from job.
+   */
+  trade?: JobKind | null;
   task: Task | null; carrying: Carry | null;
   /** eating: fetch food from storage `from`, then eat at `at`; until = 0 while walking */
   meal: { at: number | null; until: number; from: number | null; got: ResourceId | null } | null;
@@ -107,7 +113,8 @@ export interface Building {
   /** storage buildings: which goods it takes; null means everything */
   allow: ResourceId[] | null;
   /** storage buildings: high-priority storage fills first and is topped up from low */
-  /** storage priority: 2 high, 1 medium (the default), 0 low; `high` is kept for older saves and tools */
+  /** storage priority: 2 high, 1 medium (the default), 0 low; `high` is kept for older saves and tools. Workshops use
+   *  the same levels: their trade's workers go to higher ones first */
   prio?: 0 | 1 | 2;
   high: boolean;
   /** workshops: indices of recipes the player has switched off */
@@ -439,7 +446,7 @@ export function reconcileStock(w: World) {
 }
 /** settlers lost to leaving or dying; the colony collapses at MAX_DEPARTURES */
 export function lost(w: World) { return w.stats.departures + w.stats.deaths; }
-export function laborers(w: World) { return alive(w).filter(c => c.job == null); }
+export function laborers(w: World) { return alive(w).filter(c => tradeOf(w, c) == null); }
 
 // ---------- Terrain ----------
 const inMap = (x: number, y: number) => x >= 0 && y >= 0 && x < MAP_SIZE && y < MAP_SIZE;
@@ -1008,6 +1015,8 @@ function blueprintDecision(w: World, avoid: string[] = []): Decision {
 // ---------- Commands (the only way the UI changes the world) ----------
 export type Command =
   | { type: 'assign'; colonist: number; building: number | null }
+  | { type: 'trade'; colonist: number; trade: JobKind | null }
+  | { type: 'workPriority'; building: number; prio: 0 | 1 | 2 }
   | { type: 'place'; def: string; x: number; y: number; rot?: number }
   | { type: 'cancel'; building: number }
   | { type: 'path'; x: number; y: number; on: boolean }
@@ -1060,13 +1069,28 @@ export function apply(w: World, cmd: Command): string | null {
   switch (cmd.type) {
     case 'assign': {
       const c = colonistById(w, cmd.colonist); if (!c || c.left) return 'No such colonist.';
-      if (cmd.building == null) { c.job = null; return null; }
+      if (cmd.building == null) { c.job = null; c.trade = null; return null; }
       const b = buildingByUid(w, cmd.building); if (!b) return 'No such building.';
       if (!b.built) return `${bdef(b).name} isn’t built yet.`;
       const others = workersAt(w, b.uid).filter(o => o.id !== c.id);
       if (others.length >= bdef(b).slots) return `${bdef(b).name} is full.`;
+      // assigning to a building takes up its trade, starting there
       dropTask(w, c);
-      c.job = b.uid; return null;
+      c.job = b.uid; c.trade = bdef(b).job ?? null; return null;
+    }
+    case 'trade': {
+      const c = colonistById(w, cmd.colonist); if (!c || c.left) return 'No such colonist.';
+      if (cmd.trade != null && !TRADE_DEFS[cmd.trade]?.length) return 'No such trade.';
+      if ((c.trade ?? null) === cmd.trade) return null;
+      dropTask(w, c); c.trade = cmd.trade; c.job = null; pickWork(w, c); w.version++;
+      return null;
+    }
+    case 'workPriority': {
+      const b = buildingByUid(w, cmd.building);
+      if (!b || !bdef(b).slots) return 'Only a building with workers has a work priority.';
+      b.prio = cmd.prio; w.version++;
+      for (const c of alive(w)) if (c.trade === bdef(b).job) pickWork(w, c);
+      return null;
     }
     case 'place': {
       const def = BUILDING_BY_ID[cmd.def];
@@ -1725,20 +1749,87 @@ export function laborersWanted(w: World) { return Math.max(2, Math.ceil(alive(w)
 /** Fill empty job slots with laborers, keeping enough laborers free to build and haul. */
 export function fillSlots(w: World) {
   const keepFree = laborersWanted(w);
-  const free = alive(w).filter(c => c.job == null);
+  const free = alive(w).filter(c => tradeOf(w, c) == null);
   const blds = built(w).filter(b => bdef(b).slots > 0 && !blockedReason(w, b)).sort((a, b) => buildingPriority(w, b) - buildingPriority(w, a));
   for (const b of blds) {
     while (free.length > keepFree && workersAt(w, b.uid).length < bdef(b).slots) {
       const co = workersAt(w, b.uid);
       free.sort((p, q) => slotScore(w, q, b, co) - slotScore(w, p, b, co));
       const c = free.shift()!;
-      dropTask(w, c); c.job = b.uid;
+      dropTask(w, c); c.job = b.uid; c.trade = bdef(b).job ?? null;
     }
   }
 }
 export function autoAssign(w: World) {
-  for (const c of alive(w)) c.job = null;
+  for (const c of alive(w)) { c.job = null; c.trade = null; }
   fillSlots(w);
+}
+
+// ---------- Trades ----------
+/** the buildings each trade works at (a cook: the stew kitchen, smokehouse, pie oven and bakery) */
+export const TRADE_DEFS: Record<JobKind, string[]> = (() => {
+  const out = {} as Record<JobKind, string[]>;
+  for (const d of BUILDINGS) if (d.job && d.slots > 0) (out[d.job] ??= []).push(d.id);
+  return out;
+})();
+/** someone's trade; saves from before trades read it from where they work */
+export function tradeOf(w: World, c: Colonist): JobKind | null {
+  if (c.trade === undefined) c.trade = c.job != null ? bdef(buildingByUid(w, c.job) ?? ({ def: '' } as Building))?.job ?? null : null;
+  return c.trade ?? null;
+}
+/** a building's work priority: 2 high, 1 medium (the default), 0 low */
+export const workPrio = (b: Building): number => b.prio ?? 1;
+/**
+ * is there work for a tradesperson here right now? A workshop with ingredients it can get and room for what it makes,
+ * a clinic with patients, a tavern in the evening, a desk with a project. A worker already here who can fetch what's
+ * missing counts it as work.
+ */
+export function hasWork(w: World, b: Building): boolean {
+  const def = bdef(b);
+  if (!b.built || !def.slots || !def.job) return false;
+  if (seasonYield(w, def.id) <= 0) return false;
+  if (def.patients) return alive(w).some(o => bedridden(o)) || !!recipesOf(b).length && !blockedReason(w, b);
+  if (def.id === 'tavern') { const [, dusk] = workHours(w); const h = hourOfDay(w); return h >= dusk - 1 || h < 2; }
+  if (blockedReason(w, b)) return false;
+  if (recipesOf(b).length && sum(b.outbox) >= OUTBOX_CAP) {
+    const r = (Object.entries(b.outbox) as [ResourceId, number][]).sort((a, z) => z[1] - a[1])[0]?.[0];
+    if (r && storageFree(w, r) < 1) return false;
+  }
+  return true;
+}
+/** how much a worker wants this building: its priority, a patient waiting, staying put, a coworker they can't stand, the walk */
+function workScore(w: World, c: Colonist, b: Building) {
+  let s = workPrio(b) * 100;
+  if (bdef(b).patients && alive(w).some(o => bedridden(o))) s += 150;
+  if (c.job === b.uid) s += 20;
+  for (const o of workersAt(w, b.uid)) if (o.id !== c.id && (opinion(w, c.id, o.id) < -30 || opinion(w, o.id, c.id) < -30)) s -= 30;
+  return s - dist(spotOf(b), c) * 0.5;
+}
+/** send a tradesperson to the best building of their trade with work and a free place, or to laboring if none has any */
+export function pickWork(w: World, c: Colonist) {
+  const trade = tradeOf(w, c);
+  if (trade == null || c.left) { c.job = null; return; }
+  // laid up: their place is free for someone else until they're back on their feet
+  if (bedridden(c)) { c.job = null; return; }
+  const cur = buildingByUid(w, c.job);
+  let best: Building | undefined, bs = -Infinity;
+  for (const b of built(w)) {
+    if (bdef(b).job !== trade || !hasWork(w, b)) continue;
+    if (b !== cur && workersAt(w, b.uid).length >= bdef(b).slots) continue;
+    const sc = workScore(w, c, b);
+    if (sc > bs) { bs = sc; best = b; }
+  }
+  if (best?.uid === c.job) return;
+  // finish carrying what's in hand before moving on: they look again next hour
+  if (c.carrying) return;
+  if (c.task) dropTask(w, c);
+  c.job = best?.uid ?? null;
+}
+/** once an hour, everyone with a trade checks where the work is, most skilled first so they get the first pick */
+export function tradeHour(w: World) {
+  const people = alive(w).filter(c => tradeOf(w, c) != null);
+  people.sort((a, z) => z.skills[z.trade!] - a.skills[a.trade!]);
+  for (const c of people) pickWork(w, c);
 }
 
 // ---------- Tasks for laborers ----------
@@ -2674,6 +2765,7 @@ function hourly(w: World) {
   caravanHour(w);
   storyHour(w);
   for (const b of w.buildings) if (!b.built && (b.def === 'hall' || b.def === 'pavilion')) b.headcount = finaleHeadcount(w);
+  tradeHour(w);
   const h = Math.round(hourOfDay(w)) % 24;
   const pop = alive(w).length;
   const d = day(w) - 1 + (hourOfDay(w) - 6) / 24;
@@ -2776,7 +2868,7 @@ function die(w: World, c: Colonist, cause: string) {
   c.clinicRequestedAt=bedridden(c)?w.hour:undefined;
   dropTask(w, c);
   const e = w.errands.find(x => x.assignee === c.id); if (e) e.assignee = null;
-  c.left = true; c.died = true; c.job = null; c.meal = null; c.illness = null; c.errand = null; w.stats.deaths++; w.lastLoss = w.hour;
+  c.left = true; c.died = true; c.job = null; c.trade = null; c.meal = null; c.illness = null; c.errand = null; w.stats.deaths++; w.lastLoss = w.hour;
   addLog(w, `${c.name} has died of ${cause}. ${pick(w, EULOGIES)}`, 'bad');
   const p = colonistById(w, c.partner);
   if (p) { p.partner = null; addMemory(w, p, 'widowed', `${first(c)} died`, -20, 96); }
@@ -2791,7 +2883,7 @@ function die(w: World, c: Colonist, cause: string) {
 
 function leave(w: World, c: Colonist, carted = false) {
   dropTask(w, c);
-  c.left = true; c.job = null; c.meal = null; c.illness = null; w.stats.departures++; w.lastLoss = w.hour;
+  c.left = true; c.job = null; c.trade = null; c.meal = null; c.illness = null; w.stats.departures++; w.lastLoss = w.hour;
   const e = w.errands.find(x => x.assignee === c.id); if (e) e.assignee = null;
   c.errand = null;
   if (!carted) addLog(w, `${c.name} packed a sack and wandered off into the woods, muttering.`, 'bad');

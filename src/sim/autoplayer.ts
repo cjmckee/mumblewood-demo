@@ -1,8 +1,8 @@
 // A heuristic player, used by the balance harness to play thousands of runs headlessly.
 // It reads the active charter and plays towards it, the way a person would.
-import { BUILDING_BY_ID, BUILDINGS, CATEGORIES, CharterMetric, RESEARCH_BY_ID, EVENTS, ResourceId, MEALS, RAW_FOODS, RESOURCES, Recipe, InputKey, membersOf, recipeRate, LORE_BOOST, GUILD_BOOST, RENOWN, TIER, TIER_STAGE, SLOTS, FINALE_COLONISTS } from './content';
+import { BUILDING_BY_ID, BUILDINGS, CATEGORIES, CharterMetric, RESEARCH_BY_ID, EVENTS, ResourceId, MEALS, RAW_FOODS, RESOURCES, Recipe, InputKey, membersOf, recipeRate, LORE_BOOST, GUILD_BOOST, RENOWN, TIER, TIER_STAGE, SLOTS, FINALE_COLONISTS, JobKind, JOB_KINDS } from './content';
 import { assess, Concern, defsOf, KIND_DEFS } from './advisor';
-import { World, feastUnservedDrinks, orderedRecipes, costOf, tallyOf, renownOf, FEAST_MEALS, FEAST_DRINKS, workshopInputPlan, apply, alive, beds, mealTotal, sites, findSpot, CENTER, avgMood, built, MAP_SIZE, pathAt, terrainAt, T_WATER, bdef, workersAt, blockedReason, opinion, Building, Colonist, hourOfDay, charterProgress, buildingByUid, storageFree, storages, FOODS, GOODS, bedridden, foodTotal, currentRecipe, drinkTotal, siteOk, enabledRecipes, recipesOf, rerollCost, stockOf, usableHere, charterDef, charterHelpers, feastCheck, desks, researchLeft, festivalPreview, edibleTotal, doorTile, centerOf, winterStores, storageCap, stored, lastDay, lastDayHours, remainingCost, seasonYield, recipeOn, spotOf, canPlace, coversPath, efficiencyAt, footprint, BUILD_MIN, BUILD_MAX, blockedGrid, storePrio, workHours } from './world';
+import { World, feastUnservedDrinks, orderedRecipes, costOf, tallyOf, renownOf, FEAST_MEALS, FEAST_DRINKS, workshopInputPlan, apply, alive, beds, mealTotal, sites, findSpot, CENTER, avgMood, built, MAP_SIZE, pathAt, terrainAt, T_WATER, bdef, workersAt, blockedReason, opinion, Building, Colonist, hourOfDay, charterProgress, buildingByUid, storageFree, storages, FOODS, GOODS, bedridden, foodTotal, currentRecipe, drinkTotal, siteOk, enabledRecipes, recipesOf, rerollCost, stockOf, usableHere, charterDef, charterHelpers, feastCheck, desks, researchLeft, festivalPreview, edibleTotal, doorTile, centerOf, winterStores, storageCap, stored, lastDay, lastDayHours, remainingCost, seasonYield, recipeOn, spotOf, canPlace, coversPath, efficiencyAt, footprint, BUILD_MIN, BUILD_MAX, blockedGrid, storePrio, workHours, tradeOf, workPrio } from './world';
 import { seasonOf } from './seasons';
 import { draftLinks } from './charterplan';
 
@@ -710,7 +710,7 @@ export function autoDecide(w: World, style: 'greedy' | 'random' = 'greedy', rand
       // send a healthy laborer, or the best-skilled person if the job uses a skill
       const e = w.errands.find(x => x.id === d.errandId);
       const pool = alive(w).filter(c => !c.illness && c.errand == null);
-      const best = pool.sort((a, b) => (e?.skill ? b.skills[e.skill] - a.skills[e.skill] : 0) + (Number(a.job != null) - Number(b.job != null)) * 2)[0];
+      const best = pool.sort((a, b) => (e?.skill ? b.skills[e.skill] - a.skills[e.skill] : 0) + (Number(tradeOf(w, a) != null) - Number(tradeOf(w, b) != null)) * 2)[0];
       option = style === 'random' && rand() < 0.3 ? 0 : best?.id ?? 0;
     } else if (d.kind === 'research') {
       option = rnd ? Math.floor(rand() * d.options.length) : BOT.researchFeasible ? researchChoice(w, d.options) : d.options.map(id => researchScore(w, id)).reduce((b, s, i, arr) => (s > arr[b] ? i : b), 0);
@@ -1411,51 +1411,53 @@ function fit(w: World, c: Colonist, b: Building) {
   return s;
 }
 
-/** Move people to match the staffing plan, changing as few assignments as possible. */
+/** how well someone suits a trade: skill, and whether they like or dislike it (more so when mood is the problem) */
+function tradeFit(w: World, c: Colonist, job: JobKind) {
+  const moodPush = moodCharter(w) || avgMood(w) < 40;
+  let s = c.skills[job] + (c.likes === job ? (moodPush ? 8 : 3) : 0) - (c.dislikes === job ? (moodPush ? 12 : 4) : 0);
+  if (bedridden(c)) s -= 50;
+  return s;
+}
+/**
+ * Match the staffing plan with trades, changing as few as possible. The plan's buildings go to high priority and the
+ * rest to low, so each trade's workers go where the bot wants them and help elsewhere only when those run dry; the
+ * number of people in each trade is the plan's total for that trade's buildings.
+ */
 export function autoStaff(w: World) {
-  // someone laid up in bed can't work: their place goes to a laborer until they're back on their feet
-  for (const c of alive(w)) if (c.job != null && (bedridden(c) || (BOT.urgentClinic && c.illness && bdef(buildingByUid(w,c.job)!).patients))) apply(w, { type: 'assign', colonist: c.id, building: null });
   const plan = staffPlan(w, TRACE.on && Math.round(hourOfDay(w)) === 9);
-  // first, release extras
+  const want: Partial<Record<JobKind, number>> = {};
   for (const [uid, n] of plan) {
-    const b = w.buildings.find(x => x.uid === uid)!;
-    const ws = workersAt(w, uid).sort((a, z) => fit(w, a, b) - fit(w, z, b));
-    for (const c of ws.slice(0, Math.max(0, ws.length - n))) apply(w, { type: 'assign', colonist: c.id, building: null });
+    const b = buildingByUid(w, uid)!, job = bdef(b).job;
+    const p = n > 0 ? 2 : 0;
+    if (workPrio(b) !== p) apply(w, { type: 'workPriority', building: uid, prio: p });
+    if (job && n > 0) want[job] = (want[job] ?? 0) + n;
   }
-  const eligible=(c:Colonist,b:Building)=>!bedridden(c)&&(!BOT.urgentClinic||!bdef(b).patients||!c.illness);
-  if(BOT.urgentClinic && alive(w).some(bedridden)){
-    // A mildly ill worker can gather food, but the simulation cannot use them
-    // as a doctor. Reserve a healthy medic before filling ordinary jobs.
-    const reserved=new Set<number>();
-    for(const [uid,n]of plan){
-      const b=buildingByUid(w,uid)!;if(!n||!bdef(b).patients)continue;
-      const doctor=alive(w).filter(c=>!c.illness&&c.errand==null&&!reserved.has(c.id)).sort((a,z)=>z.skills.medicine-a.skills.medicine||fit(w,z,b)-fit(w,a,b))[0];
-      if(!doctor)continue;reserved.add(doctor.id);
-      for(const current of workersAt(w,uid))if(current!==doctor)apply(w,{type:'assign',colonist:current.id,building:null});
-      if(doctor.job!==uid){apply(w,{type:'assign',colonist:doctor.id,building:null});apply(w,{type:'assign',colonist:doctor.id,building:uid});}
-    }
+  const able = (c: Colonist) => !bedridden(c) && c.errand == null;
+  const setTrade = (c: Colonist, t: JobKind | null) => apply(w, { type: 'trade', colonist: c.id, trade: t });
+  // the doctor: with someone laid up, a healthy medic, never one who's ill themselves
+  const urgent = BOT.urgentClinic && alive(w).some(bedridden);
+  const canDo = (c: Colonist, job: JobKind) => able(c) && !(urgent && job === 'medicine' && c.illness);
+  // first, release extras: the worst fits, and anyone who can't do it right now
+  for (const job of JOB_KINDS) {
+    const ts = alive(w).filter(c => tradeOf(w, c) === job && able(c));
+    for (const c of ts.filter(c => !canDo(c, job))) setTrade(c, null);
+    const ok = ts.filter(c => canDo(c, job)).sort((a, z) => tradeFit(w, a, job) - tradeFit(w, z, job));
+    for (const c of ok.slice(0, Math.max(0, ok.length - (want[job] ?? 0)))) setTrade(c, null);
   }
-  // nobody keeps a job they hate while a laborer could take it instead
+  // nobody keeps a trade they hate while a laborer could take it instead
   for (const c of alive(w)) {
-    const b = buildingByUid(w, c.job); if (!b || !bdef(b).job || bdef(b).job !== c.dislikes || (BOT.urgentClinic&&bdef(b).patients&&alive(w).some(bedridden))) continue;
-    const swap = alive(w).find(o => o.job == null && o.errand == null && eligible(o,b) && o.dislikes !== bdef(b).job);
-    if (swap) { apply(w, { type: 'assign', colonist: c.id, building: null }); apply(w, { type: 'assign', colonist: swap.id, building: b.uid }); }
+    const t = tradeOf(w, c); if (!t || t !== c.dislikes || (urgent && t === 'medicine')) continue;
+    const swap = alive(w).find(o => tradeOf(w, o) == null && canDo(o, t) && o.dislikes !== t);
+    if (swap) { setTrade(c, null); setTrade(swap, t); }
   }
-  // split up people who can't stand a coworker
-  if (fixesOf(w).some(f => 'reassign' in f && f.reassign !== 'hated')) for (const c of alive(w)) {
-    if (c.job == null || !c.thoughts.some(t => t.value < 0 && (t.label.startsWith('Has to work with') || t.label.endsWith('won’t stop complaining')))) continue;
-    const b = buildingByUid(w, c.job)!;
-    const swap = alive(w).find(o => o.job == null && o.errand == null && eligible(o,b) && o.dislikes !== bdef(b).job && !workersAt(w, b.uid).some(x => opinion(w, o.id, x.id) < -20));
-    if (swap) { apply(w, { type: 'assign', colonist: c.id, building: null }); apply(w, { type: 'assign', colonist: swap.id, building: b.uid }); }
-  }
-  // then fill gaps from laborers, best fit first
-  for (const [uid, n] of [...plan].sort((a, b) => b[1] - a[1])) {
-    const b = w.buildings.find(x => x.uid === uid)!;
-    while (workersAt(w, uid).length < n) {
-      const free = alive(w).filter(c => c.job == null && c.errand == null && eligible(c,b));
+  // then fill from laborers, best fit first, the biggest gaps first
+  const have = (job: JobKind) => alive(w).filter(c => tradeOf(w, c) === job && able(c)).length;
+  for (const job of (Object.keys(want) as JobKind[]).sort((a, z) => (want[z]! - have(z)) - (want[a]! - have(a)))) {
+    while (have(job) < want[job]!) {
+      const free = alive(w).filter(c => tradeOf(w, c) == null && canDo(c, job));
       if (!free.length) break;
-      free.sort((a, z) => fit(w, z, b) - fit(w, a, b));
-      apply(w, { type: 'assign', colonist: free[0].id, building: uid });
+      free.sort((a, z) => tradeFit(w, z, job) - tradeFit(w, a, job));
+      setTrade(free[0], job);
     }
   }
 }
