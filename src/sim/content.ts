@@ -120,6 +120,15 @@ export const JOB_NAMES: Record<JobKind, string> = {
   crafting: 'crafting', brewing: 'brewing', serving: 'tavern work', medicine: 'doctoring', studying: 'studying',
 };
 /** short labels for skill bars */
+/** what someone in each trade is called, and the building that stands for it */
+export const TRADE_NAMES: Record<JobKind, string> = {
+  chopping: 'Woodcutter', foraging: 'Forager', fishing: 'Fisher', cooking: 'Cook', crafting: 'Crafter',
+  brewing: 'Brewer', serving: 'Barkeep', medicine: 'Doctor', studying: 'Scholar',
+};
+export const TRADE_ICON: Record<JobKind, string> = {
+  chopping: 'woodcutter', foraging: 'forager', fishing: 'dock', cooking: 'kitchen', crafting: 'sawmill',
+  brewing: 'brewery', serving: 'tavern', medicine: 'clinic', studying: 'desk',
+};
 export const SKILL_NAMES: Record<JobKind, string> = {
   chopping: 'Chopping', foraging: 'Foraging', fishing: 'Fishing', cooking: 'Cooking',
   crafting: 'Crafting', brewing: 'Brewing', serving: 'Serving', medicine: 'Medicine', studying: 'Studying',

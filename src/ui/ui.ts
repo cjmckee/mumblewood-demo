@@ -1,5 +1,5 @@
 // DOM overlay: HUD, bottom sheet, decision modals. Talks to the sim only through commands.
-import { LORE_BOOST, EventNeed, EventOption, BUILDINGS, membersOf, isGroup, BUILDING_BY_ID, EVENTS, RESEARCH, RESEARCH_BY_ID, BRANCHES_AFTER, JOB_NAMES, PERK_BY_ID, TRADER_BY_ID, RESOURCES, TRAIT_BY_ID, ResourceId, SKILL_NAMES, JOB_KINDS, JobKind, Recipe, InputKey, inputName, recipeRate, Stars, CATEGORIES } from '../sim/content';
+import { LORE_BOOST, EventNeed, EventOption, BUILDINGS, membersOf, isGroup, BUILDING_BY_ID, EVENTS, RESEARCH, RESEARCH_BY_ID, BRANCHES_AFTER, JOB_NAMES, TRADE_NAMES, TRADE_ICON, PERK_BY_ID, TRADER_BY_ID, RESOURCES, TRAIT_BY_ID, ResourceId, SKILL_NAMES, JOB_KINDS, JobKind, Recipe, InputKey, inputName, recipeRate, Stars, CATEGORIES } from '../sim/content';
 import {
   World, Command, Colonist, alive, avgMood, beds, buildingByUid, charterProgress, colonistById,
   day, hourOfDay, opinion, workersAt, MAX_DEPARTURES, sites, siteWork, remainingCost, storageCap, stored,
@@ -7,7 +7,7 @@ import {
   recipesOf, recipeOn, optionOn, optionsOf, currentRecipe, orderedRecipes, INPUT_CAPACITY, OUTBOX_CAP, siteOk, rerollCost, REROLL_STEP, stockOf, recipeReach, charterHelpers, charterDef,
   costOf, researchLeft, researchStillNeeds, desks, feastCheck, festivalPreview, mealTotal, drinkTotal,
   comfortParts, comfortOf, colonyComfort, comfortGaps, strainPerDay, footprint, activeNeeds, standingOf, STANDINGS, NeedKey, winterFuelPerDay,
-  sellPrice, renownOf, pavilionOf, larderOf, FEAST_MEALS, charterCounted, charterRequirements, basicsDone, researchOpen, edibleTotal, storePrio, colonyName, nameFrom, NAME_MAX,
+  sellPrice, renownOf, pavilionOf, larderOf, FEAST_MEALS, charterCounted, charterRequirements, basicsDone, researchOpen, edibleTotal, storePrio, colonyName, nameFrom, NAME_MAX, tradeOf, TRADE_DEFS, workPrio, hasWork,
 } from '../sim/world';
 import { charterPreview, metricRoutes, Route } from '../sim/charterplan';
 import { START } from '../sim/scenario';
@@ -488,6 +488,8 @@ export class UI {
       case 'recipe-options': { this.optsOpen = this.optsOpen === arg ? null : arg; this.lastSheet = ''; break; }
       case 'option-toggle': { const [bid, k, g] = arg.split(':'); const b = buildingByUid(w, Number(bid)); if (!b) break; this.send({ type: 'toggleOption', building: b.uid, key: k as InputKey, good: g as ResourceId, on: !optionOn(b, k as InputKey, g as ResourceId) }); break; }
       case 'recipe-toggle': { const [bid, i] = arg.split(':').map(Number); const b = buildingByUid(w, bid); if (!b) break; this.send({ type: 'toggleRecipe', building: bid, recipe: i, on: !recipeOn(b, i) }); break; }
+      case 'trade': { const [cid, t] = arg.split(':'); const err = this.send({ type: 'trade', colonist: Number(cid), trade: t === 'none' ? null : t as JobKind }); if (err) this.toast(err); break; }
+      case 'work-prio': { const [bid, m] = arg.split(':').map(Number); this.send({ type: 'workPriority', building: bid, prio: m as 0 | 1 | 2 }); break; }
       case 'store-prio': { const [bid, m] = arg.split(':').map(Number); this.send({ type: 'storagePriority', building: bid, prio: m as 0 | 1 | 2 }); break; }
       case 'store-item': {
         const [bid, r] = arg.split(':'); const b = buildingByUid(w, Number(bid)); if (!b) break;
@@ -878,12 +880,13 @@ export class UI {
       ...friends.map(x => `<button type="button" class="rel friend" data-act="colonist" data-arg="${x.o.id}">${avatar(x.o,'avatar-mini')} ♥ ${esc(first(x.o))} →</button>`),
       ...rivals.map(x => `<button type="button" class="rel rival" data-act="colonist" data-arg="${x.o.id}">${avatar(x.o,'avatar-mini')} × ${esc(first(x.o))} →</button>`),
     ].join('') || '<span class="muted">No strong feelings about anyone yet.</span>';
-    const job = buildingByUid(w, c.job);
-    const jobs = built(w).filter(b => BUILDING_BY_ID[b.def].slots > 0).map(b => {
-      const def = BUILDING_BY_ID[b.def];
-      const n = workersAt(w, b.uid).length, full = n >= def.slots && c.job !== b.uid;
-      const fit = def.job === c.likes ? ' likes' : def.job === c.dislikes ? ' dislikes' : '';
-      return `<button type="button" class="job${c.job === b.uid ? ' on' : ''}${fit}" data-act="assign" data-arg="${c.id}:${b.uid}" ${full ? 'disabled' : ''}><span class="jn">${icon(def.id)}${esc(def.name)}</span><small>${def.job ? `${SKILL_NAMES[def.job]} ${Math.floor(c.skills[def.job])} · ` : ''}${n}/${def.slots}${fit === ' likes' ? ' · loves this' : fit === ' dislikes' ? ' · hates this' : ''}</small></button>`;
+    const job = buildingByUid(w, c.job), trade = tradeOf(w, c);
+    // a trade per kind of work the colony has a building for: how many follow it, and how many places its buildings have
+    const jobs = JOB_KINDS.filter(k => built(w).some(b => BUILDING_BY_ID[b.def].job === k && BUILDING_BY_ID[b.def].slots > 0)).map(k => {
+      const n = alive(w).filter(o => tradeOf(w, o) === k).length;
+      const places = built(w).filter(b => BUILDING_BY_ID[b.def].job === k).reduce((m, b) => m + BUILDING_BY_ID[b.def].slots, 0);
+      const fit = k === c.likes ? ' likes' : k === c.dislikes ? ' dislikes' : '';
+      return `<button type="button" class="job${trade === k ? ' on' : ''}${fit}" data-act="trade" data-arg="${c.id}:${k}"><span class="jn">${icon(TRADE_ICON[k])}${TRADE_NAMES[k]}</span><small>${SKILL_NAMES[k]} ${Math.floor(c.skills[k])} · ${n}/${places}${fit === ' likes' ? ' · loves this' : fit === ' dislikes' ? ' · hates this' : ''}</small></button>`;
     }).join('');
     const illness = c.illness ? `<section class="urgent"><b>✚ ${esc(c.illness.name)} · ${Math.round(c.illness.severity)}/100</b>${meter(c.illness.severity, 'Illness severity')}<div class="actions"><button type="button" class="ghost" data-act="need" data-arg="health">${esc(buildingDestination(w, 'clinic', true).label)} →</button></div><small>${c.illness.contagious ? 'At 100, this illness can be fatal.' : 'At 100, leaves for treatment.'}</small></section>` : '';
     const personalFixes = assess(w).filter(issue=>issue.personIds.includes(c.id) && issue.fixes.length).slice(0,2);
@@ -898,7 +901,7 @@ export class UI {
       <div class="actions">${remedies}${job ? `<button type="button" class="ghost" data-act="building" data-arg="${job.uid}">${icon(job.def)} ${esc(BUILDING_BY_ID[job.def].name)} →</button>` : ''}${c.bed != null ? `<button type="button" class="ghost" data-act="building" data-arg="${c.bed}">⌂ Home →</button>` : '<button type="button" class="ghost" data-act="need" data-arg="shelter">⌂ Find a bed →</button>'}<button type="button" class="ghost" data-act="jobs">⚒ Change job ↓</button></div>
       <p class="prefs">${icon('coats')} ${(c.coatHours ?? 0) > 0 ? `${c.coatStoredAt != null ? 'Coat stored' : 'Warm coat'} · ${Math.ceil(c.coatHours! / 24)} days of wear` : 'No coat · collects one in winter'} <button type="button" class="text-link" data-act="source" data-arg="coats">Coat supply →</button></p>
       <h3>Needs · ${Math.round(comfortOf(w, c) * 100)}%</h3>${comfortRows(w, c)}
-      <details data-key="person-jobs"><summary id="person-jobs">⚒ Job · ${job ? esc(BUILDING_BY_ID[job.def].name) : 'Laborer'}</summary><p class="muted">${laborers(w).length} laborers free · assigning one slows hauling and building.</p><div class="jobs">${jobs}<button type="button" class="job${c.job == null ? ' on' : ''}" data-act="assign" data-arg="${c.id}:none">Laborer<small>Build · haul · clean</small></button></div></details>
+      <details data-key="person-jobs"><summary id="person-jobs">⚒ ${trade ? `${TRADE_NAMES[trade]} · ${job ? esc(BUILDING_BY_ID[job.def].name) : 'no work, laboring'}` : 'Laborer'}</summary><p class="muted">${laborers(w).length} laborers free · a trade works its highest-priority building with work.</p><div class="jobs">${jobs}<button type="button" class="job${trade == null ? ' on' : ''}" data-act="trade" data-arg="${c.id}:none">Laborer<small>Build · haul · clean</small></button></div></details>
       <details data-key="thoughts"><summary>Mood breakdown</summary>${moodLedger(c)}<ul class="thoughts">${thoughts}</ul></details>
       <details data-key="skills"><summary>Skills & preferences</summary><p class="prefs">♥ ${JOB_NAMES[c.likes]} · × ${JOB_NAMES[c.dislikes]}${tasteLine(c)} · hunger ${Math.round(c.hunger)} · fun ${Math.round(c.fun)}</p><div class="skills">${skillKinds(c).map(k => `<div class="skill${k === c.likes ? ' fav' : ''}"><span>${SKILL_NAMES[k]}</span><i><b style="width:${c.skills[k] * 10}%"></b></i><em>${Math.floor(c.skills[k])}</em></div>`).join('')}</div></details>
       <details data-key="traits"><summary>Traits · joined day ${c.joinedDay}</summary><div class="traits">${traits}</div></details>
@@ -1066,7 +1069,10 @@ export class UI {
         const cw = buildingByUid(w, c.job);
         return `<div class="row static">${avatar(c)}<span class="who">${personLink(c,false)}<small>${def.job ? `${SKILL_NAMES[def.job]} ${Math.floor(c.skills[def.job])} · ` : ''}${cw ? `now at ${esc(BUILDING_BY_ID[cw.def].name)}` : 'laborer'}${c.likes === def.job ? ' · loves this' : c.dislikes === def.job ? ' · hates this' : ''}</small></span><button type="button" class="ghost" data-act="assign" data-arg="${c.id}:${b.uid}" ${bedridden(c) || c.sulking || c.errand != null ? 'disabled' : ''}>${bedridden(c) ? 'Ill' : c.sulking ? 'Sulking' : c.errand != null ? 'On errand' : 'Assign'}</button></div>`;
       }).join('') : '';
-      staff += `<h3>Workers ${workers.length}/${def.slots}</h3><div class="rows">${cur || '<p class="muted">Nobody works here.</p>'}</div>${cand ? `<h3>Assign someone</h3><p class="muted">⚒ ${laborers(w).length} laborers free · keep hands for hauling.</p><div class="rows">${cand}</div>` : ''}`;
+      const tradeN = def.job ? alive(w).filter(o => tradeOf(w, o) === def.job).length : 0;
+      const prio = `<div class="store-set"><h3>Priority</h3><div class="segs">${([[2, 'High'], [1, 'Medium'], [0, 'Low']] as const).map(([v, l]) => `<button type="button" class="seg${workPrio(b) === v ? ' on' : ''}" data-act="work-prio" data-arg="${b.uid}:${v}" aria-pressed="${workPrio(b) === v}">${l}</button>`).join('')}</div></div>`;
+      const tradeLine = def.job ? `<p class="prefs">${icon(TRADE_ICON[def.job])} ${tradeN} ${TRADE_NAMES[def.job].toLowerCase()}${tradeN === 1 ? '' : 's'}${hasWork(w, b) ? '' : ' · no work here now'}</p>` : '';
+      staff += `${prio}${tradeLine}<h3>Workers ${workers.length}/${def.slots}</h3><div class="rows">${cur || '<p class="muted">Nobody works here.</p>'}</div>${cand ? `<h3>Assign someone</h3><p class="muted">⚒ ${laborers(w).length} laborers free · keep hands for hauling.</p><div class="rows">${cand}</div>` : ''}`;
     } else if (def.storage) {
       // what's in it first: a capacity bar split by kind of good, then a tile per good with its count, largest first
       const held = Object.values(b.stock).reduce((n, x) => n + (x ?? 0), 0);
