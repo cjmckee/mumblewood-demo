@@ -23,7 +23,8 @@ export interface Start {
    * strain builds up each hour by rate × √population, faster as the run goes on (1 + day / rampDays). The square root
    * means a bigger colony strains a little faster, not twice as fast: growing is a trade-off, not a trap.
    */
-  strain: { rate: number; rampDays: number };
+  /** popBend/popExponent: past popBend colonists, strain grows with headcount^popExponent rather than its square root */
+  strain: { rate: number; rampDays: number; popBend?: number; popExponent?: number };
   /**
    * how much the colony's comfort (0 to 1, see comfortOf) changes the strain rise: rise × (base − comfort × slope).
    * With base 1.4 and slope 1: a neglected town (0.1) strains 1.3×, a middling one (0.4) 1×, a great one (1.0) 0.4×.
@@ -142,7 +143,7 @@ export const START: Start = {
   firstCharterDay: 2,
   draftEvery: 5,
   collapse: { lost: 6, minAlive: 0 },
-  strain: { rate: 0.15, rampDays: 40 },
+  strain: { rate: 0.15, rampDays: 40, popBend: 10, popExponent: 1 },
   comfortScale: { base: 1.4, slope: 1 },
   relief: { charter: 0.3, festival: { base: 0.15, drinks: 0.05, loved: 0.05, waitDays: 4 } },
   hearth: { base: 0.125, perPerson: 0.03 },
@@ -174,7 +175,8 @@ export const START: Start = {
     hearth: {},
     homeFuel: { leanto: 0.7, cottage: 0.4 },
     harsh: 1.25,
-    recruitEvery: { spring: 1, summer: 2, autumn: 2, winter: 3 },
+    // half the old pace (1/2/2/3): a new face is an event, and the colony you have comes first
+    recruitEvery: { spring: 2, summer: 4, autumn: 4, winter: 6 },
     chill: { cold: 0.04, warm: 0.005 },
     prep: { from: 10, full: 3, share: 0.3, fuel: 0.6 },
     stricterFromYear: 0,

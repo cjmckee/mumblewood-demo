@@ -3,7 +3,9 @@
 // Usage: npx tsx tools/finale-routes-check.ts
 import { createWorld, apply, World, findSpot, festivalPreview, drinkableTotal } from '../src/sim/world';
 import { cheapestRoute, finaleOwed, finaleRoutes, finaleGoods, ROUTE_AVOID, autoFoodRules } from '../src/sim/autoplayer';
-import { alive } from '../src/sim/world';
+import { alive, costOf, debugGrow, finaleHeadcount, popStrain, recruitInterval, feastCheck } from '../src/sim/world';
+import { START } from '../src/sim/scenario';
+import { seasonOf } from '../src/sim/seasons';
 import { FINALE_COLONISTS } from '../src/sim/content';
 
 let failed = 0;
@@ -89,6 +91,30 @@ const path = (r?: { steps: { def: string; output: string }[] }) => r ? r.steps.m
   check(finaleOwed(w).feastDrink === 1 && finaleGoods(w, 'feastDrink').join() === 'hippocras', `a stocked larder with a guest it can't suit owes one drink, of a kind they'd take (${JSON.stringify(finaleOwed(w))}, ${finaleGoods(w, 'feastDrink')})`);
   w.res.hippocras = 2;
   check(!finaleOwed(w).feastDrink, 'with hippocras in storage to carry in, it owes nothing more');
+}
+{
+  // the finale bill follows the colony: a magnificent meal and a quality drink for every colonist, 12 at least
+  const w = town([]);
+  w.owned.push('pavilion'); const s = findSpot(w, 'pavilion', 16, 16, true)!; apply(w, { type: 'place', def: 'pavilion', x: s.x, y: s.y });
+  const pav = w.buildings.at(-1)!; pav.stage = 1;
+  pav.headcount = finaleHeadcount(w);
+  const few = costOf(pav);
+  debugGrow(w, 15); pav.headcount = finaleHeadcount(w);
+  const many = costOf(pav);
+  check(few.feastMeal === FINALE_COLONISTS && few.feastDrink === FINALE_COLONISTS && many.feastMeal === 15 && many.feastDrink === 15,
+    `the larder holds one each for every colonist, ${FINALE_COLONISTS} at least (${alive(createWorld(81)).length} colonists: ${few.feastMeal}; 15 colonists: ${many.feastMeal})`);
+  pav.built = true; pav.delivered = { banquet: 15, cordial: 8, hippocras: 7 } as typeof pav.delivered;
+  for (const c of alive(w)) { c.tastes = { loves: [], dislikes: [] }; c.sulking = false; c.illness = null; }
+  const ready = feastCheck(w).ok;
+  alive(w)[0].sulking = true;
+  check(ready && !feastCheck(w).ok, 'the feast seats everyone: with 15 colonists, one sulker staying away sinks it');
+}
+{
+  // strain: the square root of the headcount up to ten, then in step with it
+  check(Math.abs(popStrain(9) - 3) < 1e-9 && Math.abs(popStrain(20) - 2 * Math.sqrt(10)) < 1e-9, `strain from size: 9 colonists ${popStrain(9).toFixed(2)}, 12 ${popStrain(12).toFixed(2)} (was ${Math.sqrt(12).toFixed(2)}), 18 ${popStrain(18).toFixed(2)} (was ${Math.sqrt(18).toFixed(2)})`);
+  // recruits come half as often as they did (every 1/2/2/3 days)
+  const w = createWorld(5);
+  check(recruitInterval(w) === START.seasons.recruitEvery[seasonOf(w).season] && START.seasons.recruitEvery.spring === 2 && START.seasons.recruitEvery.winter === 6, `recruit offers every ${Object.values(START.seasons.recruitEvery).join('/')} days by season`);
 }
 console.log(failed ? `\n${failed} failed` : '\nall passed');
 if (failed) process.exit(1);

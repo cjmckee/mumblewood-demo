@@ -14,6 +14,8 @@ const STYLE = (process.env.STYLE ?? 'greedy') as 'greedy' | 'random';
 if (process.env.BOT_JSON) Object.assign(BOT, JSON.parse(process.env.BOT_JSON));
 // LONGTABLE_POP=12 — guests the founders' feast needs (the larder stays 14 and 14)
 if (process.env.LONGTABLE_POP) { const m = CHARTERS.find(c => c.id === 'longtable')!.metric as { pop: number }; m.pop = Number(process.env.LONGTABLE_POP); }
+// SEASONS_JSON='{"recruitEvery":{...},"recruitTaper":{...}}' — season settings, for experiments
+if (process.env.SEASONS_JSON) Object.assign(START.seasons, JSON.parse(process.env.SEASONS_JSON));
 if (process.env.AVOID) ROUTE_AVOID.push(...process.env.AVOID.split(','));
 if (process.env.STRAIN_K) START.strain.rate = Number(process.env.STRAIN_K);
 if (process.env.DRAFT_EVERY) START.draftEvery = Number(process.env.DRAFT_EVERY);
