@@ -63,7 +63,7 @@ for (const r of routes) {
   staff(w, p, 2);
   run(w, 72);
   const must = made(w, 'must:+ciderpress'), cider = made(w, 'cider:+ciderpress');
-  check(must > 3 && cider > 2 && Math.abs(made(w, 'berries:-ciderpress') / must - 1.6) < 0.05, `berries → must → cider at the press, 1.6 berries a must (${must.toFixed(1)} must, ${cider.toFixed(1)} cider)`);
+  check(must > 3 && cider > 2 && Math.abs(made(w, 'berries:-ciderpress') / must - 1.5) < 0.1, `berries → must → cider at the press, 3 berries for 2 must (${must.toFixed(1)} must, ${cider.toFixed(1)} cider)`);
 }
 
 // flower beds count as meadow for an apiary: try it on a map with no meadow at all
@@ -112,7 +112,7 @@ for (const r of routes) {
   w.res.wood += 60;
   run(w, 72);
   const bricks = made(w, 'bricks:+kiln'), clay = made(w, 'clay:-kiln');
-  check(bricks > 5 && Math.abs(clay / bricks - 2) < 0.05, `kiln fired ${bricks.toFixed(0)} bricks from ${clay.toFixed(0)} clay (2 each)`);
+  check(bricks > 5 && Math.abs(clay / bricks - 2) < 0.1, `kiln fired ${bricks.toFixed(0)} bricks from ${clay.toFixed(0)} clay (4 for 2, a batch may be under way)`);
   // a tavern whose 12 fine materials are all bricks
   if (!w.owned.includes('tavern')) w.owned.push('tavern');
   w.res.planks = 0; w.res.wicker = 0; w.res.bricks = Math.max(w.res.bricks, 14); w.res.wood += 40;

@@ -1,15 +1,15 @@
 // Checks the multi-recipe engine on a building given two recipes: preference by stars, fallback, toggles.
 // Usage: npx tsx tools/recipes-check.ts
 import { createWorld, debugGrow, apply, runHours, findSpot, currentRecipe, blockedReason, reconcileStock, workersAt, alive, World } from '../src/sim/world';
-import { BUILDING_BY_ID } from '../src/sim/content';
+import { BUILDING_BY_ID, rx } from '../src/sim/content';
 
 let failed = 0;
 const check = (ok: boolean, what: string) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}`); if (!ok) failed++; };
 
 // give the stew kitchen a second, better recipe for this test only
 BUILDING_BY_ID.kitchen.recipes = [
-  { inputs: { rawFood: 1.5 }, output: 'stew', stars: 2 },
-  { inputs: { fish: 1.2 }, output: 'smokedFish', stars: 3 },
+  rx({ rawFood: 3 }, 2, 'stew', 2),
+  rx({ fish: 6 }, 5, 'smokedFish', 3),
 ];
 const w: World = createWorld(4242);
 debugGrow(w, 6);

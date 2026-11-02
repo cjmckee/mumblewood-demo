@@ -4,7 +4,7 @@
 // Usage: npx tsx tools/labor-budget.ts [runs=4] [maxDays=90]
 //   RECRUIT_CAP=99 takes every recruit (a human-like player); default is the bot's own cap
 //   BOT_JSON='{...}' any bot switch; SEED_FROM=n shifts the seeds; DAYS=10,20,40 the snapshot days
-import { createWorld, tick, day, alive, TICKS_PER_HOUR, World, built, bdef, buildingByUid, workersAt, currentRecipe, enabledRecipes, inInbox, OUTBOX_CAP, workHours, hourOfDay, Colonist, Building } from '../src/sim/world';
+import { createWorld, tick, day, alive, TICKS_PER_HOUR, World, built, bdef, buildingByUid, workersAt, currentRecipe, enabledRecipes, inInbox, shelfFull, workHours, hourOfDay, Colonist, Building } from '../src/sim/world';
 import type { InputKey } from '../src/sim/content';
 import { autoDecide, autoBuild, BOT } from '../src/sim/autoplayer';
 
@@ -16,9 +16,9 @@ const sum = (o: Record<string, number | undefined>) => Object.values(o).reduce((
 
 /** would this workshop make anything this tick? (mirrors produce() in world.ts) */
 function stalled(w: World, b: Building) {
-  if (!bdef(b).recipes) return false;
-  if (sum(b.outbox) >= OUTBOX_CAP) return 'full';
-  const has = (r: { inputs: Record<string, number> }) => Object.keys(r.inputs).every(k => inInbox(b, k as InputKey) > 0);
+  if (!bdef(b).recipes || b.batch) return false;
+  if (shelfFull(w, b)) return 'full';
+  const has = (r: { take: Record<string, number> }) => Object.entries(r.take).every(([k, n]) => inInbox(b, k as InputKey) >= n);
   const cur = currentRecipe(w, b);
   const rec = cur && has(cur) ? cur : (enabledRecipes(b, w).find(has) ?? cur);
   if (!rec) return 'off';

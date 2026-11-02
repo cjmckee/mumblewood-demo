@@ -22,7 +22,7 @@ try{
  w.res.wood=180;reconcileStock(w);for(const c of alive(w))apply(w,{type:'assign',colonist:c.id,building:null});apply(w,{type:'assign',colonist:alive(w)[0].id,building:hut.uid});
  for(let h=0;h<12;h++){while(w.decisions.length)apply(w,{type:'resolve',option:99});runHours(w,1);}
  const made=w.flows['planks:+woodcutter']??0;assert(made>0,'existing production and hauling execute the fallback recipe');
- assert(Math.abs(w.flows['wood:-woodcutter']/made-3)<1e-6,'actual production consumes three wood per plank');
+ assert(Math.abs((w.flows['wood:-woodcutter']-(hut.batch?3:0))/made-3)<1e-6,'actual production consumes three wood per plank');
  w.flows['planks:+woodcutter']=BOT.roughPlankBudget;w.res.wood=180;assert.equal(roughPlankMaker(w),undefined,'early rough production budget stops further batches');
  BOT.roughPlanks=false;assert.equal(roughPlankMaker(w),undefined,'bot opt-out does not remove the player recipe');
  assert(BUILDING_BY_ID.woodcutter.recipes!.includes(ROUGH_PLANK_RECIPE),'starting recipe is real game content');

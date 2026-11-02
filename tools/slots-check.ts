@@ -77,10 +77,10 @@ let n = 0; const ok = (cond: unknown, msg: string) => { assert(cond, msg); n++; 
 
 // 7. A named slot works as a recipe input, like a category.
 {
-  const stew = BUILDING_BY_ID.kitchen.recipes![0], saved = stew.inputs;
+  const stew = BUILDING_BY_ID.kitchen.recipes![0], saved = stew.inputs, savedTake = stew.take;
   SLOTS.testFilling = { name: 'test filling', members: ['berries', 'fish'] };
   try {
-    stew.inputs = { testFilling: 0.9 } as typeof stew.inputs;
+    stew.inputs = { testFilling: 1 } as typeof stew.inputs; stew.take = { testFilling: 1 } as typeof stew.take;
     ok(isGroup('testFilling') && inputName('testFilling' as InputKey) === 'test filling' && membersOf('testFilling' as InputKey).length === 2, 'a slot names its options');
     const { w, k } = kitchenWorld(7);
     apply(w, { type: 'toggleOption', building: k.uid, key: 'testFilling' as InputKey, good: 'berries', on: false });
@@ -88,7 +88,7 @@ let n = 0; const ok = (cond: unknown, msg: string) => { assert(cond, msg); n++; 
     ok((w.flows['stew:+kitchen'] ?? 0) > 2, 'a slot recipe runs');
     ok((w.flows['fish:-kitchen'] ?? 0) > 0 && !(w.flows['berries:-kitchen'] ?? 0), 'it uses only the options left on');
     ok(!(w.flows['mushrooms:-kitchen'] ?? 0), 'and nothing outside the slot');
-  } finally { stew.inputs = saved; delete SLOTS.testFilling; }
+  } finally { stew.inputs = saved; stew.take = savedTake; delete SLOTS.testFilling; }
 }
 
 console.log(`slots: ${n} checks passed`);

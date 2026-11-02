@@ -1,5 +1,5 @@
 // DOM overlay: HUD, bottom sheet, decision modals. Talks to the sim only through commands.
-import { LORE_BOOST, EventNeed, EventOption, BUILDINGS, membersOf, isGroup, BUILDING_BY_ID, EVENTS, RESEARCH, RESEARCH_BY_ID, BRANCHES_AFTER, JOB_NAMES, TRADE_NAMES, TRADE_ICON, PERK_BY_ID, TRADER_BY_ID, RESOURCES, TRAIT_BY_ID, ResourceId, SKILL_NAMES, JOB_KINDS, JobKind, Recipe, InputKey, inputName, recipeRate, Stars, CATEGORIES } from '../sim/content';
+import { LORE_BOOST, EventNeed, EventOption, BUILDINGS, membersOf, isGroup, BUILDING_BY_ID, EVENTS, RESEARCH, RESEARCH_BY_ID, BRANCHES_AFTER, JOB_NAMES, TRADE_NAMES, TRADE_ICON, PERK_BY_ID, TRADER_BY_ID, RESOURCES, TRAIT_BY_ID, ResourceId, SKILL_NAMES, JOB_KINDS, JobKind, Recipe, InputKey, inputName, recipeRate, batchHours, Stars, CATEGORIES } from '../sim/content';
 import {
   World, Command, Colonist, alive, avgMood, beds, buildingByUid, charterProgress, colonistById,
   day, hourOfDay, opinion, workersAt, MAX_DEPARTURES, sites, siteWork, remainingCost, storageCap, stored,
@@ -37,7 +37,7 @@ const goodHtml = (k: InputKey, n?: number | string, label = goodLabel(k)) => `<s
 const costHtml = (cost: Partial<Record<InputKey, number>>, w?: World) =>
   Object.entries(cost).map(([r, n]) => `<span class="${w && stockOf(w,r as InputKey) < n! ? 'cost-short' : ''}">${goodHtml(r as InputKey, n)}${w && stockOf(w,r as InputKey) < n! ? ' !' : ''}</span>`).join(', ') || 'free';
 /** "2 [wood] + 1 [clay] → [bricks]" as HTML */
-const recipeHtml = (r: Recipe) => `${Object.keys(r.inputs).length ? `${Object.entries(r.inputs).map(([k, n]) => goodHtml(k as InputKey, n)).join(' + ')} → ` : ''}${goodHtml(r.output)}`;
+const recipeHtml = (r: Recipe) => `${Object.keys(r.take).length ? `${Object.entries(r.take).map(([k, n]) => goodHtml(k as InputKey, n)).join(' + ')} → ` : ''}${goodHtml(r.output, r.make > 1 ? r.make : undefined)}`;
 
 function timeOfDay(h: number) {
   if (h < 6) return 'Night'; if (h < 12) return 'Morning'; if (h < 18) return 'Afternoon'; if (h < 22) return 'Evening'; return 'Night';
@@ -1027,15 +1027,15 @@ export class UI {
     const blocked0 = blockedReason(w, b);
     let recipe = !recs.length ? '' : `<h3>Recipes</h3><div class="recipes">${orderedRecipes(b).map(({r, i}, position) => {
           const on = recipeOn(b, i), now = on && r === cur && !blocked0;
-          const missing = Object.keys(r.inputs).filter(k => on && optionsOf(b, k as InputKey).reduce((n, x) => n + w.res[x] + (b.inbox[x] ?? 0), 0) < (r.inputs[k as InputKey] ?? 0)) as InputKey[];
+          const missing = Object.keys(r.inputs).filter(k => on && optionsOf(b, k as InputKey).reduce((n, x) => n + w.res[x] + (b.inbox[x] ?? 0), 0) < (r.take[k as InputKey] ?? 0)) as InputKey[];
           const waiting = on && (missing.length > 0 || (r === cur && !!blocked0));
           const route = missing.length ? metricRoutes(w, { kind: 'stock', resources: membersOf(missing[0]), amount: 1 })[0]?.route : undefined;
           const tiles = route && route.state !== 'ready' ? route.state === 'never' ? `<span class="rtile never" title="Not on this map" role="img" aria-label="Not on this map">${ROUTE_GLYPH.never}</span>` : route.steps.map(st => { const name = BUILDING_BY_ID[st.def].name; const label = st.how === 'build' ? `Build ${name}` : st.how === 'study' ? `Study ${RESEARCH_BY_ID[st.research!].name}` : `Draft a ${name.toLowerCase()}`;
             const inner = `${icon(st.def)}<i class="rb ${st.how}">${ROUTE_GLYPH[st.how]}</i>`;
             return st.how === 'draft' ? `<span class="rtile draft" title="${esc(label)}" role="img" aria-label="${esc(label)}">${inner}</span>` : `<button type="button" class="rtile ${st.how}" data-act="catalog-help" data-arg="${st.def}" title="${esc(label)}" aria-label="${esc(label)}">${inner}</button>`; }).join('') : '';
           // a single good links to where it comes from; a category or slot shows its options and opens them below
-          const ins = Object.entries(r.inputs).map(([k, n]) => {
-            const miss = missing.includes(k as InputKey) ? ' missing' : '', amt = `<b>${+(n ?? 0).toFixed(2)}</b>`;
+          const ins = Object.entries(r.take).map(([k, n]) => {
+            const miss = missing.includes(k as InputKey) ? ' missing' : '', amt = `<b>${n ?? 0}</b>`;
             if (!isGroup(k)) return `<button type="button" class="rin${miss}" data-act="source" data-arg="${k}" title="${esc(inputName(k as InputKey))}: where it comes from">${icon(k)}${amt}</button>`;
             const key = `${b.uid}:${i}:${k}`, open = this.optsOpen === key, shown = optionsOf(b, k as InputKey).filter(x => optionState(w, b, x) !== 'never');
             const cut = membersOf(k as InputKey).some(x => !optionOn(b, k as InputKey, x));
@@ -1047,7 +1047,7 @@ export class UI {
           const limit = b.productionLimits?.[r.output];
           return `<div class="rrow${now ? ' making' : waiting ? ' waiting' : ''}${on ? '' : ' off'}">
             <div class="rmain"><span class="rorder"><button type="button" data-act="recipe-priority" data-arg="${b.uid}:${i}:-1" aria-label="Try ${esc(inputName(r.output))} earlier" ${position === 0 ? 'disabled' : ''}>${CHEVRON_UP}</button><button type="button" data-act="recipe-priority" data-arg="${b.uid}:${i}:1" aria-label="Try ${esc(inputName(r.output))} later" ${position === recs.length - 1 ? 'disabled' : ''}>${CHEVRON_DOWN}</button></span>
-              <span class="rbody">${starHtml(r.stars)}${ins ? `<span class="rins">${ins}</span>${ARROW_GLYPH}` : ''}<span class="rout" title="${esc(inputName(r.output))} · ${+recipeRate(r).toFixed(2)} per worker-hour">${icon(r.output)}${now ? '<i class="rnow" aria-label="Making now"></i>' : ''}</span></span>
+              <span class="rbody">${starHtml(r.stars)}${ins ? `<span class="rins">${ins}</span>${ARROW_GLYPH}` : ''}<span class="rout" title="${esc(inputName(r.output))} · ${r.make} every ${+batchHours(r).toFixed(1)} worker-hours">${icon(r.output)}${r.make > 1 ? `<b>${r.make}</b>` : ''}${now ? '<i class="rnow" aria-label="Making now"></i>' : ''}</span></span>
               <label class="rtarget" title="Stop at this many in storage (blank: no limit)">${TARGET_GLYPH}<span>${Math.floor(w.res[r.output])}/</span><input type="number" min="0" step="1" placeholder="∞" aria-label="Stock target for ${esc(inputName(r.output))}" data-act="production-target" data-arg="${b.uid}:${r.output}" data-production-limit data-building="${b.uid}" data-output="${r.output}" value="${limit ?? ''}"></label>
               <button type="button" class="rcheck" role="checkbox" aria-checked="${on}" data-act="recipe-toggle" data-arg="${b.uid}:${i}" aria-label="Make ${esc(inputName(r.output))}"><span>${on ? CHECK_GLYPH : ''}</span></button></div>
             ${opts}${waiting && missing.length ? `<div class="rwait">${missing.map(k => `<span class="rno">${icon(k)}${esc(inputName(k))}</span>`).join('')}${tiles}</div>` : ''}
@@ -1062,7 +1062,8 @@ export class UI {
     const waitLine = waiting.length ? `<p class="warnline">Waiting for beds: ${waiting.map(c=>`${personLink(c)} · ${Math.round(c.illness!.severity)}`).join(', ')}</p>` : '';
     const patients = def.patients ? `<p class="prefs">Patients: ${patientsAt(w,b).map(c=>`${personLink(c)} · ${esc(c.illness!.name)} ${Math.round(c.illness!.severity)}${c.goalReached ? '' : ' · arriving'}`).join(', ') || 'None'}</p>${START.clinicTriage ? '<p class="muted">Fatal illnesses take priority. Treatment needs a healthy doctor.</p>' : ''}` : '';
     const larderLine = def.id === 'pavilion' ? `<h3>Larder</h3><ul class="thoughts">${Object.entries(larderOf(b)).filter(([, n]) => (n ?? 0) >= 1).map(([r, n]) => `<li>${icon(r)}<span>${Math.floor(n ?? 0)} ${esc(goodLabel(r as InputKey))}</span></li>`).join('') || '<li><span>Empty</span></li>'}</ul>${this.releaseButton(w, b)}` : '';
-    let staff = larderLine + (blocked ? `<p class="warnline">${esc(blocked)}</p>` : '') + effLine + inboxLine + patients + waitLine + remedyLine + (b.def === 'desk' ? this.deskLines(w) : '');
+    const batchLine = b.batch ? `<p class="prefs">${icon(b.batch.output)} ${b.batch.make} ${esc(inputName(b.batch.output))} · ${Math.floor(b.batch.done / b.batch.make * 100)}%</p>${meter(b.batch.done / b.batch.make * 100, 'Batch progress')}` : '';
+    let staff = larderLine + (blocked ? `<p class="warnline">${esc(blocked)}</p>` : '') + batchLine + effLine + inboxLine + patients + waitLine + remedyLine + (b.def === 'desk' ? this.deskLines(w) : '');
     if (def.slots) {
       const cur = workers.map(c => `<div class="row static">${avatar(c)}<span class="who">${personLink(c,false)}<small>${def.job ? `${SKILL_NAMES[def.job]} ${Math.floor(c.skills[def.job])} · ` : ''}${def.job === c.likes ? 'loves this job' : def.job === c.dislikes ? 'hates this job' : 'doesn’t mind it'}</small></span><button type="button" class="ghost" data-act="assign" data-arg="${c.id}:none">Remove</button></div>`).join('');
       const cand = workers.length < def.slots ? alive(w).filter(c => c.job !== b.uid).sort((a, z) => (def.job ? z.skills[def.job] - a.skills[def.job] : 0) + (Number(z.likes === def.job) - Number(a.likes === def.job)) * 2).map(c => {
@@ -1294,7 +1295,7 @@ export class UI {
     const charter = new Set<string>(charterCounted(w));
     const waiting = new Map<string, string>();
     for (const b of built(w)) if (recipesOf(b).length && workersAt(w, b.uid).length) for (const { r, i } of orderedRecipes(b)) if (recipeOn(b, i))
-      for (const [k, n] of Object.entries(r.inputs) as [InputKey, number][]) { const ms = optionsOf(b, k); if (ms.reduce((m, x) => m + w.res[x] + (b.inbox[x] ?? 0), 0) < n) for (const x of ms) if (!waiting.has(x)) waiting.set(x, b.def); }
+      for (const [k, n] of Object.entries(r.take) as [InputKey, number][]) { const ms = optionsOf(b, k); if (ms.reduce((m, x) => m + w.res[x] + (b.inbox[x] ?? 0), 0) < n) for (const x of ms) if (!waiting.has(x)) waiting.set(x, b.def); }
     const needTag = (r: string) => charter.has(r) ? `<i class="tneed" title="Your charter counts these" aria-label="charter">${STAR_GLYPH}</i>` : waiting.has(r) ? `<i class="tneed" title="${esc(BUILDING_BY_ID[waiting.get(r)!].name)} is waiting for this">${icon(waiting.get(r)!)}</i>` : '';
     const price = (p: number) => `<span class="tprice">${Number.isInteger(p) ? p : p.toFixed(1)}${icon('gold')}</span>`;
     const step = (side: 'buy' | 'sell', r: string, q: number, max: number) => `<span class="tstep"><button type="button" data-act="tq" data-arg="${side}:${r}:-1" aria-label="One fewer" ${q ? '' : 'disabled'}>−</button><b aria-label="${q} in the order">${q}</b><button type="button" data-act="tq" data-arg="${side}:${r}:1" ${q < max ? '' : 'disabled'}>+1</button><button type="button" data-act="tq" data-arg="${side}:${r}:5" ${q < max ? '' : 'disabled'}>+5</button></span>`;
