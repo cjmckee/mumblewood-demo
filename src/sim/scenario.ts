@@ -15,6 +15,12 @@ export interface Start {
   firstResearch: string[];
   /** the first charter is offered on the morning of this day; blueprint drafts start once it's picked */
   firstCharterDay: number;
+  /**
+   * population intent, like RimWorld's storyteller: the colony each stage is sized for (charter tier 1, 2, 3; the
+   * charters ask for 6, 10 and 12 colonists). Recruit offers come at the season's pace below it and stop at it until
+   * the next stage. Events, gold and boons can still bring someone past it.
+   */
+  popTargets: number[];
   /** days between blueprint drafts, once they start */
   draftEvery: number;
   /** the colony collapses at this many lost, or with this many or fewer left */
@@ -140,6 +146,7 @@ export const START: Start = {
   unlocked: ['stockpile', 'leanto', 'woodcutter', 'forager', 'desk'],
   firstResearch: ['cookery', 'messhall', 'physick'],
   firstCharterDay: 2,
+  popTargets: [6, 10, 12],
   draftEvery: 5,
   collapse: { lost: 6, minAlive: 0 },
   strain: { rate: 0.15, rampDays: 40 },

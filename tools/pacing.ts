@@ -61,6 +61,9 @@ for (let i = 0; i < runs; i++) {
   // SEED_FROM=30 runs the next batch of seeds, to split a long batch across processes
   const seed = 1000 + (i + Number(process.env.SEED_FROM ?? 0)) * 7919;
   const w: World = createWorld(seed);
+  // START_PERKS=overtime and START_KNOWS=handcarts,roads: give the colony a perk or a research from day 1, as a proxy experiment
+  if (process.env.START_PERKS) w.perks.push(...process.env.START_PERKS.split(','));
+  if (process.env.START_KNOWS && w.research) w.research.done.push(...process.env.START_KNOWS.split(','));
   let r = seed;
   const rand = () => ((r = (r * 1103515245 + 12345) >>> 0) / 4294967296);
   const run: Run = { seed, status: 'timeout', day: 0, peak: 0, lost: 0, deaths: 0, offered: null, picks: [], dones: [], research: [], owned: 0, builtShare: 0, story: {}, gold: {}, caravanGoods: 0, caravanBps: 0, pop: {}, strain: {}, mood: {}, comfort: {}, gaps: {}, fin: [] };

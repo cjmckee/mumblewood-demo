@@ -118,6 +118,8 @@ export interface Building {
   productionLimits?: Partial<Record<ResourceId, number>>;
   /** buildings built in stages (the Crown's Hall): which stage is under way */
   stage?: number;
+  /** finales: how many colonists the bill is for (a magnificent meal and a quality drink each), kept up to date while it's unbuilt */
+  headcount?: number;
   /** quarter-turns from the blueprint's facing: 0 doorway towards +y, 1 towards +x, 2 towards -y, 3 towards -x. Missing means 0 */
   rot?: number;
 }
@@ -1042,7 +1044,16 @@ export function remainingCost(b: Building): Partial<Record<InputKey, number>> {
 }
 export function siteWork(b: Building) { const st = bdef(b).stages; return st ? st[b.stage ?? 0].work : bdef(b).walkable ? 3 : buildWork(bdef(b)); }
 /** what this site needs delivered: its cost, or the current stage's for a building built in stages */
-export function costOf(b: Building): Partial<Record<InputKey, number>> { const st = bdef(b).stages; return st ? st[Math.min(st.length - 1, b.stage ?? 0)].cost : bdef(b).cost; }
+export function costOf(b: Building): Partial<Record<InputKey, number>> {
+  const st = bdef(b).stages;
+  const cost = st ? st[Math.min(st.length - 1, b.stage ?? 0)].cost : bdef(b).cost;
+  // a finale's meals and drinks follow the colony: one each for every colonist, never fewer than the finale asks for
+  if (b.headcount == null || (cost.feastMeal == null && cost.feastDrink == null)) return cost;
+  const n = Math.max(FINALE_COLONISTS, b.headcount);
+  return { ...cost, ...(cost.feastMeal != null ? { feastMeal: n } : {}), ...(cost.feastDrink != null ? { feastDrink: n } : {}) };
+}
+/** how many colonists a finale is feeding: everyone, and at least the number it asks for */
+export const finaleHeadcount = (w: World) => Math.max(FINALE_COLONISTS, alive(w).length);
 export const sites = (w: World) => w.buildings.filter(b => !b.built);
 
 export function apply(w: World, cmd: Command): string | null {
@@ -2662,6 +2673,7 @@ function hourly(w: World) {
   (w.flowLog ??= []).push({ ...w.flows }); if (w.flowLog.length > 24) w.flowLog.shift();
   caravanHour(w);
   storyHour(w);
+  for (const b of w.buildings) if (!b.built && (b.def === 'hall' || b.def === 'pavilion')) b.headcount = finaleHeadcount(w);
   const h = Math.round(hourOfDay(w)) % 24;
   const pop = alive(w).length;
   const d = day(w) - 1 + (hourOfDay(w) - 6) / 24;
@@ -2808,8 +2820,14 @@ function dawn(w: World) {
   }
 }
 
+/** the colony this stage is sized for (START.popTargets by charter tier) */
+export const popTarget = (w: World) => START.popTargets[Math.min(START.popTargets.length, Math.max(1, w.charterTier)) - 1] + (hasPerk(w, 'openRoad') ? OPEN_ROAD_EXTRA : 0);
+/** the Open road boon: offers every day, and each stage's colony is this many bigger */
+export const OPEN_ROAD_EXTRA = 2;
 /** Open road retains its daily invitations; the taper is deliberately a soft limit. */
 export function recruitInterval(w: World): number {
+  // the stage's colony is here: no more offers until the next charter tier
+  if (alive(w).length >= popTarget(w)) return 0;
   if (hasPerk(w, 'openRoad')) return 1;
   const base = START.seasons.recruitEvery[seasonOf(w).season], taper = START.seasons.recruitTaper;
   if (!taper) return base;
@@ -3010,7 +3028,8 @@ export function feastUnservedDrinks(w: World): Colonist[] {
   for (const r of FEAST_DRINKS) pool[r] = (pav?.delivered[r] ?? 0) + w.res[r];
   return alive(w).filter(c => !c.sulking && !bedridden(c)).filter(c => !serving(pool, c, FEAST_DRINKS, true));
 }
-const feastTarget = (w: World) => (charterDef(w.charter)?.metric as { pop?: number } | undefined)?.pop ?? FINALE_COLONISTS;
+/** the founders' feast seats everyone who can walk to it, and at least the number the charter asks for: a sulker staying away sinks it */
+const feastTarget = (w: World) => Math.max((charterDef(w.charter)?.metric as { pop?: number } | undefined)?.pop ?? FINALE_COLONISTS, alive(w).filter(c => !bedridden(c)).length);
 /** a dry run of the founders' feast: who would come, and who would get a magnificent meal and a quality drink they don't dislike from the larder */
 export function feastCheck(w: World) {
   const people = alive(w).filter(c => !bedridden(c));

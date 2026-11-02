@@ -232,9 +232,9 @@ export interface BuildingDef {
 }
 
 /**
- * The colony a finale is sized for. Both finales ask for this many colonists, and their bill follows it: a magnificent
- * meal and a quality drink for each (the Hall's masons, the Long Table's guests). Around 12 keeps individual needs
- * manageable.
+ * The colony a finale is sized for. Both finales ask for at least this many colonists, and their bill follows the
+ * colony: a magnificent meal and a quality drink for every colonist, never fewer than this. Each newcomer adds to it,
+ * so taking one on is a trade. Around 12 keeps individual needs manageable.
  */
 export const FINALE_COLONISTS = 12;
 export const BUILDINGS: BuildingDef[] = [
@@ -348,7 +348,7 @@ export const PERKS: PerkDef[] = [
   { id: 'pilgrimsRoad', name: 'Pilgrims’ road', desc: 'The caravan comes in winter too.' },
   { id: 'rootCellars', name: 'Root cellars', desc: 'Nothing spoils in winter.' },
   { id: 'merchantsFavour', name: 'Merchant’s favour', desc: 'The caravan sells for 20% less and pays 20% more.' },
-  { id: 'openRoad', name: 'Open road', desc: 'Settlers ask to join every day, all year.', cost: 'Strain grows 10% faster.' },
+  { id: 'openRoad', name: 'Open road', desc: 'Settlers ask to join every day, all year, and each stage has room for 2 more.', cost: 'Strain grows 10% faster.' },
   { id: 'feastDays', name: 'Feast days', desc: 'Festivals ease 50% more strain.' },
   // guilds: a big boost to one chain, worth it only if the colony runs on that chain
   { id: 'brewersGuild', name: 'Brewers\u2019 guild', desc: 'Breweries and cider presses work 75% faster.' },
@@ -604,6 +604,6 @@ export const CHARTERS: CharterDef[] = [
   { id: 'menu', tier: 2, name: 'A varied table', desc: '10 colonists, 60 renown at table from 3 kinds of meal, and a 24-hour average mood of 55+. Each simple meal eaten earns 1 renown, refined 2, quality 3, magnificent 5.', metric: { kind: 'all', parts: [pop(10), { kind: 'renown', category: 'meal', kinds: 3, amount: 60 }, mood(55)] }, helpers: ['smokehouse', 'pieoven', 'bakery'] },
   { id: 'tasting', tier: 2, name: 'Something for everyone', desc: '10 colonists, 40 renown from 3 kinds of drink, and a 24-hour average mood of 55+. Each simple drink earns 1 renown, refined 2, quality 3.', metric: { kind: 'all', parts: [pop(10), { kind: 'renown', category: 'drink', kinds: 3, amount: 40 }, mood(55)] }, helpers: ['ciderpress', 'stillhouse', 'brewery', 'apothecary'] },
   // tier 3: the finale; only a happy town can finish it, and it needs magnificent fare
-  { id: 'hall', tier: 3, name: 'The Crown’s Hall', desc: `Build the Crown’s Hall with ${FINALE_COLONISTS} or more colonists. Three stages: 30 planks, bricks or wicker, ${FINALE_COLONISTS} magnificent meals for the masons, then ${FINALE_COLONISTS} quality drinks for the topping-out. Only colonists at mood 55+ will work on it.`, metric: { kind: 'all', parts: [pop(FINALE_COLONISTS), { kind: 'monument', def: 'hall' }] }, helpers: ['sawmill', 'pieoven', 'smokehouse', 'stillhouse', 'apothecary'] },
-  { id: 'longtable', tier: 3, name: 'The Long Table', desc: `The Crown sends a feast pavilion. Raise it with 30 planks, bricks or wicker, stock its larder with ${FINALE_COLONISTS} magnificent meals and ${FINALE_COLONISTS} quality drinks, then call the founders’ feast: ${FINALE_COLONISTS} or more colonists sit down at dusk, each served a meal and a drink they don’t dislike. Sulkers won’t come.`, metric: { kind: 'longTable', pop: FINALE_COLONISTS }, helpers: ['pieoven', 'smokehouse', 'stillhouse', 'apothecary', 'sawmill'] },
+  { id: 'hall', tier: 3, name: 'The Crown’s Hall', desc: `Build the Crown’s Hall with ${FINALE_COLONISTS} or more colonists. Three stages: 30 planks, bricks or wicker; a magnificent meal for every colonist (${FINALE_COLONISTS} at least) to feed the masons; then a quality drink each for the topping-out. Only colonists at mood 55+ will work on it.`, metric: { kind: 'all', parts: [pop(FINALE_COLONISTS), { kind: 'monument', def: 'hall' }] }, helpers: ['sawmill', 'pieoven', 'smokehouse', 'stillhouse', 'apothecary'] },
+  { id: 'longtable', tier: 3, name: 'The Long Table', desc: `The Crown sends a feast pavilion. Raise it with 30 planks, bricks or wicker, stock its larder with a magnificent meal and a quality drink for every colonist (${FINALE_COLONISTS} at least), then call the founders’ feast: everyone sits down at dusk, each served a meal and a drink they don’t dislike. A sulker won’t come, and the feast falls short.`, metric: { kind: 'longTable', pop: FINALE_COLONISTS }, helpers: ['pieoven', 'smokehouse', 'stillhouse', 'apothecary', 'sawmill'] },
 ];
