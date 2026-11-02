@@ -1,9 +1,12 @@
+// One bot run, logged every few days: size, mood, strain, the charter's parts, trades and where they work, the
+// staffing plan, the finale's site and routes, stock, sites, blocked workshops and the log's big moments.
+// Usage: npx tsx tools/run-log.ts <seed> [everyDays=2]
 import { createWorld, tick, day, alive, avgMood, TICKS_PER_HOUR, built, workersAt, charterRequirements, blockedReason, strainPerDay, remainingCost, feastCheck, colonyComfort } from '../src/sim/world';
 import { autoDecide, autoBuild, finaleRoutes, charterChain, staffPlan } from '../src/sim/autoplayer';
 const seed = Number(process.argv[2]), every = Number(process.argv[3] ?? 2);
 const w = createWorld(seed); let r = seed; const rand = () => ((r = (r * 1103515245 + 12345) >>> 0) / 4294967296);
 const KEY = ['wood','planks','bricks','wicker','berries','fish','mushrooms','grain','acorns','apples','honey','herbs','flour','mash','must','stew','bread','smokedFish','skewers','pie','hotpot','fishpie','banquet','platter','supper','ale','cider','mead','mulled','spirits','cordial','hippocras'];
-let lastLog = 0;
+let lastDay = 0;
 while (w.status === 'playing' && day(w) <= 90) {
   autoDecide(w, 'greedy', rand);
   for (let t = 0; t < TICKS_PER_HOUR; t++) { tick(w); if (w.decisions.length) autoDecide(w, 'greedy', rand); }
@@ -23,7 +26,7 @@ while (w.status === 'playing' && day(w) <= 90) {
     console.log(`  stock ${stock}`);
     console.log(`  sites ${w.buildings.filter(b => !b.built).map(b => b.def).join(',')} · forbidden ${w.forbidden.join(',')}`);
     if (blocked.length) console.log(`  blocked ${blocked.join(' | ')}`);
-    const newLog = w.log.slice(lastLog).filter(l => /lueprint|charter|Charter|drafted|research|study|left|died|leaves|feast|Crown|arriv|joins|joined/i.test(l.text)).map(l => l.text); lastLog = w.log.length;
+    const newLog = w.log.filter(l => l.day > lastDay).filter(l => /lueprint|charter|Charter|drafted|research|study|left|died|leaves|feast|Crown|arriv|joins|joined/i.test(l.text)).map(l => l.text); lastDay = day(w);
     if (newLog.length) console.log(`  log: ${newLog.slice(-10).join(' | ')}`);
   }
 }

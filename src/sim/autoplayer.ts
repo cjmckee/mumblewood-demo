@@ -2,7 +2,7 @@
 // It reads the active charter and plays towards it, the way a person would.
 import { BUILDING_BY_ID, BUILDINGS, CATEGORIES, CharterMetric, RESEARCH_BY_ID, EVENTS, ResourceId, MEALS, RAW_FOODS, RESOURCES, Recipe, InputKey, membersOf, recipeRate, LORE_BOOST, GUILD_BOOST, RENOWN, TIER, TIER_STAGE, SLOTS, FINALE_COLONISTS, JobKind, JOB_KINDS } from './content';
 import { assess, Concern, defsOf, KIND_DEFS } from './advisor';
-import { World, feastUnservedDrinks, orderedRecipes, costOf, tallyOf, renownOf, FEAST_MEALS, FEAST_DRINKS, workshopInputPlan, apply, alive, beds, mealTotal, sites, findSpot, CENTER, avgMood, built, MAP_SIZE, pathAt, terrainAt, T_WATER, bdef, workersAt, blockedReason, opinion, Building, Colonist, hourOfDay, charterProgress, buildingByUid, storageFree, storages, FOODS, GOODS, bedridden, foodTotal, currentRecipe, drinkTotal, siteOk, enabledRecipes, recipesOf, rerollCost, stockOf, usableHere, charterDef, charterHelpers, feastCheck, desks, researchLeft, festivalPreview, edibleTotal, doorTile, centerOf, winterStores, storageCap, stored, lastDay, lastDayHours, remainingCost, seasonYield, recipeOn, spotOf, canPlace, coversPath, efficiencyAt, footprint, BUILD_MIN, BUILD_MAX, blockedGrid, storePrio, workHours, tradeOf, workPrio } from './world';
+import { World, feastUnservedDrinks, feastUnservedMeals, orderedRecipes, costOf, tallyOf, renownOf, FEAST_MEALS, FEAST_DRINKS, workshopInputPlan, apply, alive, beds, mealTotal, sites, findSpot, CENTER, avgMood, built, MAP_SIZE, pathAt, terrainAt, T_WATER, bdef, workersAt, blockedReason, opinion, Building, Colonist, hourOfDay, charterProgress, buildingByUid, storageFree, storages, FOODS, GOODS, bedridden, foodTotal, currentRecipe, drinkTotal, siteOk, enabledRecipes, recipesOf, rerollCost, stockOf, usableHere, charterDef, charterHelpers, feastCheck, desks, researchLeft, festivalPreview, edibleTotal, doorTile, centerOf, winterStores, storageCap, stored, lastDay, lastDayHours, remainingCost, seasonYield, recipeOn, spotOf, canPlace, coversPath, efficiencyAt, footprint, BUILD_MIN, BUILD_MAX, blockedGrid, storePrio, workHours, tradeOf, workPrio } from './world';
 import { seasonOf } from './seasons';
 import { draftLinks } from './charterplan';
 
@@ -145,8 +145,24 @@ export function roughPlankMaker(w: World): number | undefined {
   const threshold = Math.max(active ? BOT.roughWoodStop : BOT.roughWoodStart, BOT.roughKeepWinterReserve ? winterStores(w).wood : 0);
   return w.res.wood >= threshold ? (active ?? huts[0])?.uid : undefined;
 }
+/**
+ * planks, bricks and wicker: a stock target on each maker, so crafters stop at enough for what's being built plus a
+ * margin (a colony once stacked 195 planks). None while a charter counts them made.
+ */
+function fineTargets(w: World) {
+  // still counting: a charter's tally of planks made that isn't reached yet (it plans as a stock above what's stored)
+  const counting = partsOf(w).some(p => p.kind === 'stock' && p.resources.some(r => CATEGORIES.fine.members.includes(r)) && p.amount > p.resources.reduce((n, r) => n + w.res[r], 0));
+  const owed = sites(w).reduce((n, b) => n + (remainingCost(b).fine ?? 0) + CATEGORIES.fine.members.reduce((m, r) => m + (remainingCost(b)[r] ?? 0), 0), 0);
+  const target = counting ? null : Math.max(BOT.fineCap, Math.ceil(owed) + 20);
+  for (const b of built(w)) for (const r of recipesOf(b)) {
+    if (!CATEGORIES.fine.members.includes(r.output)) continue;
+    const cur = b.productionLimits?.[r.output] ?? null;
+    if (cur !== target) apply(w, { type: 'productionLimit', building: b.uid, output: r.output, limit: target });
+  }
+}
 function manageRecipes(w: World) {
   const pop = alive(w).length;
+  if (BOT.fineCap > 0) fineTargets(w);
   const rough = roughPlankMaker(w);
   const wanted = new Set<ResourceId>();
   // a finale's categories are worked along one chosen route each: its steps' goods, in its own workshops
@@ -222,6 +238,8 @@ function manageRecipes(w: World) {
     const feeds = new Set(recs.flatMap((r, i) => aimed0[i] ? Object.keys(r.inputs).flatMap(k => membersOf(k as InputKey)) : []));
     const aimed = recs.map((r, i) => aimed0[i] || (can[i] && feeds.has(r.output) && w.res[r.output] < 8));
     let on = aimed.some(Boolean) ? aimed : recs.map((r, i) => !plenty(r.output) || !can[i]);
+    // nothing aimed here: an ingredient nothing built uses (mash with no brewery or still) isn't made at all
+    if (BOT.skipUnused && !aimed.some(Boolean)) { const used = on.map((x, i) => x && usedFor(w, recs[i].output)); if (used.some((x, i) => x && can[i])) on = used; }
     if (!on.some((x, i) => x && can[i])) on = recs.map(() => true);
     // the staple stays on while meals are short: a kitchen aimed at hotpot still makes stew when people are hungry
     if (BOT.dailyQuality && mealTotal(w) < pop * 2) on = on.map((x, i) => x || (recs[i].output === 'stew' && can[i]));
@@ -239,7 +257,8 @@ function manageRecipes(w: World) {
     const staple = recs.findIndex(r => r.output === 'stew');
     if (!mine.length && BOT.billOrder && staple >= 0 && on[staple]) {
       const aimedHere = recs.map((_, i) => i).filter(i => i !== staple && on[i] && aimed[i] && can[i]);
-      if (aimedHere.length) mine = mealTotal(w) >= pop ? aimedHere : [staple];
+      // raw food counts: people can eat berries for a day while the oven gets its bread (BOT.rawCounts)
+      if (aimedHere.length) mine = (BOT.rawCounts ? edibleTotal(w) >= pop * 2 && mealTotal(w) >= pop * 0.3 : mealTotal(w) >= pop) ? aimedHere : [staple];
     }
     if (mine.length) {
       const want = [...mine, ...orderedRecipes(b).map(x => x.i).filter(i => !mine.includes(i))];
@@ -249,6 +268,11 @@ function manageRecipes(w: World) {
       }
     }
   }
+}
+/** is a good of use to anyone: eaten, drunk, built with, used by the clinic, worn, or taken by a recipe somewhere built? */
+function usedFor(w: World, r: ResourceId) {
+  if (MEALS.includes(r) || RAW_FOODS.includes(r) || (['drink', 'fine', 'remedy'] as const).some(k => CATEGORIES[k].members.includes(r)) || r === 'wood' || r === 'coats') return true;
+  return built(w).some(b => recipesOf(b).some(x => Object.keys(x.take).some(k => membersOf(k as InputKey).includes(r))));
 }
 /** the parts of the current charter (an all-at-once charter has several) */
 const partsOf = (w: World): CharterMetric[] => { const m = charterDef(w.charter)?.metric; return (!m ? [] : m.kind === 'all' ? m.parts : [m]).map(p => planPart(w, p)); };
@@ -512,7 +536,9 @@ export function finaleOwed(w: World): Partial<Record<InputKey, number>> {
   if (!site) return out;
   const b = w.buildings.find(x => x.def === site);
   // a stocked pavilion still owes a drink for each guest nothing in it (or in storage) suits
-  if (b?.built) { if (site === 'pavilion' && !w.feast?.done) { const un = feastUnservedDrinks(w); if (un.length) out.feastDrink = un.length; } return out; }
+  // a stocked pavilion still owes a meal and a drink for each guest nothing in it (or in storage) suits, such as
+  // someone who arrived after it was stocked
+  if (b?.built) { if (site === 'pavilion' && !w.feast?.done) { const un = feastUnservedDrinks(w), um = feastUnservedMeals(w); if (un.length) out.feastDrink = un.length; if (um.length) out.feastMeal = um.length; } return out; }
   const stages = BUILDING_BY_ID[site].stages ?? [];
   const from = b?.stage ?? 0;
   stages.forEach((st, i) => {
@@ -656,7 +682,7 @@ export function charterChain(w: World): string[] {
  * Experiment switches for the balance tools. `advisor` makes the bot play from what's on screen (the complaint
  * panel) instead of its own rules; it's off by default because, so far, it plays worse (see the project doc).
  */
-export const BOT = { dailyQuality: true, supperRules: true, urgentClinic: true, clinicWoodBuffer: 10, seasonalStaffing: true, feasibleVariety: true, summerBank: false, summerService: false, fineInputs: true, plannedRoughDemand: true, chainGatherers: false, roughPlanks: true, roughPlankBudget: 12, roughWoodStart: 35, roughWoodStop: 20, roughKeepWinterReserve: false, clothingReserve: false, clothingDeadline: false, clothingBatch: false, researchFeasible: false, populationTargets: false, randomize: [] as string[], trade: true, shopsByStore: false, layout: true, hutPull: 0.3, recipes: true, rateStaffing: false, unlockChain: true, ruleGap: true, hallMood: true, varietyRules: true, bankDrinks: true, bankHall: false, chainBeforeWinter: true, effortPick: true, moodFestival: true, festival: true, festivalAt: 8, comfortsFirst: false, recruitCap: 99, recruitExtra: 4, comforts: true, foodDepot: 'food' as false | 'food' | 'meals', laborersPer: 5, advisor: false, gate: true, ranked: true, comfort: 'strict' as 'strict' | 'econ' | 'none', rescue: false, rescueAt: 40, moodBlock: false, reroll: true, variety: false, routes: false, finaleRoutes: true, routeOnlyReserve: true, finaleFare: true, push: 'rule' as 'rule' | 'never' | 'always', pushDays: 3, billOrder: true, downstreamFirst: true, chainReserve: true, off: [] as string[], skip: [] as string[] };
+export const BOT = { dailyQuality: true, supperRules: true, urgentClinic: true, clinicWoodBuffer: 10, seasonalStaffing: true, feasibleVariety: true, summerBank: false, summerService: false, fineInputs: true, plannedRoughDemand: true, chainGatherers: false, roughPlanks: true, roughPlankBudget: 12, roughWoodStart: 35, roughWoodStop: 20, roughKeepWinterReserve: false, clothingReserve: false, clothingDeadline: false, clothingBatch: false, researchFeasible: false, populationTargets: false, randomize: [] as string[], trade: true, shopsByStore: false, layout: true, hutPull: 0.3, recipes: true, rateStaffing: false, unlockChain: true, ruleGap: true, hallMood: true, varietyRules: true, bankDrinks: true, bankHall: false, chainBeforeWinter: true, effortPick: true, moodFestival: true, festival: true, festivalAt: 8, comfortsFirst: false, recruitCap: 99, recruitExtra: 4, comforts: true, foodDepot: 'food' as false | 'food' | 'meals', laborersPer: 5, advisor: false, gate: true, ranked: true, comfort: 'strict' as 'strict' | 'econ' | 'none', rescue: false, rescueAt: 40, moodBlock: false, reroll: true, variety: false, routes: false, finaleRoutes: true, routeOnlyReserve: true, finaleFare: true, push: 'rule' as 'rule' | 'never' | 'always', pushDays: 3, billOrder: true, downstreamFirst: true, chainReserve: true, chainFirst: true, rawCounts: true, skipUnused: true, fineCap: 40, routeGatherers: true, off: [] as string[], skip: [] as string[] };
 
 // ---------- Explaining the bot ----------
 /** one thing the bot decided and why: each option with its score broken into parts, or a staffing or build step */
@@ -1286,9 +1312,12 @@ export function staffPlan(w: World, explain = false): Map<number, number> {
     if(w.res.wood<10)give('woodcutter',1);
     stage='urgent care';give('clinic',1);stage='essentials';
   }
-  // a small colony studies before it chops, while the woodpile lasts
-  if (w.res.wood >= 30) give('desk', 1);
-  give('woodcutter', 1); give('desk', 1); give('kitchen', 1);
+  // a small colony studies before it chops, while the woodpile lasts. With a charter under way (BOT.chainFirst), its
+  // chain's first hands come before the scholar: a sawmill for First planks matters more than the next book
+  const chainFirst = BOT.chainFirst && chain.length > 0;
+  if (!chainFirst && w.res.wood >= 30) give('desk', 1);
+  give('woodcutter', 1); if (!chainFirst) give('desk', 1); give('kitchen', 1);
+  if (chainFirst) { stage = 'charter chain first'; for (const k of chain) give(k, 1); stage = 'essentials'; give('desk', 1); }
   if (BOT.summerService && seasonOf(w).season === 'summer' && !famine && drinkTotal(w) >= 0.3) {
     stage='summer tavern service';give('tavern',1);
   }
@@ -1367,6 +1396,11 @@ export function staffPlan(w: World, explain = false): Map<number, number> {
     // In famine the existing highest-yield allocation takes precedence.
     if (BOT.chainGatherers && kind === 'rawFood' && !famine)
       for (const b of bs.filter(b => charterChain(w).includes(b.def))) put(b, 1);
+    // a finale route's own gatherer (the dock its fish pie starts from) keeps a hand even when foragers out-yield it
+    if (BOT.routeGatherers && group(kind) && !famine) {
+      const steps = new Set(finaleRoutes(w).flatMap(r => r.steps.map(x => x.def)));
+      for (const b of bs.filter(b => steps.has(b.def))) put(b, 1);
+    }
     for (const b of bs) put(b, bdef(b).slots);
   }
   for (const b of built(w)) if (bdef(b).slots && !plan.has(b.uid)) plan.set(b.uid, 0);
@@ -1537,13 +1571,15 @@ export function autoFoodRules(w: World) {
   // so it reaches the ovens and the site, while there's other food enough (the starvation guard below still releases it)
   const site = w.buildings.find(b => (b.def === 'hall' || b.def === 'pavilion') && !b.built && 'feastMeal' in costOf(b));
   const feast = (w.charter === 'longtable' || w.charter === 'hall') && !!site && (remainingCost(site).feastMeal ?? 0) > stockOf(w, 'feastMeal');
+  // or a stocked pavilion still short of a meal for someone: the meals for it are kept too
+  const toppingUp = w.charter === 'longtable' && !!w.buildings.find(b => b.def === 'pavilion' && b.built) && !w.feast?.done && feastUnservedMeals(w).length > 0;
   const onRoutes = BOT.finaleRoutes && finaleRoutes(w).length > 0;
   // with a route, only its goods are kept (the reserve is path-specific); without one, the old blanket list
-  if (BOT.supperRules && feast && rawFor(2, 1.2)) keep.push(...(BOT.routeOnlyReserve && onRoutes ? SLOTS.feastMeal.members : ['bread', 'skewers', 'hotpot', 'fishpie', ...SLOTS.cured.members, ...SLOTS.feastMeal.members] as ResourceId[]));
+  if (BOT.supperRules && (feast || toppingUp) && rawFor(2, 1.2)) keep.push(...(BOT.routeOnlyReserve && onRoutes ? SLOTS.feastMeal.members : ['bread', 'skewers', 'hotpot', 'fishpie', ...SLOTS.cured.members, ...SLOTS.feastMeal.members] as ResourceId[]));
   // the meals on a finale route are its ingredients, not supper
   // (and what each step takes: the mulled cups for hippocras, even when the stores already hold enough)
   const routeGoods = BOT.finaleRoutes ? finaleRoutes(w).flatMap(r => [r.good, ...r.steps.flatMap(x => [x.output, ...stepInputsOf(x)])]) : [];
-  if (feast && rawFor(2, 1.2)) keep.push(...routeGoods.filter(r => MEALS.includes(r)));
+  if ((feast || toppingUp) && rawFor(2, 1.2)) keep.push(...routeGoods.filter(r => MEALS.includes(r)));
   // never let anyone starve for a charter: while what's left to eat is under 1.5 each, release the kept food with the
   // most in store (so a big pile of stew goes back on the menu before the pies anyone is saving)
   const open = () => [...MEALS, ...RAW_FOODS].filter(f => !keep.includes(f)).reduce((n, f) => n + w.res[f], 0);

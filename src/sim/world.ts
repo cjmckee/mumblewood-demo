@@ -3207,6 +3207,13 @@ export function feastUnservedDrinks(w: World): Colonist[] {
   for (const r of FEAST_DRINKS) pool[r] = (pav?.delivered[r] ?? 0) + w.res[r];
   return alive(w).filter(c => !c.sulking && !bedridden(c)).filter(c => !serving(pool, c, FEAST_DRINKS, true));
 }
+/** guests the larder, topped up from storage, still couldn't give a magnificent meal: someone who arrived after it was stocked */
+export function feastUnservedMeals(w: World): Colonist[] {
+  const pav = pavilionOf(w);
+  const pool: Partial<Record<ResourceId, number>> = {};
+  for (const r of FEAST_MEALS) pool[r] = (pav?.delivered[r] ?? 0) + w.res[r];
+  return alive(w).filter(c => !c.sulking && !bedridden(c)).filter(c => !serving(pool, c, FEAST_MEALS, true));
+}
 /** the founders' feast seats everyone who can walk to it, and at least the number the charter asks for: a sulker staying away sinks it */
 const feastTarget = (w: World) => Math.max((charterDef(w.charter)?.metric as { pop?: number } | undefined)?.pop ?? FINALE_COLONISTS, alive(w).filter(c => !bedridden(c)).length);
 /** a dry run of the founders' feast: who would come, and who would get a magnificent meal and a quality drink they don't dislike from the larder */
