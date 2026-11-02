@@ -2,7 +2,7 @@
 import {
   CLOTHING, BUILDING_BY_ID, BuildingDef, CHARTERS, CharterDef, EVENTS, FIRST_NAMES, JOB_NAMES, JobKind, JOB_KINDS,
   MEALS, PERKS, RAW_FOODS, ResourceId, SHIRTS, SKINS, SURNAMES, TRAITS, TRAIT_BY_ID, BUILDINGS, buildWork,
-  JOB_EVENTS, JobEventDef, ILLNESSES, RESOURCES, Recipe, InputKey, CATEGORIES, isGroup, membersOf, inputName, recipeRate, SITES, SiteId, MEAL_MOOD, DRINK_MOOD, TIER, TIER_RANK, GoodTier, tradeable, TallyHow, RENOWN, RENOWN_KIND_MIN, atLeast,
+  JOB_EVENTS, JobEventDef, ILLNESSES, RESOURCES, Recipe, InputKey, CATEGORIES, isGroup, membersOf, inputName, recipeRate, batchHours, SITES, SiteId, MEAL_MOOD, DRINK_MOOD, TIER, TIER_RANK, GoodTier, tradeable, TallyHow, RENOWN, RENOWN_KIND_MIN, atLeast,
   CharterMetric, RESEARCH, RESEARCH_BY_ID, BRANCHES_AFTER, PRICE, TRADERS, TRADER_BY_ID, LORE_BOOST, GUILD_BOOST, Tier, EventDef,
   FINALE_COLONISTS,
 } from './content';
@@ -56,7 +56,13 @@ export interface Colonist {
   path: { x: number; y: number }[]; goalKey: string; goalReached: boolean;
   hunger: number; fun: number; mood: number; moodTarget: number;
   sulking: boolean; lowMoodHours: number; left: boolean;
+  /** where they're working right now: a building of their trade, picked hourly (see tradeHour). Null: laboring */
   job: number | null; bed: number | null; partner: number | null;
+  /**
+   * their trade: the kind of work they do (cooking, crafting...). They work whichever building of it has work, highest
+   * priority first, and labor (haul, build) when none does. Null: a laborer. Missing in older saves: read from job.
+   */
+  trade?: JobKind | null;
   task: Task | null; carrying: Carry | null;
   /** eating: fetch food from storage `from`, then eat at `at`; until = 0 while walking */
   meal: { at: number | null; until: number; from: number | null; got: ResourceId | null } | null;
@@ -107,7 +113,8 @@ export interface Building {
   /** storage buildings: which goods it takes; null means everything */
   allow: ResourceId[] | null;
   /** storage buildings: high-priority storage fills first and is topped up from low */
-  /** storage priority: 2 high, 1 medium (the default), 0 low; `high` is kept for older saves and tools */
+  /** storage priority: 2 high, 1 medium (the default), 0 low; `high` is kept for older saves and tools. Workshops use
+   *  the same levels: their trade's workers go to higher ones first */
   prio?: 0 | 1 | 2;
   high: boolean;
   /** workshops: indices of recipes the player has switched off */
@@ -116,8 +123,12 @@ export interface Building {
   skip?: string[];
   recipeOrder?: number[];
   productionLimits?: Partial<Record<ResourceId, number>>;
+  /** a workshop's batch under way: its ingredients are already used, and it makes `make` whole units once `done` reaches `make` */
+  batch?: { output: ResourceId; make: number; done: number; rate: number; indoor: boolean };
   /** buildings built in stages (the Crown's Hall): which stage is under way */
   stage?: number;
+  /** finales: how many colonists the bill is for (a magnificent meal and a quality drink each), kept up to date while it's unbuilt */
+  headcount?: number;
   /** quarter-turns from the blueprint's facing: 0 doorway towards +y, 1 towards +x, 2 towards -y, 3 towards -x. Missing means 0 */
   rot?: number;
 }
@@ -176,6 +187,10 @@ export interface World {
   lastLoss?: number;
   charterTier: number; charter: string | null; charterHours: number; chartersDone: string[];
   decisions: Decision[]; log: LogEntry[];
+  /** goods opened for use a little at a time (a cask at the tavern, a remedy at the clinic, a log on the fire): what's left of each. Storage only ever holds whole goods */
+  open?: Partial<Record<ResourceId, number>>;
+  /** food going off a little each hour, out of storage that doesn't keep it fresh: a whole one is thrown out at 1 */
+  rot?: Partial<Record<ResourceId, number>>;
   opinions: Record<string, number>;
   status: 'playing' | 'won' | 'lost';
   strain: number; nextEventHour: number;
@@ -238,7 +253,9 @@ export const woodReserve = (_w: World) => START.woodReserve;
 export const CARRY = 15;
 /** recruits come this many days apart (blueprint drafts follow START.draftEvery) */
 export const DRAFT_EVERY = 2;
+/** a workshop's shelf for what it makes: work stops when it's full, and haulers come once HAUL_AT is ready */
 export const OUTBOX_CAP = 15;
+export const HAUL_AT = 4;
 export const PATH_SPEED = 1.25;
 export const INBOX_TARGET = 12; // Legacy comparison mode only.
 export const INPUT_CAPACITY = 24;
@@ -323,20 +340,39 @@ export function stockOf(w: World, key: InputKey) { return membersOf(key).reduce(
 /** total drinks in storage (ale, and later cider, mead…) */
 export function drinkTotal(w: World) { return CATEGORIES.drink.members.reduce((n, r) => n + w.res[r], 0); }
 /** drinks the tavern, bards and weddings may pour: storage less the ones reserved by the drink rules */
-export function drinkableTotal(w: World) { return CATEGORIES.drink.members.filter(r => !w.forbidden.includes(r)).reduce((n, r) => n + w.res[r], 0); }
+export function drinkableTotal(w: World) { return CATEGORIES.drink.members.filter(r => !w.forbidden.includes(r)).reduce((n, r) => n + onHand(w, r), 0); }
 /** take drinks out of storage, the most plentiful first; returns what was taken */
 function takeDrink(w: World, n: number, why: string, c?: Colonist): ResourceId | null {
   let left = n, main: ResourceId | null = null;
   // a drinker reaches for the one they love and leaves the one they dislike; otherwise the highest tier, then the most plentiful
-  // reserved drinks (the drink rules) aren't served
-  const order = CATEGORIES.drink.members.filter(r => !w.forbidden.includes(r)).sort((p, q) => (c ? taste(c, q) - taste(c, p) : 0) || TIER_RANK[TIER[q] ?? 'processed'] - TIER_RANK[TIER[p] ?? 'processed'] || w.res[q] - w.res[p]);
+  // reserved drinks (the drink rules) aren't served. A serving comes from an opened cask; whole ones leave storage.
+  const order = CATEGORIES.drink.members.filter(r => !w.forbidden.includes(r)).sort((p, q) => (c ? taste(c, q) - taste(c, p) : 0) || TIER_RANK[TIER[q] ?? 'processed'] - TIER_RANK[TIER[p] ?? 'processed'] || onHand(w, q) - onHand(w, p));
   for (const r of order) {
-    const t = Math.min(w.res[r], left); if (t <= 0) continue;
-    w.res[r] -= t; flow(w, `${r}:-${why}`, t); left -= t; main ??= r;
-    if (left <= 0) break;
+    if (onHand(w, r) <= 1e-9) continue;
+    const t = useUp(w, r, left, why); if (t <= 0) continue;
+    left -= t; main ??= r;
+    if (left <= 1e-9) break;
   }
   if (c && main) c.lastDrink = w.hour;
   return main;
+}
+/** what's left of an opened good plus what's whole in storage */
+export const onHand = (w: World, r: ResourceId) => w.res[r] + (w.open?.[r] ?? 0);
+/**
+ * use part of a good: from one already opened, opening whole ones from storage as needed. Storage loses whole goods
+ * only; what's left of an opened one waits for next time. Returns how much was used.
+ */
+export function useUp(w: World, r: ResourceId, n: number, why: string): number {
+  const open = (w.open ??= {});
+  let used = 0;
+  while (n - used > 1e-9) {
+    if ((open[r] ?? 0) <= 1e-9) {
+      if (w.res[r] < 1 - 1e-9) break;
+      w.res[r] -= 1; flow(w, `${r}:-${why}`, 1); open[r] = (open[r] ?? 0) + 1; reconcileStock(w);
+    }
+    const t = Math.min(open[r]!, n - used); open[r]! -= t; used += t;
+  }
+  return used;
 }
 /** mood from the first drink of the evening, by kind */
 export function flow(w: World, key: string, n: number) { if (w.flows) w.flows[key] = (w.flows[key] ?? 0) + n; if (w.tally) tallyFlow(w.tally, key, n); }
@@ -409,6 +445,23 @@ function takeOut(w: World, b: Building | undefined, r: ResourceId, n: number) {
   return amt;
 }
 /**
+ * saves from before whole goods: what's fractional in storage becomes an opened good, and part-goods on workshop
+ * shelves are dropped, so storage only ever holds whole ones
+ */
+export function wholeGoods(w: World) {
+  const open = (w.open ??= {});
+  for (const { id: r } of RESOURCES) {
+    const whole = Math.floor(w.res[r] + 1e-9), part = w.res[r] - whole;
+    if (part > 1e-9) { open[r] = (open[r] ?? 0) + part; w.res[r] = whole; }
+  }
+  for (const b of w.buildings) {
+    for (const k of Object.keys(b.stock) as ResourceId[]) b.stock[k] = Math.floor((b.stock[k] ?? 0) + 1e-9);
+    for (const box of [b.inbox, b.outbox]) for (const k of Object.keys(box) as ResourceId[]) box[k] = Math.floor((box[k] ?? 0) + 1e-9);
+  }
+  for (const c of w.colonists) if (c.carrying) { c.carrying.amount = Math.floor(c.carrying.amount + 1e-9); if (c.carrying.amount <= 0) { c.carrying = null; c.task = null; } }
+  reconcileStock(w);
+}
+/**
  * w.res is the colony's total in storage; each storage building's stock says where it sits.
  * Anything that changed w.res directly (eating, events, rewards) is settled here: losses come out of the
  * fullest piles, gains go to storage nearest the hearth that accepts them.
@@ -437,7 +490,7 @@ export function reconcileStock(w: World) {
 }
 /** settlers lost to leaving or dying; the colony collapses at MAX_DEPARTURES */
 export function lost(w: World) { return w.stats.departures + w.stats.deaths; }
-export function laborers(w: World) { return alive(w).filter(c => c.job == null); }
+export function laborers(w: World) { return alive(w).filter(c => tradeOf(w, c) == null); }
 
 // ---------- Terrain ----------
 const inMap = (x: number, y: number) => x >= 0 && y >= 0 && x < MAP_SIZE && y < MAP_SIZE;
@@ -810,7 +863,7 @@ export function createWorld(seed: number, options: { colonists?: number; startDa
     charterTier: 1, charter: null, charterHours: 0, chartersDone: [],
     decisions: [], log: [], opinions: {}, status: 'playing', strain: 0, nextEventHour: 24 * 1.6, sites: [], rerolls: 0,
     errands: [], nextErrandId: 1, moodLog: [], ateOffTable: false, forbidden: [],
-    nextUid: 1, nextColonistId: 1, autoAssignNew: false,
+    nextUid: 1, nextColonistId: 1, autoAssignNew: false, open: {}, rot: {},
     flows: {}, flowLog: [],
     stats: { peakPop: sc.colonists, couples: 0, breakups: 0, departures: 0, mealsEaten: 0, built: 0, cured: 0, errands: 0, deaths: 0 },
     version: 0, research: { done: [], current: null, progress: 0 },
@@ -930,7 +983,7 @@ function researchHourly(w: World, b: Building, c: Colonist, dt: number) {
   const r = w.research; const cur = r?.current ? RESEARCH_BY_ID[r.current] : undefined;
   if (!r || !cur || Object.keys(researchStillNeeds(w)).length) return;
   r.progress += workSpeed(w, c, 'studying') * dt * rule(START.seasons.indoor, seasonOf(w).season, 1);
-  c.skills.studying = Math.min(10, (c.skills.studying ?? 3) + 0.004 * dt * 6);
+  practice(c, 'studying', dt);
   if (r.progress < cur.hours) return;
   // spend the goods from the desks and unlock the buildings
   for (const [k, n] of Object.entries(cur.cost) as [InputKey, number][]) {
@@ -1006,6 +1059,8 @@ function blueprintDecision(w: World, avoid: string[] = []): Decision {
 // ---------- Commands (the only way the UI changes the world) ----------
 export type Command =
   | { type: 'assign'; colonist: number; building: number | null }
+  | { type: 'trade'; colonist: number; trade: JobKind | null }
+  | { type: 'workPriority'; building: number; prio: 0 | 1 | 2 }
   | { type: 'place'; def: string; x: number; y: number; rot?: number }
   | { type: 'cancel'; building: number }
   | { type: 'path'; x: number; y: number; on: boolean }
@@ -1042,20 +1097,44 @@ export function remainingCost(b: Building): Partial<Record<InputKey, number>> {
 }
 export function siteWork(b: Building) { const st = bdef(b).stages; return st ? st[b.stage ?? 0].work : bdef(b).walkable ? 3 : buildWork(bdef(b)); }
 /** what this site needs delivered: its cost, or the current stage's for a building built in stages */
-export function costOf(b: Building): Partial<Record<InputKey, number>> { const st = bdef(b).stages; return st ? st[Math.min(st.length - 1, b.stage ?? 0)].cost : bdef(b).cost; }
+export function costOf(b: Building): Partial<Record<InputKey, number>> {
+  const st = bdef(b).stages;
+  const cost = st ? st[Math.min(st.length - 1, b.stage ?? 0)].cost : bdef(b).cost;
+  // a finale's meals and drinks follow the colony: one each for every colonist, never fewer than the finale asks for
+  if (b.headcount == null || (cost.feastMeal == null && cost.feastDrink == null)) return cost;
+  const n = Math.max(FINALE_COLONISTS, b.headcount);
+  return { ...cost, ...(cost.feastMeal != null ? { feastMeal: n } : {}), ...(cost.feastDrink != null ? { feastDrink: n } : {}) };
+}
+/** how many colonists a finale is feeding: everyone, and at least the number it asks for */
+export const finaleHeadcount = (w: World) => Math.max(FINALE_COLONISTS, alive(w).length);
 export const sites = (w: World) => w.buildings.filter(b => !b.built);
 
 export function apply(w: World, cmd: Command): string | null {
   switch (cmd.type) {
     case 'assign': {
       const c = colonistById(w, cmd.colonist); if (!c || c.left) return 'No such colonist.';
-      if (cmd.building == null) { c.job = null; return null; }
+      if (cmd.building == null) { c.job = null; c.trade = null; return null; }
       const b = buildingByUid(w, cmd.building); if (!b) return 'No such building.';
       if (!b.built) return `${bdef(b).name} isn’t built yet.`;
       const others = workersAt(w, b.uid).filter(o => o.id !== c.id);
       if (others.length >= bdef(b).slots) return `${bdef(b).name} is full.`;
+      // assigning to a building takes up its trade, starting there
       dropTask(w, c);
-      c.job = b.uid; return null;
+      c.job = b.uid; c.trade = bdef(b).job ?? null; return null;
+    }
+    case 'trade': {
+      const c = colonistById(w, cmd.colonist); if (!c || c.left) return 'No such colonist.';
+      if (cmd.trade != null && !TRADE_DEFS[cmd.trade]?.length) return 'No such trade.';
+      if ((c.trade ?? null) === cmd.trade) return null;
+      dropTask(w, c); c.trade = cmd.trade; c.job = null; pickWork(w, c); w.version++;
+      return null;
+    }
+    case 'workPriority': {
+      const b = buildingByUid(w, cmd.building);
+      if (!b || !bdef(b).slots) return 'Only a building with workers has a work priority.';
+      b.prio = cmd.prio; w.version++;
+      for (const c of alive(w)) if (c.trade === bdef(b).job) pickWork(w, c);
+      return null;
     }
     case 'place': {
       const def = BUILDING_BY_ID[cmd.def];
@@ -1339,7 +1418,7 @@ function finishErrand(w: World, e: Errand, success: boolean) {
     case 'flood': {
       if (success) { addLog(w, `${who} dug a ditch in the nick of time. The water goes round, grumbling.`, 'good'); break; }
       const b = wreckable(w, ['dock', 'smokehouse', 'sawmill']);
-      for (const r of RAW_FOODS) w.res[r] *= 0.8;
+      for (const r of RAW_FOODS) w.res[r] = Math.ceil(w.res[r] * 0.8 - 1e-9);
       reconcileStock(w);
       addLog(w, `The river comes through${b ? ` and wrecks the ${bdef(b).name.toLowerCase()}` : ''}. A fifth of the raw food floats away.`, 'bad');
       if (b) wreck(w, b);
@@ -1356,7 +1435,7 @@ function finishErrand(w: World, e: Errand, success: boolean) {
     case 'storeFire': {
       const st = storages(w).sort((a, b) => Object.values(b.stock).reduce((n, x) => n + (x ?? 0), 0) - Object.values(a.stock).reduce((n, x) => n + (x ?? 0), 0))[0];
       const share = success ? 0.05 : 0.33;
-      if (st) for (const [r, n] of Object.entries(st.stock) as [ResourceId, number][]) { const lost = (n ?? 0) * share; st.stock[r] = (n ?? 0) - lost; w.res[r] -= lost; flow(w, `${r}:-fire`, lost); }
+      if (st) for (const [r, n] of Object.entries(st.stock) as [ResourceId, number][]) { const lost = Math.floor((n ?? 0) * share); st.stock[r] = (n ?? 0) - lost; w.res[r] -= lost; flow(w, `${r}:-fire`, lost); }
       addLog(w, success ? `${who} got a bucket line going. Only a little was lost.` : `Nobody got there in time. A third of what was in the ${st ? bdef(st).name.toLowerCase() : 'stores'} is ash.`, success ? 'good' : 'bad');
       break;
     }
@@ -1382,7 +1461,7 @@ function finishErrand(w: World, e: Errand, success: boolean) {
       break;
     case 'badger':
       if (success) addLog(w, `${who} chased the badger off with a broom and a stern lecture.`, 'good');
-      else { for (const r of [...RAW_FOODS, ...MEALS]) w.res[r] *= 0.75; addLog(w, 'The badger ate a quarter of the food, then left a review.', 'bad'); }
+      else { for (const r of [...RAW_FOODS, ...MEALS]) w.res[r] = Math.ceil(w.res[r] * 0.75 - 1e-9); reconcileStock(w); addLog(w, 'The badger ate a quarter of the food, then left a review.', 'bad'); }
       break;
     case 'cat':
       if (success) { everyone(w, 'cat', 'The cat is safe', 3, 24); addLog(w, `${who} rescued the cat. The cat is unimpressed.`, 'good'); }
@@ -1496,8 +1575,8 @@ function illnessHourly(w: World) {
       const skill = doctor.skills.medicine;
       change -= 0.25 + skill * 0.15;
       // remedies from storage: a tonic speeds recovery most and rules out a botch; a poultice helps and halves the risk
-      const remedy = (['tonic', 'poultice'] as ResourceId[]).find(r => w.res[r] >= REMEDY_DOSE);
-      if (remedy) { w.res[remedy] -= REMEDY_DOSE; flow(w, `${remedy}:-clinic`, REMEDY_DOSE); change -= remedy === 'tonic' ? 0.8 : 0.5; }
+      const remedy = (['tonic', 'poultice'] as ResourceId[]).find(r => onHand(w, r) >= REMEDY_DOSE);
+      if (remedy) { useUp(w, remedy, REMEDY_DOSE, 'clinic'); change -= remedy === 'tonic' ? 0.8 : 0.5; }
       const botchRisk = remedy === 'tonic' ? 0 : remedy === 'poultice' ? 0.5 : 1;
       if (skill < 5 && nextRand(w) < (5 - skill) * 0.015 * botchRisk) {
         change += 4;
@@ -1505,7 +1584,7 @@ function illnessHourly(w: World) {
       }
     }
     ill.severity += change;
-    if (doctor && nextRand(w) < 0.1) doctor.skills.medicine = Math.min(10, doctor.skills.medicine + 0.1);
+    if (doctor) practice(doctor, 'medicine', 1);
     // contagion among people in the same place
     if (ill.contagious && c.place != null && c.activity !== 'sick') {
       for (const o of alive(w)) if (o !== c && !o.illness && o.place === c.place && nextRand(w) < (knows(w, 'quarantine') ? 0.008 : 0.02)) { fallIll(w, o, ill.id); addLog(w, `${first(o)} caught the ${ill.name.toLowerCase()} from ${first(c)}.`, 'bad'); }
@@ -1692,6 +1771,7 @@ export function blockedReason(w: World, b: Building): string | null {
     return null;
   }
   if (!recipesOf(b).length || !b.built) return null;
+  if (b.batch) return null;
   const rec = currentRecipe(w, b);
   if (!rec) return enabledRecipes(b).length ? 'Warehouse stock targets are met.' : 'Every recipe here is switched off.';
   // ingredients it can be brought count, fractions included: 0.75 spirits in the inbox and 0.05 in storage make a
@@ -1714,20 +1794,94 @@ export function laborersWanted(w: World) { return Math.max(2, Math.ceil(alive(w)
 /** Fill empty job slots with laborers, keeping enough laborers free to build and haul. */
 export function fillSlots(w: World) {
   const keepFree = laborersWanted(w);
-  const free = alive(w).filter(c => c.job == null);
+  const free = alive(w).filter(c => tradeOf(w, c) == null);
   const blds = built(w).filter(b => bdef(b).slots > 0 && !blockedReason(w, b)).sort((a, b) => buildingPriority(w, b) - buildingPriority(w, a));
   for (const b of blds) {
     while (free.length > keepFree && workersAt(w, b.uid).length < bdef(b).slots) {
       const co = workersAt(w, b.uid);
       free.sort((p, q) => slotScore(w, q, b, co) - slotScore(w, p, b, co));
       const c = free.shift()!;
-      dropTask(w, c); c.job = b.uid;
+      dropTask(w, c); c.job = b.uid; c.trade = bdef(b).job ?? null;
     }
   }
 }
 export function autoAssign(w: World) {
-  for (const c of alive(w)) c.job = null;
+  for (const c of alive(w)) { c.job = null; c.trade = null; }
   fillSlots(w);
+}
+
+// ---------- Trades ----------
+/** the buildings each trade works at (a cook: the stew kitchen, smokehouse, pie oven and bakery) */
+export const TRADE_DEFS: Record<JobKind, string[]> = (() => {
+  const out = {} as Record<JobKind, string[]>;
+  for (const d of BUILDINGS) if (d.job && d.slots > 0) (out[d.job] ??= []).push(d.id);
+  return out;
+})();
+/** someone's trade; saves from before trades read it from where they work */
+export function tradeOf(w: World, c: Colonist): JobKind | null {
+  if (c.trade === undefined) c.trade = c.job != null ? bdef(buildingByUid(w, c.job) ?? ({ def: '' } as Building))?.job ?? null : null;
+  return c.trade ?? null;
+}
+/** a building's work priority: 2 high, 1 medium (the default), 0 low */
+export const workPrio = (b: Building): number => b.prio ?? 1;
+/**
+ * is there work for a tradesperson here right now? A workshop with ingredients it can get and room for what it makes,
+ * a clinic with patients, a tavern in the evening, a desk with a project. A worker already here who can fetch what's
+ * missing counts it as work.
+ */
+export function hasWork(w: World, b: Building): boolean {
+  const def = bdef(b);
+  if (!b.built || !def.slots || !def.job) return false;
+  if (seasonYield(w, def.id) <= 0) return false;
+  if (def.patients) return alive(w).some(o => bedridden(o)) || !!recipesOf(b).length && !blockedReason(w, b);
+  if (def.id === 'tavern') { const [, dusk] = workHours(w); const h = hourOfDay(w); return h >= dusk - 1 || h < 2; }
+  if (b.batch) return true;
+  if (blockedReason(w, b)) return false;
+  if (recipesOf(b).length && shelfFull(w, b)) {
+    const r = (Object.entries(b.outbox) as [ResourceId, number][]).sort((a, z) => z[1] - a[1])[0]?.[0];
+    if (r && storageFree(w, r) < 1) return false;
+  }
+  return true;
+}
+/** no room on the shelf for the next batch: someone has to carry some away first */
+export function shelfFull(w: World, b: Building) {
+  if (b.batch) return false;
+  const rec = currentRecipe(w, b);
+  return sum(b.outbox) + (rec?.make ?? 1) > OUTBOX_CAP + 1e-9;
+}
+/** how much a worker wants this building: its priority, a patient waiting, staying put, a coworker they can't stand, the walk */
+function workScore(w: World, c: Colonist, b: Building) {
+  let s = workPrio(b) * 100;
+  if (bdef(b).patients && alive(w).some(o => bedridden(o))) s += 150;
+  if (c.job === b.uid) s += 20;
+  for (const o of workersAt(w, b.uid)) if (o.id !== c.id && (opinion(w, c.id, o.id) < -30 || opinion(w, o.id, c.id) < -30)) s -= 30;
+  return s - dist(spotOf(b), c) * 0.5;
+}
+/** send a tradesperson to the best building of their trade with work and a free place, or to laboring if none has any */
+export function pickWork(w: World, c: Colonist) {
+  const trade = tradeOf(w, c);
+  if (trade == null || c.left) { c.job = null; return; }
+  // laid up: their place is free for someone else until they're back on their feet
+  if (bedridden(c)) { c.job = null; return; }
+  const cur = buildingByUid(w, c.job);
+  let best: Building | undefined, bs = -Infinity;
+  for (const b of built(w)) {
+    if (bdef(b).job !== trade || !hasWork(w, b)) continue;
+    if (b !== cur && workersAt(w, b.uid).length >= bdef(b).slots) continue;
+    const sc = workScore(w, c, b);
+    if (sc > bs) { bs = sc; best = b; }
+  }
+  if (best?.uid === c.job) return;
+  // finish carrying what's in hand before moving on: they look again next hour
+  if (c.carrying) return;
+  if (c.task) dropTask(w, c);
+  c.job = best?.uid ?? null;
+}
+/** once an hour, everyone with a trade checks where the work is, most skilled first so they get the first pick */
+export function tradeHour(w: World) {
+  const people = alive(w).filter(c => tradeOf(w, c) != null);
+  people.sort((a, z) => z.skills[z.trade!] - a.skills[a.trade!]);
+  for (const c of people) pickWork(w, c);
 }
 
 // ---------- Tasks for laborers ----------
@@ -1760,24 +1914,22 @@ function chooseTask(w: World, c: Colonist): Task | null {
       if (need <= 0.001) continue;
       missing = true;
       // "fine materials": bring whichever kind storage has most of. A feast larder is stocked for the guests instead:
-      // the kind the most guests it can't serve yet would take, so the few who can't stand ale still get a cup
+      // the kind the most guests it can't serve yet would rather have, though any quality drink will do
       const guests = bdef(b).feastSeats ? alive(w).filter(x => !x.sulking && !bedridden(x)) : null;
       const larder: Partial<Record<ResourceId, number>> = {};
       for (const m of membersOf(k)) larder[m] = (b.delivered?.[m] ?? 0) + enroute(w, b.uid, m);
       const unserved = guests ? guests.filter(x => !serving(larder, x, membersOf(k), true)) : [];
       const pull = (m: ResourceId) => unserved.filter(x => taste(x, m) >= 0).length;
       const r = [...membersOf(k)].sort((p, q) => Number(constructionStock(w, b, q) >= 1) - Number(constructionStock(w, b, p) >= 1) || pull(q) - pull(p) || w.res[q] - w.res[p])[0];
-      // nobody left unserved would take it, but something here is making a kind they would: wait for that
-      if (guests && unserved.length && pull(r) <= 0 && membersOf(k).some(m => pull(m) > 0 && built(w).some(x => enabledRecipes(x).some(e => e.output === m)))) continue;
       // a guest still unserved gets a whole serving, even when the larder is only a fraction short of its count
-      const due = guests && pull(r) > 0 ? Math.max(need, 1) : need;
+      const due = guests && unserved.length ? Math.max(need, 1) : need;
       const amount = Math.min(CARRY, due, constructionStock(w, b, r));
       if (amount >= 1 || (amount > 0 && amount >= due - 0.001)) opts.push({ t: { kind: 'deliver', site: b.uid, res: r, amount }, pri: 3, x: s.x, y: s.y });
     }
     if (!missing && Object.keys(left).length === 0 && taskCount(w, t => t.kind === 'build' && t.site === b.uid) < 3) opts.push({ t: { kind: 'build', site: b.uid }, pri: 3.5, x: s.x, y: s.y });
   }
-  // a stocked pavilion still takes a serving for a guest its larder can't suit: someone who came after it was
-  // stocked and can't stand the only drink in it. One whole serving each, of a kind they'd take.
+  // a stocked pavilion still takes a serving for a guest its larder is short of: someone who came after it was
+  // stocked. One whole serving each, the kind they'd like best.
   const pav = pavilionOf(w);
   if (pav?.built && !w.feast?.done && !w.feast?.called) {
     const s = spotOf(pav);
@@ -1787,7 +1939,7 @@ function chooseTask(w: World, c: Colonist): Task | null {
       for (const r of goods) larder[r] = (pav.delivered[r] ?? 0) + enroute(w, pav.uid, r);
       const unserved = guests.filter(x => !serving(larder, x, goods, true));
       for (const x of unserved) {
-        const r = goods.filter(g => taste(x, g) >= 0 && constructionStock(w, pav, g) >= 1).sort((a, b) => taste(x, b) - taste(x, a) || w.res[b] - w.res[a])[0];
+        const r = goods.filter(g => constructionStock(w, pav, g) >= 1).sort((a, b) => taste(x, b) - taste(x, a) || w.res[b] - w.res[a])[0];
         if (r) { opts.push({ t: { kind: 'deliver', site: pav.uid, res: r, amount: 1 }, pri: 3, x: s.x, y: s.y }); break; }
       }
     }
@@ -1802,9 +1954,9 @@ function chooseTask(w: World, c: Colonist): Task | null {
       const low = FOODS.includes(r) && foodTotal(w) < alive(w).length * 3;
       const available = r === 'coats' ? Math.floor(n + 1e-8) : n;
       const smallBatch = r === 'coats' || (b.def === 'woodcutter' && r === 'planks') || siteWants.has(r);
-      if (available < (low || smallBatch ? 1 : 4) || storageFree(w, r) < 1 || taskCount(w, t => t.kind === 'haul' && t.from === b.uid && t.res === r) > 0) continue;
+      if (available < (low || smallBatch ? 1 : HAUL_AT) || storageFree(w, r) < 1 || taskCount(w, t => t.kind === 'haul' && t.from === b.uid && t.res === r) > 0) continue;
       const s = spotOf(b);
-      opts.push({ t: { kind: 'haul', from: b.uid, res: r, amount: Math.min(CARRY, available) }, pri: n >= OUTBOX_CAP ? 3.2 : low ? 3.3 : 2, x: s.x, y: s.y });
+      opts.push({ t: { kind: 'haul', from: b.uid, res: r, amount: Math.min(CARRY, available) }, pri: shelfFull(w, b) ? 3.2 : low ? 3.3 : 2, x: s.x, y: s.y });
     }
   }
   // moving goods out of storage that no longer accepts them, and topping up high-priority storage from low
@@ -1857,14 +2009,24 @@ export function workshopInputPlan(w: World,b: Building,rec: Recipe,maxOutputs=IN
   available.wood=Math.max(0,available.wood-woodReserve(w));
   const limit=b.productionLimits?.[rec.output];
   const outputs=Math.min(maxOutputs,ignoreOutputRoom?maxOutputs:Math.floor(OUTBOX_CAP-sum(b.outbox)+1e-8),limit==null?maxOutputs:Math.max(0,Math.ceil(limit-w.res[rec.output])));
-  return planInputBatch(rec.inputs,held,available,INPUT_CAPACITY,outputs,k=>optionsOf(b,k));
+  return batchPlan(rec,held,available,outputs,k=>optionsOf(b,k));
+}
+/**
+ * the ingredients for up to `outputs` units, in whole batches: at least one batch whenever any output is wanted, since a
+ * recipe can't make part of one
+ */
+export function batchPlan(rec: Recipe, held: Partial<Record<ResourceId, number>>, available: Partial<Record<ResourceId, number>>, outputs: number, optionsFor?: (k: InputKey) => ResourceId[]) {
+  if (outputs <= 0) return undefined;
+  const batches = Math.max(1, Math.floor(outputs / rec.make + 1e-8));
+  const p = planInputBatch(rec.take, held, available, INPUT_CAPACITY, batches, optionsFor);
+  return p && { outputs: p.outputs * rec.make, deliveries: p.deliveries };
 }
 
 /** how many outputs' worth of ingredients a workshop holds, counting what's being carried in */
 function heldOutputs(w: World, b: Building, rec: Recipe) {
   const held = { ...b.inbox };
   for (const c of alive(w)) if (c.task?.kind === 'supply' && c.task.to === b.uid && c.carrying) held[c.carrying.res] = (held[c.carrying.res] ?? 0) + c.carrying.amount;
-  return planInputBatch(rec.inputs, held, {}, INPUT_CAPACITY, INPUT_BATCH_OUTPUTS)?.outputs ?? 0;
+  return (batchPlan(rec, held, {}, INPUT_BATCH_OUTPUTS, k => optionsOf(b, k))?.outputs ?? 0) + (b.batch ? b.batch.make : 0);
 }
 /** a dry workshop's worker takes over a delivery a laborer claimed but hasn't picked up, when the laborer's trip is far longer */
 function overtakeSupply(w: World, c: Colonist, b: Building, ratio: number): SupplyTask | undefined {
@@ -1894,7 +2056,7 @@ function supplyNeeds(w: World, b: Building, rec: Recipe | undefined = currentRec
   if(w.recipeBatching!==false){
     const plan=workshopInputPlan(w,b,rec);if(!plan)return out;
     const held={...b.inbox};for(const c of alive(w))if(c.task?.kind==='supply'&&c.task.to===b.uid&&c.carrying)held[c.carrying.res]=(held[c.carrying.res]??0)+c.carrying.amount;
-    if((planInputBatch(rec.inputs,held,{},INPUT_CAPACITY,INPUT_BATCH_OUTPUTS,k=>optionsOf(b,k))?.outputs??0)>=INPUT_REFILL_AT)return out;
+    if((batchPlan(rec,held,{},INPUT_BATCH_OUTPUTS,k=>optionsOf(b,k))?.outputs??0)>=Math.max(INPUT_REFILL_AT,rec.make))return out;
     for(const [res,n]of Object.entries(plan.deliveries)as[ResourceId,number][]){
       const coming=alive(w).reduce((total,c)=>total+(c.task?.kind==='supply'&&c.task.to===b.uid&&c.task.res===res&&!c.carrying?c.task.amount:0),0);
       const amount=Math.min(CARRY,n-coming);if(amount>1e-7)out.push({kind:'supply',to:b.uid,res,amount});
@@ -2017,7 +2179,7 @@ function activityFor(w: World, c: Colonist): Activity {
   const idleDoctor = job0 && bdef(job0).patients && !alive(w).some(o => bedridden(o));
   const job = idleDoctor ? undefined : job0;
   if (job) {
-    const full = sum(job.outbox) >= OUTBOX_CAP;
+    const full = shelfFull(w, job);
     if (full && recipesOf(job).length && !c.task) {
       const [r] = Object.entries(job.outbox).sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0))[0] as [ResourceId, number];
       if (storageFree(w, r) > 0 && taskCount(w, t => t.kind === 'haul' && t.from === job.uid) === 0) c.task = { kind: 'haul', from: job.uid, res: r, amount: Math.min(CARRY, job.outbox[r] ?? 0) };
@@ -2157,8 +2319,13 @@ export const knows = (w: World, id: string) => !!w.research?.done.includes(id);
 export function passing(w: World, defId: string) { let m = 1; for (const e of w.effects ?? []) if (w.hour < e.until && e.defs.includes(defId)) m *= e.mult; return m; }
 function addEffect(w: World, id: string, label: string, defs: string[], mult: number, days: number) { (w.effects ??= []).push({ id, label, defs, mult, until: w.hour + days * 24 }); }
 
+/** an hour (or part of one) of practice at a trade: quick from a low start, slowing towards 10, and quicker in a liked trade */
+export function practice(c: Colonist, job: JobKind, hours: number) {
+  const k = START.skills, s = c.skills[job] ?? 3;
+  c.skills[job] = Math.min(10, s + k.rate * hours * Math.max(0, 10 - s) / 5 * (c.likes === job ? k.liked : 1));
+}
 function workSpeed(w: World, c: Colonist, skill?: JobKind) {
-  let s = skill ? 0.6 + c.skills[skill] * 0.08 : 1;
+  let s = skill ? START.skills.base + c.skills[skill] * START.skills.perPoint : 1;
   if (has(c, 'lazy')) s *= 0.7;
   if (has(c, 'diligent')) s *= 1.3;
   if (hasPerk(w, 'overtime')) s *= 1.25;
@@ -2169,26 +2336,33 @@ function workSpeed(w: World, c: Colonist, skill?: JobKind) {
 function produce(w: World, dt: number) {
   for (const b of built(w)) {
     const def = bdef(b); if (!def.recipes) continue;
-    // work on the current recipe; if its ingredients aren't here yet, use up whatever another switched-on recipe can
-    const cur = currentRecipe(w, b);
-    const rec = cur && canCook(w, b, cur, 0) ? cur : (enabledRecipes(b,w).find(r => canCook(w, b, r, 0)) ?? cur);
-    if (!rec) continue;
     for (const c of workersAt(w, b.uid)) {
       if (c.activity !== 'working' || !c.goalReached) continue;
-      if (sum(b.outbox) >= OUTBOX_CAP) continue;
-      let amount = recipeRate(rec) * workSpeed(w, c, def.job) * dt * b.eff * seasonYield(w, def.id) * (def.id === 'woodcutter' && hasPerk(w, 'lumberGuild') ? 1.5 : 1) * craftBoost(w, def.id) * passing(w, def.id) * (Object.keys(rec.inputs).length ? rule(START.seasons.indoor, seasonOf(w).season, 1) : 1);
-      for (const [r, per] of Object.entries(rec.inputs)) amount = Math.min(amount, inInbox(b, r as InputKey) / (per as number));
-      if(w.recipeBatching!==false)amount=Math.min(amount,Math.max(0,OUTBOX_CAP-sum(b.outbox)));
-      if (amount <= 0) continue;
-      for (const [r, per] of Object.entries(rec.inputs)) {
-        let need = amount * (per as number);
-        if (isGroup(r)) {
-          for (const x of [...optionsOf(b, r)].sort((p, q) => (b.inbox[q] ?? 0) - (b.inbox[p] ?? 0))) { const t = Math.min(b.inbox[x] ?? 0, need); b.inbox[x] = (b.inbox[x] ?? 0) - t; need -= t; flow(w, `${x}:-${b.def}`, t); }
-        } else { b.inbox[r as ResourceId] = (b.inbox[r as ResourceId] ?? 0) - need; flow(w, `${r}:-${b.def}`, need); }
+      // start a batch: the current recipe if its ingredients are here, else any switched-on one whose are. Its
+      // ingredients go in now, and there must be room on the shelf for everything it makes
+      if (!b.batch) {
+        const cur = currentRecipe(w, b);
+        const rec = cur && canStart(b, cur) ? cur : enabledRecipes(b, w).find(r => canStart(b, r));
+        if (!rec || sum(b.outbox) + rec.make > OUTBOX_CAP + 1e-9) continue;
+        for (const [key, n] of Object.entries(rec.take) as [InputKey, number][]) {
+          let need = n;
+          for (const x of [...optionsOf(b, key)].sort((p, q) => (b.inbox[q] ?? 0) - (b.inbox[p] ?? 0))) {
+            const t = Math.min(b.inbox[x] ?? 0, need); if (t <= 0) continue;
+            b.inbox[x] = (b.inbox[x] ?? 0) - t; need -= t; flow(w, `${x}:-${b.def}`, t);
+            if (need <= 1e-9) break;
+          }
+        }
+        b.batch = { output: rec.output, make: rec.make, done: 0, rate: recipeRate(rec), indoor: Object.keys(rec.take).length > 0 };
       }
-      b.outbox[rec.output] = (b.outbox[rec.output] ?? 0) + amount;
-      flow(w, `${rec.output}:+${b.def}`, amount);
-      if (def.job) c.skills[def.job] = Math.min(10, c.skills[def.job] + 0.004 * dt * 6);
+      const bt = b.batch;
+      bt.done += bt.rate * workSpeed(w, c, def.job) * dt * b.eff * seasonYield(w, def.id) * (def.id === 'woodcutter' && hasPerk(w, 'lumberGuild') ? 1.5 : 1) * craftBoost(w, def.id) * passing(w, def.id) * (bt.indoor ? rule(START.seasons.indoor, seasonOf(w).season, 1) : 1);
+      // the whole batch comes out at the end of its work
+      if (bt.done >= bt.make - 1e-9) {
+        b.outbox[bt.output] = (b.outbox[bt.output] ?? 0) + bt.make;
+        flow(w, `${bt.output}:+${b.def}`, bt.make);
+        b.batch = undefined;
+      }
+      if (def.job) practice(c, def.job, dt);
       // the occasional workplace mishap, likelier for the unskilled
       if (def.job && nextRand(w) < dt * 0.0025 * (def.job === 'chopping' ? 2 : 1) * (11 - c.skills[def.job]) / 6) {
         const id = def.job === 'chopping' || def.job === 'crafting' ? pick(w, ['thumb', 'splinter', 'ankle']) : pick(w, ['splinter', 'ankle']);
@@ -2233,9 +2407,13 @@ function produce(w: World, dt: number) {
   }
 }
 
-/** does the workshop have enough ingredients for a little more work? */
-function canCook(w: World, b: Building, rec: Recipe, share = 0.2) {
-  return Object.entries(rec.inputs).every(([r, per]) => (share ? inInbox(b, r as InputKey) >= (per as number) * share : inInbox(b, r as InputKey) > 0));
+/** are a whole batch's ingredients in the workshop? */
+function canStart(b: Building, rec: Recipe) {
+  return Object.entries(rec.take).every(([k, n]) => inInbox(b, k as InputKey) >= (n as number) - 1e-9);
+}
+/** is there work here: a batch under way, or the ingredients for one? */
+function canCook(_w: World, b: Building, rec: Recipe) {
+  return !!b.batch || canStart(b, rec);
 }
 
 function completeBuilding(w: World, b: Building) {
@@ -2615,7 +2793,7 @@ function heatHomes(w: World) {
   if (winter) for (const b of built(w)) {
     if (!bdef(b).beds || !alive(w).some(c => c.bed === b.uid)) continue;
     const need = homeFuel(w, b.def) / 24;
-    if (w.res.wood >= need) { w.res.wood -= need; flow(w, 'wood:-homes', need); heated.add(b.uid); }
+    if (onHand(w, 'wood') >= need) { useUp(w, 'wood', need, 'homes'); heated.add(b.uid); }
   }
   for (const c of alive(w)) c.cold = winter && (c.bed == null || !heated.has(c.bed));
 }
@@ -2662,6 +2840,8 @@ function hourly(w: World) {
   (w.flowLog ??= []).push({ ...w.flows }); if (w.flowLog.length > 24) w.flowLog.shift();
   caravanHour(w);
   storyHour(w);
+  for (const b of w.buildings) if (!b.built && (b.def === 'hall' || b.def === 'pavilion')) b.headcount = finaleHeadcount(w);
+  tradeHour(w);
   const h = Math.round(hourOfDay(w)) % 24;
   const pop = alive(w).length;
   const d = day(w) - 1 + (hourOfDay(w) - 6) / 24;
@@ -2675,18 +2855,27 @@ function hourly(w: World) {
   if (h >= 18 || h < 6) {
     const hb = sc.hearth;
     const burn = (hasPerk(w, 'warmHearth') ? 0 : 1) * Math.min(1, hb.base + hb.perPerson * pop) * rule(sc.seasons.hearth, seasonOf(w).season, 1);
-    if (w.res.wood >= burn) { w.res.wood -= burn; flow(w, 'wood:-hearth', burn); w.hearthCold = false; }
+    if (onHand(w, 'wood') >= burn) { useUp(w, 'wood', burn, 'hearth'); w.hearthCold = false; }
     else { everyone(w, 'cold', 'The hearth went cold', -5, 12); w.hearthCold = true; }
   }
-  if (hasBuilt(w, 'bathhouse') && h >= 6 && h < 18) { flow(w, 'wood:-bathhouse', Math.min(0.4, w.res.wood)); w.res.wood = Math.max(0, w.res.wood - 0.4); }
+  if (hasBuilt(w, 'bathhouse') && h >= 6 && h < 18) useUp(w, 'wood', 0.4, 'bathhouse');
   // food spoils unless it sits somewhere that keeps it fresh (a storehouse)
   const rot = (START.body.spoilPerDay / 24) * rule(sc.seasons.spoil, seasonOf(w).season, 1) * (hasPerk(w, 'rootCellars') && seasonOf(w).season === 'winter' ? 0 : 1) * (knows(w, 'preserving') ? 0.5 : 1);
   for (const r of FOODS) {
     if (r === 'smokedFish' && knows(w, 'salting')) continue;
     let fresh = 0;
     for (const b of storages(w)) if (bdef(b).keepsFresh) fresh += b.stock[r] ?? 0;
-    const loss = Math.max(0, w.res[r] - fresh) * rot * (r === 'fish' && knows(w, 'salting') ? 1 / 3 : 1);
-    if (loss > 0) { w.res[r] -= loss; flow(w, `${r}:-spoiled`, loss); for (const b of storages(w)) if (!bdef(b).keepsFresh && b.stock[r]) b.stock[r]! *= 1 - rot; }
+    const exposed = Math.max(0, w.res[r] - fresh);
+    const rotting = (w.rot ??= {});
+    rotting[r] = exposed > 0 ? (rotting[r] ?? 0) + exposed * rot * (r === 'fish' && knows(w, 'salting') ? 1 / 3 : 1) : 0;
+    // whole ones are thrown out, from the open stores holding the most
+    let gone = Math.min(Math.floor(rotting[r]! + 1e-9), Math.floor(exposed + 1e-9));
+    if (gone > 0) {
+      rotting[r]! -= gone; w.res[r] -= gone; flow(w, `${r}:-spoiled`, gone);
+      for (const b of storages(w).filter(b => !bdef(b).keepsFresh).sort((a, z) => (z.stock[r] ?? 0) - (a.stock[r] ?? 0))) {
+        const t = Math.min(b.stock[r] ?? 0, gone); b.stock[r] = (b.stock[r] ?? 0) - t; gone -= t; if (gone <= 0) break;
+      }
+    }
   }
   heatHomes(w);
   const stage = hasBuilt(w, 'stage');
@@ -2764,7 +2953,7 @@ function die(w: World, c: Colonist, cause: string) {
   c.clinicRequestedAt=bedridden(c)?w.hour:undefined;
   dropTask(w, c);
   const e = w.errands.find(x => x.assignee === c.id); if (e) e.assignee = null;
-  c.left = true; c.died = true; c.job = null; c.meal = null; c.illness = null; c.errand = null; w.stats.deaths++; w.lastLoss = w.hour;
+  c.left = true; c.died = true; c.job = null; c.trade = null; c.meal = null; c.illness = null; c.errand = null; w.stats.deaths++; w.lastLoss = w.hour;
   addLog(w, `${c.name} has died of ${cause}. ${pick(w, EULOGIES)}`, 'bad');
   const p = colonistById(w, c.partner);
   if (p) { p.partner = null; addMemory(w, p, 'widowed', `${first(c)} died`, -20, 96); }
@@ -2779,7 +2968,7 @@ function die(w: World, c: Colonist, cause: string) {
 
 function leave(w: World, c: Colonist, carted = false) {
   dropTask(w, c);
-  c.left = true; c.job = null; c.meal = null; c.illness = null; w.stats.departures++; w.lastLoss = w.hour;
+  c.left = true; c.job = null; c.trade = null; c.meal = null; c.illness = null; w.stats.departures++; w.lastLoss = w.hour;
   const e = w.errands.find(x => x.assignee === c.id); if (e) e.assignee = null;
   c.errand = null;
   if (!carted) addLog(w, `${c.name} packed a sack and wandered off into the woods, muttering.`, 'bad');
@@ -2808,8 +2997,14 @@ function dawn(w: World) {
   }
 }
 
+/** the colony this stage is sized for (START.popTargets by charter tier) */
+export const popTarget = (w: World) => START.popTargets[Math.min(START.popTargets.length, Math.max(1, w.charterTier)) - 1] + (hasPerk(w, 'openRoad') ? OPEN_ROAD_EXTRA : 0);
+/** the Open road boon: offers every day, and each stage's colony is this many bigger */
+export const OPEN_ROAD_EXTRA = 2;
 /** Open road retains its daily invitations; the taper is deliberately a soft limit. */
 export function recruitInterval(w: World): number {
+  // the stage's colony is here: no more offers until the next charter tier
+  if (alive(w).length >= popTarget(w)) return 0;
   if (hasPerk(w, 'openRoad')) return 1;
   const base = START.seasons.recruitEvery[seasonOf(w).season], taper = START.seasons.recruitTaper;
   if (!taper) return base;
@@ -2992,26 +3187,34 @@ export const pavilionOf = (w: World) => w.buildings.find(b => b.def === 'pavilio
 /** what's in the pavilion's larder: goods delivered while it's being stocked, kept when it's ready */
 export const larderOf = (b: Building | undefined): Partial<Record<ResourceId, number>> => (b && (b.built || (b.stage ?? 0) >= 1) ? b.delivered : {});
 /**
- * One serving for a guest from the larder: a whole one of a good they don't dislike, favourites first, topped up from
- * other goods they'd take when deliveries left fractions (9.5 ale and 4.5 mulled is 14 drinks, not 13). Returns the
- * main good served, and takes it from the larder only when `take`.
+ * One serving for a guest from the larder: a whole one, favourites first, then anything they don't mind, and one they
+ * dislike only when that's all that's left. At the founders' feast nobody turns down a quality drink; they just enjoy
+ * it less (see runFeast). Returns the main good served, and takes it from the larder only when `take`.
  */
 function serving(larder: Partial<Record<ResourceId, number>>, c: Colonist, goods: ResourceId[], take: boolean): ResourceId | undefined {
-  const ok = [...goods].filter(r => (larder[r] ?? 0) > 1e-9 && taste(c, r) >= 0).sort((a, b) => taste(c, b) - taste(c, a) || (larder[b] ?? 0) - (larder[a] ?? 0));
+  const ok = [...goods].filter(r => (larder[r] ?? 0) > 1e-9).sort((a, b) => taste(c, b) - taste(c, a) || (larder[b] ?? 0) - (larder[a] ?? 0));
   if (ok.reduce((n, r) => n + (larder[r] ?? 0), 0) < 1 - 1e-6) return undefined;
   const main = ok.find(r => (larder[r] ?? 0) >= 1 - 1e-6) ?? ok[0];
   if (take) { let need = 1; for (const r of [main, ...ok.filter(x => x !== main)]) { const t = Math.min(need, larder[r] ?? 0); larder[r] = (larder[r] ?? 0) - t; need -= t; if (need <= 1e-9) break; } }
   return main;
 }
-/** guests the feast pavilion's larder, topped up from storage, still couldn't give a drink they'd take */
+/** guests the feast pavilion's larder, topped up from storage, still couldn't give a quality drink: it's short */
 export function feastUnservedDrinks(w: World): Colonist[] {
   const pav = pavilionOf(w);
   const pool: Partial<Record<ResourceId, number>> = {};
   for (const r of FEAST_DRINKS) pool[r] = (pav?.delivered[r] ?? 0) + w.res[r];
   return alive(w).filter(c => !c.sulking && !bedridden(c)).filter(c => !serving(pool, c, FEAST_DRINKS, true));
 }
-const feastTarget = (w: World) => (charterDef(w.charter)?.metric as { pop?: number } | undefined)?.pop ?? FINALE_COLONISTS;
-/** a dry run of the founders' feast: who would come, and who would get a magnificent meal and a quality drink they don't dislike from the larder */
+/** guests the larder, topped up from storage, still couldn't give a magnificent meal: someone who arrived after it was stocked */
+export function feastUnservedMeals(w: World): Colonist[] {
+  const pav = pavilionOf(w);
+  const pool: Partial<Record<ResourceId, number>> = {};
+  for (const r of FEAST_MEALS) pool[r] = (pav?.delivered[r] ?? 0) + w.res[r];
+  return alive(w).filter(c => !c.sulking && !bedridden(c)).filter(c => !serving(pool, c, FEAST_MEALS, true));
+}
+/** the founders' feast seats everyone who can walk to it, and at least the number the charter asks for: a sulker staying away sinks it */
+const feastTarget = (w: World) => Math.max((charterDef(w.charter)?.metric as { pop?: number } | undefined)?.pop ?? FINALE_COLONISTS, alive(w).filter(c => !bedridden(c)).length);
+/** a dry run of the founders' feast: who would come, and who would get a magnificent meal and a quality drink from the larder */
 export function feastCheck(w: World) {
   const people = alive(w).filter(c => !bedridden(c));
   const sulkers = people.filter(c => c.sulking).length;
@@ -3040,7 +3243,9 @@ function runFeast(w: World) {
     const meal = can ? serving(larder, c, FEAST_MEALS, true) : undefined, drink = can ? serving(larder, c, FEAST_DRINKS, true) : undefined;
     if (meal && drink) {
       flow(w, `${meal}:-feast`, 1); flow(w, `${drink}:-feast`, 1); served++;
-      addMemory(w, c, 'feast', taste(c, meal) > 0 && taste(c, drink) > 0 ? 'A feast of my favourites' : 'The founders\u2019 feast', taste(c, meal) > 0 && taste(c, drink) > 0 ? 10 : 7, 48);
+      // favourites please most; a disliked meal or drink still counts, but it's remembered as the one thing wrong
+      const fav = taste(c, meal) > 0 && taste(c, drink) > 0, grim = taste(c, meal) < 0 || taste(c, drink) < 0;
+      addMemory(w, c, 'feast', fav ? 'A feast of my favourites' : grim ? 'The founders\u2019 feast, shame about the cup' : 'The founders\u2019 feast', fav ? 10 : grim ? 4 : 7, 48);
     } else { unserved++; addMemory(w, c, 'feast', 'Went without at the feast', -5, 24); }
   }
   for (const r of Object.keys(larder) as ResourceId[]) if ((larder[r] ?? 0) < 1e-6) delete larder[r];
@@ -3048,7 +3253,7 @@ function runFeast(w: World) {
   if (served >= target) { f.done = true; f.last = 'triumph'; addLog(w, `The founders\u2019 feast: ${served} settlers at one long table in the pavilion, every plate a magnificent one. The Crown\u2019s envoy cries a little.`, 'good'); return; }
   const short: string[] = [];
   if (sulkers) short.push(`${sulkers} sulked behind the woodpile instead`);
-  if (unserved) short.push(`${unserved} got no meal and drink they would have`);
+  if (unserved) short.push(`${unserved} found the larder empty by the time they sat down`);
   short.push(`only ${served} of the ${target} the Crown asked for sat down to eat`);
   f.readyAt = w.hour + 72; f.last = short.join('; ');
   // what's left stays in the larder, and the pavilion goes back to stocking

@@ -6,10 +6,11 @@ function fixture(){const w=createWorld(42);w.nextEventHour=1e9;for(const c of al
 function put(w:World,id:string){w.owned.push(id);const s=findSpot(w,id);assert(s);assert.equal(apply(w,{type:'place',def:id,...s}),null);const b=w.buildings.at(-1)!;b.built=true;return b;}
 function run(w:World,hours:number){for(let h=0;h<hours;h++){while(w.decisions.length)apply(w,{type:'resolve',option:99});runHours(w,1);}}
 {
- const w=fixture(),oven=put(w,'pieoven');oven.off=[1,2,3];w.res.berries=40;w.res.bread=0;w.res.stew=60;reconcileStock(w);apply(w,{type:'assign',colonist:alive(w)[0].id,building:oven.uid});run(w,12);
+ const w=fixture(),oven=put(w,'pieoven');oven.off=[1,2,3];w.res.berries=40;w.res.bread=0;w.res.stew=60;reconcileStock(w);apply(w,{type:'assign',colonist:alive(w)[0].id,building:oven.uid});alive(w)[0].skills.cooking=9;run(w,12);
  assert.equal(oven.inbox.berries??0,0,'missing bread: no orphan filling is collected');
- w.res.bread=30;reconcileStock(w);const plan=workshopInputPlan(w,oven,currentRecipe(w,oven)!)!;assert.equal(plan.outputs,12);assert(Math.abs(plan.deliveries.bread!-7.2)<1e-6);
- run(w,12);assert((w.flows['pie:+pieoven']??0)>0,'complete recipe gets supplied and produces');assert(Object.values(oven.inbox).reduce((n,x)=>n+(x??0),0)<=INPUT_CAPACITY+1e-6,'input capacity is shared');
+ w.res.bread=30;reconcileStock(w);const plan=workshopInputPlan(w,oven,currentRecipe(w,oven)!)!;assert.equal(plan.outputs,12);assert.equal(plan.deliveries.bread,8,'four whole batches of 2 bread');
+ // a whole batch takes a few hours of work: keep the one cook on their feet (a winter chill would stall the test, not the oven)
+ for(let h=0;h<30;h++){for(const c of alive(w))c.illness=null;run(w,1);}assert((w.flows['pie:+pieoven']??0)>0,'complete recipe gets supplied and produces');assert(Object.values(oven.inbox).reduce((n,x)=>n+(x??0),0)<=INPUT_CAPACITY+1e-6,'input capacity is shared');
 }
 {
  const w=fixture(),a=put(w,'kitchen'),b=put(w,'kitchen');w.res.stew=10;w.res.fish=20;w.res.berries=20;reconcileStock(w);
@@ -33,8 +34,8 @@ function run(w:World,hours:number){for(let h=0;h<hours;h++){while(w.decisions.le
  assert.equal(c.carrying,null,'return trip completes');
 }
 {
- const w=fixture(),oven=put(w,'pieoven');oven.off=[1,2,3];oven.inbox={berries:7.2,bread:3};oven.outbox.pie=15;
- run(w,1);assert.deepEqual(oven.inbox,{berries:7.2,bread:3},'a full output buffer does not make valid input stock obsolete');
+ const w=fixture(),oven=put(w,'pieoven');oven.off=[1,2,3];oven.inbox={berries:7,bread:3};oven.outbox.pie=15;
+ run(w,1);assert.deepEqual(oven.inbox,{berries:7,bread:3},'a full output buffer does not make valid input stock obsolete');
 }
 {
  const w=fixture(),oven=put(w,'pieoven');oven.off=[1,2,3];w.res.bread=40;w.res.berries=40;w.res.stew=20;reconcileStock(w);apply(w,{type:'assign',colonist:alive(w)[0].id,building:oven.uid});

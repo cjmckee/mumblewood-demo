@@ -3,7 +3,9 @@
 // Usage: npx tsx tools/finale-routes-check.ts
 import { createWorld, apply, World, findSpot, festivalPreview, drinkableTotal } from '../src/sim/world';
 import { cheapestRoute, finaleOwed, finaleRoutes, finaleGoods, ROUTE_AVOID, autoFoodRules } from '../src/sim/autoplayer';
-import { alive } from '../src/sim/world';
+import { alive, costOf, debugGrow, finaleHeadcount, recruitInterval, feastCheck } from '../src/sim/world';
+import { START } from '../src/sim/scenario';
+import { seasonOf } from '../src/sim/seasons';
 import { FINALE_COLONISTS } from '../src/sim/content';
 
 let failed = 0;
@@ -79,16 +81,45 @@ const path = (r?: { steps: { def: string; output: string }[] }) => r ? r.steps.m
   check(!['hippocras', 'mulled', 'ale'].some(d => w.forbidden.includes(d as never)), 'with no finale owed, they’re poured again');
 }
 {
-  // a stocked larder of cordial and a guest who can't stand it: the finale still owes them a drink, and only hippocras will do
+  // a stocked larder of cordial and a guest who can't stand it: they drink it anyway, so nothing more is owed
   const w = town([]);
   w.owned.push('pavilion'); const s = findSpot(w, 'pavilion', 16, 16, true)!; apply(w, { type: 'place', def: 'pavilion', x: s.x, y: s.y });
   const pav = w.buildings.at(-1)!; pav.built = true; pav.stage = 1; pav.delivered = { banquet: 14, cordial: 14 } as typeof pav.delivered;
   for (const c of alive(w)) { c.tastes = { loves: [], dislikes: [] }; c.sulking = false; }
   alive(w)[0].tastes.dislikes = ['cordial'];
   w.res.cordial = 0; w.res.hippocras = 0;
-  check(finaleOwed(w).feastDrink === 1 && finaleGoods(w, 'feastDrink').join() === 'hippocras', `a stocked larder with a guest it can't suit owes one drink, of a kind they'd take (${JSON.stringify(finaleOwed(w))}, ${finaleGoods(w, 'feastDrink')})`);
-  w.res.hippocras = 2;
-  check(!finaleOwed(w).feastDrink, 'with hippocras in storage to carry in, it owes nothing more');
+  check(!finaleOwed(w).feastDrink, `a stocked larder with a guest who dislikes its only drink owes nothing more (${JSON.stringify(finaleOwed(w))})`);
+  // one short instead: the drink owed is any quality drink, the one the short guest would rather have first
+  pav.delivered.cordial = alive(w).length - 1;
+  check(finaleOwed(w).feastDrink === 1 && finaleGoods(w, 'feastDrink').length >= 1, `a larder one drink short owes one (${JSON.stringify(finaleOwed(w))}, ${finaleGoods(w, 'feastDrink')})`);
+}
+{
+  // the finale bill follows the colony: a magnificent meal and a quality drink for every colonist, 12 at least
+  const w = town([]);
+  w.owned.push('pavilion'); const s = findSpot(w, 'pavilion', 16, 16, true)!; apply(w, { type: 'place', def: 'pavilion', x: s.x, y: s.y });
+  const pav = w.buildings.at(-1)!; pav.stage = 1;
+  pav.headcount = finaleHeadcount(w);
+  const few = costOf(pav);
+  debugGrow(w, 15); pav.headcount = finaleHeadcount(w);
+  const many = costOf(pav);
+  check(few.feastMeal === FINALE_COLONISTS && few.feastDrink === FINALE_COLONISTS && many.feastMeal === 15 && many.feastDrink === 15,
+    `the larder holds one each for every colonist, ${FINALE_COLONISTS} at least (${alive(createWorld(81)).length} colonists: ${few.feastMeal}; 15 colonists: ${many.feastMeal})`);
+  pav.built = true; pav.delivered = { banquet: 15, cordial: 8, hippocras: 7 } as typeof pav.delivered;
+  for (const c of alive(w)) { c.tastes = { loves: [], dislikes: [] }; c.sulking = false; c.illness = null; }
+  const ready = feastCheck(w).ok;
+  alive(w)[0].sulking = true;
+  check(ready && !feastCheck(w).ok, 'the feast seats everyone: with 15 colonists, one sulker staying away sinks it');
+}
+{
+  // population intent: offers at the season's pace below the stage's colony, none at it until the next charter tier
+  const w = createWorld(5);
+  const pace = START.seasons.recruitEvery[seasonOf(w).season];
+  const below = recruitInterval(w);
+  debugGrow(w, START.popTargets[0]);
+  const at = recruitInterval(w);
+  w.charterTier = 2;
+  const next = recruitInterval(w);
+  check(below === pace && at === 0 && next === pace, `recruit offers every ${below} days below ${START.popTargets[0]} colonists, ${at ? `every ${at}` : 'none'} at it, every ${next} once tier 2 asks for ${START.popTargets[1]}`);
 }
 console.log(failed ? `\n${failed} failed` : '\nall passed');
 if (failed) process.exit(1);

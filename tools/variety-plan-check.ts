@@ -13,8 +13,8 @@ try{
  BOT.feasibleVariety=false;assert(varietyTargets(w,4).includes('skewers'),'legacy plan counts an unfeedable skewer recipe');
  BOT.feasibleVariety=true;assert(!varietyTargets(w,4).includes('skewers'),'an empty recipe with no supply route is not a meal source');
  assert(varietyTargets(w,4).includes('pie'),'fruit pie from bread and berries is a plan');
- w.res.driedMushrooms=1;w.res.herbs=1;assert(varietyTargets(w,4).includes('skewers'),'imported ingredients sufficient for a complete recipe are usable');
- w.res.driedMushrooms=0;w.res.herbs=0;const smoke=w.buildings.find(b=>b.def==='smokehouse')!;smoke.inbox.driedMushrooms=1;smoke.inbox.herbs=1;
+ w.res.driedMushrooms=2;w.res.herbs=1;assert(varietyTargets(w,4).includes('skewers'),'imported ingredients sufficient for a complete recipe are usable');
+ w.res.driedMushrooms=0;w.res.herbs=0;const smoke=w.buildings.find(b=>b.def==='smokehouse')!;smoke.inbox.driedMushrooms=2;smoke.inbox.herbs=1;
  assert(varietyTargets(w,4).includes('skewers'),'already-delivered recipe ingredients are usable');smoke.inbox={};
  w.res.skewers=15;assert(varietyTargets(w,4).includes('skewers'),'already stored charter goods remain valid without a producer');
  w.res.skewers=0;w.forbidden=['skewers'];autoFoodRules(w);assert(!w.forbidden.includes('skewers'),'stale impossible-food reservation is released');

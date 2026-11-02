@@ -128,13 +128,19 @@ function pavilion(w: World, larder: Partial<Record<string, number>>, full = true
   untilHour(w2, 19, () => { for (const c of alive(w2)) { c.sulking = false; c.illness = null; c.mood = Math.max(c.mood, 40); } });
   ok(!!w2.feast!.done, `the feast succeeds (${w2.feast!.last})`);
   ok(w2.status === 'won' || w2.chartersDone.includes('longtable'), `the Long Table charter completes (status ${w2.status})`);
-  // tastes matter: with only hippocras in the larder, the one settler who dislikes it goes without
+  // tastes don't bar anyone: with only hippocras in the larder, the one settler who dislikes it drinks it anyway, and
+  // remembers the feast less fondly than those who got their favourite
   const w3 = createWorld(82); clear(w3); w3.charter = 'longtable';
   pavilion(w3, { banquet: 14, hippocras: 14 });
   alive(w3)[0].tastes = { loves: ['banquet', 'cordial'], dislikes: ['stew', 'hippocras'] };
   for (const c of alive(w3).slice(1)) c.tastes = { loves: ['banquet', 'hippocras'], dislikes: ['stew', 'mead'] };
-  const dislikeCider = alive(w3).filter(c => c.tastes.dislikes.includes('hippocras')).length;
-  ok(dislikeCider === 1 && feastCheck(w3).hungry === 1, `with only hippocras, the one settler who dislikes it can't be served (${feastCheck(w3).hungry} unserved)`);
+  ok(feastCheck(w3).hungry === 0, `with only hippocras, the settler who dislikes it is still served (${feastCheck(w3).hungry} unserved)`);
+  for (const c of alive(w3)) { c.sulking = false; c.illness = null; c.mood = 60; }
+  ok(apply(w3, { type: 'callFeast' }) === null, 'that feast can be called');
+  untilHour(w3, 19, () => { for (const c of alive(w3)) { c.sulking = false; c.illness = null; c.mood = Math.max(c.mood, 40); } });
+  const mem = (c: (typeof w3.colonists)[number]) => c.memories.find(m => m.key === 'feast');
+  const [hater, ...fans] = alive(w3);
+  ok(mem(hater)?.value === 4 && fans.every(c => mem(c)?.value === 10), `a disliked drink is remembered at +${mem(hater)?.value}, favourites at +${mem(fans[0])?.value}`);
   // deliveries leave fractions: 9.5 cordials and 4.5 hippocras are still 14 drinks
   const w5 = createWorld(82); clear(w5); w5.charter = 'longtable';
   let k = 0; while (alive(w5).length < 14) { w5.colonists.push({ ...structuredClone(donor.colonists[k % donor.colonists.length]), id: 2000 + k, partner: null, job: null, bed: null }); k++; }

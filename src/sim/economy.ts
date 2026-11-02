@@ -1,7 +1,7 @@
 // The colony's books for the last day: what came in, what went out, and what everyone spent their time on.
 // Shared by the Ledger tab, the foreman's notes and the balance tools, so they all read the same numbers.
 import { BUILDING_BY_ID, JobKind, MEALS, RAW_FOODS, ResourceId, SKILL_NAMES, CATEGORIES, RESOURCES } from './content';
-import { World, Colonist, alive, built, bdef, workersAt, lastDay, lastDayHours, foodTotal, bedridden, drinkTotal } from './world';
+import { World, Colonist, alive, built, bdef, workersAt, lastDay, lastDayHours, foodTotal, bedridden, drinkTotal, tradeOf } from './world';
 
 export interface Line { label: string; perDay: number }
 export interface Account { name: string; stock: number; lines: Line[]; net: number; daysLeft: number | null }
@@ -66,7 +66,7 @@ export function economy(w: World): Economy {
   ]);
 
   // jobs: every kind of workplace, with the best-skilled laborer who could fill an empty slot
-  const laborers = alive(w).filter(c => c.job == null && !bedridden(c));
+  const laborers = alive(w).filter(c => tradeOf(w, c) == null && !bedridden(c));
   const byDef = new Map<string, JobRow>();
   for (const b of built(w)) {
     const d = bdef(b); if (!d.slots || !d.job) continue;
