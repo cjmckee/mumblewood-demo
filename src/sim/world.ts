@@ -247,7 +247,9 @@ export const woodReserve = (_w: World) => START.woodReserve;
 export const CARRY = 15;
 /** recruits come this many days apart (blueprint drafts follow START.draftEvery) */
 export const DRAFT_EVERY = 2;
+/** a workshop's shelf for what it makes: work stops when it's full, and haulers come once HAUL_AT is ready */
 export const OUTBOX_CAP = 15;
+export const HAUL_AT = 4;
 export const PATH_SPEED = 1.25;
 export const INBOX_TARGET = 12; // Legacy comparison mode only.
 export const INPUT_CAPACITY = 24;
@@ -939,7 +941,7 @@ function researchHourly(w: World, b: Building, c: Colonist, dt: number) {
   const r = w.research; const cur = r?.current ? RESEARCH_BY_ID[r.current] : undefined;
   if (!r || !cur || Object.keys(researchStillNeeds(w)).length) return;
   r.progress += workSpeed(w, c, 'studying') * dt * rule(START.seasons.indoor, seasonOf(w).season, 1);
-  c.skills.studying = Math.min(10, (c.skills.studying ?? 3) + 0.004 * dt * 6);
+  practice(c, 'studying', dt);
   if (r.progress < cur.hours) return;
   // spend the goods from the desks and unlock the buildings
   for (const [k, n] of Object.entries(cur.cost) as [InputKey, number][]) {
@@ -1540,7 +1542,7 @@ function illnessHourly(w: World) {
       }
     }
     ill.severity += change;
-    if (doctor && nextRand(w) < 0.1) doctor.skills.medicine = Math.min(10, doctor.skills.medicine + 0.1);
+    if (doctor) practice(doctor, 'medicine', 1);
     // contagion among people in the same place
     if (ill.contagious && c.place != null && c.activity !== 'sick') {
       for (const o of alive(w)) if (o !== c && !o.illness && o.place === c.place && nextRand(w) < (knows(w, 'quarantine') ? 0.008 : 0.02)) { fallIll(w, o, ill.id); addLog(w, `${first(o)} caught the ${ill.name.toLowerCase()} from ${first(c)}.`, 'bad'); }
@@ -1904,7 +1906,7 @@ function chooseTask(w: World, c: Colonist): Task | null {
       const low = FOODS.includes(r) && foodTotal(w) < alive(w).length * 3;
       const available = r === 'coats' ? Math.floor(n + 1e-8) : n;
       const smallBatch = r === 'coats' || (b.def === 'woodcutter' && r === 'planks') || siteWants.has(r);
-      if (available < (low || smallBatch ? 1 : 4) || storageFree(w, r) < 1 || taskCount(w, t => t.kind === 'haul' && t.from === b.uid && t.res === r) > 0) continue;
+      if (available < (low || smallBatch ? 1 : HAUL_AT) || storageFree(w, r) < 1 || taskCount(w, t => t.kind === 'haul' && t.from === b.uid && t.res === r) > 0) continue;
       const s = spotOf(b);
       opts.push({ t: { kind: 'haul', from: b.uid, res: r, amount: Math.min(CARRY, available) }, pri: n >= OUTBOX_CAP ? 3.2 : low ? 3.3 : 2, x: s.x, y: s.y });
     }
@@ -2259,8 +2261,13 @@ export const knows = (w: World, id: string) => !!w.research?.done.includes(id);
 export function passing(w: World, defId: string) { let m = 1; for (const e of w.effects ?? []) if (w.hour < e.until && e.defs.includes(defId)) m *= e.mult; return m; }
 function addEffect(w: World, id: string, label: string, defs: string[], mult: number, days: number) { (w.effects ??= []).push({ id, label, defs, mult, until: w.hour + days * 24 }); }
 
+/** an hour (or part of one) of practice at a trade: quick from a low start, slowing towards 10, and quicker in a liked trade */
+export function practice(c: Colonist, job: JobKind, hours: number) {
+  const k = START.skills, s = c.skills[job] ?? 3;
+  c.skills[job] = Math.min(10, s + k.rate * hours * Math.max(0, 10 - s) / 5 * (c.likes === job ? k.liked : 1));
+}
 function workSpeed(w: World, c: Colonist, skill?: JobKind) {
-  let s = skill ? 0.6 + c.skills[skill] * 0.08 : 1;
+  let s = skill ? START.skills.base + c.skills[skill] * START.skills.perPoint : 1;
   if (has(c, 'lazy')) s *= 0.7;
   if (has(c, 'diligent')) s *= 1.3;
   if (hasPerk(w, 'overtime')) s *= 1.25;
@@ -2290,7 +2297,7 @@ function produce(w: World, dt: number) {
       }
       b.outbox[rec.output] = (b.outbox[rec.output] ?? 0) + amount;
       flow(w, `${rec.output}:+${b.def}`, amount);
-      if (def.job) c.skills[def.job] = Math.min(10, c.skills[def.job] + 0.004 * dt * 6);
+      if (def.job) practice(c, def.job, dt);
       // the occasional workplace mishap, likelier for the unskilled
       if (def.job && nextRand(w) < dt * 0.0025 * (def.job === 'chopping' ? 2 : 1) * (11 - c.skills[def.job]) / 6) {
         const id = def.job === 'chopping' || def.job === 'crafting' ? pick(w, ['thumb', 'splinter', 'ankle']) : pick(w, ['splinter', 'ankle']);

@@ -63,8 +63,9 @@ for (let i = 0; i < runs; i++) {
       const jobs: Record<string, number> = {};
       for (const b of built(w)) { const n = workersAt(w, b.uid).length; if (n) jobs[b.def] = (jobs[b.def] ?? 0) + n; }
       const lab = alive(w).filter(c => c.job == null).length;
+      const tr = alive(w).filter(c => c.trade), sk = tr.length ? tr.reduce((n, c) => n + c.skills[c.trade!], 0) / tr.length : 0;
       const st = built(w).filter(b => workersAt(w, b.uid).length && stalled(w, b)).map(b => `${b.def}:${stalled(w, b)}`);
-      snaps.push(`  d${day(w)} pop ${alive(w).length} · laborers ${lab} · ${Object.entries(jobs).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(', ')}${st.length ? ` · stalled now: ${st.join(' ')}` : ''} · charter ${w.charter ?? '-'} (${w.chartersDone.length} done)`);
+      snaps.push(`  d${day(w)} pop ${alive(w).length} · laborers ${lab} · ${Object.entries(jobs).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(', ')}${st.length ? ` · stalled now: ${st.join(' ')}` : ''} · trade skill ${sk.toFixed(1)} · charter ${w.charter ?? '-'} (${w.chartersDone.length} done)`);
     }
   }
   console.log(`seed ${seed}: ${w.status} day ${day(w)}, peak ${w.stats.peakPop}, left ${w.stats.departures}, died ${w.stats.deaths}`);

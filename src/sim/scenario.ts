@@ -57,6 +57,11 @@ export interface Start {
    * - roundTrip: carry finished goods to storage on the way, and bring ingredients back from there
    */
   selfSupply: { topUpAt: number; overtake: number; roundTrip: boolean };
+  /**
+   * skills (1 to 10) and practice: work speed is base + skill × perPoint (5 is 1×). Each hour of practice adds
+   * rate × (10 − skill) / 5, so a beginner learns fast and a master slowly; a liked trade is learned `liked` times as fast
+   */
+  skills: { base: number; perPoint: number; rate: number; liked: number };
   /** outbreaks wait until this day and this many colonists */
   outbreakFrom: { day: number; pop: number };
   /** the calendar and what each season does; see seasons.ts */
@@ -156,6 +161,7 @@ export const START: Start = {
   woodReserve: 10,
   body: { hungerHours: 34, eatBelow: 45, walk: 7, spoilPerDay: 0.035 },
   selfSupply: { topUpAt: 2, overtake: 1.5, roundTrip: true },
+  skills: { base: 0.5, perPoint: 0.1, rate: 0.04, liked: 1.5 },
   outbreakFrom: { day: 6, pop: 5 },
   seasons: {
     days: 10,
