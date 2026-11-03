@@ -46,4 +46,3 @@ export function charterCompletionCard(w: World, d: Extract<Decision, { kind: 'ch
     <button type="button" class="act cc-continue" data-act="resolve" data-arg="0">Continue</button>
   </div>`;
 }
-
