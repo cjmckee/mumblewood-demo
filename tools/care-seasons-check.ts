@@ -26,7 +26,7 @@ try{
  const illDoctor=med.colonists[0],patient=med.colonists[1],healthyMedic=med.colonists[2];
  illDoctor.illness={id:'tummy',name:'Bad tummy',severity:1,worsen:0.15,contagious:false};illDoctor.skills.medicine=10;
  patient.illness={id:'flu',name:'Frontier flu',severity:60,worsen:1,contagious:true};
- for(const c of med.colonists.slice(2))c.skills.medicine=0;healthyMedic.skills.medicine=5;
+ for(const c of med.colonists.slice(2)){c.skills.medicine=0;if(c.likes==='medicine')c.likes='foraging';if(c.dislikes==='medicine')c.dislikes='serving';}healthyMedic.skills.medicine=5;
  apply(med,{type:'assign',colonist:illDoctor.id,building:clinic.uid});
  const gatherer=med.buildings.find(b=>b.def==='forager')!;apply(med,{type:'assign',colonist:healthyMedic.id,building:gatherer.uid});
  BOT.urgentClinic=false;autoStaff(med);assert.equal(workersAt(med,clinic.uid)[0]?.id,illDoctor.id,'old staffing retains a mildly ill doctor');

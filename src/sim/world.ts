@@ -4,7 +4,7 @@ import {
   MEALS, PERKS, RAW_FOODS, ResourceId, SHIRTS, SKINS, SURNAMES, TRAITS, TRAIT_BY_ID, BUILDINGS, buildWork,
   JOB_EVENTS, JobEventDef, ILLNESSES, RESOURCES, Recipe, InputKey, CATEGORIES, isGroup, membersOf, inputName, recipeRate, batchHours, SITES, SiteId, MEAL_MOOD, DRINK_MOOD, TIER, TIER_RANK, GoodTier, tradeable, TallyHow, RENOWN, RENOWN_KIND_MIN, atLeast,
   CharterMetric, RESEARCH, RESEARCH_BY_ID, BRANCHES_AFTER, PRICE, TRADERS, TRADER_BY_ID, LORE_BOOST, GUILD_BOOST, Tier, EventDef,
-  FINALE_COLONISTS,
+  FINALE_COLONISTS, WANTS, WANT_BY_ID, WantId,
 } from './content';
 import { planInputBatch } from './batching';
 import { draftLinks } from './charterplan';
@@ -63,6 +63,10 @@ export interface Colonist {
    * priority first, and labor (haul, build) when none does. Null: a laborer. Missing in older saves: read from job.
    */
   trade?: JobKind | null;
+  /** personal wants, from arrival (missing in older saves: none) */
+  wants?: WantId[];
+  /** the days they had a drink at the tavern, lately (for the tippler want) */
+  drankOn?: number[];
   task: Task | null; carrying: Carry | null;
   /** eating: fetch food from storage `from`, then eat at `at`; until = 0 while walking */
   meal: { at: number | null; until: number; from: number | null; got: ResourceId | null } | null;
@@ -148,6 +152,7 @@ export interface Caravan {
 }
 
 export type Decision =
+  | { kind: 'charter-complete'; charter: string; tier: 1 | 2; gold: number; strainBefore: number; strainAfter: number }
   | { kind: 'charter'; tier: 1 | 2 | 3; options: string[] }
   | { kind: 'blueprint'; options: string[] }
   | { kind: 'recruit'; options: Colonist[] }
@@ -789,7 +794,16 @@ function tastesFor(w: World, id: number): Colonist['tastes'] {
 }
 const TASTE_BONUS = 3;
 /** meals in the order a colonist reaches for them: loved, then the rest, disliked last */
-function mealOrder(c: Colonist) { return [...MEALS].sort((a, b) => taste(c, b) - taste(c, a)); }
+/**
+ * what someone reaches for in the larder: favourites first, then what their wants ask for (something sweet for a sweet
+ * tooth; something they haven't had lately for a gourmand), then the usual order
+ */
+function mealOrder(c: Colonist) {
+  const recent = new Set((c.ate ?? []).slice(-3).map(a => a.r));
+  const sweet = c.wants?.includes('sweetTooth'), gourmand = c.wants?.includes('gourmand');
+  const want = (r: ResourceId) => (sweet && SWEET.includes(r) ? 1 : 0) + (gourmand && !recent.has(r) ? 1 : 0);
+  return [...MEALS].sort((a, b) => taste(c, b) - taste(c, a) || want(b) - want(a));
+}
 const taste = (c: Colonist, r: ResourceId) => (c.tastes.loves.includes(r) ? 1 : c.tastes.dislikes.includes(r) ? -1 : 0);
 const goodName = (r: ResourceId) => RESOURCES.find(x => x.id === r)!.name.toLowerCase();
 function tasteMemory(w: World, c: Colonist, r: ResourceId, key = 'taste') {
@@ -805,6 +819,7 @@ function makeColonist(w: World, usedNames: Set<string>): Colonist {
   const traits: string[] = [];
   for (const t of shuffle(w, TRAITS)) {
     if (traits.length >= 2) break;
+    if (t.id === 'tippler') continue; // a want now
     if (t.group && traits.some(x => TRAIT_BY_ID[x].group === t.group)) continue;
     traits.push(t.id);
   }
@@ -816,7 +831,9 @@ function makeColonist(w: World, usedNames: Set<string>): Colonist {
   skills[likes] = Math.min(10, skills[likes] + 3);
   skills[dislikes] = Math.max(1, skills[dislikes] - 1);
   const talent = pick(w, jobs); skills[talent] = Math.min(10, skills[talent] + 4);
+  const wants = shuffle(w, WANTS).slice(0, START.wants.per).map(x => x.id);
   return {
+    wants,
     id: w.nextColonistId, tastes: tastesFor(w, w.nextColonistId++), name, traits, likes, dislikes,
     shirt: pick(w, SHIRTS), skin: pick(w, SKINS),
     x: CENTER + nextRand(w) * 2 - 1, y: CENTER + 2.5 + nextRand(w), px: 0, py: 0, jitter: nextRand(w),
@@ -897,7 +914,9 @@ function assignBeds(w: World) {
   for (const b of built(w).sort((a, b2) => order[bdef(a).bedQuality ?? 'rough'] - order[bdef(b2).bedQuality ?? 'rough'])) {
     for (let i = 0; i < (bdef(b).beds ?? 0); i++) slots.push({ uid: b.uid });
   }
-  const people = alive(w).sort((a, b) => Number(has(b, 'vain')) - Number(has(a, 'vain')));
+  // the best beds go first to those who care most: the vain, and homebodies
+  const keen = (c: Colonist) => Number(has(c, 'vain')) + Number(!!c.wants?.includes('homebody'));
+  const people = alive(w).sort((a, b) => keen(b) - keen(a));
   for (const c of people) c.bed = null;
   for (const c of people) {
     if (c.bed != null) continue;
@@ -1307,6 +1326,8 @@ function resolveDecision(w: World, option: number): string | null {
   if (d.kind === 'recruit' && (d.options[option]?.fee ?? 0) > w.gold) return `${first(d.options[option])} wants ${d.options[option].fee} gold to join.`;
   w.decisions.shift();
   switch (d.kind) {
+    // Rewards and standing already changed at completion; Continue only acknowledges the news.
+    case 'charter-complete': break;
     case 'charter': {
       const id = d.options[option] ?? d.options[0];
       w.charter = id; w.charterHours = 0; w.tally = freshTally();
@@ -2601,6 +2622,47 @@ function dailyRelationships(w: World) {
   }
 }
 
+const SWEET: ResourceId[] = ['pie', 'porridge', 'banquet'];
+/** is this want of theirs met right now? */
+export function wantMet(w: World, c: Colonist, id: WantId): boolean {
+  switch (id) {
+    case 'sweetTooth': return (c.ate ?? []).some(a => a.h >= w.hour - 72 && SWEET.includes(a.r));
+    case 'gourmand': return mealKinds(w, c, 120) >= 3;
+    // 3 of the last 4 evenings, counting tonight once it's had
+    case 'tippler': return (c.drankOn ?? []).filter(x => x >= day(w) - 3).length >= 3;
+    case 'bather': return hasBuilt(w, 'bathhouse') && onHand(w, 'wood') > 0;
+    case 'musicLover': return hasBuilt(w, 'stage');
+    case 'greenThumb': { const home = buildingByUid(w, c.bed); if (!home) return false; const h = spotOf(home); return built(w).some(b => (b.def === 'flowerbed' || b.def === 'herbgarden') && dist(spotOf(b), h) <= 5); }
+    case 'homebody': { const home = buildingByUid(w, c.bed); return !!home && bdef(home).bedQuality === 'cozy'; }
+  }
+}
+/** could the colony meet this want for a newcomer, with what it has now? */
+export function wantSupported(w: World, id: WantId): boolean {
+  const has = (d: string) => built(w).some(b => b.def === d);
+  switch (id) {
+    case 'sweetTooth': return SWEET.some(r => w.res[r] >= 1) || ['pieoven', 'bakery', 'malthouse'].some(has);
+    case 'gourmand': return MEALS.filter(r => w.res[r] >= 1).length >= 3;
+    case 'tippler': return has('tavern') && drinkTotal(w) >= 3;
+    case 'bather': return has('bathhouse');
+    case 'musicLover': return has('stage');
+    case 'greenThumb': return has('flowerbed') || has('herbgarden');
+    case 'homebody': return has('cottage');
+  }
+}
+/** what a want needs that the colony lacks, in a few words ("a stage", "3 kinds of meal") */
+export function wantGap(w: World, id: WantId): string {
+  switch (id) {
+    case 'sweetTooth': return 'a pie oven, bakery or malthouse';
+    case 'gourmand': return '3 kinds of meal';
+    case 'tippler': return built(w).some(b => b.def === 'tavern') ? 'drinks in store' : 'a tavern';
+    case 'bather': return 'a bathhouse';
+    case 'musicLover': return 'a bard\u2019s stage';
+    case 'greenThumb': return 'a flower bed';
+    case 'homebody': return 'a cottage';
+  }
+}
+/** what an unmet want costs at the town's standing: people come to expect more */
+export const wantPenalty = (w: World) => START.wants.unmet[Math.min(START.wants.unmet.length - 1, standingOf(w))];
 function computeThoughts(w: World, c: Colonist): Thought[] {
   const t: Thought[] = [];
   const add = (label: string, value: number) => { if (value !== 0) t.push({ label, value: Math.round(value * 10) / 10 }); };
@@ -2643,6 +2705,7 @@ function computeThoughts(w: World, c: Colonist): Thought[] {
   else if (c.beauty <= -1.2) add('Ugly surroundings', -3);
   const strain = w.strain * (has(c, 'stoic') ? 0.5 : 1);
   if (strain >= 1) add('The frontier wears on me', -strain);
+  if (START.wants.on) for (const id of c.wants ?? []) { const d = WANT_BY_ID[id]; if (wantMet(w, c, id)) add(d.met, START.wants.met); else add(d.unmet, -wantPenalty(w)); }
   for (const m of c.memories) add(m.label, m.value);
   return t.sort((a, b) => a.value - b.value);
 }
@@ -2904,6 +2967,7 @@ function hourly(w: World) {
         const r = takeDrink(w, serving, 'drunk', c); c.fun += 18;
         if (r) {
           c.drankTonight = true;
+          const d = day(w); c.drankOn = [...(c.drankOn ?? []).filter(x => x >= d - 6 && x !== d), d];
           addMemory(w, c, 'ale', `Drank ${goodName(r)} at the tavern`, (DRINK_MOOD[r] ?? 6) + (has(c, 'tippler') ? 4 : 0) + (knows(w, 'cellaring') ? 2 : 0), 14);
           tasteMemory(w, c, r, 'tasteDrink');
         }
@@ -3298,6 +3362,7 @@ function checkCharter(w: World) {
   w.chartersDone.push(c.id); w.charter = null;
   addLog(w, `Charter complete: ${c.name}! The Crown sends a stiffly worded note of approval.`, 'good');
   // the Crown's approval eases the frontier's wear: a share of current strain, so a colony deep in it climbs back further
+  const strainBefore = w.strain;
   const eased = ease(w, START.relief.charter);
   if (eased) addLog(w, `Word of the charter spreads around the hearth. Strain eases by ${eased}.`, 'good');
   if (c.tier === 3) { w.status = 'won'; addLog(w, 'The Crown declares the colony a proper town. Someone makes a banner. It is spelled wrong.', 'good'); return; }
@@ -3310,6 +3375,7 @@ function checkCharter(w: World) {
   const cornerstone = w.decisions.splice(queued);
   w.charterTier = c.tier + 1;
   w.decisions.push(charterDecision(w, w.charterTier as 2 | 3), ...cornerstone);
+  w.decisions.unshift({ kind: 'charter-complete', charter: c.id, tier: c.tier, gold: stipend, strainBefore, strainAfter: w.strain });
 }
 
 // ---------- Gold and the caravan ----------

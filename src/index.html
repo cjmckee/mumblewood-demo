@@ -214,6 +214,47 @@ h3.first { margin-top: 4px; }
 .opt span { font-size: 13px; color: var(--muted); line-height: 1.4; }
 .opt small { font-size: 12px; color: var(--accent); }
 .skip { justify-self: start; }
+/* A quiet celebration between charters; the header can later host the animated scene. */
+.charter-celebration { gap: 18px; border-color: #76603c; background: radial-gradient(ellipse at 50% 0%, #45503966, transparent 42%), var(--panel-solid); }
+.cc-celebrate { display: grid; justify-items: center; gap: 10px; text-align: center; }
+.cc-celebrate .eyebrow { padding-inline: 34px; }
+/* The final scene is the default, so reduced motion never reveals an empty header. */
+.cc-scene { display: block; width: 100%; max-width: 480px; height: auto; overflow: visible; }
+.cc-scene .cc-build, .cc-scene .cc-settler, .cc-scene .cc-banner { transform-box: fill-box; transform-origin: center bottom; }
+.cc-scene .cc-banner { transform-origin: center top; }
+.cc-scene .cc-confetti { opacity: 0; transform-box: fill-box; transform-origin: center; }
+.cc-scene .cc-smoke { opacity: .35; }
+.cc-animated .cc-build { animation: cc-rise 750ms cubic-bezier(.2,.7,.3,1) var(--cc-delay) both; }
+.cc-animated .cc-settler { animation: cc-arrive 650ms ease-out var(--cc-delay) both; }
+.cc-animated .cc-lamplight { animation: cc-light 800ms ease-out var(--cc-delay) both; }
+.cc-animated .cc-banner { animation: cc-unfurl 850ms cubic-bezier(.2,.7,.3,1) var(--cc-delay) both; }
+.cc-animated .cc-confetti { animation: cc-confetti 1500ms ease-out var(--cc-delay) both; }
+.cc-animated .cc-smoke { animation: cc-smoke 2300ms ease-out both; }
+@keyframes cc-rise { from { opacity: 0; transform: translateY(13px) scale(.8); } to { opacity: 1; transform: none; } }
+@keyframes cc-arrive { from { opacity: 0; transform: translateX(-12px); } to { opacity: 1; transform: none; } }
+@keyframes cc-light { from { opacity: 0; } to { opacity: 1; } }
+@keyframes cc-unfurl { from { opacity: 0; transform: scaleY(.08); } to { opacity: 1; transform: none; } }
+@keyframes cc-confetti { 0% { opacity: 0; transform: translateY(10px) rotate(-20deg); } 25% { opacity: .9; } 100% { opacity: 0; transform: translateY(-25px) rotate(100deg); } }
+@keyframes cc-smoke { from { opacity: 0; transform: translateY(5px); } 40% { opacity: .45; } to { opacity: .35; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .cc-animated * { animation: none !important; } }
+.cc-achievement { margin: 0; color: var(--accent); font-size: 13px; }
+.cc-rewards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-block: 1px solid #75603c66; padding: 12px 0; gap: 10px; text-align: center; }
+.cc-rewards > span { display: flex; flex-wrap: wrap; justify-content: center; align-content: start; align-items: center; gap: 3px; min-width: 0; font-size: 13px; }
+.cc-rewards .ico { width: 16px; height: 16px; }
+.cc-rewards b { color: var(--good); overflow-wrap: anywhere; }
+.cc-rewards small { width: 100%; color: var(--muted); font-size: 11px; }
+.cc-standing { margin: 0; display: flex; justify-content: center; gap: 12px; font-size: 12px; color: var(--muted); }
+.cc-standing b { color: var(--accent); }
+.charter-celebration .cc-expectations h3 { margin: 0 0 5px; font: 600 22px var(--font-display); text-transform: none; letter-spacing: normal; color: var(--text); }
+.cc-expectations > .lede { font-size: 13px; }
+.cc-expectations ul { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 12px; }
+.cc-expectations li { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; font-size: 13px; }
+.cc-need-icon > .ico { width: 28px; height: 28px; }
+.cc-expectations li p { margin: 3px 0 0; color: var(--muted); line-height: 1.45; }
+.cc-wants, .cc-note { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.cc-wants { padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; }
+.cc-wants b { color: var(--text); }
+.cc-continue { justify-self: stretch; }
 #modal:focus { outline: none; }
 /* charter offers: one row per condition, with the buildings its goods still need */
 .opt .conds { display: grid; gap: 6px; margin-top: 2px; }
@@ -266,6 +307,9 @@ h3.first { margin-top: 4px; }
 /* recruit traits as chips */
 .opt .traits { display: flex; flex-wrap: wrap; gap: 4px; }
 .opt .traits i { font-style: normal; font-size: 12px; color: var(--text); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; }
+.wants .want, .traits.wants .want { font-style: normal; font-size: 12px; color: var(--text); border: 1px dashed var(--line); border-radius: 999px; padding: 1px 8px; margin-right: 4px; display: inline-block; }
+.wants .want.met { border-style: solid; border-color: #6fae6a; color: #a6d9a0; }
+.wants .want.unmet { border-style: solid; border-color: #c96a5a; color: #f0a596; }
 .recruit .opt > b .rname { flex: 1; font-size: inherit; color: inherit; }
 .reroll-note { margin: 2px 0 0; font-size: 12px; }
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin: 6px 0 8px; }
@@ -417,6 +461,35 @@ button.leavers { width:100%; }
 .inputs { margin:0; padding:0 10px; gap:10px; }
 .inputs .text-link { font-size:12px; }
 .recruit { border:1px solid var(--line); border-radius:12px; overflow:hidden; background:#232a24; }
+/* Selected recruit stat sheet. Help and recruitment are separate controls. */
+.recruit.rc { display: grid; gap: 8px; padding: 14px; }
+.rc-head { display: flex; gap: 10px; align-items: center; min-width: 0; flex-wrap: wrap; }
+.rc-head .rname { flex: 1; min-width: 100px; font-size: 18px; }
+.rc-head .avatar { width: 48px; height: 48px; }
+.rc-take { justify-self: end; margin-top: 2px; }
+.help-chip { background: transparent; font: inherit; cursor: help; line-height: 1.5; }
+.help-chip:hover, .help-chip:focus-visible { background: #384335; border-color: var(--accent); }
+.game-tooltip { position: fixed; z-index: 100; width: 290px; max-width: calc(100vw - 24px); padding: 13px 15px;
+  border: 1px solid #997345; border-radius: 10px; background: #20291f; color: var(--text);
+  box-shadow: 0 8px 28px #0009, inset 0 0 0 3px #e8a33d09; font: 13px/1.5 var(--font-body); overflow-wrap: anywhere; }
+.game-tooltip > small { display: block; color: var(--muted); text-transform: uppercase; font-size: 10px; letter-spacing: .12em; }
+.game-tooltip > b { display: block; color: var(--accent); font-family: var(--font-display); font-size: 23px; line-height: 1.25; margin: 2px 0 6px; }
+.game-tooltip > p { margin: 0; }
+.game-tooltip > footer { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 8px; color: #c7c4ae; font-size: 12px; }
+.rc-skills { display: grid; gap: 4px; }
+.rc-skill { display: grid; grid-template-columns: 18px 92px 1fr 22px; align-items: center; gap: 6px; font-size: 13px; color: var(--text); }
+.rc-skill .ico { width: 16px; height: 16px; }
+.rc-skill i { height: 6px; background: #2f3a30; border-radius: 3px; overflow: hidden; }
+.rc-skill i b { display: block; height: 100%; background: var(--muted); border-radius: 3px; }
+.rc-skill.fav i b { background: var(--accent); }
+.rc-skill.fav span { color: var(--accent); }
+.rc-skill em { font-style: normal; text-align: right; font-weight: 600; color: var(--text); }
+.rc-row { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.rc-row > small { color: var(--muted); width: 46px; font-size: 12px; }
+.rc-want, .rc-trait { font-style: normal; font-size: 12px; border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; color: var(--text); }
+.rc-want.ok, .rc-trait.good { border-color: #5f8f4f; color: var(--good); }
+.rc-want.no, .rc-trait.bad { border-color: #8f4a3a; color: #f3a28c; }
+.rc-foot { color: var(--muted); font-size: 12px; }
 .recruit .opt { width:100%; border:0; border-radius:0; }
 .recruit details { padding:0 14px 4px; }
 .recruit summary { font-size:12px; }

@@ -1,13 +1,13 @@
 // DOM overlay: HUD, bottom sheet, decision modals. Talks to the sim only through commands.
-import { LORE_BOOST, EventNeed, EventOption, BUILDINGS, membersOf, isGroup, BUILDING_BY_ID, EVENTS, RESEARCH, RESEARCH_BY_ID, BRANCHES_AFTER, JOB_NAMES, TRADE_NAMES, TRADE_ICON, PERK_BY_ID, TRADER_BY_ID, RESOURCES, TRAIT_BY_ID, ResourceId, SKILL_NAMES, JOB_KINDS, JobKind, Recipe, InputKey, inputName, recipeRate, batchHours, Stars, CATEGORIES } from '../sim/content';
+import { LORE_BOOST, EventNeed, EventOption, BUILDINGS, membersOf, isGroup, BUILDING_BY_ID, EVENTS, RESEARCH, RESEARCH_BY_ID, BRANCHES_AFTER, JOB_NAMES, WANT_BY_ID, WantId, TRADE_NAMES, TRADE_ICON, PERK_BY_ID, TRADER_BY_ID, RESOURCES, TRAIT_BY_ID, ResourceId, SKILL_NAMES, JOB_KINDS, JobKind, Recipe, InputKey, inputName, recipeRate, batchHours, Stars, CATEGORIES } from '../sim/content';
 import {
-  World, Command, Colonist, alive, avgMood, beds, buildingByUid, charterProgress, colonistById,
+  World, Command, Decision, Colonist, alive, avgMood, beds, buildingByUid, charterProgress, colonistById,
   day, hourOfDay, opinion, workersAt, MAX_DEPARTURES, sites, siteWork, remainingCost, storageCap, stored,
   keepsFresh, findSpot, canPlace, laborers, centerOf, built, Building, efficiencyAt, pathAt, MAP_SIZE, blockedReason, Errand, patientsAt, clinicAdmissions, lost, bedridden, spoilingFood, accepts, roomIn, FOODS, GOODS,
   recipesOf, recipeOn, optionOn, optionsOf, currentRecipe, orderedRecipes, INPUT_CAPACITY, OUTBOX_CAP, siteOk, rerollCost, REROLL_STEP, stockOf, recipeReach, charterHelpers, charterDef,
   costOf, researchLeft, researchStillNeeds, desks, feastCheck, festivalPreview, mealTotal, drinkTotal,
   comfortParts, comfortOf, colonyComfort, comfortGaps, strainPerDay, footprint, activeNeeds, standingOf, STANDINGS, NeedKey, winterFuelPerDay,
-  sellPrice, renownOf, pavilionOf, larderOf, FEAST_MEALS, charterCounted, charterRequirements, basicsDone, researchOpen, edibleTotal, storePrio, colonyName, nameFrom, NAME_MAX, tradeOf, TRADE_DEFS, workPrio, hasWork,
+  sellPrice, renownOf, pavilionOf, larderOf, FEAST_MEALS, charterCounted, charterRequirements, basicsDone, researchOpen, edibleTotal, storePrio, colonyName, nameFrom, NAME_MAX, wantMet, wantPenalty, wantSupported, wantGap, tradeOf, TRADE_DEFS, workPrio, hasWork,
 } from '../sim/world';
 import { charterPreview, metricRoutes, Route } from '../sim/charterplan';
 import { START } from '../sim/scenario';
@@ -17,11 +17,14 @@ import type { IsoView, Picked } from '../render/iso';
 import { icon } from './icons';
 import { avatar } from './avatars';
 import { buildingStatus, saleQuantity } from './status';
-import { replaceMarkup } from './dom';
+import { replaceMarkup, escapeHtml as esc } from './dom';
+import { installTooltips } from './tooltips';
+import { charterCompletionCard } from './charter-celebration';
+import { animateCharterScene } from './charter-scene';
+import { NEED_NAMES, NEED_BUILD } from './needs';
 import { Destination, buildingDestination, fixDestination, producers } from './navigation';
 import { seasonOf, SEASON_NAMES } from '../sim/seasons';
 
-const esc = (s: string) => s.replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]!));
 const first = (c: Colonist) => c.name.split(' ')[0];
 const sum = (o: Partial<Record<string, number>>) => Object.values(o).reduce<number>((n, v) => n + (v ?? 0), 0);
 const hex = (n: number) => `#${n.toString(16).padStart(6, '0')}`;
@@ -98,7 +101,38 @@ type Tab = 'colonists' | 'build' | 'ledger' | 'issues' | 'log' | 'menu';
 type Detail = { kind: 'colonist' | 'building'; id: number } | null;
 
 const goodName = (r: ResourceId) => RESOURCES.find(x => x.id === r)!.name.toLowerCase();
-/** " · favourite food pie · not stew", with bold for the detail page */
+/** Help chips are separate controls, so inspecting one never recruits a settler. */
+const helpChip = (cls: string, label: string, kind: string, name: string, body: string, note = '') => `<button type="button" class="${cls} help-chip" data-help-kind="${esc(kind)}" data-help-name="${esc(name)}" data-help-body="${esc(body)}" data-help-note="${esc(note)}">${esc(label)}</button>`;
+function wantChips(w: World, c: Colonist) {
+  return (c.wants ?? []).map(id => {
+    const d = WANT_BY_ID[id], met = wantMet(w, c, id);
+    return helpChip(`want ${met ? 'met' : 'unmet'}`, `${d.name} ${met ? `✓ +${START.wants.met}` : `−${wantPenalty(w)}`}`, 'Personal want', d.name, d.desc, met ? `Met · +${START.wants.met} mood` : `Unmet · −${wantPenalty(w)} mood`);
+  }).join('');
+}
+const GOOD_TRAITS = ['sunny', 'diligent', 'stoic'];
+const BAD_TRAITS = ['grumbler', 'lazy', 'drama', 'hummer', 'vain', 'picky', 'glutton'];
+const traitTone = (t: string) => GOOD_TRAITS.includes(t) ? 'good' : BAD_TRAITS.includes(t) ? 'bad' : 'plain';
+const bestSkills = (c: Colonist, n = 3) => [...skillKinds(c)].sort((a, b) => c.skills[b] - c.skills[a] || Number(b === c.likes) - Number(a === c.likes)).slice(0, n);
+const skillBar = (c: Colonist, k: JobKind) => `<div class="rc-skill${k === c.likes ? ' fav' : ''}">${icon(TRADE_ICON[k])}<span>${SKILL_NAMES[k]}${k === c.likes ? ' ♥' : ''}</span><i><b style="width:${c.skills[k] * 10}%"></b></i><em>${Math.floor(c.skills[k])}</em></div>`;
+function recruitWant(w: World, id: WantId) {
+  const d = WANT_BY_ID[id], ok = wantSupported(w, id);
+  const later = START.wants.unmet[START.wants.unmet.length - 1];
+  const note = `${ok ? 'Colony can support this' : `Needs ${wantGap(w, id)}`} · +${START.wants.met} mood when met; −${wantPenalty(w)} if unmet${wantPenalty(w) < later ? ` (up to −${later} later)` : ''}.`;
+  return helpChip(`rc-want ${ok ? 'ok' : 'no'}`, `${ok ? '✓' : '✗'} ${d.name}`, 'Personal want', d.name, d.desc, note);
+}
+const traitChip = (t: string) => helpChip(`rc-trait ${traitTone(t)}`, TRAIT_BY_ID[t].name, 'Trait', TRAIT_BY_ID[t].name, TRAIT_BY_ID[t].desc);
+const feeChip = (w: World, c: Colonist) => c.fee ? `<em class="fee">${icon('gold')}${c.fee} gold${w.gold < c.fee ? ` · you have ${Math.floor(w.gold)}` : ''}</em>` : '';
+/** Option A: a stat sheet with skill bars, want readiness and tinted traits. */
+function recruitA(w: World, c: Colonist, i: number) {
+  return `<article class="recruit rc">
+    <b class="rc-head">${avatar(c)}<span class="rname">${esc(c.name)}</span>${feeChip(w, c)}</b>
+    <div class="rc-skills">${bestSkills(c).map(k => skillBar(c, k)).join('')}</div>
+    ${(c.wants ?? []).length ? `<div class="rc-row"><small>Wants</small>${(c.wants ?? []).map(id => recruitWant(w, id)).join('')}</div>` : ''}
+    <div class="rc-row"><small>Traits</small>${c.traits.map(traitChip).join('')}</div>
+    <small class="rc-foot">× ${esc(SKILL_NAMES[c.dislikes])}${tasteLine(c, false)}</small>
+    <button type="button" class="act rc-take" data-act="resolve" data-arg="${i}" ${(c.fee ?? 0) > w.gold ? 'disabled' : ''}>${(c.fee ?? 0) > w.gold ? 'Not enough gold' : `Invite ${esc(c.name.split(' ')[0])}`}</button>
+  </article>`;
+}
 const tasteLine = (c: Colonist, bold = true) => {
   const b = (r: ResourceId) => (bold ? `<b>${goodHtml(r)}</b>` : goodHtml(r));
   return c.tastes.loves.map((r, i) => ` · favourite ${b(r)}, not ${b(c.tastes.dislikes[i])}`).join('');
@@ -220,6 +254,7 @@ export class UI {
   private strainOpen = false;
   private help: string | null = null;
   private dialogKey = '';
+  private celebrationStarted = new WeakMap<Decision, number | null>();
   private colonistFilter = 'all';
   /** the decision card is hidden so the player can look at the colony; play stays paused until they choose */
   private peeking = false;
@@ -280,6 +315,7 @@ export class UI {
 
   constructor(private root: HTMLElement, private getWorld: () => World, private send: (c: Command) => string | null, private view: IsoView) {
     currentUI = this;
+    installTooltips(root);
     // the colony name being typed: kept without redrawing the card; Enter founds it
     root.addEventListener('input', e => { const t = e.target as HTMLElement; if (t instanceof HTMLInputElement && t.dataset.nameInput != null) this.nameDraft = t.value; });
     root.addEventListener('keydown', e => { const t = e.target as HTMLElement; if (e.key === 'Enter' && t instanceof HTMLInputElement && t.dataset.nameInput != null) { e.preventDefault(); (root.querySelector('[data-act=name-ok]') as HTMLElement | null)?.click(); } });
@@ -900,6 +936,7 @@ export class UI {
       ${worst ? `<p class="warnline">${logText(w,worst.label)} <b>−${Math.abs(Math.round(worst.value))}</b></p>` : ''}
       <div class="actions">${remedies}${job ? `<button type="button" class="ghost" data-act="building" data-arg="${job.uid}">${icon(job.def)} ${esc(BUILDING_BY_ID[job.def].name)} →</button>` : ''}${c.bed != null ? `<button type="button" class="ghost" data-act="building" data-arg="${c.bed}">⌂ Home →</button>` : '<button type="button" class="ghost" data-act="need" data-arg="shelter">⌂ Find a bed →</button>'}<button type="button" class="ghost" data-act="jobs">⚒ Change job ↓</button></div>
       <p class="prefs">${icon('coats')} ${(c.coatHours ?? 0) > 0 ? `${c.coatStoredAt != null ? 'Coat stored' : 'Warm coat'} · ${Math.ceil(c.coatHours! / 24)} days of wear` : 'No coat · collects one in winter'} <button type="button" class="text-link" data-act="source" data-arg="coats">Coat supply →</button></p>
+      ${(c.wants ?? []).length ? `<h3>Wants</h3><p class="traits wants">${wantChips(w, c)}</p>` : ''}
       <h3>Needs · ${Math.round(comfortOf(w, c) * 100)}%</h3>${comfortRows(w, c)}
       <details data-key="person-jobs"><summary id="person-jobs">⚒ ${trade ? `${TRADE_NAMES[trade]} · ${job ? esc(BUILDING_BY_ID[job.def].name) : 'no work, laboring'}` : 'Laborer'}</summary><p class="muted">${laborers(w).length} laborers free · a trade works its highest-priority building with work.</p><div class="jobs">${jobs}<button type="button" class="job${trade == null ? ' on' : ''}" data-act="trade" data-arg="${c.id}:none">Laborer<small>Build · haul · clean</small></button></div></details>
       <details data-key="thoughts"><summary>Mood breakdown</summary>${moodLedger(c)}<ul class="thoughts">${thoughts}</ul></details>
@@ -1186,10 +1223,14 @@ export class UI {
     const el = this.root.querySelector('#modal') as HTMLElement;
     let html = '';
     const d = w.decisions[0];
+    if (d?.kind === 'charter-complete' && this.resumeOpen) this.celebrationStarted.set(d, null);
     if (w.status !== 'playing') html = this.endScreen(w);
     else if (this.resumeOpen) html = this.resumeCard(w);
     else if (d) {
       switch (d.kind) {
+        case 'charter-complete':
+          if (!this.celebrationStarted.has(d)) this.celebrationStarted.set(d, performance.now());
+          html = charterCompletionCard(w, d); break;
         case 'charter': html = this.cards(d.tier === 1 ? 'Your first charter' : d.tier === 3 ? 'The final charter' : `Charter ${d.tier} of 3`,
           d.tier === 3 ? 'Finish one of these to win.' : `${d.tier === 1 ? 'Complete three charters to establish your town. ' : ''}Each pays ${charterPreview(w, d.options[0]).rewards[0]}, eases strain ${Math.round(START.relief.charter * 100)}% and brings a cornerstone.`,
           d.options.map(id => this.charterOption(w, id))); break;
@@ -1224,7 +1265,11 @@ export class UI {
           'Choose one permanent bonus.',
           d.options.map(id => this.cornerstoneOption(id))); break;
         case 'trade': html = this.tradeCard(w); break;
-        case 'recruit': html = `<div class="card-wrap"><p class="eyebrow">Choose one</p><h2>New settlers</h2><p class="lede">⌂ ${beds(w)} beds · ${alive(w).length} settlers${beds(w) <= alive(w).length ? ' · ⚠ Another bed needed' : ''}</p><div class="opts">${d.options.map((c,i) => `<article class="recruit"><button type="button" class="opt" data-act="resolve" data-arg="${i}" ${(c.fee ?? 0) > w.gold ? 'disabled' : ''}><b>${avatar(c)}<span class="rname">${esc(c.name)}</span>${c.fee ? `<em class="fee">${icon('gold')}${c.fee} gold${w.gold < c.fee ? ` · you have ${Math.floor(w.gold)}` : ''}</em>` : ''}</b><span>★ ${esc(topSkills(c))}</span><span class="traits">${c.traits.map(t => `<i title="${esc(TRAIT_BY_ID[t].desc)}">${esc(TRAIT_BY_ID[t].name)}</i>`).join('')}</span><small>♥ ${esc(SKILL_NAMES[c.likes])} · × ${esc(SKILL_NAMES[c.dislikes])}</small></button><details data-key="recruit-${c.id}"><summary>What the traits do · tastes</summary>${c.traits.map(t => `<p><b>${esc(TRAIT_BY_ID[t].name)}</b> · ${esc(TRAIT_BY_ID[t].desc)}</p>`).join('')}<p>${tasteLine(c,false)}</p></details></article>`).join('')}</div><button type="button" class="ghost skip" data-act="resolve" data-arg="99">Send all away</button></div>`; break;
+        case 'recruit': {
+          const lede = `<p class="lede">⌂ ${beds(w)} beds · ${alive(w).length} settlers${beds(w) <= alive(w).length ? ' · ⚠ Another bed needed' : ''}</p>`;
+          const body = `<div class="opts">${d.options.map((c, i) => recruitA(w, c, i)).join('')}</div>`;
+          html = `<div class="card-wrap"><p class="eyebrow">Choose one</p><h2>New settlers</h2>${lede}${body}<button type="button" class="ghost skip" data-act="resolve" data-arg="99">Send all away</button></div>`; break;
+        }
         case 'errand': { const e = w.errands.find(x => x.id === d.errandId); if (e) html = this.errandPicker(w, e, true); break; }
         case 'event': {
           const ev = EVENTS.find(e => e.id === d.eventId)!;
@@ -1266,6 +1311,11 @@ export class UI {
     }
     if (force || html !== this.lastModal) { replaceMarkup(el, html, !changedDialog); this.lastModal = html; }
     el.hidden = !html;
+    const scene = el.querySelector<SVGElement>('.cc-scene');
+    if (scene && d?.kind === 'charter-complete') {
+      const began = this.celebrationStarted.get(d);
+      animateCharterScene(scene, began == null ? null : performance.now() - began, this.prefs.calm);
+    }
     el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); el.tabIndex = -1;
     const heading = el.querySelector('h2');
     if (heading) { heading.id = 'dialog-title'; el.setAttribute('aria-labelledby', 'dialog-title'); }
@@ -1410,8 +1460,6 @@ function storeLabel(b: Building) {
   return `${b.allow.length} kinds`;
 }
 
-const NEED_BUILD: Record<NeedKey, string> = { shelter: 'leanto', food: 'rawFood', fire: 'woodcutter', meals: 'kitchen', variety: 'kitchen', health: 'clinic', evenings: 'tavern', surroundings: 'flowerbed', fresh: 'rawFood', drink: 'drinks', warmth: 'woodcutter' };
-const NEED_NAMES: Record<NeedKey, string> = { shelter: 'Shelter', food: 'Food', fire: 'A fire', meals: 'Meals', variety: 'Variety', health: 'Health', evenings: 'Evenings', surroundings: 'Surroundings', fresh: 'Something fresh', drink: 'A cold drink', warmth: 'Warmth' };
 const NEED_FIX: Record<NeedKey, string> = {
   shelter: 'beds for everyone, cottages better still',
   food: 'enough food in storage',

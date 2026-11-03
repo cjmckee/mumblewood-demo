@@ -21,6 +21,8 @@ export interface Start {
    * the next stage. Events, gold and boons can still bring someone past it.
    */
   popTargets: number[];
+  /** personal wants: how many each settler has, the mood a met one gives, and what an unmet one costs by standing (camp, settlement, village) */
+  wants: { per: number; met: number; unmet: number[]; on: boolean };
   /** days between blueprint drafts, once they start */
   draftEvery: number;
   /** the colony collapses at this many lost, or with this many or fewer left */
@@ -152,6 +154,7 @@ export const START: Start = {
   firstResearch: ['cookery', 'messhall', 'physick'],
   firstCharterDay: 2,
   popTargets: [6, 10, 12],
+  wants: { per: 2, met: 6, unmet: [1, 3, 6], on: true },
   draftEvery: 5,
   collapse: { lost: 6, minAlive: 0 },
   strain: { rate: 0.15, rampDays: 40 },

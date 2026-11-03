@@ -328,6 +328,22 @@ export const SITES: { id: SiteId; name: string; blurb: string; feeds: string }[]
   { id: 'oaks', name: 'an oak stand', blurb: 'Old oaks heavy with acorns. Can\u2019t be built on.', feeds: 'oakhut' },
 ];
 
+/**
+ * A settler's personal wants: two each, known from the day they arrive (on the recruit card). A met want is always
+ * worth START.wants.met mood; an unmet one costs more as the town's standing rises and people come to expect it.
+ */
+export type WantId = 'sweetTooth' | 'gourmand' | 'tippler' | 'bather' | 'musicLover' | 'greenThumb' | 'homebody';
+export interface WantDef { id: WantId; name: string; desc: string; met: string; unmet: string; buildings: string[] }
+export const WANTS: WantDef[] = [
+  { id: 'sweetTooth', name: 'Sweet tooth', desc: 'A sweet meal every few days: fruit pie, porridge or banquet pie.', met: 'Had something sweet', unmet: 'Nothing sweet in days', buildings: ['pieoven', 'bakery', 'malthouse'] },
+  { id: 'gourmand', name: 'Gourmand', desc: 'Three kinds of meal over five days.', met: 'A varied table', unmet: 'The same old food', buildings: ['smokehouse', 'pieoven', 'bakery', 'malthouse'] },
+  { id: 'tippler', name: 'Tippler', desc: 'A drink at the tavern most evenings.', met: 'A drink most evenings', unmet: 'Hardly a drink all week', buildings: ['tavern', 'brewery', 'ciderpress'] },
+  { id: 'bather', name: 'Bather', desc: 'A bathhouse with its fire going.', met: 'A hot bath', unmet: 'No bath to be had', buildings: ['bathhouse'] },
+  { id: 'musicLover', name: 'Music lover', desc: 'Music in the evenings from a bard\u2019s stage.', met: 'Music in the evenings', unmet: 'No music in this town', buildings: ['stage'] },
+  { id: 'greenThumb', name: 'Green thumb', desc: 'A flower bed or herb garden near home.', met: 'Flowers by the door', unmet: 'Not a flower near home', buildings: ['flowerbed', 'herbgarden'] },
+  { id: 'homebody', name: 'Homebody', desc: 'A cottage, not a shack.', met: 'A proper home', unmet: 'Stuck in a shack', buildings: ['cottage'] },
+];
+export const WANT_BY_ID = Object.fromEntries(WANTS.map(x => [x.id, x])) as Record<WantId, WantDef>;
 export interface TraitDef {
   id: string;
   name: string;
@@ -349,6 +365,7 @@ export const TRAITS: TraitDef[] = [
   { id: 'hummer', name: 'Hums loudly', desc: 'Everyone nearby slowly likes them less.' },
   { id: 'stoic', name: 'Stoic', desc: 'Frontier strain affects them half as much.' },
   { id: 'vain', name: 'Vain', desc: '−5 unless sleeping in a cottage.' },
+  // older saves only: new settlers get the tippler want instead
   { id: 'tippler', name: 'Tippler', desc: 'A drink gives +4 extra. −4 when there\u2019s nothing to drink.' },
 ];
 export const TRAIT_BY_ID: Record<string, TraitDef> = Object.fromEntries(TRAITS.map(t => [t.id, t]));

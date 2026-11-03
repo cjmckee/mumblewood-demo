@@ -52,6 +52,8 @@ g.res.stew = 40; g.tally = { eaten: { stew: 30 }, drunk: {}, made: {}, used: {} 
 for (const c of g.colonists) c.mood = 90;
 runHours(g, 2);
 check(g.chartersDone.includes('settled'), 'the charter completes');
+check(g.decisions[0]?.kind === 'charter-complete', 'completion is celebrated before the next choice');
+apply(g, { type: 'resolve', option: 0 });
 check(g.decisions[0]?.kind === 'charter' && g.decisions[1]?.kind === 'perk', `next charter comes before the cornerstone (${g.decisions.map(d => d.kind)})`);
 
 // the requirement row names what it counts

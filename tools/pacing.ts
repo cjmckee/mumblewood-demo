@@ -1,7 +1,7 @@
 // Pacing probe: when each charter is picked and finished, how research goes, and how population and
 // strain grow. Targets: charter 1 by day 10-16, charter 2 by day 28-36, a win by day 50-60.
 // Usage: npx tsx tools/pacing.ts [runs=60] [maxDays=90]   (VERBOSE=1 prints every run)
-import { createWorld, tick, day, alive, avgMood, TICKS_PER_HOUR, World, charterDef, colonyComfort, comfortGaps } from '../src/sim/world';
+import { createWorld, tick, day, alive, avgMood, TICKS_PER_HOUR, World, charterDef, colonyComfort, comfortGaps, wantMet } from '../src/sim/world';
 import { autoDecide, autoBuild, BOT, ROUTE_AVOID, pushing } from '../src/sim/autoplayer';
 import { CHARTERS } from '../src/sim/content';
 import { START } from '../src/sim/scenario';
@@ -41,6 +41,8 @@ if (process.env.STRICTER_FROM) START.seasons.stricterFromYear = Number(process.e
 if (process.env.SUMMER_WORK) START.seasons.work.summer = process.env.SUMMER_WORK.split('-').map(Number) as [number, number];
 if (process.env.RECRUIT_WINTER) START.seasons.recruitEvery.winter = Number(process.env.RECRUIT_WINTER);
 if (process.env.RECRUIT_SPRING) START.seasons.recruitEvery.spring = Number(process.env.RECRUIT_SPRING);
+// WANTS=0 turns personal wants' mood off (they're still drawn, so runs stay comparable)
+if (process.env.WANTS === '0') START.wants.on = false;
 if (process.env.COMFORTS_FIRST) BOT.comfortsFirst = process.env.COMFORTS_FIRST === '1';
 
 // BOT='{"varietyRules":false}' switches bot behaviours for an A/B
@@ -54,7 +56,7 @@ interface Run {
   fin: { meals: number; mood: number; min: number; push: boolean }[];
   seed: number; status: string; day: number; peak: number; lost: number; deaths: number;
   offered: number | null; picks: { id: string; day: number }[]; dones: { id: string; day: number }[];
-  research: { id: string; day: number }[]; owned: number; builtShare: number; story: Record<string, number>; gold: Record<string, number>; caravanGoods: number; caravanBps: number; pop: Record<number, number>; strain: Record<number, number>; mood: Record<number, number>; comfort: Record<number, number>; gaps: Record<number, Record<string, number>>;
+  research: { id: string; day: number }[]; owned: number; builtShare: number; story: Record<string, number>; gold: Record<string, number>; caravanGoods: number; caravanBps: number; pop: Record<number, number>; strain: Record<number, number>; mood: Record<number, number>; wantsMet: Record<number, number>; low: Record<number, number>; comfort: Record<number, number>; gaps: Record<number, Record<string, number>>;
 }
 const out: Run[] = [];
 for (let i = 0; i < runs; i++) {
@@ -66,7 +68,7 @@ for (let i = 0; i < runs; i++) {
   if (process.env.START_KNOWS && w.research) w.research.done.push(...process.env.START_KNOWS.split(','));
   let r = seed;
   const rand = () => ((r = (r * 1103515245 + 12345) >>> 0) / 4294967296);
-  const run: Run = { seed, status: 'timeout', day: 0, peak: 0, lost: 0, deaths: 0, offered: null, picks: [], dones: [], research: [], owned: 0, builtShare: 0, story: {}, gold: {}, caravanGoods: 0, caravanBps: 0, pop: {}, strain: {}, mood: {}, comfort: {}, gaps: {}, fin: [] };
+  const run: Run = { seed, status: 'timeout', day: 0, peak: 0, lost: 0, deaths: 0, offered: null, picks: [], dones: [], research: [], owned: 0, builtShare: 0, story: {}, gold: {}, caravanGoods: 0, caravanBps: 0, pop: {}, strain: {}, mood: {}, wantsMet: {}, low: {}, comfort: {}, gaps: {}, fin: [] };
   let lastCharter: string | null = null, doneN = 0, resN = 0;
   const watch = () => {
     if (w.charter && w.charter !== lastCharter) run.picks.push({ id: w.charter, day: day(w) });
@@ -84,7 +86,7 @@ for (let i = 0; i < runs; i++) {
     autoBuild(w);
     // during the finale, once a day: meal comfort, mood, the lowest mood, and whether the bot is pushing for the finish
     if (Math.round(w.hour) % 24 === 12 && ['hall', 'longtable'].includes(w.charter ?? '')) { const ms = alive(w).map(c => c.mood); run.fin.push({ meals: (comfortGaps(w).find(g => g.need === 'meals')?.avg ?? 0) * 100, mood: avgMood(w), min: Math.min(...ms), push: pushing(w) }); }
-    if (Math.round(w.hour) % 24 === 12 && marks.includes(day(w))) { run.pop[day(w)] = alive(w).length; run.strain[day(w)] = Math.round(w.strain); run.mood[day(w)] = Math.round(avgMood(w)); run.comfort[day(w)] = Math.round(colonyComfort(w) * 100); run.gaps[day(w)] = Object.fromEntries(comfortGaps(w).map(g => [g.need, Math.round(g.avg * 100)])); }
+    if (Math.round(w.hour) % 24 === 12 && marks.includes(day(w))) { run.pop[day(w)] = alive(w).length; run.strain[day(w)] = Math.round(w.strain); run.mood[day(w)] = Math.round(avgMood(w)); { const ws = alive(w).flatMap(c => (c.wants ?? []).map(id => wantMet(w, c, id))); run.wantsMet[day(w)] = ws.length ? Math.round(ws.filter(Boolean).length / ws.length * 100) : 0; run.low[day(w)] = Math.round(Math.min(...alive(w).map(c => c.mood))); } run.comfort[day(w)] = Math.round(colonyComfort(w) * 100); run.gaps[day(w)] = Object.fromEntries(comfortGaps(w).map(g => [g.need, Math.round(g.avg * 100)])); }
   }
   watch();
   run.status = w.status === 'playing' ? 'timeout' : w.status; run.day = day(w); run.peak = w.stats.peakPop;
@@ -129,7 +131,7 @@ if (res.size) {
   const m = (f: (x: { meals: number; mood: number; min: number; push: boolean }) => number) => avg(fins.map(x => avg(x.fin.map(f))));
   console.log(`during the finale (${fins.length} runs, ${f1(avg(fins.map(x => x.fin.length)))} days): meal comfort ${f1(m(x => x.meals))}% · mood ${f1(m(x => x.mood))} · lowest mood ${f1(m(x => x.min))} · pushing ${f1(m(x => x.push ? 100 : 0))}% of days`); }
 console.log(`by day:   ${marks.map(m => `d${m}`.padStart(6)).join('')}`);
-for (const [label, key] of [['pop', 'pop'], ['strain', 'strain'], ['mood', 'mood'], ['comfort %', 'comfort']] as const) console.log(`${label.padEnd(9)} ${marks.map(m => f1(avg(out.map(x => x[key][m]).filter(v => v != null))).padStart(6)).join('')}`);
+for (const [label, key] of [['pop', 'pop'], ['strain', 'strain'], ['mood', 'mood'], ['lowest', 'low'], ['wants met %', 'wantsMet'], ['comfort %', 'comfort']] as const) console.log(`${label.padEnd(9)} ${marks.map(m => f1(avg(out.map(x => x[key][m]).filter(v => v != null))).padStart(6)).join('')}`);
 for (const need of ['shelter', 'meals', 'evenings', 'health', 'surroundings']) console.log(`  ${need.padEnd(13)}${marks.map(m => f1(avg(out.map(x => x.gaps[m]?.[need]).filter(v => v != null))).padStart(6)).join('')}`);
 const golds = [...new Set(out.flatMap(x => Object.keys(x.gold)))].sort();
 console.log(`blueprints: own ${pct(avg(out.map(x => x.owned)) * out.length)} of the draftable pool (wins ${pct(avg(out.filter(x => x.status === 'won').map(x => x.owned)) * out.length)}), built ${pct(avg(out.map(x => x.builtShare)) * out.length)} of what they own; ${f1(avg(out.map(x => x.caravanBps)))} bought from the caravan a run`);

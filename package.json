@@ -8,7 +8,12 @@
     "typecheck": "tsc --noEmit",
     "build": "node build.mjs",
     "check": "npm run typecheck && npm test && npm run build",
-    "test:ui": "node tools/ui-check.mjs"
+    "test:ui": "node tools/ui-check.mjs",
+    "test:ui:recruit": "node tools/recruit-ui-check.mjs",
+    "prototype:recruit": "node tools/recruit-prototype.mjs",
+    "test:ui:charter": "node tools/charter-ui-check.mjs",
+    "prototype:charter": "node tools/charter-prototype.mjs",
+    "test:ui:charter-animation": "node tools/charter-animation-check.mjs"
   },
   "keywords": [],
   "author": "",
