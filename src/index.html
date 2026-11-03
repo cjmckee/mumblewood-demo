@@ -266,9 +266,9 @@ h3.first { margin-top: 4px; }
 /* recruit traits as chips */
 .opt .traits { display: flex; flex-wrap: wrap; gap: 4px; }
 .opt .traits i { font-style: normal; font-size: 12px; color: var(--text); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; }
-.wants i.want, .traits.wants i { font-style: normal; font-size: 12px; color: var(--text); border: 1px dashed var(--line); border-radius: 999px; padding: 1px 8px; margin-right: 4px; display: inline-block; }
-.wants i.want.met { border-style: solid; border-color: #6fae6a; color: #a6d9a0; }
-.wants i.want.unmet { border-style: solid; border-color: #c96a5a; color: #f0a596; }
+.wants .want, .traits.wants .want { font-style: normal; font-size: 12px; color: var(--text); border: 1px dashed var(--line); border-radius: 999px; padding: 1px 8px; margin-right: 4px; display: inline-block; }
+.wants .want.met { border-style: solid; border-color: #6fae6a; color: #a6d9a0; }
+.wants .want.unmet { border-style: solid; border-color: #c96a5a; color: #f0a596; }
 .recruit .opt > b .rname { flex: 1; font-size: inherit; color: inherit; }
 .reroll-note { margin: 2px 0 0; font-size: 12px; }
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin: 6px 0 8px; }
@@ -420,8 +420,21 @@ button.leavers { width:100%; }
 .inputs { margin:0; padding:0 10px; gap:10px; }
 .inputs .text-link { font-size:12px; }
 .recruit { border:1px solid var(--line); border-radius:12px; overflow:hidden; background:#232a24; }
-/* the recruit card under comparison: a stat sheet (a), the verdict first (b), side by side (c) */
-.rc .opt { display: grid; gap: 8px; }
+/* Selected recruit stat sheet. Help and recruitment are separate controls. */
+.recruit.rc { display: grid; gap: 8px; padding: 14px; }
+.rc-head { display: flex; gap: 10px; align-items: center; min-width: 0; flex-wrap: wrap; }
+.rc-head .rname { flex: 1; min-width: 100px; font-size: 18px; }
+.rc-head .avatar { width: 48px; height: 48px; }
+.rc-take { justify-self: end; margin-top: 2px; }
+.help-chip { background: transparent; font: inherit; cursor: help; line-height: 1.5; }
+.help-chip:hover, .help-chip:focus-visible { background: #384335; border-color: var(--accent); }
+.game-tooltip { position: fixed; z-index: 100; width: 290px; max-width: calc(100vw - 24px); padding: 13px 15px;
+  border: 1px solid #997345; border-radius: 10px; background: #20291f; color: var(--text);
+  box-shadow: 0 8px 28px #0009, inset 0 0 0 3px #e8a33d09; font: 13px/1.5 var(--font-body); overflow-wrap: anywhere; }
+.game-tooltip > small { display: block; color: var(--muted); text-transform: uppercase; font-size: 10px; letter-spacing: .12em; }
+.game-tooltip > b { display: block; color: var(--accent); font-family: var(--font-display); font-size: 23px; line-height: 1.25; margin: 2px 0 6px; }
+.game-tooltip > p { margin: 0; }
+.game-tooltip > footer { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 8px; color: #c7c4ae; font-size: 12px; }
 .rc-skills { display: grid; gap: 4px; }
 .rc-skill { display: grid; grid-template-columns: 18px 92px 1fr 22px; align-items: center; gap: 6px; font-size: 13px; color: var(--text); }
 .rc-skill .ico { width: 16px; height: 16px; }
@@ -436,25 +449,6 @@ button.leavers { width:100%; }
 .rc-want.ok, .rc-trait.good { border-color: #5f8f4f; color: var(--good); }
 .rc-want.no, .rc-trait.bad { border-color: #8f4a3a; color: #f3a28c; }
 .rc-foot { color: var(--muted); font-size: 12px; }
-.rc-verdict { margin: 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 15px; color: var(--text); }
-.rc-verdict .ico { width: 20px; height: 20px; }
-.rc-verdict .fav { color: var(--accent); font-size: 13px; }
-.rc-then { color: var(--muted); font-size: 13px; }
-.rc-lines { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; font-size: 13px; }
-.rc-lines li b { font-weight: 600; color: var(--text); }
-.rc-lines li span { color: var(--muted); }
-.rc-lines li.ok b { color: var(--good); }
-.rc-lines li.no b { color: #f3a28c; }
-.rcc { display: grid; grid-template-columns: 52px repeat(var(--n), 1fr); gap: 6px 6px; align-items: start; margin-top: 6px; }
-.rcc-label { color: var(--muted); font-size: 12px; padding-top: 3px; }
-.rcc-cell { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; min-width: 0; border-left: 1px solid var(--line); padding-left: 6px; }
-.rcc-cell .avatar { width: 44px; height: 44px; }
-.rcc-name { font-size: 14px; color: var(--text); }
-.rcc-sk { display: inline-flex; align-items: center; gap: 2px; font-size: 13px; color: var(--text); }
-.rcc-sk .ico { width: 16px; height: 16px; }
-.rcc-sk.fav { color: var(--accent); }
-.rcc-cell .rc-want, .rcc-cell .rc-trait { font-size: 11px; padding: 0 6px; }
-.rcc-take { width: 100%; }
 .recruit .opt { width:100%; border:0; border-radius:0; }
 .recruit details { padding:0 14px 4px; }
 .recruit summary { font-size:12px; }
