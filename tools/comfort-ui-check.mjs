@@ -31,6 +31,12 @@ try {
     await page.locator('#recovery-controls summary').click();
     assert.equal(await page.locator('#recovery-controls tbody tr').count(), 12);
     assert.equal(await page.locator('#recovery > .scroll tbody tr').first().locator('td').first().innerText(), '22h / 22h');
+    assert.equal(await page.locator('#strain-test > .scroll tbody tr').count(), 4);
+    assert.equal(await page.locator('#strain-test details').count(), 8);
+    await page.locator('[data-ablation-seed="1000"] summary').click();
+    assert.equal(await page.locator('[data-ablation-seed="1000"] tbody tr').count(), 4);
+    assert.match(await page.locator('[data-ablation-seed="1000"] tbody').innerText(), /Cutoff \/ 90.0/);
+    assert.match(await page.locator('#strain-test > .scroll tbody').innerText(), /Growth off/);
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'no page overflow on mobile');
     await page.screenshot({ path: `dist/comfort-prototype/${width}.png`, fullPage: true });
     assert.deepEqual(errors, []);
