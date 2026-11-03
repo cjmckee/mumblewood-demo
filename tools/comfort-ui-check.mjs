@@ -25,8 +25,12 @@ try {
     await page.locator('#people').fill('20');
     assert.doesNotMatch(await page.locator('#candidate-rate').innerText(), /NaN/);
     await page.locator('#day').fill('60');
-    await page.locator('summary').first().click();
-    assert.equal(await page.locator('details').first().locator('tbody tr').count(), 6);
+    await page.locator('#continuations summary').first().click();
+    assert.equal(await page.locator('#continuations details').first().locator('tbody tr').count(), 6);
+    assert.equal(await page.locator('#recovery > .scroll tbody tr').count(), 3);
+    await page.locator('#recovery-controls summary').click();
+    assert.equal(await page.locator('#recovery-controls tbody tr').count(), 12);
+    assert.equal(await page.locator('#recovery > .scroll tbody tr').first().locator('td').first().innerText(), '22h / 22h');
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'no page overflow on mobile');
     await page.screenshot({ path: `dist/comfort-prototype/${width}.png`, fullPage: true });
     assert.deepEqual(errors, []);

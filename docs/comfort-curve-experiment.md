@@ -49,6 +49,8 @@ Later events, festivals, recruitment and choices diverge. Whole-continuation mea
 
 ## Recommendation
 
+The [situational recovery follow-up](comfort-recovery.md) tests food loss, a recruit beyond bed capacity and diverted tavern workers, and diagnoses the seed-1000 meal-chain delay. It preserves the default balance and keeps logistics counterfactuals separate from the curve comparison.
+
 Keep both curves experimental while reviewing the tradeoff in the mobile comparison. The gentler alternative is a useful starting point for player testing because it strengthens high-comfort rewards without adding low-comfort penalties. The results do not establish that it is the better whole-game balance: it also has unfinished seed-1000 continuations. Next, watch recovery from a concrete housing/food/service shortage and the cost of fixing it, rather than treating faster bot victories as the sole design goal or adding items to compensate.
 
 ## Reproduction and review
