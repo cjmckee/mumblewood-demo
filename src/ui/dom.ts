@@ -1,3 +1,5 @@
+export const escapeHtml = (s: string) => s.replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]!));
+
 /** Preserve interaction state when live simulation values refresh a panel. */
 export function replaceMarkup(root: HTMLElement, html: string, preserveDetails = true) {
   const active = root.contains(document.activeElement) ? document.activeElement as HTMLElement : null;

@@ -762,6 +762,8 @@ const day = (w: World) => Math.floor(w.hour / 24) + 1;
 export function autoDecide(w: World, style: 'greedy' | 'random' = 'greedy', rand = Math.random) {
   while (w.decisions.length) {
     const d = w.decisions[0];
+    // An acknowledgement consumes no choice RNG and changes no strategy or rewards.
+    if (d.kind === 'charter-complete') { apply(w, { type: 'resolve', option: 0 }); continue; }
     let option = 0;
     // this kind of choice made at random: the whole control (style 'random'), or one kind at a time (BOT.randomize) to see what it's worth
     const rnd = style === 'random' || BOT.randomize.includes(d.kind);

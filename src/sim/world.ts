@@ -152,6 +152,7 @@ export interface Caravan {
 }
 
 export type Decision =
+  | { kind: 'charter-complete'; charter: string; tier: 1 | 2; gold: number; strainBefore: number; strainAfter: number }
   | { kind: 'charter'; tier: 1 | 2 | 3; options: string[] }
   | { kind: 'blueprint'; options: string[] }
   | { kind: 'recruit'; options: Colonist[] }
@@ -1325,6 +1326,8 @@ function resolveDecision(w: World, option: number): string | null {
   if (d.kind === 'recruit' && (d.options[option]?.fee ?? 0) > w.gold) return `${first(d.options[option])} wants ${d.options[option].fee} gold to join.`;
   w.decisions.shift();
   switch (d.kind) {
+    // Rewards and standing already changed at completion; Continue only acknowledges the news.
+    case 'charter-complete': break;
     case 'charter': {
       const id = d.options[option] ?? d.options[0];
       w.charter = id; w.charterHours = 0; w.tally = freshTally();
@@ -3359,6 +3362,7 @@ function checkCharter(w: World) {
   w.chartersDone.push(c.id); w.charter = null;
   addLog(w, `Charter complete: ${c.name}! The Crown sends a stiffly worded note of approval.`, 'good');
   // the Crown's approval eases the frontier's wear: a share of current strain, so a colony deep in it climbs back further
+  const strainBefore = w.strain;
   const eased = ease(w, START.relief.charter);
   if (eased) addLog(w, `Word of the charter spreads around the hearth. Strain eases by ${eased}.`, 'good');
   if (c.tier === 3) { w.status = 'won'; addLog(w, 'The Crown declares the colony a proper town. Someone makes a banner. It is spelled wrong.', 'good'); return; }
@@ -3371,6 +3375,7 @@ function checkCharter(w: World) {
   const cornerstone = w.decisions.splice(queued);
   w.charterTier = c.tier + 1;
   w.decisions.push(charterDecision(w, w.charterTier as 2 | 3), ...cornerstone);
+  w.decisions.unshift({ kind: 'charter-complete', charter: c.id, tier: c.tier, gold: stipend, strainBefore, strainAfter: w.strain });
 }
 
 // ---------- Gold and the caravan ----------

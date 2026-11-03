@@ -214,6 +214,47 @@ h3.first { margin-top: 4px; }
 .opt span { font-size: 13px; color: var(--muted); line-height: 1.4; }
 .opt small { font-size: 12px; color: var(--accent); }
 .skip { justify-self: start; }
+/* A quiet celebration between charters; the header can later host the animated scene. */
+.charter-celebration { gap: 18px; border-color: #76603c; background: radial-gradient(ellipse at 50% 0%, #45503966, transparent 42%), var(--panel-solid); }
+.cc-celebrate { display: grid; justify-items: center; gap: 10px; text-align: center; }
+.cc-celebrate .eyebrow { padding-inline: 34px; }
+/* The final scene is the default, so reduced motion never reveals an empty header. */
+.cc-scene { display: block; width: 100%; max-width: 480px; height: auto; overflow: visible; }
+.cc-scene .cc-build, .cc-scene .cc-settler, .cc-scene .cc-banner { transform-box: fill-box; transform-origin: center bottom; }
+.cc-scene .cc-banner { transform-origin: center top; }
+.cc-scene .cc-confetti { opacity: 0; transform-box: fill-box; transform-origin: center; }
+.cc-scene .cc-smoke { opacity: .35; }
+.cc-animated .cc-build { animation: cc-rise 750ms cubic-bezier(.2,.7,.3,1) var(--cc-delay) both; }
+.cc-animated .cc-settler { animation: cc-arrive 650ms ease-out var(--cc-delay) both; }
+.cc-animated .cc-lamplight { animation: cc-light 800ms ease-out var(--cc-delay) both; }
+.cc-animated .cc-banner { animation: cc-unfurl 850ms cubic-bezier(.2,.7,.3,1) var(--cc-delay) both; }
+.cc-animated .cc-confetti { animation: cc-confetti 1500ms ease-out var(--cc-delay) both; }
+.cc-animated .cc-smoke { animation: cc-smoke 2300ms ease-out both; }
+@keyframes cc-rise { from { opacity: 0; transform: translateY(13px) scale(.8); } to { opacity: 1; transform: none; } }
+@keyframes cc-arrive { from { opacity: 0; transform: translateX(-12px); } to { opacity: 1; transform: none; } }
+@keyframes cc-light { from { opacity: 0; } to { opacity: 1; } }
+@keyframes cc-unfurl { from { opacity: 0; transform: scaleY(.08); } to { opacity: 1; transform: none; } }
+@keyframes cc-confetti { 0% { opacity: 0; transform: translateY(10px) rotate(-20deg); } 25% { opacity: .9; } 100% { opacity: 0; transform: translateY(-25px) rotate(100deg); } }
+@keyframes cc-smoke { from { opacity: 0; transform: translateY(5px); } 40% { opacity: .45; } to { opacity: .35; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .cc-animated * { animation: none !important; } }
+.cc-achievement { margin: 0; color: var(--accent); font-size: 13px; }
+.cc-rewards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-block: 1px solid #75603c66; padding: 12px 0; gap: 10px; text-align: center; }
+.cc-rewards > span { display: flex; flex-wrap: wrap; justify-content: center; align-content: start; align-items: center; gap: 3px; min-width: 0; font-size: 13px; }
+.cc-rewards .ico { width: 16px; height: 16px; }
+.cc-rewards b { color: var(--good); overflow-wrap: anywhere; }
+.cc-rewards small { width: 100%; color: var(--muted); font-size: 11px; }
+.cc-standing { margin: 0; display: flex; justify-content: center; gap: 12px; font-size: 12px; color: var(--muted); }
+.cc-standing b { color: var(--accent); }
+.charter-celebration .cc-expectations h3 { margin: 0 0 5px; font: 600 22px var(--font-display); text-transform: none; letter-spacing: normal; color: var(--text); }
+.cc-expectations > .lede { font-size: 13px; }
+.cc-expectations ul { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 12px; }
+.cc-expectations li { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; font-size: 13px; }
+.cc-need-icon > .ico { width: 28px; height: 28px; }
+.cc-expectations li p { margin: 3px 0 0; color: var(--muted); line-height: 1.45; }
+.cc-wants, .cc-note { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.cc-wants { padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; }
+.cc-wants b { color: var(--text); }
+.cc-continue { justify-self: stretch; }
 #modal:focus { outline: none; }
 /* charter offers: one row per condition, with the buildings its goods still need */
 .opt .conds { display: grid; gap: 6px; margin-top: 2px; }

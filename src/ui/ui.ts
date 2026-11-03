@@ -1,7 +1,7 @@
 // DOM overlay: HUD, bottom sheet, decision modals. Talks to the sim only through commands.
 import { LORE_BOOST, EventNeed, EventOption, BUILDINGS, membersOf, isGroup, BUILDING_BY_ID, EVENTS, RESEARCH, RESEARCH_BY_ID, BRANCHES_AFTER, JOB_NAMES, WANT_BY_ID, WantId, TRADE_NAMES, TRADE_ICON, PERK_BY_ID, TRADER_BY_ID, RESOURCES, TRAIT_BY_ID, ResourceId, SKILL_NAMES, JOB_KINDS, JobKind, Recipe, InputKey, inputName, recipeRate, batchHours, Stars, CATEGORIES } from '../sim/content';
 import {
-  World, Command, Colonist, alive, avgMood, beds, buildingByUid, charterProgress, colonistById,
+  World, Command, Decision, Colonist, alive, avgMood, beds, buildingByUid, charterProgress, colonistById,
   day, hourOfDay, opinion, workersAt, MAX_DEPARTURES, sites, siteWork, remainingCost, storageCap, stored,
   keepsFresh, findSpot, canPlace, laborers, centerOf, built, Building, efficiencyAt, pathAt, MAP_SIZE, blockedReason, Errand, patientsAt, clinicAdmissions, lost, bedridden, spoilingFood, accepts, roomIn, FOODS, GOODS,
   recipesOf, recipeOn, optionOn, optionsOf, currentRecipe, orderedRecipes, INPUT_CAPACITY, OUTBOX_CAP, siteOk, rerollCost, REROLL_STEP, stockOf, recipeReach, charterHelpers, charterDef,
@@ -17,12 +17,14 @@ import type { IsoView, Picked } from '../render/iso';
 import { icon } from './icons';
 import { avatar } from './avatars';
 import { buildingStatus, saleQuantity } from './status';
-import { replaceMarkup } from './dom';
+import { replaceMarkup, escapeHtml as esc } from './dom';
 import { installTooltips } from './tooltips';
+import { charterCompletionCard } from './charter-celebration';
+import { animateCharterScene } from './charter-scene';
+import { NEED_NAMES, NEED_BUILD } from './needs';
 import { Destination, buildingDestination, fixDestination, producers } from './navigation';
 import { seasonOf, SEASON_NAMES } from '../sim/seasons';
 
-const esc = (s: string) => s.replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]!));
 const first = (c: Colonist) => c.name.split(' ')[0];
 const sum = (o: Partial<Record<string, number>>) => Object.values(o).reduce<number>((n, v) => n + (v ?? 0), 0);
 const hex = (n: number) => `#${n.toString(16).padStart(6, '0')}`;
@@ -252,6 +254,7 @@ export class UI {
   private strainOpen = false;
   private help: string | null = null;
   private dialogKey = '';
+  private celebrationStarted = new WeakMap<Decision, number | null>();
   private colonistFilter = 'all';
   /** the decision card is hidden so the player can look at the colony; play stays paused until they choose */
   private peeking = false;
@@ -1220,10 +1223,14 @@ export class UI {
     const el = this.root.querySelector('#modal') as HTMLElement;
     let html = '';
     const d = w.decisions[0];
+    if (d?.kind === 'charter-complete' && this.resumeOpen) this.celebrationStarted.set(d, null);
     if (w.status !== 'playing') html = this.endScreen(w);
     else if (this.resumeOpen) html = this.resumeCard(w);
     else if (d) {
       switch (d.kind) {
+        case 'charter-complete':
+          if (!this.celebrationStarted.has(d)) this.celebrationStarted.set(d, performance.now());
+          html = charterCompletionCard(w, d); break;
         case 'charter': html = this.cards(d.tier === 1 ? 'Your first charter' : d.tier === 3 ? 'The final charter' : `Charter ${d.tier} of 3`,
           d.tier === 3 ? 'Finish one of these to win.' : `${d.tier === 1 ? 'Complete three charters to establish your town. ' : ''}Each pays ${charterPreview(w, d.options[0]).rewards[0]}, eases strain ${Math.round(START.relief.charter * 100)}% and brings a cornerstone.`,
           d.options.map(id => this.charterOption(w, id))); break;
@@ -1304,6 +1311,11 @@ export class UI {
     }
     if (force || html !== this.lastModal) { replaceMarkup(el, html, !changedDialog); this.lastModal = html; }
     el.hidden = !html;
+    const scene = el.querySelector<SVGElement>('.cc-scene');
+    if (scene && d?.kind === 'charter-complete') {
+      const began = this.celebrationStarted.get(d);
+      animateCharterScene(scene, began == null ? null : performance.now() - began, this.prefs.calm);
+    }
     el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); el.tabIndex = -1;
     const heading = el.querySelector('h2');
     if (heading) { heading.id = 'dialog-title'; el.setAttribute('aria-labelledby', 'dialog-title'); }
@@ -1448,8 +1460,6 @@ function storeLabel(b: Building) {
   return `${b.allow.length} kinds`;
 }
 
-const NEED_BUILD: Record<NeedKey, string> = { shelter: 'leanto', food: 'rawFood', fire: 'woodcutter', meals: 'kitchen', variety: 'kitchen', health: 'clinic', evenings: 'tavern', surroundings: 'flowerbed', fresh: 'rawFood', drink: 'drinks', warmth: 'woodcutter' };
-const NEED_NAMES: Record<NeedKey, string> = { shelter: 'Shelter', food: 'Food', fire: 'A fire', meals: 'Meals', variety: 'Variety', health: 'Health', evenings: 'Evenings', surroundings: 'Surroundings', fresh: 'Something fresh', drink: 'A cold drink', warmth: 'Warmth' };
 const NEED_FIX: Record<NeedKey, string> = {
   shelter: 'beds for everyone, cottages better still',
   food: 'enough food in storage',
