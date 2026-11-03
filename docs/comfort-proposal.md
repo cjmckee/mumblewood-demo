@@ -4,11 +4,11 @@
 
 Make the existing comfort system more impactful and easier to understand before adding goods or production chains. Comfort measures living conditions and controls future strain growth. Personal wants affect mood separately. Current comfort balance is unchanged by the charter celebration work below.
 
-## Balance proposal — not implemented
+## Balance experiment — implemented, opt-in
 
 The current normal multiplier is `1.4 − comfort`. For ten settlers around day 20, moving from 60% to 90% comfort saves about two strain points over ten days, assuming the conditions remain fixed and no other modifiers or relief. That can be hard to perceive beside direct mood effects.
 
-Prototype a continuous curve through these illustrative points:
+The prototype now supports the proposed curve and a gentler comparison. The shipped default remains linear. See [the experiment and results](comfort-curve-experiment.md). The proposal uses a continuous curve through these points:
 
 | Comfort | Strain growth multiplier |
 | --- | ---: |
@@ -16,7 +16,7 @@ Prototype a continuous curve through these illustrative points:
 | 60% | 1.0× |
 | 90% | 0.3× |
 
-These are candidate tuning values, not established balance. In the same fixed-state example, the 60% → 90% improvement would save roughly five strain points over ten days. Define interpolation and bounds before implementing the experiment. Prioritize the reward for sustained good provision; monitor whether stronger low-comfort penalties create an unrecoverable workforce/mood spiral.
+These are candidate tuning values, not established balance. In the same fixed-state example, the 60% → 90% improvement would save roughly five strain points over ten days. The experiment uses linear interpolation between points and positive, bounded endpoints. Prioritize the reward for sustained good provision; monitor whether stronger low-comfort penalties create an unrecoverable workforce/mood spiral.
 
 Keep festivals and charter completion as relief for existing strain. Do not introduce passive strain recovery in the first curve experiment. Existing homes, meals, tables, variety, healthcare, entertainment, beauty and heating provide enough choices to test this direction.
 
@@ -50,4 +50,4 @@ A 2.4-second SVG/CSS scene now plays in the celebration header:
 - System reduced motion and the game's calm setting show the finished illustration immediately. Resumed cards also show the final scene. Live redraws preserve elapsed time, and inspecting the colony does not restart the sequence.
 - Retains the same saved acknowledgement and reward data; the illustration grants no buildings and changes no simulation timing or payouts.
 
-The stronger comfort curve and advance warning remain proposals. Run `npm run test:ui:charter-animation` after building the game and preview (with the repository served locally) to check motion, redraw continuity, early Continue, inspection, offline preview and reduced motion. `PREVIEW_ORIGIN` selects a local server other than `http://127.0.0.1:8765`. The check captures exact-timestamp frames for animation recordings in `dist/charter-prototype/frames/`.
+The comfort curves are now opt-in experiments; advance warning remains a proposal. Run `npm run test:ui:charter-animation` after building the game and preview (with the repository served locally) to check motion, redraw continuity, early Continue, inspection, offline preview and reduced motion. `PREVIEW_ORIGIN` selects a local server other than `http://127.0.0.1:8765`. The check captures exact-timestamp frames for animation recordings in `dist/charter-prototype/frames/`.

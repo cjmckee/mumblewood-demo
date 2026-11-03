@@ -1,0 +1,444 @@
+{
+  "baseCommit": "384dd0336c591b7f5e75ad8004b0d995857eed23",
+  "method": "Two seeded first-charter checkpoints; three curves and two staffing priorities; no grants. Normal defaults through the common checkpoint. Means over complete continuations have unequal durations. Ten-day comparison uses ten noon snapshots, not hourly means.",
+  "profiles": {
+    "current": {
+      "base": 1.4,
+      "slope": 1
+    },
+    "strong": [
+      [
+        0,
+        2.2
+      ],
+      [
+        0.3,
+        1.8
+      ],
+      [
+        0.6,
+        1
+      ],
+      [
+        0.9,
+        0.3
+      ],
+      [
+        1,
+        0.2
+      ]
+    ],
+    "reward": [
+      [
+        0,
+        1.4
+      ],
+      [
+        0.3,
+        1.1
+      ],
+      [
+        0.6,
+        0.8
+      ],
+      [
+        0.9,
+        0.3
+      ],
+      [
+        1,
+        0.2
+      ]
+    ]
+  },
+  "cases": [
+    {
+      "seed": 1000,
+      "limit": 90,
+      "checkpointHash": "94d9723b477e4544894ce06db8599c2bdf13f67cdba75188221dc8e25a1079b3",
+      "forkHour": 447,
+      "results": [
+        {
+          "seed": 1000,
+          "curve": "current",
+          "staffing": "standard",
+          "checkpointHash": "94d9723b477e4544894ce06db8599c2bdf13f67cdba75188221dc8e25a1079b3",
+          "forkDay": 19,
+          "observedHours": 1371,
+          "status": "won",
+          "elapsedDays": 75.5,
+          "completedCharters": 3,
+          "population": 13,
+          "departures": 0,
+          "deaths": 0,
+          "meanComfort": 0.7314387602791702,
+          "meanMood": 52.339616469922824,
+          "minimumMood": 5.5,
+          "peakStrain": 19.729653386920663,
+          "endStrain": 6.449601203696699,
+          "minFood": 9,
+          "minWood": 3,
+          "sulkerHours": 365,
+          "serviceStaffHours": 151,
+          "firstTenDaysNoonSamples": {
+            "observations": 10,
+            "meanComfort": 0.8079376190476191,
+            "meanMood": 47.06061111111111,
+            "lastSampleStrain": 9.216675299912158,
+            "lastSamplePopulation": 10,
+            "lastSampleHour": 684
+          }
+        },
+        {
+          "seed": 1000,
+          "curve": "current",
+          "staffing": "earlier-comfort",
+          "checkpointHash": "94d9723b477e4544894ce06db8599c2bdf13f67cdba75188221dc8e25a1079b3",
+          "forkDay": 19,
+          "observedHours": 1371,
+          "status": "won",
+          "elapsedDays": 75.5,
+          "completedCharters": 3,
+          "population": 13,
+          "departures": 0,
+          "deaths": 0,
+          "meanComfort": 0.7314387602791702,
+          "meanMood": 52.339616469922824,
+          "minimumMood": 5.5,
+          "peakStrain": 19.729653386920663,
+          "endStrain": 6.449601203696699,
+          "minFood": 9,
+          "minWood": 3,
+          "sulkerHours": 365,
+          "serviceStaffHours": 151,
+          "firstTenDaysNoonSamples": {
+            "observations": 10,
+            "meanComfort": 0.8079376190476191,
+            "meanMood": 47.06061111111111,
+            "lastSampleStrain": 9.216675299912158,
+            "lastSamplePopulation": 10,
+            "lastSampleHour": 684
+          }
+        },
+        {
+          "seed": 1000,
+          "curve": "strong",
+          "staffing": "standard",
+          "checkpointHash": "94d9723b477e4544894ce06db8599c2bdf13f67cdba75188221dc8e25a1079b3",
+          "forkDay": 19,
+          "observedHours": 1659,
+          "status": "won",
+          "elapsedDays": 87.5,
+          "completedCharters": 3,
+          "population": 12,
+          "departures": 0,
+          "deaths": 0,
+          "meanComfort": 0.7215594673105755,
+          "meanMood": 55.07623345745413,
+          "minimumMood": 12.299999999999997,
+          "peakStrain": 17.4382660692199,
+          "endStrain": 3.705030042131175,
+          "minFood": 9,
+          "minWood": 1,
+          "sulkerHours": 258,
+          "serviceStaffHours": 212,
+          "firstTenDaysNoonSamples": {
+            "observations": 10,
+            "meanComfort": 0.8086642857142857,
+            "meanMood": 47.162063492063496,
+            "lastSampleStrain": 5.4392999280464265,
+            "lastSamplePopulation": 9,
+            "lastSampleHour": 684
+          }
+        },
+        {
+          "seed": 1000,
+          "curve": "strong",
+          "staffing": "earlier-comfort",
+          "checkpointHash": "94d9723b477e4544894ce06db8599c2bdf13f67cdba75188221dc8e25a1079b3",
+          "forkDay": 19,
+          "observedHours": 1719,
+          "status": "cutoff",
+          "elapsedDays": 90,
+          "completedCharters": 2,
+          "population": 12,
+          "departures": 0,
+          "deaths": 0,
+          "meanComfort": 0.6949637792778646,
+          "meanMood": 51.60359402216303,
+          "minimumMood": 12.299999999999997,
+          "peakStrain": 18.502417003106576,
+          "endStrain": 5.917477519688484,
+          "minFood": 9,
+          "minWood": 1,
+          "sulkerHours": 258,
+          "serviceStaffHours": 347,
+          "firstTenDaysNoonSamples": {
+            "observations": 10,
+            "meanComfort": 0.8086642857142857,
+            "meanMood": 47.162063492063496,
+            "lastSampleStrain": 5.4392999280464265,
+            "lastSamplePopulation": 9,
+            "lastSampleHour": 684
+          }
+        },
+        {
+          "seed": 1000,
+          "curve": "reward",
+          "staffing": "standard",
+          "checkpointHash": "94d9723b477e4544894ce06db8599c2bdf13f67cdba75188221dc8e25a1079b3",
+          "forkDay": 19,
+          "observedHours": 1719,
+          "status": "cutoff",
+          "elapsedDays": 90,
+          "completedCharters": 2,
+          "population": 12,
+          "departures": 0,
+          "deaths": 0,
+          "meanComfort": 0.6936943465974671,
+          "meanMood": 53.43152798449034,
+          "minimumMood": 12.399999999999999,
+          "peakStrain": 16.73164077113237,
+          "endStrain": 6.905342539806635,
+          "minFood": 9,
+          "minWood": 1,
+          "sulkerHours": 375,
+          "serviceStaffHours": 205,
+          "firstTenDaysNoonSamples": {
+            "observations": 10,
+            "meanComfort": 0.8086642857142857,
+            "meanMood": 47.183035714285715,
+            "lastSampleStrain": 5.4011634084791345,
+            "lastSamplePopulation": 9,
+            "lastSampleHour": 684
+          }
+        },
+        {
+          "seed": 1000,
+          "curve": "reward",
+          "staffing": "earlier-comfort",
+          "checkpointHash": "94d9723b477e4544894ce06db8599c2bdf13f67cdba75188221dc8e25a1079b3",
+          "forkDay": 19,
+          "observedHours": 1719,
+          "status": "cutoff",
+          "elapsedDays": 90,
+          "completedCharters": 2,
+          "population": 12,
+          "departures": 0,
+          "deaths": 0,
+          "meanComfort": 0.6901276436441798,
+          "meanMood": 51.45344788154112,
+          "minimumMood": 12.799999999999997,
+          "peakStrain": 16.50972217113871,
+          "endStrain": 4.849037016873266,
+          "minFood": 9,
+          "minWood": 1,
+          "sulkerHours": 216,
+          "serviceStaffHours": 388,
+          "firstTenDaysNoonSamples": {
+            "observations": 10,
+            "meanComfort": 0.8086642857142857,
+            "meanMood": 47.183035714285715,
+            "lastSampleStrain": 5.4011634084791345,
+            "lastSamplePopulation": 9,
+            "lastSampleHour": 684
+          }
+        }
+      ]
+    },
+    {
+      "seed": 24757,
+      "limit": 90,
+      "checkpointHash": "6dd7cc6afe53809dd9da5ec6e7a6def6099fa96c4a1e12cdd60ffea2a9809d0f",
+      "forkHour": 212,
+      "results": [
+        {
+          "seed": 24757,
+          "curve": "current",
+          "staffing": "standard",
+          "checkpointHash": "6dd7cc6afe53809dd9da5ec6e7a6def6099fa96c4a1e12cdd60ffea2a9809d0f",
+          "forkDay": 9,
+          "observedHours": 1198,
+          "status": "won",
+          "elapsedDays": 58.5,
+          "completedCharters": 3,
+          "population": 12,
+          "departures": 1,
+          "deaths": 0,
+          "meanComfort": 0.7727476822895329,
+          "meanMood": 49.69914752702307,
+          "minimumMood": 2.3999999999999986,
+          "peakStrain": 19.452546663321147,
+          "endStrain": 9.906916998068235,
+          "minFood": 3,
+          "minWood": 0,
+          "sulkerHours": 283,
+          "serviceStaffHours": 590,
+          "firstTenDaysNoonSamples": {
+            "observations": 10,
+            "meanComfort": 0.7034131944444445,
+            "meanMood": 47.05594444444444,
+            "lastSampleStrain": 5.087642921003693,
+            "lastSamplePopulation": 10,
+            "lastSampleHour": 444
+          }
+        },
+        {
+          "seed": 24757,
+          "curve": "current",
+          "staffing": "earlier-comfort",
+          "checkpointHash": "6dd7cc6afe53809dd9da5ec6e7a6def6099fa96c4a1e12cdd60ffea2a9809d0f",
+          "forkDay": 9,
+          "observedHours": 1954,
+          "status": "cutoff",
+          "elapsedDays": 90,
+          "completedCharters": 2,
+          "population": 12,
+          "departures": 1,
+          "deaths": 0,
+          "meanComfort": 0.7875905688282395,
+          "meanMood": 52.90953480557881,
+          "minimumMood": 2.3999999999999986,
+          "peakStrain": 24.909418494778404,
+          "endStrain": 24.909418494778404,
+          "minFood": 3,
+          "minWood": 0,
+          "sulkerHours": 403,
+          "serviceStaffHours": 939,
+          "firstTenDaysNoonSamples": {
+            "observations": 10,
+            "meanComfort": 0.7034131944444445,
+            "meanMood": 47.05594444444444,
+            "lastSampleStrain": 5.087642921003693,
+            "lastSamplePopulation": 10,
+            "lastSampleHour": 444
+          }
+        },
+        {
+          "seed": 24757,
+          "curve": "strong",
+          "staffing": "standard",
+          "checkpointHash": "6dd7cc6afe53809dd9da5ec6e7a6def6099fa96c4a1e12cdd60ffea2a9809d0f",
+          "forkDay": 9,
+          "observedHours": 1366,
+          "status": "won",
+          "elapsedDays": 65.5,
+          "completedCharters": 3,
+          "population": 13,
+          "departures": 0,
+          "deaths": 0,
+          "meanComfort": 0.7684397849809049,
+          "meanMood": 50.82255500234273,
+          "minimumMood": 14.700000000000003,
+          "peakStrain": 16.739569912369237,
+          "endStrain": 6.024030468623483,
+          "minFood": 5,
+          "minWood": 0,
+          "sulkerHours": 92,
+          "serviceStaffHours": 558,
+          "firstTenDaysNoonSamples": {
+            "observations": 10,
+            "meanComfort": 0.6981359217171718,
+            "meanMood": 45.542876262626265,
+            "lastSampleStrain": 8.859936175069546,
+            "lastSamplePopulation": 11,
+            "lastSampleHour": 444
+          }
+        },
+        {
+          "seed": 24757,
+          "curve": "strong",
+          "staffing": "earlier-comfort",
+          "checkpointHash": "6dd7cc6afe53809dd9da5ec6e7a6def6099fa96c4a1e12cdd60ffea2a9809d0f",
+          "forkDay": 9,
+          "observedHours": 1366,
+          "status": "won",
+          "elapsedDays": 65.5,
+          "completedCharters": 3,
+          "population": 13,
+          "departures": 0,
+          "deaths": 0,
+          "meanComfort": 0.7684397849809049,
+          "meanMood": 50.82255500234273,
+          "minimumMood": 14.700000000000003,
+          "peakStrain": 16.739569912369237,
+          "endStrain": 6.024030468623483,
+          "minFood": 5,
+          "minWood": 0,
+          "sulkerHours": 92,
+          "serviceStaffHours": 558,
+          "firstTenDaysNoonSamples": {
+            "observations": 10,
+            "meanComfort": 0.6981359217171718,
+            "meanMood": 45.542876262626265,
+            "lastSampleStrain": 8.859936175069546,
+            "lastSamplePopulation": 11,
+            "lastSampleHour": 444
+          }
+        },
+        {
+          "seed": 24757,
+          "curve": "reward",
+          "staffing": "standard",
+          "checkpointHash": "6dd7cc6afe53809dd9da5ec6e7a6def6099fa96c4a1e12cdd60ffea2a9809d0f",
+          "forkDay": 9,
+          "observedHours": 1174,
+          "status": "won",
+          "elapsedDays": 57.5,
+          "completedCharters": 3,
+          "population": 13,
+          "departures": 0,
+          "deaths": 0,
+          "meanComfort": 0.7714069324402859,
+          "meanMood": 54.79785665593153,
+          "minimumMood": 9.200000000000003,
+          "peakStrain": 16.496999567799687,
+          "endStrain": 5.144444548128152,
+          "minFood": 3,
+          "minWood": 0,
+          "sulkerHours": 180,
+          "serviceStaffHours": 582,
+          "firstTenDaysNoonSamples": {
+            "observations": 10,
+            "meanComfort": 0.7034131944444445,
+            "meanMood": 47.23672222222222,
+            "lastSampleStrain": 4.607405170359861,
+            "lastSamplePopulation": 10,
+            "lastSampleHour": 444
+          }
+        },
+        {
+          "seed": 24757,
+          "curve": "reward",
+          "staffing": "earlier-comfort",
+          "checkpointHash": "6dd7cc6afe53809dd9da5ec6e7a6def6099fa96c4a1e12cdd60ffea2a9809d0f",
+          "forkDay": 9,
+          "observedHours": 1126,
+          "status": "won",
+          "elapsedDays": 55.5,
+          "completedCharters": 3,
+          "population": 13,
+          "departures": 0,
+          "deaths": 0,
+          "meanComfort": 0.7686763366751896,
+          "meanMood": 54.268854234378175,
+          "minimumMood": 9.200000000000003,
+          "peakStrain": 16.496999567799687,
+          "endStrain": 3.946905241617409,
+          "minFood": 3,
+          "minWood": 0,
+          "sulkerHours": 180,
+          "serviceStaffHours": 580,
+          "firstTenDaysNoonSamples": {
+            "observations": 10,
+            "meanComfort": 0.7034131944444445,
+            "meanMood": 47.23672222222222,
+            "lastSampleStrain": 4.607405170359861,
+            "lastSamplePopulation": 10,
+            "lastSampleHour": 444
+          }
+        }
+      ]
+    }
+  ]
+}

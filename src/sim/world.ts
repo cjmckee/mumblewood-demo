@@ -7,6 +7,7 @@ import {
   FINALE_COLONISTS, WANTS, WANT_BY_ID, WantId,
 } from './content';
 import { planInputBatch } from './batching';
+import { comfortMultiplier } from './comfort';
 import { draftLinks } from './charterplan';
 import { START, Season, SEASONS } from './scenario';
 import { seasonOf, seasonOn, rule, SEASON_NAMES } from './seasons';
@@ -2794,7 +2795,7 @@ export function comfortGaps(w: World, standing = standingOf(w)) {
   return keys.map(k => ({ need: k, avg: sums[k] / a.length })).sort((x, y) => x.avg - y.avg);
 }
 /** how much the colony's comfort scales the strain rise right now */
-export const comfortFactor = (w: World) => Math.max(0.2, START.comfortScale.base - Math.min(1, (w.comfort ?? colonyComfort(w)) * (hasPerk(w, 'homesteaders') ? 1.3 : 1)) * START.comfortScale.slope);
+export const comfortFactor = (w: World, comfort = w.comfort ?? colonyComfort(w)) => comfortMultiplier(comfort * (hasPerk(w, 'homesteaders') ? 1.3 : 1), START.comfortScale);
 /** strain rise per day at the colony's current size, day and comfort (before boons) */
 export function strainPerDay(w: World) {
   const d = day(w) - 1 + (hourOfDay(w) - 6) / 24;
