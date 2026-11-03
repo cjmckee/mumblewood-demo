@@ -4,7 +4,7 @@ import {
   MEALS, PERKS, RAW_FOODS, ResourceId, SHIRTS, SKINS, SURNAMES, TRAITS, TRAIT_BY_ID, BUILDINGS, buildWork,
   JOB_EVENTS, JobEventDef, ILLNESSES, RESOURCES, Recipe, InputKey, CATEGORIES, isGroup, membersOf, inputName, recipeRate, batchHours, SITES, SiteId, MEAL_MOOD, DRINK_MOOD, TIER, TIER_RANK, GoodTier, tradeable, TallyHow, RENOWN, RENOWN_KIND_MIN, atLeast,
   CharterMetric, RESEARCH, RESEARCH_BY_ID, BRANCHES_AFTER, PRICE, TRADERS, TRADER_BY_ID, LORE_BOOST, GUILD_BOOST, Tier, EventDef,
-  FINALE_COLONISTS,
+  FINALE_COLONISTS, WANTS, WANT_BY_ID, WantId,
 } from './content';
 import { planInputBatch } from './batching';
 import { draftLinks } from './charterplan';
@@ -63,6 +63,10 @@ export interface Colonist {
    * priority first, and labor (haul, build) when none does. Null: a laborer. Missing in older saves: read from job.
    */
   trade?: JobKind | null;
+  /** personal wants, from arrival (missing in older saves: none) */
+  wants?: WantId[];
+  /** the days they had a drink at the tavern, lately (for the tippler want) */
+  drankOn?: number[];
   task: Task | null; carrying: Carry | null;
   /** eating: fetch food from storage `from`, then eat at `at`; until = 0 while walking */
   meal: { at: number | null; until: number; from: number | null; got: ResourceId | null } | null;
@@ -789,7 +793,16 @@ function tastesFor(w: World, id: number): Colonist['tastes'] {
 }
 const TASTE_BONUS = 3;
 /** meals in the order a colonist reaches for them: loved, then the rest, disliked last */
-function mealOrder(c: Colonist) { return [...MEALS].sort((a, b) => taste(c, b) - taste(c, a)); }
+/**
+ * what someone reaches for in the larder: favourites first, then what their wants ask for (something sweet for a sweet
+ * tooth; something they haven't had lately for a gourmand), then the usual order
+ */
+function mealOrder(c: Colonist) {
+  const recent = new Set((c.ate ?? []).slice(-3).map(a => a.r));
+  const sweet = c.wants?.includes('sweetTooth'), gourmand = c.wants?.includes('gourmand');
+  const want = (r: ResourceId) => (sweet && SWEET.includes(r) ? 1 : 0) + (gourmand && !recent.has(r) ? 1 : 0);
+  return [...MEALS].sort((a, b) => taste(c, b) - taste(c, a) || want(b) - want(a));
+}
 const taste = (c: Colonist, r: ResourceId) => (c.tastes.loves.includes(r) ? 1 : c.tastes.dislikes.includes(r) ? -1 : 0);
 const goodName = (r: ResourceId) => RESOURCES.find(x => x.id === r)!.name.toLowerCase();
 function tasteMemory(w: World, c: Colonist, r: ResourceId, key = 'taste') {
@@ -805,6 +818,7 @@ function makeColonist(w: World, usedNames: Set<string>): Colonist {
   const traits: string[] = [];
   for (const t of shuffle(w, TRAITS)) {
     if (traits.length >= 2) break;
+    if (t.id === 'tippler') continue; // a want now
     if (t.group && traits.some(x => TRAIT_BY_ID[x].group === t.group)) continue;
     traits.push(t.id);
   }
@@ -816,7 +830,9 @@ function makeColonist(w: World, usedNames: Set<string>): Colonist {
   skills[likes] = Math.min(10, skills[likes] + 3);
   skills[dislikes] = Math.max(1, skills[dislikes] - 1);
   const talent = pick(w, jobs); skills[talent] = Math.min(10, skills[talent] + 4);
+  const wants = shuffle(w, WANTS).slice(0, START.wants.per).map(x => x.id);
   return {
+    wants,
     id: w.nextColonistId, tastes: tastesFor(w, w.nextColonistId++), name, traits, likes, dislikes,
     shirt: pick(w, SHIRTS), skin: pick(w, SKINS),
     x: CENTER + nextRand(w) * 2 - 1, y: CENTER + 2.5 + nextRand(w), px: 0, py: 0, jitter: nextRand(w),
@@ -897,7 +913,9 @@ function assignBeds(w: World) {
   for (const b of built(w).sort((a, b2) => order[bdef(a).bedQuality ?? 'rough'] - order[bdef(b2).bedQuality ?? 'rough'])) {
     for (let i = 0; i < (bdef(b).beds ?? 0); i++) slots.push({ uid: b.uid });
   }
-  const people = alive(w).sort((a, b) => Number(has(b, 'vain')) - Number(has(a, 'vain')));
+  // the best beds go first to those who care most: the vain, and homebodies
+  const keen = (c: Colonist) => Number(has(c, 'vain')) + Number(!!c.wants?.includes('homebody'));
+  const people = alive(w).sort((a, b) => keen(b) - keen(a));
   for (const c of people) c.bed = null;
   for (const c of people) {
     if (c.bed != null) continue;
@@ -2601,6 +2619,22 @@ function dailyRelationships(w: World) {
   }
 }
 
+const SWEET: ResourceId[] = ['pie', 'porridge', 'banquet'];
+/** is this want of theirs met right now? */
+export function wantMet(w: World, c: Colonist, id: WantId): boolean {
+  switch (id) {
+    case 'sweetTooth': return (c.ate ?? []).some(a => a.h >= w.hour - 72 && SWEET.includes(a.r));
+    case 'gourmand': return mealKinds(w, c, 120) >= 3;
+    // 3 of the last 4 evenings, counting tonight once it's had
+    case 'tippler': return (c.drankOn ?? []).filter(x => x >= day(w) - 3).length >= 3;
+    case 'bather': return hasBuilt(w, 'bathhouse') && onHand(w, 'wood') > 0;
+    case 'musicLover': return hasBuilt(w, 'stage');
+    case 'greenThumb': { const home = buildingByUid(w, c.bed); if (!home) return false; const h = spotOf(home); return built(w).some(b => (b.def === 'flowerbed' || b.def === 'herbgarden') && dist(spotOf(b), h) <= 5); }
+    case 'homebody': { const home = buildingByUid(w, c.bed); return !!home && bdef(home).bedQuality === 'cozy'; }
+  }
+}
+/** what an unmet want costs at the town's standing: people come to expect more */
+export const wantPenalty = (w: World) => START.wants.unmet[Math.min(START.wants.unmet.length - 1, standingOf(w))];
 function computeThoughts(w: World, c: Colonist): Thought[] {
   const t: Thought[] = [];
   const add = (label: string, value: number) => { if (value !== 0) t.push({ label, value: Math.round(value * 10) / 10 }); };
@@ -2643,6 +2677,7 @@ function computeThoughts(w: World, c: Colonist): Thought[] {
   else if (c.beauty <= -1.2) add('Ugly surroundings', -3);
   const strain = w.strain * (has(c, 'stoic') ? 0.5 : 1);
   if (strain >= 1) add('The frontier wears on me', -strain);
+  if (START.wants.on) for (const id of c.wants ?? []) { const d = WANT_BY_ID[id]; if (wantMet(w, c, id)) add(d.met, START.wants.met); else add(d.unmet, -wantPenalty(w)); }
   for (const m of c.memories) add(m.label, m.value);
   return t.sort((a, b) => a.value - b.value);
 }
@@ -2904,6 +2939,7 @@ function hourly(w: World) {
         const r = takeDrink(w, serving, 'drunk', c); c.fun += 18;
         if (r) {
           c.drankTonight = true;
+          const d = day(w); c.drankOn = [...(c.drankOn ?? []).filter(x => x >= d - 6 && x !== d), d];
           addMemory(w, c, 'ale', `Drank ${goodName(r)} at the tavern`, (DRINK_MOOD[r] ?? 6) + (has(c, 'tippler') ? 4 : 0) + (knows(w, 'cellaring') ? 2 : 0), 14);
           tasteMemory(w, c, r, 'tasteDrink');
         }

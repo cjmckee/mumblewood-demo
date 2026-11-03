@@ -266,6 +266,9 @@ h3.first { margin-top: 4px; }
 /* recruit traits as chips */
 .opt .traits { display: flex; flex-wrap: wrap; gap: 4px; }
 .opt .traits i { font-style: normal; font-size: 12px; color: var(--text); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; }
+.wants i.want, .traits.wants i { font-style: normal; font-size: 12px; color: var(--text); border: 1px dashed var(--line); border-radius: 999px; padding: 1px 8px; margin-right: 4px; display: inline-block; }
+.wants i.want.met { border-style: solid; border-color: #6fae6a; color: #a6d9a0; }
+.wants i.want.unmet { border-style: solid; border-color: #c96a5a; color: #f0a596; }
 .recruit .opt > b .rname { flex: 1; font-size: inherit; color: inherit; }
 .reroll-note { margin: 2px 0 0; font-size: 12px; }
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin: 6px 0 8px; }
