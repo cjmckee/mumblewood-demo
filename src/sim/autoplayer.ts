@@ -2,7 +2,7 @@
 // It reads the active charter and plays towards it, the way a person would.
 import { WANT_BY_ID, WantId, BUILDING_BY_ID, BUILDINGS, CATEGORIES, CharterMetric, RESEARCH_BY_ID, EVENTS, ResourceId, MEALS, RAW_FOODS, RESOURCES, Recipe, InputKey, membersOf, recipeRate, LORE_BOOST, GUILD_BOOST, RENOWN, TIER, TIER_STAGE, SLOTS, FINALE_COLONISTS, JobKind, JOB_KINDS } from './content';
 import { assess, Concern, defsOf, KIND_DEFS } from './advisor';
-import { World, feastUnservedDrinks, feastUnservedMeals, orderedRecipes, costOf, tallyOf, renownOf, FEAST_MEALS, FEAST_DRINKS, workshopInputPlan, apply, alive, beds, mealTotal, sites, findSpot, CENTER, avgMood, built, MAP_SIZE, pathAt, terrainAt, T_WATER, bdef, workersAt, blockedReason, opinion, Building, Colonist, hourOfDay, charterProgress, buildingByUid, storageFree, storages, FOODS, GOODS, bedridden, foodTotal, currentRecipe, drinkTotal, siteOk, enabledRecipes, recipesOf, rerollCost, stockOf, usableHere, charterDef, charterHelpers, feastCheck, desks, researchLeft, festivalPreview, edibleTotal, doorTile, centerOf, winterStores, storageCap, stored, lastDay, lastDayHours, remainingCost, seasonYield, recipeOn, spotOf, canPlace, coversPath, efficiencyAt, footprint, BUILD_MIN, BUILD_MAX, blockedGrid, storePrio, workHours, tradeOf, workPrio, wantMet } from './world';
+import { World, feastUnservedDrinks, feastUnservedMeals, orderedRecipes, costOf, tallyOf, renownOf, FEAST_MEALS, FEAST_DRINKS, workshopInputPlan, apply, alive, beds, mealTotal, sites, findSpot, CENTER, avgMood, built, MAP_SIZE, pathAt, terrainAt, T_WATER, bdef, workersAt, blockedReason, opinion, Building, Colonist, hourOfDay, charterProgress, buildingByUid, storageFree, storages, FOODS, GOODS, bedridden, foodTotal, currentRecipe, drinkTotal, siteOk, enabledRecipes, recipesOf, rerollCost, stockOf, usableHere, charterDef, charterHelpers, feastCheck, desks, researchLeft, festivalPreview, edibleTotal, doorTile, centerOf, winterStores, storageCap, stored, lastDay, lastDayHours, remainingCost, seasonYield, recipeOn, spotOf, canPlace, coversPath, efficiencyAt, footprint, BUILD_MIN, BUILD_MAX, blockedGrid, storePrio, workHours, tradeOf, workPrio, wantMet, wantSupported } from './world';
 import { seasonOf } from './seasons';
 import { draftLinks } from './charterplan';
 
@@ -285,19 +285,6 @@ export function unmetWants(w: World): Partial<Record<WantId, number>> {
   const out: Partial<Record<WantId, number>> = {};
   for (const c of alive(w)) for (const id of c.wants ?? []) if (!wantMet(w, c, id)) out[id] = (out[id] ?? 0) + 1;
   return out;
-}
-/** could the colony meet this want for a newcomer, with what it has built now? */
-function wantSupported(w: World, id: WantId) {
-  const has = (d: string) => built(w).some(b => b.def === d);
-  switch (id) {
-    case 'sweetTooth': return ['pie', 'porridge', 'banquet'].some(r => w.res[r as ResourceId] >= 1) || ['pieoven', 'bakery', 'malthouse'].some(has);
-    case 'gourmand': return MEALS.filter(r => w.res[r] >= 1).length >= 3;
-    case 'tippler': return has('tavern') && drinkTotal(w) >= 3;
-    case 'bather': return has('bathhouse');
-    case 'musicLover': return has('stage');
-    case 'greenThumb': return has('flowerbed') || has('herbgarden');
-    case 'homebody': return has('cottage');
-  }
 }
 /** the buildings settlers' unmet wants call for, most wanted first (two or more settlers, or one at village standing) */
 function wantedBuildings(w: World): string[] {

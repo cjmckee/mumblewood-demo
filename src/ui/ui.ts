@@ -1,5 +1,5 @@
 // DOM overlay: HUD, bottom sheet, decision modals. Talks to the sim only through commands.
-import { LORE_BOOST, EventNeed, EventOption, BUILDINGS, membersOf, isGroup, BUILDING_BY_ID, EVENTS, RESEARCH, RESEARCH_BY_ID, BRANCHES_AFTER, JOB_NAMES, WANT_BY_ID, TRADE_NAMES, TRADE_ICON, PERK_BY_ID, TRADER_BY_ID, RESOURCES, TRAIT_BY_ID, ResourceId, SKILL_NAMES, JOB_KINDS, JobKind, Recipe, InputKey, inputName, recipeRate, batchHours, Stars, CATEGORIES } from '../sim/content';
+import { LORE_BOOST, EventNeed, EventOption, BUILDINGS, membersOf, isGroup, BUILDING_BY_ID, EVENTS, RESEARCH, RESEARCH_BY_ID, BRANCHES_AFTER, JOB_NAMES, WANT_BY_ID, WantId, TRADE_NAMES, TRADE_ICON, PERK_BY_ID, TRADER_BY_ID, RESOURCES, TRAIT_BY_ID, ResourceId, SKILL_NAMES, JOB_KINDS, JobKind, Recipe, InputKey, inputName, recipeRate, batchHours, Stars, CATEGORIES } from '../sim/content';
 import {
   World, Command, Colonist, alive, avgMood, beds, buildingByUid, charterProgress, colonistById,
   day, hourOfDay, opinion, workersAt, MAX_DEPARTURES, sites, siteWork, remainingCost, storageCap, stored,
@@ -7,7 +7,7 @@ import {
   recipesOf, recipeOn, optionOn, optionsOf, currentRecipe, orderedRecipes, INPUT_CAPACITY, OUTBOX_CAP, siteOk, rerollCost, REROLL_STEP, stockOf, recipeReach, charterHelpers, charterDef,
   costOf, researchLeft, researchStillNeeds, desks, feastCheck, festivalPreview, mealTotal, drinkTotal,
   comfortParts, comfortOf, colonyComfort, comfortGaps, strainPerDay, footprint, activeNeeds, standingOf, STANDINGS, NeedKey, winterFuelPerDay,
-  sellPrice, renownOf, pavilionOf, larderOf, FEAST_MEALS, charterCounted, charterRequirements, basicsDone, researchOpen, edibleTotal, storePrio, colonyName, nameFrom, NAME_MAX, wantMet, wantPenalty, tradeOf, TRADE_DEFS, workPrio, hasWork,
+  sellPrice, renownOf, pavilionOf, larderOf, FEAST_MEALS, charterCounted, charterRequirements, basicsDone, researchOpen, edibleTotal, storePrio, colonyName, nameFrom, NAME_MAX, wantMet, wantPenalty, wantSupported, wantGap, tradeOf, TRADE_DEFS, workPrio, hasWork,
 } from '../sim/world';
 import { charterPreview, metricRoutes, Route } from '../sim/charterplan';
 import { START } from '../sim/scenario';
@@ -106,6 +106,56 @@ function wantChips(w: World, c: Colonist, recruit = false) {
     const state = recruit ? '' : met ? ` ✓ +${START.wants.met}` : ` −${wantPenalty(w)}`;
     return `<i class="want${recruit ? '' : met ? ' met' : ' unmet'}" title="${esc(d.desc)}">${esc(d.name)}${state}</i>`;
   }).join('');
+}
+// ---------- The recruit card: three layouts under comparison (ui.recruitLayout) ----------
+const GOOD_TRAITS = ['sunny', 'diligent', 'stoic'];
+const BAD_TRAITS = ['grumbler', 'lazy', 'drama', 'hummer', 'vain', 'picky', 'glutton'];
+const traitTone = (t: string) => GOOD_TRAITS.includes(t) ? 'good' : BAD_TRAITS.includes(t) ? 'bad' : 'plain';
+/** their best kinds of work, best first */
+const bestSkills = (c: Colonist, n = 3) => [...skillKinds(c)].sort((a, b) => c.skills[b] - c.skills[a] || Number(b === c.likes) - Number(a === c.likes)).slice(0, n);
+/** a skill as a short bar: icon, name, bar, number, a heart if they like that work */
+const skillBar = (c: Colonist, k: JobKind) => `<div class="rc-skill${k === c.likes ? ' fav' : ''}">${icon(TRADE_ICON[k])}<span>${SKILL_NAMES[k]}${k === c.likes ? ' ♥' : ''}</span><i><b style="width:${c.skills[k] * 10}%"></b></i><em>${Math.floor(c.skills[k])}</em></div>`;
+/** a want on a recruit card: met already (the colony has what it takes) or what it would need, and what going without costs now */
+function recruitWant(w: World, id: WantId, long: boolean) {
+  const d = WANT_BY_ID[id], ok = wantSupported(w, id);
+  if (!long) return `<i class="rc-want ${ok ? 'ok' : 'no'}" title="${esc(d.desc)}">${ok ? '✓' : '✗'} ${esc(d.name)}</i>`;
+  const later = START.wants.unmet[START.wants.unmet.length - 1];
+  return `<li class="${ok ? 'ok' : 'no'}"><b>${ok ? '✓' : '✗'} ${esc(d.name)}</b> <span>${ok ? `you can meet it · +${START.wants.met}` : `needs ${esc(wantGap(w, id))} · −${wantPenalty(w)} now${wantPenalty(w) < later ? `, −${later} later` : ''}`}</span></li>`;
+}
+const traitChip = (t: string) => `<i class="rc-trait ${traitTone(t)}" title="${esc(TRAIT_BY_ID[t].desc)}">${esc(TRAIT_BY_ID[t].name)}</i>`;
+const feeChip = (w: World, c: Colonist) => c.fee ? `<em class="fee">${icon('gold')}${c.fee} gold${w.gold < c.fee ? ` · you have ${Math.floor(w.gold)}` : ''}</em>` : '';
+/** A: a stat sheet. Skills as bars, wants as ✓/✗ chips, traits tinted good or bad */
+function recruitA(w: World, c: Colonist, i: number) {
+  return `<article class="recruit rc"><button type="button" class="opt" data-act="resolve" data-arg="${i}" ${(c.fee ?? 0) > w.gold ? 'disabled' : ''}>
+    <b>${avatar(c)}<span class="rname">${esc(c.name)}</span>${feeChip(w, c)}</b>
+    <div class="rc-skills">${bestSkills(c).map(k => skillBar(c, k)).join('')}</div>
+    <div class="rc-row"><small>Wants</small>${(c.wants ?? []).map(id => recruitWant(w, id, false)).join('')}</div>
+    <div class="rc-row"><small>Traits</small>${c.traits.map(traitChip).join('')}</div>
+    <small class="rc-foot">× ${esc(SKILL_NAMES[c.dislikes])}${tasteLine(c, false)}</small>
+  </button></article>`;
+}
+/** B: the verdict first. What they'd do best, then each want and trait as a line saying what it means for you */
+function recruitB(w: World, c: Colonist, i: number) {
+  const [best, second] = bestSkills(c, 2);
+  const traitLine = (t: string) => `<li class="${traitTone(t) === 'good' ? 'ok' : traitTone(t) === 'bad' ? 'no' : ''}"><b>${traitTone(t) === 'good' ? '+' : traitTone(t) === 'bad' ? '−' : '·'} ${esc(TRAIT_BY_ID[t].name)}</b> <span>${esc(TRAIT_BY_ID[t].desc)}</span></li>`;
+  return `<article class="recruit rc"><button type="button" class="opt" data-act="resolve" data-arg="${i}" ${(c.fee ?? 0) > w.gold ? 'disabled' : ''}>
+    <b>${avatar(c)}<span class="rname">${esc(c.name)}</span>${feeChip(w, c)}</b>
+    <p class="rc-verdict">${icon(TRADE_ICON[best])}<b>${TRADE_NAMES[best]} ${Math.floor(c.skills[best])}</b>${best === c.likes ? ' <span class="fav">♥ loves it</span>' : ''}<span class="rc-then"> · then ${SKILL_NAMES[second].toLowerCase()} ${Math.floor(c.skills[second])}${second === c.likes ? ' ♥' : ''}</span></p>
+    <ul class="rc-lines">${(c.wants ?? []).map(id => recruitWant(w, id, true)).join('')}${c.traits.map(traitLine).join('')}</ul>
+    <small class="rc-foot">${c.likes !== best && c.likes !== second ? `♥ ${esc(SKILL_NAMES[c.likes])} · ` : ''}× ${esc(SKILL_NAMES[c.dislikes])}${tasteLine(c, false)}</small>
+  </button></article>`;
+}
+/** C: the three side by side, one row per question */
+function recruitC(w: World, cs: Colonist[]) {
+  const col = (f: (c: Colonist, i: number) => string) => cs.map((c, i) => `<div class="rcc-cell">${f(c, i)}</div>`).join('');
+  const row = (label: string, f: (c: Colonist, i: number) => string) => `<div class="rcc-label">${label}</div>${col(f)}`;
+  return `<div class="rcc" style="--n:${cs.length}">
+    <div class="rcc-label"></div>${col(c => `${avatar(c)}<b class="rcc-name">${esc(c.name.split(' ')[0])}</b>${c.fee ? `<em class="fee">${icon('gold')}${c.fee}</em>` : ''}`)}
+    ${row('Best at', c => bestSkills(c, 2).map(k => `<span class="rcc-sk${k === c.likes ? ' fav' : ''}">${icon(TRADE_ICON[k])}${Math.floor(c.skills[k])}${k === c.likes ? '♥' : ''}</span>`).join(''))}
+    ${row('Wants', c => (c.wants ?? []).map(id => recruitWant(w, id, false)).join(''))}
+    ${row('Traits', c => c.traits.map(traitChip).join(''))}
+    ${row('', (c, i) => `<button type="button" class="act rcc-take" data-act="resolve" data-arg="${i}" ${(c.fee ?? 0) > w.gold ? 'disabled' : ''}>Take</button>`)}
+  </div>`;
 }
 const tasteLine = (c: Colonist, bold = true) => {
   const b = (r: ResourceId) => (bold ? `<b>${goodHtml(r)}</b>` : goodHtml(r));
@@ -252,6 +302,8 @@ export class UI {
   private colonistSort = 'mood';
   private buildingFilter = 'all';
   private buildMode = 'manage';
+  /** which recruit card layout to show: '' the current one, or a, b, c (under comparison) */
+  recruitLayout: '' | 'a' | 'b' | 'c' = '';
   private catalogGroup = 'all';
   private destination: Destination | null = null;
   private peopleFilter: number[] | null = null;
@@ -1233,7 +1285,12 @@ export class UI {
           'Choose one permanent bonus.',
           d.options.map(id => this.cornerstoneOption(id))); break;
         case 'trade': html = this.tradeCard(w); break;
-        case 'recruit': html = `<div class="card-wrap"><p class="eyebrow">Choose one</p><h2>New settlers</h2><p class="lede">⌂ ${beds(w)} beds · ${alive(w).length} settlers${beds(w) <= alive(w).length ? ' · ⚠ Another bed needed' : ''}</p><div class="opts">${d.options.map((c,i) => `<article class="recruit"><button type="button" class="opt" data-act="resolve" data-arg="${i}" ${(c.fee ?? 0) > w.gold ? 'disabled' : ''}><b>${avatar(c)}<span class="rname">${esc(c.name)}</span>${c.fee ? `<em class="fee">${icon('gold')}${c.fee} gold${w.gold < c.fee ? ` · you have ${Math.floor(w.gold)}` : ''}</em>` : ''}</b><span>★ ${esc(topSkills(c))}</span><span class="traits">${c.traits.map(t => `<i title="${esc(TRAIT_BY_ID[t].desc)}">${esc(TRAIT_BY_ID[t].name)}</i>`).join('')}</span>${(c.wants ?? []).length ? `<span class="traits wants">Wants ${wantChips(w, c, true)}</span>` : ''}<small>♥ ${esc(SKILL_NAMES[c.likes])} · × ${esc(SKILL_NAMES[c.dislikes])}</small></button><details data-key="recruit-${c.id}"><summary>What the traits and wants are · tastes</summary>${c.traits.map(t => `<p><b>${esc(TRAIT_BY_ID[t].name)}</b> · ${esc(TRAIT_BY_ID[t].desc)}</p>`).join('')}${(c.wants ?? []).map(id => `<p><b>${esc(WANT_BY_ID[id].name)}</b> · ${esc(WANT_BY_ID[id].desc)}</p>`).join('')}<p>${tasteLine(c,false)}</p></details></article>`).join('')}</div><button type="button" class="ghost skip" data-act="resolve" data-arg="99">Send all away</button></div>`; break;
+        case 'recruit': {
+          const lede = `<p class="lede">⌂ ${beds(w)} beds · ${alive(w).length} settlers${beds(w) <= alive(w).length ? ' · ⚠ Another bed needed' : ''}</p>`;
+          const L = this.recruitLayout;
+          const body = L === 'c' ? recruitC(w, d.options) : L === 'b' ? `<div class="opts">${d.options.map((c, i) => recruitB(w, c, i)).join('')}</div>` : L === 'a' ? `<div class="opts">${d.options.map((c, i) => recruitA(w, c, i)).join('')}</div>` : `<div class="opts">${d.options.map((c,i) => `<article class="recruit"><button type="button" class="opt" data-act="resolve" data-arg="${i}" ${(c.fee ?? 0) > w.gold ? 'disabled' : ''}><b>${avatar(c)}<span class="rname">${esc(c.name)}</span>${c.fee ? `<em class="fee">${icon('gold')}${c.fee} gold${w.gold < c.fee ? ` · you have ${Math.floor(w.gold)}` : ''}</em>` : ''}</b><span>★ ${esc(topSkills(c))}</span><span class="traits">${c.traits.map(t => `<i title="${esc(TRAIT_BY_ID[t].desc)}">${esc(TRAIT_BY_ID[t].name)}</i>`).join('')}</span>${(c.wants ?? []).length ? `<span class="traits wants">Wants ${wantChips(w, c, true)}</span>` : ''}<small>♥ ${esc(SKILL_NAMES[c.likes])} · × ${esc(SKILL_NAMES[c.dislikes])}</small></button><details data-key="recruit-${c.id}"><summary>What the traits and wants are · tastes</summary>${c.traits.map(t => `<p><b>${esc(TRAIT_BY_ID[t].name)}</b> · ${esc(TRAIT_BY_ID[t].desc)}</p>`).join('')}${(c.wants ?? []).map(id => `<p><b>${esc(WANT_BY_ID[id].name)}</b> · ${esc(WANT_BY_ID[id].desc)}</p>`).join('')}<p>${tasteLine(c,false)}</p></details></article>`).join('')}</div>`;
+          html = `<div class="card-wrap"><p class="eyebrow">Choose one</p><h2>New settlers</h2>${lede}${body}<button type="button" class="ghost skip" data-act="resolve" data-arg="99">Send all away</button></div>`; break;
+        }
         case 'errand': { const e = w.errands.find(x => x.id === d.errandId); if (e) html = this.errandPicker(w, e, true); break; }
         case 'event': {
           const ev = EVENTS.find(e => e.id === d.eventId)!;

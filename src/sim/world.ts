@@ -2633,6 +2633,31 @@ export function wantMet(w: World, c: Colonist, id: WantId): boolean {
     case 'homebody': { const home = buildingByUid(w, c.bed); return !!home && bdef(home).bedQuality === 'cozy'; }
   }
 }
+/** could the colony meet this want for a newcomer, with what it has now? */
+export function wantSupported(w: World, id: WantId): boolean {
+  const has = (d: string) => built(w).some(b => b.def === d);
+  switch (id) {
+    case 'sweetTooth': return SWEET.some(r => w.res[r] >= 1) || ['pieoven', 'bakery', 'malthouse'].some(has);
+    case 'gourmand': return MEALS.filter(r => w.res[r] >= 1).length >= 3;
+    case 'tippler': return has('tavern') && drinkTotal(w) >= 3;
+    case 'bather': return has('bathhouse');
+    case 'musicLover': return has('stage');
+    case 'greenThumb': return has('flowerbed') || has('herbgarden');
+    case 'homebody': return has('cottage');
+  }
+}
+/** what a want needs that the colony lacks, in a few words ("a stage", "3 kinds of meal") */
+export function wantGap(w: World, id: WantId): string {
+  switch (id) {
+    case 'sweetTooth': return 'a pie oven, bakery or malthouse';
+    case 'gourmand': return '3 kinds of meal';
+    case 'tippler': return built(w).some(b => b.def === 'tavern') ? 'drinks in store' : 'a tavern';
+    case 'bather': return 'a bathhouse';
+    case 'musicLover': return 'a bard\u2019s stage';
+    case 'greenThumb': return 'a flower bed';
+    case 'homebody': return 'a cottage';
+  }
+}
 /** what an unmet want costs at the town's standing: people come to expect more */
 export const wantPenalty = (w: World) => START.wants.unmet[Math.min(START.wants.unmet.length - 1, standingOf(w))];
 function computeThoughts(w: World, c: Colonist): Thought[] {
