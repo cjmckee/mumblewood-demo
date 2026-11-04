@@ -8,6 +8,7 @@ import {
 } from './content';
 import { planInputBatch } from './batching';
 import { comfortMultiplier } from './comfort';
+import { MilestoneState, RewardProfile, milestoneView, rollDouble } from './comfort-milestones';
 import { draftLinks } from './charterplan';
 import { START, Season, SEASONS } from './scenario';
 import { seasonOf, seasonOn, rule, SEASON_NAMES } from './seasons';
@@ -130,6 +131,8 @@ export interface Building {
   productionLimits?: Partial<Record<ResourceId, number>>;
   /** a workshop's batch under way: its ingredients are already used, and it makes `make` whole units once `done` reaches `make` */
   batch?: { output: ResourceId; make: number; done: number; rate: number; indoor: boolean };
+  /** Earned double output waits here if the workshop shelf cannot hold it yet. */
+  comfortBonus?: { output: ResourceId; amount: number };
   /** buildings built in stages (the Crown's Hall): which stage is under way */
   stage?: number;
   /** finales: how many colonists the bill is for (a magnificent meal and a quality drink each), kept up to date while it's unbuilt */
@@ -166,6 +169,8 @@ export type Decision =
 export interface LogEntry { day: number; hour: number; text: string; tone: 'good' | 'bad' | 'neutral' | 'love' }
 
 export interface World {
+  /** Opt-in comfort reward prototype, including its rolling history and independent random stream. */
+  comfortMilestones?: MilestoneState;
   recipeBatching?: boolean;
   startDate?: { season: Season; day: number };
   seed: number; rngState: number;
@@ -2356,8 +2361,20 @@ function workSpeed(w: World, c: Colonist, skill?: JobKind) {
 }
 
 function produce(w: World, dt: number) {
+  const milestone = w.comfortMilestones ? comfortMilestoneView(w) : { speed: 1, doubleChance: 0 };
   for (const b of built(w)) {
     const def = bdef(b); if (!def.recipes) continue;
+    if (b.comfortBonus) {
+      const n = Math.min(b.comfortBonus.amount, Math.max(0, OUTBOX_CAP - sum(b.outbox)));
+      if (n > 0) {
+        b.outbox[b.comfortBonus.output] = (b.outbox[b.comfortBonus.output] ?? 0) + n;
+        flow(w, `${b.comfortBonus.output}:+${b.def}`, n);
+        flow(w, `${b.comfortBonus.output}:comfort-bonus`, n);
+        b.comfortBonus.amount -= n;
+      }
+      if (b.comfortBonus.amount <= 1e-9) b.comfortBonus = undefined;
+      else continue;
+    }
     for (const c of workersAt(w, b.uid)) {
       if (c.activity !== 'working' || !c.goalReached) continue;
       // start a batch: the current recipe if its ingredients are here, else any switched-on one whose are. Its
@@ -2377,11 +2394,21 @@ function produce(w: World, dt: number) {
         b.batch = { output: rec.output, make: rec.make, done: 0, rate: recipeRate(rec), indoor: Object.keys(rec.take).length > 0 };
       }
       const bt = b.batch;
-      bt.done += bt.rate * workSpeed(w, c, def.job) * dt * b.eff * seasonYield(w, def.id) * (def.id === 'woodcutter' && hasPerk(w, 'lumberGuild') ? 1.5 : 1) * craftBoost(w, def.id) * passing(w, def.id) * (bt.indoor ? rule(START.seasons.indoor, seasonOf(w).season, 1) : 1);
+      bt.done += bt.rate * workSpeed(w, c, def.job) * dt * b.eff * seasonYield(w, def.id) * (def.id === 'woodcutter' && hasPerk(w, 'lumberGuild') ? 1.5 : 1) * craftBoost(w, def.id) * passing(w, def.id) * (bt.indoor ? rule(START.seasons.indoor, seasonOf(w).season, 1) * milestone.speed : 1);
       // the whole batch comes out at the end of its work
       if (bt.done >= bt.make - 1e-9) {
         b.outbox[bt.output] = (b.outbox[bt.output] ?? 0) + bt.make;
         flow(w, `${bt.output}:+${b.def}`, bt.make);
+        if (bt.indoor && w.comfortMilestones && milestone.doubleChance > 0) {
+          w.comfortMilestones.eligibleBatches++;
+          if (rollDouble(w.comfortMilestones, milestone.doubleChance)) {
+            // Double the entire batch with no second input charge. Never discard an
+            // earned bonus or overfill the shelf: backpressure holds the extra output.
+            b.comfortBonus = { output: bt.output, amount: bt.make };
+            w.comfortMilestones.bonusBatches++;
+            w.comfortMilestones.bonusUnits += bt.make;
+          }
+        }
         b.batch = undefined;
       }
       if (def.job) practice(c, def.job, dt);
@@ -2390,6 +2417,7 @@ function produce(w: World, dt: number) {
         const id = def.job === 'chopping' || def.job === 'crafting' ? pick(w, ['thumb', 'splinter', 'ankle']) : pick(w, ['splinter', 'ankle']);
         fallIll(w, c, id); addLog(w, `${first(c)} has a ${c.illness!.name.toLowerCase()} and goes off to lie down.`, 'bad');
       }
+      if (b.comfortBonus) break;
     }
   }
   // study at the research desk
@@ -2731,6 +2759,25 @@ export type ComfortNeed = NeedKey;
 export const STANDINGS = ['Camp', 'Settlement', 'Village'] as const;
 /** 0 camp, 1 settlement, 2 village: one step per charter granted */
 export const standingOf = (w: World) => Math.min(STANDINGS.length - 1, w.chartersDone.length);
+export function enableComfortMilestones(w: World, profile: RewardProfile) {
+  if (w.comfortMilestones) { w.comfortMilestones.profile = profile; return; }
+  w.comfortMilestones = { profile, history: [], rng: ((w.rngState ^ 0x9e3779b9) >>> 0) || 1, eligibleBatches: 0, bonusBatches: 0, bonusUnits: 0 };
+}
+export const comfortMilestoneView = (w: World) => milestoneView(w.comfortMilestones, standingOf(w), w.hour);
+export function sampleComfortMilestones(w: World) {
+  const state = w.comfortMilestones; if (!state) return;
+  const people = alive(w), n = Math.max(1, people.length);
+  const sample = { hour: Math.floor(w.hour), homes: 0, meals: 0, evenings: 0 };
+  for (const c of people) {
+    const bed = buildingByUid(w, c.bed);
+    sample.homes += bed ? bdef(bed).bedQuality === 'cozy' ? 1 : 0.6 : 0;
+    const meal = c.lastMeal;
+    sample.meals += c.hunger >= 25 && meal?.cooked ? ({ processed: 0.5, simple: 0.65, refined: 0.8, quality: 1, magnificent: 1 }[meal.tier ?? 'processed']) * (meal.table ? 1 : 0.8) : 0;
+    sample.evenings += Math.max(0, Math.min(1, c.fun / 100));
+  }
+  sample.homes /= n; sample.meals /= n; sample.evenings /= n;
+  state.history = [...state.history.filter(s => s.hour > sample.hour - 24 && s.hour !== sample.hour), sample].sort((a, b) => a.hour - b.hour);
+}
 const STANDING_NEEDS: NeedKey[][] = [
   ['shelter', 'food', 'fire'],
   ['shelter', 'meals', 'health', 'evenings'],
@@ -2799,7 +2846,7 @@ export const comfortFactor = (w: World, comfort = w.comfort ?? colonyComfort(w))
 /** strain rise per day at the colony's current size, day and comfort (before boons) */
 export function strainPerDay(w: World) {
   const d = day(w) - 1 + (hourOfDay(w) - 6) / 24;
-  return START.strain.rate * Math.sqrt(alive(w).length) * (1 + Math.max(0, d) / START.strain.rampDays) * comfortFactor(w) * (hasPerk(w, 'ironWill') ? 0.65 : 1) * (hasPerk(w, 'openRoad') ? 1.1 : 1) * (hasPerk(w, 'crownsFavour') ? 1.15 : 1);
+  return START.strain.rate * Math.sqrt(alive(w).length) * (1 + Math.max(0, d) / START.strain.rampDays) * comfortFactor(w) * (hasPerk(w, 'ironWill') ? 0.65 : 1) * (hasPerk(w, 'openRoad') ? 1.1 : 1) * (hasPerk(w, 'crownsFavour') ? 1.15 : 1) * (w.comfortMilestones ? comfortMilestoneView(w).strain : 1);
 }
 
 /** what happened in the last 24 hours, from the running flow totals */
@@ -2913,6 +2960,7 @@ function hourly(w: World) {
   // strain builds up with the colony's size and the run's length, faster when people's needs go unmet and slower when
   // they're met; relief (charters, festivals) brings it back down
   w.comfort = colonyComfort(w);
+  sampleComfortMilestones(w);
   w.strain += strainPerDay(w) / 24;
   void sc; void d; void pop;
 

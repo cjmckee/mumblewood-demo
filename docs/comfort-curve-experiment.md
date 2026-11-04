@@ -49,6 +49,8 @@ Later events, festivals, recruitment and choices diverge. Whole-continuation mea
 
 ## Recommendation
 
+The [milestone prototype](comfort-milestones.md) adds opt-in rolling homes/meals/evenings tracks, rising charter requirements and four cumulative reward sets, including full-batch doubling. The playable phone preview and matched choice tests retain the old default. These are new design hypotheses, not a finding that milestones are the best system.
+
 The [investment-choice follow-up](comfort-investment.md) compares a cottage/stage, an extra kitchen and saving from four affordable checkpoints under current/gentler/no-growth. The passive-strain payoff from these small upgrades is modest; provision can improve comfort too. This does not establish gentler as the correct curve or justify new items.
 
 The [strain ablation follow-up](strain-ablation.md) expands to eight seed cases with current/gentler/growth-off/strain-zero arms. It finds measurable work and festival costs but no win-count improvement from removing growth, so gentler remains a test candidate rather than a balance conclusion.

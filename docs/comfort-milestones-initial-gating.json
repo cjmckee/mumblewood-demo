@@ -1,0 +1,112 @@
+{
+  "thresholds": [
+    {
+      "homes": 0.5,
+      "meals": 0.35,
+      "evenings": 0.4
+    },
+    {
+      "homes": 0.7,
+      "meals": 0.55,
+      "evenings": 0.5
+    },
+    {
+      "homes": 0.85,
+      "meals": 0.7,
+      "evenings": 0.6
+    }
+  ],
+  "aggregate": [
+    {
+      "profile": "off",
+      "continuations": 12,
+      "levelHours": [
+        4032.0000000000387,
+        0,
+        0,
+        0
+      ],
+      "foodMade": 2917,
+      "daytimeSulking": 135.1666666666685,
+      "eligibleBatches": 0,
+      "bonusBatches": 0,
+      "bonusUnits": 0,
+      "passiveGrowth": 100.3513669548533,
+      "addedCharters": 9,
+      "losses": 0
+    },
+    {
+      "profile": "balanced",
+      "continuations": 12,
+      "levelHours": [
+        288.0000000000004,
+        2753.9999999999695,
+        947.0000000000025,
+        43.00000000000005
+      ],
+      "foodMade": 2763,
+      "daytimeSulking": 149.3333333333354,
+      "eligibleBatches": 49,
+      "bonusBatches": 8,
+      "bonusUnits": 10,
+      "passiveGrowth": 91.18119802314504,
+      "addedCharters": 9,
+      "losses": 0
+    },
+    {
+      "profile": "steady",
+      "continuations": 12,
+      "levelHours": [
+        288.0000000000004,
+        2690.9999999999677,
+        1009.999999999999,
+        43.00000000000005
+      ],
+      "foodMade": 2767,
+      "daytimeSulking": 149.3333333333354,
+      "eligibleBatches": 0,
+      "bonusBatches": 0,
+      "bonusUnits": 0,
+      "passiveGrowth": 91.1643818856262,
+      "addedCharters": 9,
+      "losses": 0
+    },
+    {
+      "profile": "abundance",
+      "continuations": 12,
+      "levelHours": [
+        288.0000000000004,
+        2605.9999999999745,
+        1067.999999999994,
+        69.9999999999999
+      ],
+      "foodMade": 2910,
+      "daytimeSulking": 139.16666666666842,
+      "eligibleBatches": 1056,
+      "bonusBatches": 72,
+      "bonusUnits": 128,
+      "passiveGrowth": 94.34552785529849,
+      "addedCharters": 9,
+      "losses": 0
+    },
+    {
+      "profile": "resilience",
+      "continuations": 12,
+      "levelHours": [
+        288.0000000000004,
+        2676.999999999973,
+        1014.9999999999978,
+        52.00000000000007
+      ],
+      "foodMade": 2949,
+      "daytimeSulking": 132.16666666666842,
+      "eligibleBatches": 0,
+      "bonusBatches": 0,
+      "bonusUnits": 0,
+      "passiveGrowth": 95.66001221654835,
+      "addedCharters": 9,
+      "losses": 0
+    }
+  ],
+  "explanation": "Initial higher housing thresholds; preserved before one housing-threshold calibration. All other rules unchanged."
+}

@@ -6,6 +6,8 @@ Make the existing comfort system more impactful and easier to understand before 
 
 ## Balance experiment — implemented, opt-in
 
+The latest [milestone prototype](comfort-milestones.md) explores a separate hypothesis: rolling homes/meals/evenings thresholds, rising charter expectations, and cumulative strain/speed/double-output rewards. It includes a playable phone preview and reward comparisons. It remains opt-in, alongside the continuous-curve experiments below; neither system has been selected as the final balance.
+
 The current normal multiplier is `1.4 − comfort`. For ten settlers around day 20, moving from 60% to 90% comfort saves about two strain points over ten days, assuming the conditions remain fixed and no other modifiers or relief. That can be hard to perceive beside direct mood effects.
 
 The prototype now supports the proposed curve and a gentler comparison. The shipped default remains linear. See [the experiment and results](comfort-curve-experiment.md). The proposal uses a continuous curve through these points:
