@@ -49,6 +49,8 @@ Later events, festivals, recruitment and choices diverge. Whole-continuation mea
 
 ## Recommendation
 
+The [investment-choice follow-up](comfort-investment.md) compares a cottage/stage, an extra kitchen and saving from four affordable checkpoints under current/gentler/no-growth. The passive-strain payoff from these small upgrades is modest; provision can improve comfort too. This does not establish gentler as the correct curve or justify new items.
+
 The [strain ablation follow-up](strain-ablation.md) expands to eight seed cases with current/gentler/growth-off/strain-zero arms. It finds measurable work and festival costs but no win-count improvement from removing growth, so gentler remains a test candidate rather than a balance conclusion.
 
 The [situational recovery follow-up](comfort-recovery.md) tests food loss, a recruit beyond bed capacity and diverted tavern workers, and diagnoses the seed-1000 meal-chain delay. It preserves the default balance and keeps logistics counterfactuals separate from the curve comparison.

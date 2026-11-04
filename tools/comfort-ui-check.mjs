@@ -37,6 +37,11 @@ try {
     assert.equal(await page.locator('[data-ablation-seed="1000"] tbody tr').count(), 4);
     assert.match(await page.locator('[data-ablation-seed="1000"] tbody').innerText(), /Cutoff \/ 90.0/);
     assert.match(await page.locator('#strain-test > .scroll tbody').innerText(), /Growth off/);
+    assert.equal(await page.locator('#investment-test > .scroll tbody tr').count(), 4);
+    assert.equal(await page.locator('#investment-test details').count(), 4);
+    await page.locator('[data-investment-case="24757-cottage"] summary').click();
+    assert.equal(await page.locator('[data-investment-case="24757-cottage"] tbody tr').count(), 9);
+    assert.match(await page.locator('[data-investment-case="24757-cottage"] tbody').innerText(), /Growth off/);
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'no page overflow on mobile');
     await page.screenshot({ path: `dist/comfort-prototype/${width}.png`, fullPage: true });
     assert.deepEqual(errors, []);

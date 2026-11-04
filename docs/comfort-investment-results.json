@@ -1,0 +1,5205 @@
+{
+  "sourceBaseCommit": "e802777b21d5c125dee44913de4aca30dfada501",
+  "commitmentHours": 168,
+  "horizonHours": 336,
+  "method": "Four selected affordable checkpoints. Current/gentler/no-growth each compare a comfort building, an extra stew kitchen with one reserved worker, and saving the project budget. No other new buildings or paths for seven days; existing sites continue. Worker stays in general labor outside the production assignment. Normal bot construction/staffing resumes after seven days. Normal events/recruitment/relief continue throughout.",
+  "checkpoints": [
+    {
+      "case": "24757-cottage",
+      "seed": 24757,
+      "id": "cottage",
+      "hour": 995,
+      "strain": 17.51284570635304,
+      "rate": 0.7862995990420405,
+      "mood": 47.769999999999996,
+      "comfort": 0.6892000000000001,
+      "pop": 10,
+      "gaps": [
+        {
+          "need": "drink",
+          "avg": 0
+        },
+        {
+          "need": "meals",
+          "avg": 0.72
+        },
+        {
+          "need": "shelter",
+          "avg": 0.75
+        },
+        {
+          "need": "evenings",
+          "avg": 0.976
+        },
+        {
+          "need": "health",
+          "avg": 1
+        }
+      ],
+      "charter": "bread",
+      "chartersDone": [
+        "settled"
+      ]
+    },
+    {
+      "case": "42-cottage",
+      "seed": 42,
+      "id": "cottage",
+      "hour": 1503,
+      "strain": 6.984950960114869,
+      "rate": 0.509309194368951,
+      "mood": 67.58181818181818,
+      "comfort": 0.8714545454545455,
+      "pop": 11,
+      "gaps": [
+        {
+          "need": "meals",
+          "avg": 0.7454545454545456
+        },
+        {
+          "need": "shelter",
+          "avg": 0.75
+        },
+        {
+          "need": "health",
+          "avg": 0.9090909090909091
+        },
+        {
+          "need": "evenings",
+          "avg": 0.9527272727272728
+        },
+        {
+          "need": "warmth",
+          "avg": 1
+        }
+      ],
+      "charter": "roof",
+      "chartersDone": [
+        "settled"
+      ]
+    },
+    {
+      "case": "1000-stage",
+      "seed": 1000,
+      "id": "stage",
+      "hour": 1452,
+      "strain": 9.473374249930854,
+      "rate": 0.5747892771296305,
+      "mood": 65.3,
+      "comfort": 0.7164712229443788,
+      "pop": 12,
+      "gaps": [
+        {
+          "need": "meals",
+          "avg": 0.38749999999999996
+        },
+        {
+          "need": "shelter",
+          "avg": 0.5
+        },
+        {
+          "need": "evenings",
+          "avg": 0.5333333333333333
+        },
+        {
+          "need": "variety",
+          "avg": 0.7000000000000002
+        },
+        {
+          "need": "surroundings",
+          "avg": 0.8944652272773183
+        },
+        {
+          "need": "health",
+          "avg": 1
+        },
+        {
+          "need": "warmth",
+          "avg": 1
+        }
+      ],
+      "charter": "longtable",
+      "chartersDone": [
+        "rested",
+        "goodtable"
+      ]
+    },
+    {
+      "case": "303-stage",
+      "seed": 303,
+      "id": "stage",
+      "hour": 990,
+      "strain": 8.662905794861357,
+      "rate": 0.4432900588259408,
+      "mood": 65.88,
+      "comfort": 0.6900000000000002,
+      "pop": 10,
+      "gaps": [
+        {
+          "need": "drink",
+          "avg": 0
+        },
+        {
+          "need": "meals",
+          "avg": 0.7000000000000001
+        },
+        {
+          "need": "shelter",
+          "avg": 0.75
+        },
+        {
+          "need": "health",
+          "avg": 1
+        },
+        {
+          "need": "evenings",
+          "avg": 1
+        }
+      ],
+      "charter": "bread",
+      "chartersDone": [
+        "settled"
+      ]
+    }
+  ],
+  "comparisons": [
+    {
+      "case": "24757-cottage",
+      "curve": "current",
+      "hours": 168,
+      "comfortVsProduction": {
+        "meanMood": 0.9541071428571541,
+        "comfort": 0.0342583333333335,
+        "passiveGrowthAvoided": 0.28007918436210844,
+        "daytimeSulkingAvoided": -29.000000000000824,
+        "foodMade": -21,
+        "endStrain": 1.399614654660457
+      },
+      "comfortVsSave": {
+        "meanMood": 2.473571428571418,
+        "comfort": 0.010025000000002171,
+        "passiveGrowthAvoided": 0.08042487302752654,
+        "daytimeSulkingAvoided": 25.999999999999744,
+        "foodMade": -40,
+        "endStrain": 1.571595365819256
+      }
+    },
+    {
+      "case": "24757-cottage",
+      "curve": "gentler",
+      "hours": 168,
+      "comfortVsProduction": {
+        "meanMood": 0.9713690476190493,
+        "comfort": 0.03470119047619091,
+        "passiveGrowthAvoided": 0.45552711741317253,
+        "daytimeSulkingAvoided": -31.00000000000088,
+        "foodMade": -21,
+        "endStrain": 2.6102125151704705
+      },
+      "comfortVsSave": {
+        "meanMood": 2.509107142857168,
+        "comfort": 0.010025000000002171,
+        "passiveGrowthAvoided": 0.13062382840574216,
+        "daytimeSulkingAvoided": 25.999999999999744,
+        "foodMade": -40,
+        "endStrain": 1.4970593625370867
+      }
+    },
+    {
+      "case": "24757-cottage",
+      "curve": "no-growth",
+      "hours": 168,
+      "comfortVsProduction": {
+        "meanMood": 0.9558603896104145,
+        "comfort": 0.014669217328180939,
+        "passiveGrowthAvoided": 0,
+        "daytimeSulkingAvoided": -25.00000000000071,
+        "foodMade": -30,
+        "endStrain": 1.2167049554488791
+      },
+      "comfortVsSave": {
+        "meanMood": 2.4088149350649672,
+        "comfort": 0.03012729342053433,
+        "passiveGrowthAvoided": 0,
+        "daytimeSulkingAvoided": -9.000000000000256,
+        "foodMade": 5,
+        "endStrain": 1.2167049554488791
+      }
+    },
+    {
+      "case": "42-cottage",
+      "curve": "current",
+      "hours": 168,
+      "comfortVsProduction": {
+        "meanMood": 1.4619543650793645,
+        "comfort": 0.005022005772006066,
+        "passiveGrowthAvoided": -0.09186423588708248,
+        "daytimeSulkingAvoided": 0,
+        "foodMade": -70,
+        "endStrain": 0.09186423588708337
+      },
+      "comfortVsSave": {
+        "meanMood": -1.7040539321790078,
+        "comfort": 0.019566017316017148,
+        "passiveGrowthAvoided": -0.09891316724660193,
+        "daytimeSulkingAvoided": 0,
+        "foodMade": 35,
+        "endStrain": 4.700730371406671
+      }
+    },
+    {
+      "case": "42-cottage",
+      "curve": "gentler",
+      "hours": 168,
+      "comfortVsProduction": {
+        "meanMood": 3.071654040403999,
+        "comfort": 0.010913329725830367,
+        "passiveGrowthAvoided": -0.02201782907492955,
+        "daytimeSulkingAvoided": 0,
+        "foodMade": -36,
+        "endStrain": -1.0738525560978314
+      },
+      "comfortVsSave": {
+        "meanMood": -0.20770652958158564,
+        "comfort": 0.016565115440115408,
+        "passiveGrowthAvoided": -0.04945658362330274,
+        "daytimeSulkingAvoided": 0,
+        "foodMade": 22,
+        "endStrain": 1.9535861984505418
+      }
+    },
+    {
+      "case": "42-cottage",
+      "curve": "no-growth",
+      "hours": 168,
+      "comfortVsProduction": {
+        "meanMood": 0.9432720057719877,
+        "comfort": 0.013315566378068522,
+        "passiveGrowthAvoided": 0,
+        "daytimeSulkingAvoided": 0,
+        "foodMade": -25,
+        "endStrain": 0
+      },
+      "comfortVsSave": {
+        "meanMood": 0.3962436868686581,
+        "comfort": 0.021251172438672805,
+        "passiveGrowthAvoided": 0,
+        "daytimeSulkingAvoided": 0,
+        "foodMade": 38,
+        "endStrain": 0
+      }
+    },
+    {
+      "case": "1000-stage",
+      "curve": "current",
+      "hours": 168,
+      "comfortVsProduction": {
+        "meanMood": 0.5710508241757708,
+        "comfort": -0.027920430606257485,
+        "passiveGrowthAvoided": -0.27121885911347654,
+        "daytimeSulkingAvoided": 0,
+        "foodMade": -6,
+        "endStrain": -1.9854119756703863
+      },
+      "comfortVsSave": {
+        "meanMood": 3.1373054029303376,
+        "comfort": 0.010137607274157578,
+        "passiveGrowthAvoided": 0.0643214169248818,
+        "daytimeSulkingAvoided": 0,
+        "foodMade": 10,
+        "endStrain": 1.5688249234754448
+      }
+    },
+    {
+      "case": "1000-stage",
+      "curve": "gentler",
+      "hours": 168,
+      "comfortVsProduction": {
+        "meanMood": 0.24083867521366642,
+        "comfort": -0.031976662170737025,
+        "passiveGrowthAvoided": -0.4167142521105278,
+        "daytimeSulkingAvoided": 0,
+        "foodMade": -10,
+        "endStrain": -1.8215794158281344
+      },
+      "comfortVsSave": {
+        "meanMood": 3.2268543956043914,
+        "comfort": 0.010523342390927004,
+        "passiveGrowthAvoided": 0.11546821788140171,
+        "daytimeSulkingAvoided": 0,
+        "foodMade": 13,
+        "endStrain": -2.3580684976418222
+      }
+    },
+    {
+      "case": "1000-stage",
+      "curve": "no-growth",
+      "hours": 168,
+      "comfortVsProduction": {
+        "meanMood": 1.4458829365078287,
+        "comfort": -0.025158748751315962,
+        "passiveGrowthAvoided": 0,
+        "daytimeSulkingAvoided": 0,
+        "foodMade": -22,
+        "endStrain": -3.275892815626089
+      },
+      "comfortVsSave": {
+        "meanMood": 0.513640873015774,
+        "comfort": -0.02458987760743314,
+        "passiveGrowthAvoided": 0,
+        "daytimeSulkingAvoided": 0,
+        "foodMade": 14,
+        "endStrain": -3.275892815626089
+      }
+    },
+    {
+      "case": "303-stage",
+      "curve": "current",
+      "hours": 168,
+      "comfortVsProduction": {
+        "meanMood": 4.935102813852808,
+        "comfort": 0.0055091043434996045,
+        "passiveGrowthAvoided": 0.024819676707950045,
+        "daytimeSulkingAvoided": 0,
+        "foodMade": -28,
+        "endStrain": 0.06309003305303573
+      },
+      "comfortVsSave": {
+        "meanMood": 6.790735930735934,
+        "comfort": 0.021344731102259096,
+        "passiveGrowthAvoided": 0.08927869770367369,
+        "daytimeSulkingAvoided": 0,
+        "foodMade": -25,
+        "endStrain": 0.36990703807975134
+      }
+    },
+    {
+      "case": "303-stage",
+      "curve": "gentler",
+      "hours": 168,
+      "comfortVsProduction": {
+        "meanMood": 4.933652597402656,
+        "comfort": 0.0055091043434996045,
+        "passiveGrowthAvoided": 0.03582030959382987,
+        "daytimeSulkingAvoided": 0,
+        "foodMade": -28,
+        "endStrain": 0.0484811897146038
+      },
+      "comfortVsSave": {
+        "meanMood": 6.8007521645021995,
+        "comfort": 0.021344731102259096,
+        "passiveGrowthAvoided": 0.15260842156333077,
+        "daytimeSulkingAvoided": 0,
+        "foodMade": -25,
+        "endStrain": 0.3083521253329966
+      }
+    },
+    {
+      "case": "303-stage",
+      "curve": "no-growth",
+      "hours": 168,
+      "comfortVsProduction": {
+        "meanMood": 4.736158008658009,
+        "comfort": 0.006264778222455192,
+        "passiveGrowthAvoided": 0,
+        "daytimeSulkingAvoided": 0,
+        "foodMade": -26,
+        "endStrain": 0
+      },
+      "comfortVsSave": {
+        "meanMood": 7.563035714285732,
+        "comfort": 0.02794369029090804,
+        "passiveGrowthAvoided": 0,
+        "daytimeSulkingAvoided": 0,
+        "foodMade": 8,
+        "endStrain": 0
+      }
+    }
+  ],
+  "windows": [
+    {
+      "case": "24757-cottage",
+      "curve": "current",
+      "policy": "comfort",
+      "hours": 168,
+      "meanMood": 49.34160714285715,
+      "meanComfort": 0.6936607142857143,
+      "minimumMood": 13.600000000000001,
+      "passiveGrowth": 5.708277372062767,
+      "eventStrain": 0,
+      "relief": 4.124274227074025,
+      "daytimeSulking": 38.00000000000094,
+      "foodMade": 126,
+      "endFood": 116,
+      "endWood": 82,
+      "endFine": 41,
+      "endPopulation": 10,
+      "endStrain": 19.096848851341782,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 0,
+      "requirements": [
+        {
+          "kind": "population",
+          "value": 10,
+          "target": 10
+        },
+        {
+          "kind": "tally",
+          "value": 51,
+          "target": 30
+        },
+        {
+          "kind": "avgMood",
+          "value": 0.9297121212121211,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 9,
+      "sulkingPersonHours": 86.00000000000026,
+      "hungryPersonHours": 0
+    },
+    {
+      "case": "24757-cottage",
+      "curve": "current",
+      "policy": "comfort",
+      "hours": 336,
+      "meanMood": 57.11042162698409,
+      "meanComfort": 0.7439040915024544,
+      "minimumMood": 13.600000000000001,
+      "passiveGrowth": 9.826986963534951,
+      "eventStrain": 0,
+      "relief": 14.200124260648845,
+      "daytimeSulking": 38.00000000000094,
+      "foodMade": 294,
+      "endFood": 64,
+      "endWood": 41,
+      "endFine": 9,
+      "endPopulation": 12,
+      "endStrain": 13.139708409239146,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 1,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.1,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 31,
+      "sulkingPersonHours": 86.00000000000026,
+      "hungryPersonHours": 4.833333333333333
+    },
+    {
+      "case": "24757-cottage",
+      "curve": "current",
+      "policy": "production",
+      "hours": 168,
+      "meanMood": 48.387499999999996,
+      "meanComfort": 0.6594023809523808,
+      "minimumMood": 19.799999999999997,
+      "passiveGrowth": 5.9883565564248755,
+      "eventStrain": 0,
+      "relief": 5.803968066096591,
+      "daytimeSulking": 9.000000000000114,
+      "foodMade": 147,
+      "endFood": 72,
+      "endWood": 101,
+      "endFine": 41,
+      "endPopulation": 10,
+      "endStrain": 17.697234196681325,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 0,
+      "requirements": [
+        {
+          "kind": "population",
+          "value": 10,
+          "target": 10
+        },
+        {
+          "kind": "tally",
+          "value": 53,
+          "target": 30
+        },
+        {
+          "kind": "avgMood",
+          "value": 0.9306363636363637,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 19,
+      "sulkingPersonHours": 33.00000000000007,
+      "hungryPersonHours": 0
+    },
+    {
+      "case": "24757-cottage",
+      "curve": "current",
+      "policy": "production",
+      "hours": 336,
+      "meanMood": 52.13697059884558,
+      "meanComfort": 0.7489955784171094,
+      "minimumMood": 19.700000000000003,
+      "passiveGrowth": 9.733202303343106,
+      "eventStrain": 0,
+      "relief": 15.633550170743515,
+      "daytimeSulking": 10.000000000000142,
+      "foodMade": 228,
+      "endFood": 94,
+      "endWood": 21,
+      "endFine": 0,
+      "endPopulation": 12,
+      "endStrain": 11.612497838952631,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 1,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.05,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 29,
+      "sulkingPersonHours": 38,
+      "hungryPersonHours": 1.1666666666666665
+    },
+    {
+      "case": "24757-cottage",
+      "curve": "current",
+      "policy": "save",
+      "hours": 168,
+      "meanMood": 46.86803571428573,
+      "meanComfort": 0.6836357142857121,
+      "minimumMood": 16.9,
+      "passiveGrowth": 5.788702245090294,
+      "eventStrain": 0,
+      "relief": 5.776294465920808,
+      "daytimeSulking": 64.00000000000068,
+      "foodMade": 166,
+      "endFood": 144,
+      "endWood": 119,
+      "endFine": 42,
+      "endPopulation": 10,
+      "endStrain": 17.525253485522526,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 0,
+      "requirements": [
+        {
+          "kind": "population",
+          "value": 10,
+          "target": 10
+        },
+        {
+          "kind": "tally",
+          "value": 60,
+          "target": 30
+        },
+        {
+          "kind": "avgMood",
+          "value": 0.9597651515151514,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 20,
+      "sulkingPersonHours": 132.00000000000122,
+      "hungryPersonHours": 0
+    },
+    {
+      "case": "24757-cottage",
+      "curve": "current",
+      "policy": "save",
+      "hours": 336,
+      "meanMood": 54.78086264430018,
+      "meanComfort": 0.7349303545355591,
+      "minimumMood": 16.9,
+      "passiveGrowth": 11.525118702263844,
+      "eventStrain": 0,
+      "relief": 14.137376489379921,
+      "daytimeSulking": 64.00000000000068,
+      "foodMade": 315,
+      "endFood": 84,
+      "endWood": 0,
+      "endFine": 5,
+      "endPopulation": 12,
+      "endStrain": 14.900587919236964,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 1,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.1,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 32,
+      "sulkingPersonHours": 132.00000000000122,
+      "hungryPersonHours": 2.666666666666666
+    },
+    {
+      "case": "24757-cottage",
+      "curve": "gentler",
+      "policy": "comfort",
+      "hours": 168,
+      "meanMood": 49.54785714285714,
+      "meanComfort": 0.6936607142857143,
+      "minimumMood": 13.799999999999997,
+      "passiveGrowth": 5.200007490378191,
+      "eventStrain": 0,
+      "relief": 4.081854301178179,
+      "daytimeSulking": 38.00000000000094,
+      "foodMade": 126,
+      "endFood": 116,
+      "endWood": 82,
+      "endFine": 41,
+      "endPopulation": 10,
+      "endStrain": 18.630998895553052,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 0,
+      "requirements": [
+        {
+          "kind": "population",
+          "value": 10,
+          "target": 10
+        },
+        {
+          "kind": "tally",
+          "value": 51,
+          "target": 30
+        },
+        {
+          "kind": "avgMood",
+          "value": 0.9373106060606059,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 9,
+      "sulkingPersonHours": 86.00000000000026,
+      "hungryPersonHours": 0
+    },
+    {
+      "case": "24757-cottage",
+      "curve": "gentler",
+      "policy": "comfort",
+      "hours": 336,
+      "meanMood": 57.69292523448778,
+      "meanComfort": 0.7438299387573565,
+      "minimumMood": 13.799999999999997,
+      "passiveGrowth": 7.545034286889756,
+      "eventStrain": 0,
+      "relief": 13.708853013238508,
+      "daytimeSulking": 38.00000000000094,
+      "foodMade": 295,
+      "endFood": 64,
+      "endWood": 41,
+      "endFine": 9,
+      "endPopulation": 12,
+      "endStrain": 11.349026980004288,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 1,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.1,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 31,
+      "sulkingPersonHours": 86.00000000000026,
+      "hungryPersonHours": 4.833333333333333
+    },
+    {
+      "case": "24757-cottage",
+      "curve": "gentler",
+      "policy": "production",
+      "hours": 168,
+      "meanMood": 48.57648809523809,
+      "meanComfort": 0.6589595238095234,
+      "minimumMood": 20,
+      "passiveGrowth": 5.655534607791363,
+      "eventStrain": 0,
+      "relief": 7.147593933761822,
+      "daytimeSulking": 7.000000000000057,
+      "foodMade": 147,
+      "endFood": 66,
+      "endWood": 96,
+      "endFine": 41,
+      "endPopulation": 10,
+      "endStrain": 16.02078638038258,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 0,
+      "requirements": [
+        {
+          "kind": "population",
+          "value": 10,
+          "target": 10
+        },
+        {
+          "kind": "tally",
+          "value": 53,
+          "target": 30
+        },
+        {
+          "kind": "avgMood",
+          "value": 0.9400757575757575,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 19,
+      "sulkingPersonHours": 18.999999999999996,
+      "hungryPersonHours": 0
+    },
+    {
+      "case": "24757-cottage",
+      "curve": "gentler",
+      "policy": "production",
+      "hours": 336,
+      "meanMood": 52.68171581890333,
+      "meanComfort": 0.7235445689824067,
+      "minimumMood": 20,
+      "passiveGrowth": 10.180398649722152,
+      "eventStrain": 0,
+      "relief": 16.82966325569586,
+      "daytimeSulking": 7.000000000000057,
+      "foodMade": 296,
+      "endFood": 33,
+      "endWood": 104,
+      "endFine": 1,
+      "endPopulation": 12,
+      "endStrain": 10.863581100379333,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 1,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.1,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 31,
+      "sulkingPersonHours": 18.999999999999996,
+      "hungryPersonHours": 1.3333333333333333
+    },
+    {
+      "case": "24757-cottage",
+      "curve": "gentler",
+      "policy": "save",
+      "hours": 168,
+      "meanMood": 47.03874999999997,
+      "meanComfort": 0.6836357142857121,
+      "minimumMood": 17.1,
+      "passiveGrowth": 5.330631318783933,
+      "eventStrain": 0,
+      "relief": 5.709537492121008,
+      "daytimeSulking": 64.00000000000068,
+      "foodMade": 166,
+      "endFood": 144,
+      "endWood": 119,
+      "endFine": 42,
+      "endPopulation": 10,
+      "endStrain": 17.133939533015965,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 0,
+      "requirements": [
+        {
+          "kind": "population",
+          "value": 10,
+          "target": 10
+        },
+        {
+          "kind": "tally",
+          "value": 60,
+          "target": 30
+        },
+        {
+          "kind": "avgMood",
+          "value": 0.9661818181818184,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 20,
+      "sulkingPersonHours": 132.00000000000122,
+      "hungryPersonHours": 0
+    },
+    {
+      "case": "24757-cottage",
+      "curve": "gentler",
+      "policy": "save",
+      "hours": 336,
+      "meanMood": 55.268230970418486,
+      "meanComfort": 0.734848998692035,
+      "minimumMood": 17.1,
+      "passiveGrowth": 9.887797375380666,
+      "eventStrain": 0,
+      "relief": 13.774206717407957,
+      "daytimeSulking": 64.00000000000068,
+      "foodMade": 312,
+      "endFood": 110,
+      "endWood": 0,
+      "endFine": 4,
+      "endPopulation": 12,
+      "endStrain": 13.62643636432575,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 1,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.1,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 32,
+      "sulkingPersonHours": 132.00000000000122,
+      "hungryPersonHours": 2.666666666666666
+    },
+    {
+      "case": "24757-cottage",
+      "curve": "no-growth",
+      "policy": "comfort",
+      "hours": 168,
+      "meanMood": 52.23341991341994,
+      "meanComfort": 0.681816025046477,
+      "minimumMood": 14.5,
+      "passiveGrowth": 0,
+      "eventStrain": 0,
+      "relief": 7.439019034916111,
+      "daytimeSulking": 32.00000000000077,
+      "foodMade": 131,
+      "endFood": 102,
+      "endWood": 121,
+      "endFine": 53,
+      "endPopulation": 11,
+      "endStrain": 10.07382667143693,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 1,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 9,
+      "sulkingPersonHours": 70.99999999999983,
+      "hungryPersonHours": 0
+    },
+    {
+      "case": "24757-cottage",
+      "curve": "no-growth",
+      "policy": "comfort",
+      "hours": 336,
+      "meanMood": 57.183335518648,
+      "meanComfort": 0.7115329141749501,
+      "minimumMood": 14.5,
+      "passiveGrowth": 0,
+      "eventStrain": 3,
+      "relief": 10.234505936239858,
+      "daytimeSulking": 32.00000000000077,
+      "foodMade": 250,
+      "endFood": 97,
+      "endWood": 21,
+      "endFine": 12,
+      "endPopulation": 13,
+      "endStrain": 10.278339770113183,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 1,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.1,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 32,
+      "sulkingPersonHours": 70.99999999999983,
+      "hungryPersonHours": 3.4999999999999987
+    },
+    {
+      "case": "24757-cottage",
+      "curve": "no-growth",
+      "policy": "production",
+      "hours": 168,
+      "meanMood": 51.27755952380952,
+      "meanComfort": 0.667146807718296,
+      "minimumMood": 24.1,
+      "passiveGrowth": 0,
+      "eventStrain": 0,
+      "relief": 8.65572399036499,
+      "daytimeSulking": 7.000000000000057,
+      "foodMade": 161,
+      "endFood": 111,
+      "endWood": 106,
+      "endFine": 41,
+      "endPopulation": 10,
+      "endStrain": 8.85712171598805,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 1,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.05,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 19,
+      "sulkingPersonHours": 18.999999999999996,
+      "hungryPersonHours": 0
+    },
+    {
+      "case": "24757-cottage",
+      "curve": "no-growth",
+      "policy": "production",
+      "hours": 336,
+      "meanMood": 52.30502029220772,
+      "meanComfort": 0.7095951346373153,
+      "minimumMood": 17.1,
+      "passiveGrowth": 0,
+      "eventStrain": 0,
+      "relief": 10.360719920692688,
+      "daytimeSulking": 10.000000000000142,
+      "foodMade": 238,
+      "endFood": 57,
+      "endWood": 99,
+      "endFine": 16,
+      "endPopulation": 12,
+      "endStrain": 7.152125785660351,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 1,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.20625,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 31,
+      "sulkingPersonHours": 34.00000000000006,
+      "hungryPersonHours": 0.5
+    },
+    {
+      "case": "24757-cottage",
+      "curve": "no-growth",
+      "policy": "save",
+      "hours": 168,
+      "meanMood": 49.82460497835497,
+      "meanComfort": 0.6516887316259427,
+      "minimumMood": 17.6,
+      "passiveGrowth": 0,
+      "eventStrain": 0,
+      "relief": 8.65572399036499,
+      "daytimeSulking": 23.00000000000051,
+      "foodMade": 126,
+      "endFood": 74,
+      "endWood": 209,
+      "endFine": 42,
+      "endPopulation": 12,
+      "endStrain": 8.85712171598805,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 1,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.05,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 22,
+      "sulkingPersonHours": 58.9999999999997,
+      "hungryPersonHours": 0
+    },
+    {
+      "case": "24757-cottage",
+      "curve": "no-growth",
+      "policy": "save",
+      "hours": 336,
+      "meanMood": 52.32462887806624,
+      "meanComfort": 0.7306342020746343,
+      "minimumMood": 17.6,
+      "passiveGrowth": 0,
+      "eventStrain": 0,
+      "relief": 10.648576376462302,
+      "daytimeSulking": 23.00000000000051,
+      "foodMade": 266,
+      "endFood": 55,
+      "endWood": 56,
+      "endFine": 6,
+      "endPopulation": 12,
+      "endStrain": 6.864269329890739,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 1,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.7374999999999999,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 34,
+      "sulkingPersonHours": 58.9999999999997,
+      "hungryPersonHours": 2.1666666666666665
+    },
+    {
+      "case": "42-cottage",
+      "curve": "current",
+      "policy": "comfort",
+      "hours": 168,
+      "meanMood": 70.93804563492061,
+      "meanComfort": 0.9053690476190485,
+      "minimumMood": 33.6,
+      "passiveGrowth": 3.786689000547711,
+      "eventStrain": 3.000000000000001,
+      "relief": 3.2314742872512348,
+      "daytimeSulking": 0,
+      "foodMade": 140,
+      "endFood": 207,
+      "endWood": 739,
+      "endFine": 34,
+      "endPopulation": 12,
+      "endStrain": 10.540165673411346,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 0,
+      "requirements": [
+        {
+          "kind": "population",
+          "value": 12,
+          "target": 10
+        },
+        {
+          "kind": "built",
+          "value": 1,
+          "target": 3
+        },
+        {
+          "kind": "tally",
+          "value": 80,
+          "target": 30
+        },
+        {
+          "kind": "avgMood",
+          "value": 1,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 22,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 6.833333333333337
+    },
+    {
+      "case": "42-cottage",
+      "curve": "current",
+      "policy": "comfort",
+      "hours": 336,
+      "meanMood": 70.32279265873015,
+      "meanComfort": 0.8526281774562389,
+      "minimumMood": 33.4,
+      "passiveGrowth": 7.9558344384139685,
+      "eventStrain": 3.000000000000001,
+      "relief": 10.945199459570128,
+      "daytimeSulking": 0,
+      "foodMade": 197,
+      "endFood": 189,
+      "endWood": 582,
+      "endFine": 9,
+      "endPopulation": 12,
+      "endStrain": 6.995585938958712,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 1,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.41874999999999996,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 46,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 10.833333333333329
+    },
+    {
+      "case": "42-cottage",
+      "curve": "current",
+      "policy": "production",
+      "hours": 168,
+      "meanMood": 69.47609126984125,
+      "meanComfort": 0.9003470418470424,
+      "minimumMood": 42.6,
+      "passiveGrowth": 3.6948247646606287,
+      "eventStrain": 3,
+      "relief": 3.2314742872512348,
+      "daytimeSulking": 0,
+      "foodMade": 210,
+      "endFood": 142,
+      "endWood": 704,
+      "endFine": 40,
+      "endPopulation": 12,
+      "endStrain": 10.448301437524263,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 0,
+      "requirements": [
+        {
+          "kind": "population",
+          "value": 12,
+          "target": 10
+        },
+        {
+          "kind": "built",
+          "value": 0,
+          "target": 3
+        },
+        {
+          "kind": "tally",
+          "value": 80,
+          "target": 30
+        },
+        {
+          "kind": "avgMood",
+          "value": 1,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 22,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 2.666666666666666
+    },
+    {
+      "case": "42-cottage",
+      "curve": "current",
+      "policy": "production",
+      "hours": 336,
+      "meanMood": 69.21011904761906,
+      "meanComfort": 0.8676301558928052,
+      "minimumMood": 34.7,
+      "passiveGrowth": 7.8739627154638265,
+      "eventStrain": 3,
+      "relief": 11.668098054842293,
+      "daytimeSulking": 0,
+      "foodMade": 282,
+      "endFood": 150,
+      "endWood": 482,
+      "endFine": 4,
+      "endPopulation": 12,
+      "endStrain": 6.190815620736403,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 1,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.05,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 46,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 7.1666666666666705
+    },
+    {
+      "case": "42-cottage",
+      "curve": "current",
+      "policy": "save",
+      "hours": 168,
+      "meanMood": 72.64209956709962,
+      "meanComfort": 0.8858030303030313,
+      "minimumMood": 50,
+      "passiveGrowth": 3.6877758333011093,
+      "eventStrain": 0,
+      "relief": 4.833291491411303,
+      "daytimeSulking": 0,
+      "foodMade": 105,
+      "endFood": 161,
+      "endWood": 768,
+      "endFine": 40,
+      "endPopulation": 11,
+      "endStrain": 5.839435302004675,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 0,
+      "requirements": [
+        {
+          "kind": "population",
+          "value": 11,
+          "target": 10
+        },
+        {
+          "kind": "built",
+          "value": 0,
+          "target": 3
+        },
+        {
+          "kind": "tally",
+          "value": 80,
+          "target": 30
+        },
+        {
+          "kind": "avgMood",
+          "value": 1,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 22,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 4.833333333333333
+    },
+    {
+      "case": "42-cottage",
+      "curve": "current",
+      "policy": "save",
+      "hours": 336,
+      "meanMood": 72.26601055194806,
+      "meanComfort": 0.8306546222619837,
+      "minimumMood": 40,
+      "passiveGrowth": 8.173900552538878,
+      "eventStrain": 0,
+      "relief": 9.564290361988089,
+      "daytimeSulking": 0,
+      "foodMade": 191,
+      "endFood": 145,
+      "endWood": 554,
+      "endFine": 4,
+      "endPopulation": 12,
+      "endStrain": 5.594561150665656,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 1,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.525,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 22,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 10.833333333333329
+    },
+    {
+      "case": "42-cottage",
+      "curve": "gentler",
+      "policy": "comfort",
+      "hours": 168,
+      "meanMood": 71.03488005050501,
+      "meanComfort": 0.9070164141414141,
+      "minimumMood": 32.2,
+      "passiveGrowth": 1.8933445002738578,
+      "eventStrain": 3,
+      "relief": 4.3185815278607285,
+      "daytimeSulking": 0,
+      "foodMade": 157,
+      "endFood": 188,
+      "endWood": 770,
+      "endFine": 34,
+      "endPopulation": 12,
+      "endStrain": 7.559713932527998,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 0,
+      "requirements": [
+        {
+          "kind": "population",
+          "value": 12,
+          "target": 10
+        },
+        {
+          "kind": "built",
+          "value": 1,
+          "target": 3
+        },
+        {
+          "kind": "tally",
+          "value": 81,
+          "target": 30
+        },
+        {
+          "kind": "avgMood",
+          "value": 1,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 24,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 6.833333333333337
+    },
+    {
+      "case": "42-cottage",
+      "curve": "gentler",
+      "policy": "comfort",
+      "hours": 336,
+      "meanMood": 72.26835768398267,
+      "meanComfort": 0.8531091118889874,
+      "minimumMood": 29.9,
+      "passiveGrowth": 4.338249787578998,
+      "eventStrain": 3,
+      "relief": 9.84895592330986,
+      "daytimeSulking": 0,
+      "foodMade": 254,
+      "endFood": 190,
+      "endWood": 570,
+      "endFine": 20,
+      "endPopulation": 12,
+      "endStrain": 4.474244824384006,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 1,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.1,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 36,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 17.333333333333318
+    },
+    {
+      "case": "42-cottage",
+      "curve": "gentler",
+      "policy": "production",
+      "hours": 168,
+      "meanMood": 67.96322601010101,
+      "meanComfort": 0.8961030844155837,
+      "minimumMood": 37.8,
+      "passiveGrowth": 1.8713266711989283,
+      "eventStrain": 3,
+      "relief": 3.2227111426879675,
+      "daytimeSulking": 0,
+      "foodMade": 193,
+      "endFood": 146,
+      "endWood": 689,
+      "endFine": 40,
+      "endPopulation": 12,
+      "endStrain": 8.63356648862583,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 0,
+      "requirements": [
+        {
+          "kind": "population",
+          "value": 12,
+          "target": 10
+        },
+        {
+          "kind": "built",
+          "value": 0,
+          "target": 3
+        },
+        {
+          "kind": "tally",
+          "value": 80,
+          "target": 30
+        },
+        {
+          "kind": "avgMood",
+          "value": 1,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 22,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 5.166666666666667
+    },
+    {
+      "case": "42-cottage",
+      "curve": "gentler",
+      "policy": "production",
+      "hours": 336,
+      "meanMood": 70.10713956182707,
+      "meanComfort": 0.8573194747465698,
+      "minimumMood": 37.8,
+      "passiveGrowth": 4.350450825877428,
+      "eventStrain": 3,
+      "relief": 9.856600747551568,
+      "daytimeSulking": 0,
+      "foodMade": 292,
+      "endFood": 119,
+      "endWood": 440,
+      "endFine": 10,
+      "endPopulation": 14,
+      "endStrain": 4.4788010384407295,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 1,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.1,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 43,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 10.666666666666663
+    },
+    {
+      "case": "42-cottage",
+      "curve": "gentler",
+      "policy": "save",
+      "hours": 168,
+      "meanMood": 71.2425865800866,
+      "meanComfort": 0.8904512987012987,
+      "minimumMood": 46.9,
+      "passiveGrowth": 1.843887916650555,
+      "eventStrain": 0,
+      "relief": 3.2227111426879675,
+      "daytimeSulking": 0,
+      "foodMade": 135,
+      "endFood": 147,
+      "endWood": 757,
+      "endFine": 41,
+      "endPopulation": 11,
+      "endStrain": 5.6061277340774565,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 0,
+      "requirements": [
+        {
+          "kind": "population",
+          "value": 11,
+          "target": 10
+        },
+        {
+          "kind": "built",
+          "value": 0,
+          "target": 3
+        },
+        {
+          "kind": "tally",
+          "value": 80,
+          "target": 30
+        },
+        {
+          "kind": "avgMood",
+          "value": 1,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 22,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 5.833333333333335
+    },
+    {
+      "case": "42-cottage",
+      "curve": "gentler",
+      "policy": "save",
+      "hours": 336,
+      "meanMood": 71.70599522005774,
+      "meanComfort": 0.8545179519088877,
+      "minimumMood": 37.9,
+      "passiveGrowth": 3.9621477474467133,
+      "eventStrain": 0,
+      "relief": 6.416268712094282,
+      "daytimeSulking": 0,
+      "foodMade": 229,
+      "endFood": 185,
+      "endWood": 546,
+      "endFine": 3,
+      "endPopulation": 12,
+      "endStrain": 4.5308299954673,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 1,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.41874999999999996,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 22,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 7.3333333333333375
+    },
+    {
+      "case": "42-cottage",
+      "curve": "no-growth",
+      "policy": "comfort",
+      "hours": 168,
+      "meanMood": 69.78502435064935,
+      "meanComfort": 0.9060769300144303,
+      "minimumMood": 32,
+      "passiveGrowth": 0,
+      "eventStrain": 3,
+      "relief": 3.9939803840459476,
+      "daytimeSulking": 0,
+      "foodMade": 155,
+      "endFood": 195,
+      "endWood": 761,
+      "endFine": 34,
+      "endPopulation": 12,
+      "endStrain": 5.990970576068921,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 0,
+      "requirements": [
+        {
+          "kind": "population",
+          "value": 12,
+          "target": 10
+        },
+        {
+          "kind": "built",
+          "value": 1,
+          "target": 3
+        },
+        {
+          "kind": "tally",
+          "value": 81,
+          "target": 30
+        },
+        {
+          "kind": "avgMood",
+          "value": 1,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 24,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 5.500000000000001
+    },
+    {
+      "case": "42-cottage",
+      "curve": "no-growth",
+      "policy": "comfort",
+      "hours": 336,
+      "meanMood": 69.72673836580091,
+      "meanComfort": 0.8423197341801916,
+      "minimumMood": 26.5,
+      "passiveGrowth": 0,
+      "eventStrain": 3,
+      "relief": 6.989465672080408,
+      "daytimeSulking": 0,
+      "foodMade": 191,
+      "endFood": 241,
+      "endWood": 587,
+      "endFine": 8,
+      "endPopulation": 12,
+      "endStrain": 2.9954852880344607,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 1,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.525,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 24,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 8.000000000000005
+    },
+    {
+      "case": "42-cottage",
+      "curve": "no-growth",
+      "policy": "production",
+      "hours": 168,
+      "meanMood": 68.84175234487736,
+      "meanComfort": 0.8927613636363618,
+      "minimumMood": 41,
+      "passiveGrowth": 0,
+      "eventStrain": 3,
+      "relief": 3.9939803840459476,
+      "daytimeSulking": 0,
+      "foodMade": 180,
+      "endFood": 172,
+      "endWood": 745,
+      "endFine": 41,
+      "endPopulation": 12,
+      "endStrain": 5.990970576068921,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 0,
+      "requirements": [
+        {
+          "kind": "population",
+          "value": 12,
+          "target": 10
+        },
+        {
+          "kind": "built",
+          "value": 0,
+          "target": 3
+        },
+        {
+          "kind": "tally",
+          "value": 81,
+          "target": 30
+        },
+        {
+          "kind": "avgMood",
+          "value": 1,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 24,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 5.500000000000001
+    },
+    {
+      "case": "42-cottage",
+      "curve": "no-growth",
+      "policy": "production",
+      "hours": 336,
+      "meanMood": 71.55740891053394,
+      "meanComfort": 0.8496938656755084,
+      "minimumMood": 39.5,
+      "passiveGrowth": 0,
+      "eventStrain": 3,
+      "relief": 6.989465672080408,
+      "daytimeSulking": 0,
+      "foodMade": 235,
+      "endFood": 218,
+      "endWood": 520,
+      "endFine": 0,
+      "endPopulation": 12,
+      "endStrain": 2.9954852880344607,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 1,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.05,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 24,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 10.666666666666663
+    },
+    {
+      "case": "42-cottage",
+      "curve": "no-growth",
+      "policy": "save",
+      "hours": 168,
+      "meanMood": 69.3887806637807,
+      "meanComfort": 0.8848257575757575,
+      "minimumMood": 38,
+      "passiveGrowth": 0,
+      "eventStrain": 3,
+      "relief": 3.9939803840459476,
+      "daytimeSulking": 0,
+      "foodMade": 117,
+      "endFood": 183,
+      "endWood": 787,
+      "endFine": 41,
+      "endPopulation": 12,
+      "endStrain": 5.990970576068921,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 0,
+      "requirements": [
+        {
+          "kind": "population",
+          "value": 12,
+          "target": 10
+        },
+        {
+          "kind": "built",
+          "value": 0,
+          "target": 3
+        },
+        {
+          "kind": "tally",
+          "value": 81,
+          "target": 30
+        },
+        {
+          "kind": "avgMood",
+          "value": 1,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 24,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 4.666666666666666
+    },
+    {
+      "case": "42-cottage",
+      "curve": "no-growth",
+      "policy": "save",
+      "hours": 336,
+      "meanMood": 72.61296672077928,
+      "meanComfort": 0.8477526704328301,
+      "minimumMood": 38,
+      "passiveGrowth": 0,
+      "eventStrain": 3,
+      "relief": 6.989465672080408,
+      "daytimeSulking": 0,
+      "foodMade": 191,
+      "endFood": 225,
+      "endWood": 462,
+      "endFine": 12,
+      "endPopulation": 12,
+      "endStrain": 2.9954852880344607,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 1,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.1,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 24,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 9.333333333333334
+    },
+    {
+      "case": "1000-stage",
+      "curve": "current",
+      "policy": "comfort",
+      "hours": 168,
+      "meanMood": 68.95130876068373,
+      "meanComfort": 0.7664231850325707,
+      "minimumMood": 33.9,
+      "passiveGrowth": 3.9879930369377696,
+      "eventStrain": 3,
+      "relief": 5.810366364746274,
+      "daytimeSulking": 0,
+      "foodMade": 140,
+      "endFood": 190,
+      "endWood": 25,
+      "endFine": 20,
+      "endPopulation": 13,
+      "endStrain": 10.65100092212235,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 0,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.49230769230769234,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 15,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 2.666666666666666
+    },
+    {
+      "case": "1000-stage",
+      "curve": "current",
+      "policy": "comfort",
+      "hours": 336,
+      "meanMood": 71.32979815323561,
+      "meanComfort": 0.757737247374204,
+      "minimumMood": 32.4,
+      "passiveGrowth": 8.427581245568131,
+      "eventStrain": 3,
+      "relief": 13.502333797009364,
+      "daytimeSulking": 0,
+      "foodMade": 238,
+      "endFood": 118,
+      "endWood": 95,
+      "endFine": 8,
+      "endPopulation": 13,
+      "endStrain": 7.398621698489626,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 0,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.6884615384615383,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 50,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 6.66666666666667
+    },
+    {
+      "case": "1000-stage",
+      "curve": "current",
+      "policy": "production",
+      "hours": 168,
+      "meanMood": 68.38025793650796,
+      "meanComfort": 0.7943436156388282,
+      "minimumMood": 32.8,
+      "passiveGrowth": 3.716774177824293,
+      "eventStrain": 3,
+      "relief": 3.5537355299624114,
+      "daytimeSulking": 0,
+      "foodMade": 146,
+      "endFood": 111,
+      "endWood": 41,
+      "endFine": 16,
+      "endPopulation": 12,
+      "endStrain": 12.636412897792736,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 0,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.41874999999999996,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 15,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 3.666666666666665
+    },
+    {
+      "case": "1000-stage",
+      "curve": "current",
+      "policy": "production",
+      "hours": 336,
+      "meanMood": 70.70138888888894,
+      "meanComfort": 0.7658064804704401,
+      "minimumMood": 32.3,
+      "passiveGrowth": 8.059123580389112,
+      "eventStrain": 3,
+      "relief": 13.556938797481664,
+      "daytimeSulking": 0,
+      "foodMade": 226,
+      "endFood": 216,
+      "endWood": 40,
+      "endFine": 13,
+      "endPopulation": 12,
+      "endStrain": 6.975559032838303,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 0,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.525,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 34,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 8.333333333333337
+    },
+    {
+      "case": "1000-stage",
+      "curve": "current",
+      "policy": "save",
+      "hours": 168,
+      "meanMood": 65.81400335775339,
+      "meanComfort": 0.7562855777584131,
+      "minimumMood": 30.9,
+      "passiveGrowth": 4.052314453862651,
+      "eventStrain": 3,
+      "relief": 7.443512705146601,
+      "daytimeSulking": 0,
+      "foodMade": 130,
+      "endFood": 91,
+      "endWood": 49,
+      "endFine": 14,
+      "endPopulation": 13,
+      "endStrain": 9.082175998646905,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 0,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.5249999999999999,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 15,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 2.333333333333333
+    },
+    {
+      "case": "1000-stage",
+      "curve": "current",
+      "policy": "save",
+      "hours": 336,
+      "meanMood": 63.824263583638654,
+      "meanComfort": 0.763030302589819,
+      "minimumMood": 11.299999999999997,
+      "passiveGrowth": 8.340602577549078,
+      "eventStrain": 3,
+      "relief": 7.443512705146601,
+      "daytimeSulking": 23.16666666666674,
+      "foodMade": 247,
+      "endFood": 111,
+      "endWood": 10,
+      "endFine": 3,
+      "endPopulation": 13,
+      "endStrain": 13.370464122333331,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 0,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.8519230769230769,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 15,
+      "sulkingPersonHours": 57.999999999999716,
+      "hungryPersonHours": 15.166666666666647
+    },
+    {
+      "case": "1000-stage",
+      "curve": "gentler",
+      "policy": "comfort",
+      "hours": 168,
+      "meanMood": 69.24793192918192,
+      "meanComfort": 0.7664231850325707,
+      "minimumMood": 34.5,
+      "passiveGrowth": 3.2972315787360182,
+      "eventStrain": 3,
+      "relief": 5.751946469049414,
+      "daytimeSulking": 0,
+      "foodMade": 140,
+      "endFood": 190,
+      "endWood": 25,
+      "endFine": 20,
+      "endPopulation": 13,
+      "endStrain": 10.018659359617459,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 0,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.49230769230769234,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 15,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 2.666666666666666
+    },
+    {
+      "case": "1000-stage",
+      "curve": "gentler",
+      "policy": "comfort",
+      "hours": 336,
+      "meanMood": 71.80677274114771,
+      "meanComfort": 0.7582544340374524,
+      "minimumMood": 33.3,
+      "passiveGrowth": 7.051075811009859,
+      "eventStrain": 3,
+      "relief": 12.875525877069073,
+      "daytimeSulking": 0,
+      "foodMade": 238,
+      "endFood": 133,
+      "endWood": 73,
+      "endFine": 8,
+      "endPopulation": 13,
+      "endStrain": 6.648924183871641,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 0,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.6884615384615383,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 50,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 6.66666666666667
+    },
+    {
+      "case": "1000-stage",
+      "curve": "gentler",
+      "policy": "production",
+      "hours": 168,
+      "meanMood": 69.00709325396825,
+      "meanComfort": 0.7983998472033077,
+      "minimumMood": 33,
+      "passiveGrowth": 2.8805173266254904,
+      "eventStrain": 3,
+      "relief": 3.5136528011107515,
+      "daytimeSulking": 0,
+      "foodMade": 150,
+      "endFood": 176,
+      "endWood": 45,
+      "endFine": 11,
+      "endPopulation": 12,
+      "endStrain": 11.840238775445593,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 0,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.525,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 15,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 3.666666666666665
+    },
+    {
+      "case": "1000-stage",
+      "curve": "gentler",
+      "policy": "production",
+      "hours": 336,
+      "meanMood": 71.360689484127,
+      "meanComfort": 0.8020872390864682,
+      "minimumMood": 33,
+      "passiveGrowth": 5.874029184319493,
+      "eventStrain": 3,
+      "relief": 7.7005994311855925,
+      "daytimeSulking": 0,
+      "foodMade": 210,
+      "endFood": 225,
+      "endWood": 24,
+      "endFine": 9,
+      "endPopulation": 12,
+      "endStrain": 10.646804003064755,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 0,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.8437499999999999,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 27,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 6.66666666666667
+    },
+    {
+      "case": "1000-stage",
+      "curve": "gentler",
+      "policy": "save",
+      "hours": 168,
+      "meanMood": 66.02107753357753,
+      "meanComfort": 0.7558998426416437,
+      "minimumMood": 31,
+      "passiveGrowth": 3.41269979661742,
+      "eventStrain": 3.000000000000001,
+      "relief": 3.509346189288994,
+      "daytimeSulking": 0,
+      "foodMade": 127,
+      "endFood": 155,
+      "endWood": 24,
+      "endFine": 24,
+      "endPopulation": 13,
+      "endStrain": 12.376727857259281,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 0,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.5903846153846154,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 15,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 4.166666666666665
+    },
+    {
+      "case": "1000-stage",
+      "curve": "gentler",
+      "policy": "save",
+      "hours": 336,
+      "meanMood": 68.45650619222042,
+      "meanComfort": 0.7389026047860044,
+      "minimumMood": 25.4,
+      "passiveGrowth": 7.850531050951548,
+      "eventStrain": 6.000000000000001,
+      "relief": 14.82883002760594,
+      "daytimeSulking": 0,
+      "foodMade": 222,
+      "endFood": 194,
+      "endWood": 39,
+      "endFine": 9,
+      "endPopulation": 14,
+      "endStrain": 8.495075273276463,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 0,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.8892857142857142,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 47,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 12.833333333333321
+    },
+    {
+      "case": "1000-stage",
+      "curve": "no-growth",
+      "policy": "comfort",
+      "hours": 168,
+      "meanMood": 71.5680555555555,
+      "meanComfort": 0.7726885450599267,
+      "minimumMood": 35.5,
+      "passiveGrowth": 0,
+      "eventStrain": 0,
+      "relief": 6.5915738031018885,
+      "daytimeSulking": 0,
+      "foodMade": 133,
+      "endFood": 168,
+      "endWood": 26,
+      "endFine": 27,
+      "endPopulation": 12,
+      "endStrain": 2.881800446828966,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 0,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.525,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 15,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 2.1666666666666665
+    },
+    {
+      "case": "1000-stage",
+      "curve": "no-growth",
+      "policy": "comfort",
+      "hours": 336,
+      "meanMood": 72.97499999999998,
+      "meanComfort": 0.761504727692901,
+      "minimumMood": 31.1,
+      "passiveGrowth": 0,
+      "eventStrain": 0,
+      "relief": 6.5915738031018885,
+      "daytimeSulking": 0,
+      "foodMade": 242,
+      "endFood": 227,
+      "endWood": 26,
+      "endFine": 19,
+      "endPopulation": 12,
+      "endStrain": 2.881800446828966,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 0,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.9145833333333333,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 15,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 8.000000000000005
+    },
+    {
+      "case": "1000-stage",
+      "curve": "no-growth",
+      "policy": "production",
+      "hours": 168,
+      "meanMood": 70.12217261904767,
+      "meanComfort": 0.7978472938112426,
+      "minimumMood": 33.5,
+      "passiveGrowth": 0,
+      "eventStrain": 0,
+      "relief": 3.3156809874757993,
+      "daytimeSulking": 0,
+      "foodMade": 155,
+      "endFood": 130,
+      "endWood": 47,
+      "endFine": 13,
+      "endPopulation": 12,
+      "endStrain": 6.157693262455055,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 0,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.525,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 15,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 4.166666666666665
+    },
+    {
+      "case": "1000-stage",
+      "curve": "no-growth",
+      "policy": "production",
+      "hours": 336,
+      "meanMood": 71.54467528998782,
+      "meanComfort": 0.7762837656806305,
+      "minimumMood": 33.5,
+      "passiveGrowth": 0,
+      "eventStrain": 3,
+      "relief": 5.162988966212316,
+      "daytimeSulking": 0,
+      "foodMade": 246,
+      "endFood": 120,
+      "endWood": 22,
+      "endFine": 8,
+      "endPopulation": 14,
+      "endStrain": 7.310385283718539,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 0,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.7374999999999999,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 15,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 8.833333333333336
+    },
+    {
+      "case": "1000-stage",
+      "curve": "no-growth",
+      "policy": "save",
+      "hours": 168,
+      "meanMood": 71.05441468253973,
+      "meanComfort": 0.7972784226673598,
+      "minimumMood": 31.5,
+      "passiveGrowth": 0,
+      "eventStrain": 0,
+      "relief": 3.3156809874757993,
+      "daytimeSulking": 0,
+      "foodMade": 119,
+      "endFood": 166,
+      "endWood": 34,
+      "endFine": 18,
+      "endPopulation": 12,
+      "endStrain": 6.157693262455055,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 0,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.525,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 15,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 1.8333333333333335
+    },
+    {
+      "case": "1000-stage",
+      "curve": "no-growth",
+      "policy": "save",
+      "hours": 336,
+      "meanMood": 69.88444940476194,
+      "meanComfort": 0.7560441552271989,
+      "minimumMood": 30.799999999999997,
+      "passiveGrowth": 0,
+      "eventStrain": 3,
+      "relief": 3.3156809874757993,
+      "daytimeSulking": 0,
+      "foodMade": 189,
+      "endFood": 151,
+      "endWood": 49,
+      "endFine": 14,
+      "endPopulation": 12,
+      "endStrain": 9.157693262455055,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 0,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.99,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 15,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 15.83333333333331
+    },
+    {
+      "case": "303-stage",
+      "curve": "current",
+      "policy": "comfort",
+      "hours": 168,
+      "meanMood": 70.31899891774894,
+      "meanComfort": 0.6833396101999538,
+      "minimumMood": 42.2,
+      "passiveGrowth": 3.2943632294252616,
+      "eventStrain": 0,
+      "relief": 4.840805935712554,
+      "daytimeSulking": 0,
+      "foodMade": 107,
+      "endFood": 110,
+      "endWood": 42,
+      "endFine": 37,
+      "endPopulation": 11,
+      "endStrain": 7.116463088574065,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 1,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.05,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 10,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 0
+    },
+    {
+      "case": "303-stage",
+      "curve": "current",
+      "policy": "comfort",
+      "hours": 336,
+      "meanMood": 69.26345869408371,
+      "meanComfort": 0.6874675754156873,
+      "minimumMood": 30.6,
+      "passiveGrowth": 7.099907093427575,
+      "eventStrain": 0,
+      "relief": 11.443225667410424,
+      "daytimeSulking": 0,
+      "foodMade": 236,
+      "endFood": 68,
+      "endWood": 35,
+      "endFine": 19,
+      "endPopulation": 12,
+      "endStrain": 4.319587220878509,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 1,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.1,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 22,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 0.9999999999999999
+    },
+    {
+      "case": "303-stage",
+      "curve": "current",
+      "policy": "production",
+      "hours": 168,
+      "meanMood": 65.38389610389613,
+      "meanComfort": 0.6778305058564542,
+      "minimumMood": 37.2,
+      "passiveGrowth": 3.3191829061332117,
+      "eventStrain": 0,
+      "relief": 4.92871564547354,
+      "daytimeSulking": 0,
+      "foodMade": 135,
+      "endFood": 108,
+      "endWood": 63,
+      "endFine": 34,
+      "endPopulation": 11,
+      "endStrain": 7.053373055521029,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 1,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.05,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 10,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 0
+    },
+    {
+      "case": "303-stage",
+      "curve": "current",
+      "policy": "production",
+      "hours": 336,
+      "meanMood": 66.51140602453104,
+      "meanComfort": 0.6833511923614498,
+      "minimumMood": 34.6,
+      "passiveGrowth": 6.29617435011188,
+      "eventStrain": 0,
+      "relief": 10.416058242809202,
+      "daytimeSulking": 0,
+      "foodMade": 215,
+      "endFood": 27,
+      "endWood": 50,
+      "endFine": 6,
+      "endPopulation": 12,
+      "endStrain": 4.543021902164037,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 1,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.3125,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 22,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 0
+    },
+    {
+      "case": "303-stage",
+      "curve": "current",
+      "policy": "save",
+      "hours": 168,
+      "meanMood": 63.52826298701301,
+      "meanComfort": 0.6619948790976947,
+      "minimumMood": 36.7,
+      "passiveGrowth": 3.3836419271289353,
+      "eventStrain": 0,
+      "relief": 5.299991671495979,
+      "daytimeSulking": 0,
+      "foodMade": 132,
+      "endFood": 160,
+      "endWood": 60,
+      "endFine": 27,
+      "endPopulation": 11,
+      "endStrain": 6.746556050494314,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 1,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.05,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 10,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 0
+    },
+    {
+      "case": "303-stage",
+      "curve": "current",
+      "policy": "save",
+      "hours": 336,
+      "meanMood": 65.18285304972802,
+      "meanComfort": 0.6935374472677731,
+      "minimumMood": 36.7,
+      "passiveGrowth": 7.038972432248951,
+      "eventStrain": 3,
+      "relief": 7.582929785306508,
+      "daytimeSulking": 0,
+      "foodMade": 248,
+      "endFood": 99,
+      "endWood": 47,
+      "endFine": 10,
+      "endPopulation": 13,
+      "endStrain": 11.1189484418038,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 1,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.1,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 22,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 1.5
+    },
+    {
+      "case": "303-stage",
+      "curve": "gentler",
+      "policy": "comfort",
+      "hours": 168,
+      "meanMood": 70.41633658008665,
+      "meanComfort": 0.6833396101999538,
+      "minimumMood": 42.3,
+      "passiveGrowth": 3.0405643902994974,
+      "eventStrain": 0,
+      "relief": 4.759927707114924,
+      "daytimeSulking": 0,
+      "foodMade": 107,
+      "endFood": 110,
+      "endWood": 42,
+      "endFine": 37,
+      "endPopulation": 11,
+      "endStrain": 6.943542478045931,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 1,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.05,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 10,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 0
+    },
+    {
+      "case": "303-stage",
+      "curve": "gentler",
+      "policy": "comfort",
+      "hours": 336,
+      "meanMood": 69.4343317099567,
+      "meanComfort": 0.6874675754156873,
+      "minimumMood": 30.799999999999997,
+      "passiveGrowth": 6.512758783876435,
+      "eventStrain": 0,
+      "relief": 11.087985433483034,
+      "daytimeSulking": 0,
+      "foodMade": 236,
+      "endFood": 68,
+      "endWood": 35,
+      "endFine": 19,
+      "endPopulation": 12,
+      "endStrain": 4.087679145254759,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 1,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.1,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 22,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 0.9999999999999999
+    },
+    {
+      "case": "303-stage",
+      "curve": "gentler",
+      "policy": "production",
+      "hours": 168,
+      "meanMood": 65.482683982684,
+      "meanComfort": 0.6778305058564542,
+      "minimumMood": 37.3,
+      "passiveGrowth": 3.0763846998933273,
+      "eventStrain": 0,
+      "relief": 4.844229206423358,
+      "daytimeSulking": 0,
+      "foodMade": 135,
+      "endFood": 108,
+      "endWood": 63,
+      "endFine": 34,
+      "endPopulation": 11,
+      "endStrain": 6.895061288331327,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 1,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.05,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 10,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 0
+    },
+    {
+      "case": "303-stage",
+      "curve": "gentler",
+      "policy": "production",
+      "hours": 336,
+      "meanMood": 66.70491973304472,
+      "meanComfort": 0.6833511923614498,
+      "minimumMood": 34.8,
+      "passiveGrowth": 5.282231043992191,
+      "eventStrain": 0,
+      "relief": 10.159575443521824,
+      "daytimeSulking": 0,
+      "foodMade": 215,
+      "endFood": 27,
+      "endWood": 50,
+      "endFine": 6,
+      "endPopulation": 12,
+      "endStrain": 3.785561395331725,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 1,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.3125,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 22,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 0
+    },
+    {
+      "case": "303-stage",
+      "curve": "gentler",
+      "policy": "save",
+      "hours": 168,
+      "meanMood": 63.61558441558445,
+      "meanComfort": 0.6619948790976947,
+      "minimumMood": 36.8,
+      "passiveGrowth": 3.193172811862828,
+      "eventStrain": 0,
+      "relief": 5.220888254011252,
+      "daytimeSulking": 0,
+      "foodMade": 132,
+      "endFood": 160,
+      "endWood": 60,
+      "endFine": 27,
+      "endPopulation": 11,
+      "endStrain": 6.635190352712934,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 1,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.05,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 10,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 0
+    },
+    {
+      "case": "303-stage",
+      "curve": "gentler",
+      "policy": "save",
+      "hours": 336,
+      "meanMood": 65.3290797743923,
+      "meanComfort": 0.6935374472677731,
+      "minimumMood": 36.8,
+      "passiveGrowth": 6.365343418950839,
+      "eventStrain": 3,
+      "relief": 7.4431035143490165,
+      "daytimeSulking": 0,
+      "foodMade": 248,
+      "endFood": 99,
+      "endWood": 47,
+      "endFine": 10,
+      "endPopulation": 13,
+      "endStrain": 10.58514569946318,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 1,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.1,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 22,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 1.5
+    },
+    {
+      "case": "303-stage",
+      "curve": "no-growth",
+      "policy": "comfort",
+      "hours": 168,
+      "meanMood": 71.50330627705623,
+      "meanComfort": 0.6833396101999538,
+      "minimumMood": 44.3,
+      "passiveGrowth": 0,
+      "eventStrain": 0,
+      "relief": 3.9632794011490704,
+      "daytimeSulking": 0,
+      "foodMade": 107,
+      "endFood": 110,
+      "endWood": 42,
+      "endFine": 37,
+      "endPopulation": 11,
+      "endStrain": 4.699626393712287,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 1,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.05,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 10,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 0
+    },
+    {
+      "case": "303-stage",
+      "curve": "no-growth",
+      "policy": "comfort",
+      "hours": 336,
+      "meanMood": 72.99103129509369,
+      "meanComfort": 0.7073682196223436,
+      "minimumMood": 44.3,
+      "passiveGrowth": 0,
+      "eventStrain": 0,
+      "relief": 5.020695339734335,
+      "daytimeSulking": 0,
+      "foodMade": 201,
+      "endFood": 106,
+      "endWood": 38,
+      "endFine": 20,
+      "endPopulation": 12,
+      "endStrain": 3.6422104551270227,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 1,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.1,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 22,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 8.66666666666667
+    },
+    {
+      "case": "303-stage",
+      "curve": "no-growth",
+      "policy": "production",
+      "hours": 168,
+      "meanMood": 66.76714826839822,
+      "meanComfort": 0.6770748319774986,
+      "minimumMood": 38.3,
+      "passiveGrowth": 0,
+      "eventStrain": 0,
+      "relief": 3.9632794011490704,
+      "daytimeSulking": 0,
+      "foodMade": 133,
+      "endFood": 108,
+      "endWood": 52,
+      "endFine": 34,
+      "endPopulation": 11,
+      "endStrain": 4.699626393712287,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 1,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.05,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 10,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 0
+    },
+    {
+      "case": "303-stage",
+      "curve": "no-growth",
+      "policy": "production",
+      "hours": 336,
+      "meanMood": 65.57105384199141,
+      "meanComfort": 0.6757622107554815,
+      "minimumMood": 22.5,
+      "passiveGrowth": 0,
+      "eventStrain": 0,
+      "relief": 6.988663892101355,
+      "daytimeSulking": 0,
+      "foodMade": 226,
+      "endFood": 77,
+      "endWood": 51,
+      "endFine": 0,
+      "endPopulation": 12,
+      "endStrain": 1.6742419027600026,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 1,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.1,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 22,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 2.999999999999999
+    },
+    {
+      "case": "303-stage",
+      "curve": "no-growth",
+      "policy": "save",
+      "hours": 168,
+      "meanMood": 63.94027056277049,
+      "meanComfort": 0.6553959199090458,
+      "minimumMood": 38.3,
+      "passiveGrowth": 0,
+      "eventStrain": 0,
+      "relief": 3.9632794011490704,
+      "daytimeSulking": 0,
+      "foodMade": 99,
+      "endFood": 125,
+      "endWood": 61,
+      "endFine": 45,
+      "endPopulation": 11,
+      "endStrain": 4.699626393712287,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 1,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 10,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 0
+    },
+    {
+      "case": "303-stage",
+      "curve": "no-growth",
+      "policy": "save",
+      "hours": 336,
+      "meanMood": 66.98050009018755,
+      "meanComfort": 0.6703929317671317,
+      "minimumMood": 33,
+      "passiveGrowth": 0,
+      "eventStrain": 0,
+      "relief": 5.202805862490686,
+      "daytimeSulking": 0,
+      "foodMade": 194,
+      "endFood": 57,
+      "endWood": 15,
+      "endFine": 17,
+      "endPopulation": 12,
+      "endStrain": 3.460099932370672,
+      "departures": 0,
+      "deaths": 0,
+      "addedCharters": 1,
+      "requirements": [
+        {
+          "kind": "longTable",
+          "value": 0.1,
+          "target": 1
+        }
+      ],
+      "festivalGoods": 21,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 0
+    }
+  ],
+  "results": [
+    {
+      "case": "24757-cottage",
+      "curve": "current",
+      "policy": "comfort",
+      "checkpointHash": "3be834fa6ee540a7cf4f336beecdb2fb5dcf2c47890f277423fc12316103d71d",
+      "forkHour": 995,
+      "initialStrain": 17.51284570635304,
+      "initialComfort": 0.6892000000000001,
+      "workerId": 11,
+      "projectDef": "cottage",
+      "projectId": 39,
+      "completionHour": 21,
+      "materials": {
+        "wood": 6,
+        "planks": 10
+      },
+      "observedHours": 336,
+      "status": "playing",
+      "addedCharters": 1,
+      "initialCharter": "bread",
+      "initialRequirements": [
+        {
+          "kind": "population",
+          "value": 10,
+          "target": 10
+        },
+        {
+          "kind": "tally",
+          "value": 24,
+          "target": 30
+        },
+        {
+          "kind": "avgMood",
+          "value": 0.8243257575757575,
+          "target": 1
+        }
+      ],
+      "endRequirements": [
+        {
+          "kind": "longTable",
+          "value": 0.1,
+          "target": 1
+        }
+      ],
+      "endStrain": 13.139708409239146,
+      "passiveGrowth": 9.826986963534951,
+      "eventStrain": 0,
+      "relief": 14.200124260648845,
+      "meanMood": 57.11042162698409,
+      "minimumMood": 13.600000000000001,
+      "meanComfort": 0.7439040915024544,
+      "daytimeSulking": 38.00000000000094,
+      "foodMade": 294,
+      "endFood": 64,
+      "endWood": 41,
+      "endFine": 9,
+      "festivalGoods": 31,
+      "departures": 0,
+      "deaths": 0,
+      "sulkingPersonHours": 86.00000000000026,
+      "hungryPersonHours": 4.833333333333333,
+      "projectBuildPersonHours": 4.499999999999999,
+      "reservedWorkerBuildHours": 10.666666666666663,
+      "reservedWorkerHaulHours": 56.49999999999974,
+      "reservedWorkerProductionHours": 0
+    },
+    {
+      "case": "24757-cottage",
+      "curve": "current",
+      "policy": "production",
+      "checkpointHash": "3be834fa6ee540a7cf4f336beecdb2fb5dcf2c47890f277423fc12316103d71d",
+      "forkHour": 995,
+      "initialStrain": 17.51284570635304,
+      "initialComfort": 0.6892000000000001,
+      "workerId": 11,
+      "projectDef": "kitchen",
+      "projectId": 39,
+      "completionHour": 27,
+      "materials": {
+        "wood": 18
+      },
+      "observedHours": 336,
+      "status": "playing",
+      "addedCharters": 1,
+      "initialCharter": "bread",
+      "initialRequirements": [
+        {
+          "kind": "population",
+          "value": 10,
+          "target": 10
+        },
+        {
+          "kind": "tally",
+          "value": 24,
+          "target": 30
+        },
+        {
+          "kind": "avgMood",
+          "value": 0.8243257575757575,
+          "target": 1
+        }
+      ],
+      "endRequirements": [
+        {
+          "kind": "longTable",
+          "value": 0.05,
+          "target": 1
+        }
+      ],
+      "endStrain": 11.612497838952631,
+      "passiveGrowth": 9.733202303343106,
+      "eventStrain": 0,
+      "relief": 15.633550170743515,
+      "meanMood": 52.13697059884558,
+      "minimumMood": 19.700000000000003,
+      "meanComfort": 0.7489955784171094,
+      "daytimeSulking": 10.000000000000142,
+      "foodMade": 228,
+      "endFood": 94,
+      "endWood": 21,
+      "endFine": 0,
+      "festivalGoods": 29,
+      "departures": 0,
+      "deaths": 0,
+      "sulkingPersonHours": 38,
+      "hungryPersonHours": 1.1666666666666665,
+      "projectBuildPersonHours": 5.833333333333335,
+      "reservedWorkerBuildHours": 5,
+      "reservedWorkerHaulHours": 10.666666666666663,
+      "reservedWorkerProductionHours": 52.33333333333313
+    },
+    {
+      "case": "24757-cottage",
+      "curve": "current",
+      "policy": "save",
+      "checkpointHash": "3be834fa6ee540a7cf4f336beecdb2fb5dcf2c47890f277423fc12316103d71d",
+      "forkHour": 995,
+      "initialStrain": 17.51284570635304,
+      "initialComfort": 0.6892000000000001,
+      "workerId": 11,
+      "projectDef": null,
+      "projectId": null,
+      "completionHour": null,
+      "materials": {},
+      "observedHours": 336,
+      "status": "playing",
+      "addedCharters": 1,
+      "initialCharter": "bread",
+      "initialRequirements": [
+        {
+          "kind": "population",
+          "value": 10,
+          "target": 10
+        },
+        {
+          "kind": "tally",
+          "value": 24,
+          "target": 30
+        },
+        {
+          "kind": "avgMood",
+          "value": 0.8243257575757575,
+          "target": 1
+        }
+      ],
+      "endRequirements": [
+        {
+          "kind": "longTable",
+          "value": 0.1,
+          "target": 1
+        }
+      ],
+      "endStrain": 14.900587919236964,
+      "passiveGrowth": 11.525118702263844,
+      "eventStrain": 0,
+      "relief": 14.137376489379921,
+      "meanMood": 54.78086264430018,
+      "minimumMood": 16.9,
+      "meanComfort": 0.7349303545355591,
+      "daytimeSulking": 64.00000000000068,
+      "foodMade": 315,
+      "endFood": 84,
+      "endWood": 0,
+      "endFine": 5,
+      "festivalGoods": 32,
+      "departures": 0,
+      "deaths": 0,
+      "sulkingPersonHours": 132.00000000000122,
+      "hungryPersonHours": 2.666666666666666,
+      "projectBuildPersonHours": 0,
+      "reservedWorkerBuildHours": 4.499999999999999,
+      "reservedWorkerHaulHours": 58.66666666666637,
+      "reservedWorkerProductionHours": 0
+    },
+    {
+      "case": "24757-cottage",
+      "curve": "gentler",
+      "policy": "comfort",
+      "checkpointHash": "3be834fa6ee540a7cf4f336beecdb2fb5dcf2c47890f277423fc12316103d71d",
+      "forkHour": 995,
+      "initialStrain": 17.51284570635304,
+      "initialComfort": 0.6892000000000001,
+      "workerId": 11,
+      "projectDef": "cottage",
+      "projectId": 39,
+      "completionHour": 21,
+      "materials": {
+        "wood": 6,
+        "planks": 10
+      },
+      "observedHours": 336,
+      "status": "playing",
+      "addedCharters": 1,
+      "initialCharter": "bread",
+      "initialRequirements": [
+        {
+          "kind": "population",
+          "value": 10,
+          "target": 10
+        },
+        {
+          "kind": "tally",
+          "value": 24,
+          "target": 30
+        },
+        {
+          "kind": "avgMood",
+          "value": 0.8243257575757575,
+          "target": 1
+        }
+      ],
+      "endRequirements": [
+        {
+          "kind": "longTable",
+          "value": 0.1,
+          "target": 1
+        }
+      ],
+      "endStrain": 11.349026980004288,
+      "passiveGrowth": 7.545034286889756,
+      "eventStrain": 0,
+      "relief": 13.708853013238508,
+      "meanMood": 57.69292523448778,
+      "minimumMood": 13.799999999999997,
+      "meanComfort": 0.7438299387573565,
+      "daytimeSulking": 38.00000000000094,
+      "foodMade": 295,
+      "endFood": 64,
+      "endWood": 41,
+      "endFine": 9,
+      "festivalGoods": 31,
+      "departures": 0,
+      "deaths": 0,
+      "sulkingPersonHours": 86.00000000000026,
+      "hungryPersonHours": 4.833333333333333,
+      "projectBuildPersonHours": 4.499999999999999,
+      "reservedWorkerBuildHours": 10.666666666666663,
+      "reservedWorkerHaulHours": 56.49999999999974,
+      "reservedWorkerProductionHours": 0
+    },
+    {
+      "case": "24757-cottage",
+      "curve": "gentler",
+      "policy": "production",
+      "checkpointHash": "3be834fa6ee540a7cf4f336beecdb2fb5dcf2c47890f277423fc12316103d71d",
+      "forkHour": 995,
+      "initialStrain": 17.51284570635304,
+      "initialComfort": 0.6892000000000001,
+      "workerId": 11,
+      "projectDef": "kitchen",
+      "projectId": 39,
+      "completionHour": 27,
+      "materials": {
+        "wood": 18
+      },
+      "observedHours": 336,
+      "status": "playing",
+      "addedCharters": 1,
+      "initialCharter": "bread",
+      "initialRequirements": [
+        {
+          "kind": "population",
+          "value": 10,
+          "target": 10
+        },
+        {
+          "kind": "tally",
+          "value": 24,
+          "target": 30
+        },
+        {
+          "kind": "avgMood",
+          "value": 0.8243257575757575,
+          "target": 1
+        }
+      ],
+      "endRequirements": [
+        {
+          "kind": "longTable",
+          "value": 0.1,
+          "target": 1
+        }
+      ],
+      "endStrain": 10.863581100379333,
+      "passiveGrowth": 10.180398649722152,
+      "eventStrain": 0,
+      "relief": 16.82966325569586,
+      "meanMood": 52.68171581890333,
+      "minimumMood": 20,
+      "meanComfort": 0.7235445689824067,
+      "daytimeSulking": 7.000000000000057,
+      "foodMade": 296,
+      "endFood": 33,
+      "endWood": 104,
+      "endFine": 1,
+      "festivalGoods": 31,
+      "departures": 0,
+      "deaths": 0,
+      "sulkingPersonHours": 18.999999999999996,
+      "hungryPersonHours": 1.3333333333333333,
+      "projectBuildPersonHours": 5.833333333333335,
+      "reservedWorkerBuildHours": 5,
+      "reservedWorkerHaulHours": 10.666666666666663,
+      "reservedWorkerProductionHours": 52.33333333333313
+    },
+    {
+      "case": "24757-cottage",
+      "curve": "gentler",
+      "policy": "save",
+      "checkpointHash": "3be834fa6ee540a7cf4f336beecdb2fb5dcf2c47890f277423fc12316103d71d",
+      "forkHour": 995,
+      "initialStrain": 17.51284570635304,
+      "initialComfort": 0.6892000000000001,
+      "workerId": 11,
+      "projectDef": null,
+      "projectId": null,
+      "completionHour": null,
+      "materials": {},
+      "observedHours": 336,
+      "status": "playing",
+      "addedCharters": 1,
+      "initialCharter": "bread",
+      "initialRequirements": [
+        {
+          "kind": "population",
+          "value": 10,
+          "target": 10
+        },
+        {
+          "kind": "tally",
+          "value": 24,
+          "target": 30
+        },
+        {
+          "kind": "avgMood",
+          "value": 0.8243257575757575,
+          "target": 1
+        }
+      ],
+      "endRequirements": [
+        {
+          "kind": "longTable",
+          "value": 0.1,
+          "target": 1
+        }
+      ],
+      "endStrain": 13.62643636432575,
+      "passiveGrowth": 9.887797375380666,
+      "eventStrain": 0,
+      "relief": 13.774206717407957,
+      "meanMood": 55.268230970418486,
+      "minimumMood": 17.1,
+      "meanComfort": 0.734848998692035,
+      "daytimeSulking": 64.00000000000068,
+      "foodMade": 312,
+      "endFood": 110,
+      "endWood": 0,
+      "endFine": 4,
+      "festivalGoods": 32,
+      "departures": 0,
+      "deaths": 0,
+      "sulkingPersonHours": 132.00000000000122,
+      "hungryPersonHours": 2.666666666666666,
+      "projectBuildPersonHours": 0,
+      "reservedWorkerBuildHours": 4.499999999999999,
+      "reservedWorkerHaulHours": 58.66666666666637,
+      "reservedWorkerProductionHours": 0
+    },
+    {
+      "case": "24757-cottage",
+      "curve": "no-growth",
+      "policy": "comfort",
+      "checkpointHash": "3be834fa6ee540a7cf4f336beecdb2fb5dcf2c47890f277423fc12316103d71d",
+      "forkHour": 995,
+      "initialStrain": 17.51284570635304,
+      "initialComfort": 0.6892000000000001,
+      "workerId": 11,
+      "projectDef": "cottage",
+      "projectId": 39,
+      "completionHour": 21,
+      "materials": {
+        "wood": 6,
+        "planks": 10
+      },
+      "observedHours": 336,
+      "status": "playing",
+      "addedCharters": 1,
+      "initialCharter": "bread",
+      "initialRequirements": [
+        {
+          "kind": "population",
+          "value": 10,
+          "target": 10
+        },
+        {
+          "kind": "tally",
+          "value": 24,
+          "target": 30
+        },
+        {
+          "kind": "avgMood",
+          "value": 0.8243257575757575,
+          "target": 1
+        }
+      ],
+      "endRequirements": [
+        {
+          "kind": "longTable",
+          "value": 0.1,
+          "target": 1
+        }
+      ],
+      "endStrain": 10.278339770113183,
+      "passiveGrowth": 0,
+      "eventStrain": 3,
+      "relief": 10.234505936239858,
+      "meanMood": 57.183335518648,
+      "minimumMood": 14.5,
+      "meanComfort": 0.7115329141749501,
+      "daytimeSulking": 32.00000000000077,
+      "foodMade": 250,
+      "endFood": 97,
+      "endWood": 21,
+      "endFine": 12,
+      "festivalGoods": 32,
+      "departures": 0,
+      "deaths": 0,
+      "sulkingPersonHours": 70.99999999999983,
+      "hungryPersonHours": 3.4999999999999987,
+      "projectBuildPersonHours": 4.499999999999999,
+      "reservedWorkerBuildHours": 10.666666666666663,
+      "reservedWorkerHaulHours": 61.66666666666633,
+      "reservedWorkerProductionHours": 0
+    },
+    {
+      "case": "24757-cottage",
+      "curve": "no-growth",
+      "policy": "production",
+      "checkpointHash": "3be834fa6ee540a7cf4f336beecdb2fb5dcf2c47890f277423fc12316103d71d",
+      "forkHour": 995,
+      "initialStrain": 17.51284570635304,
+      "initialComfort": 0.6892000000000001,
+      "workerId": 11,
+      "projectDef": "kitchen",
+      "projectId": 39,
+      "completionHour": 27,
+      "materials": {
+        "wood": 18
+      },
+      "observedHours": 336,
+      "status": "playing",
+      "addedCharters": 1,
+      "initialCharter": "bread",
+      "initialRequirements": [
+        {
+          "kind": "population",
+          "value": 10,
+          "target": 10
+        },
+        {
+          "kind": "tally",
+          "value": 24,
+          "target": 30
+        },
+        {
+          "kind": "avgMood",
+          "value": 0.8243257575757575,
+          "target": 1
+        }
+      ],
+      "endRequirements": [
+        {
+          "kind": "longTable",
+          "value": 0.20625,
+          "target": 1
+        }
+      ],
+      "endStrain": 7.152125785660351,
+      "passiveGrowth": 0,
+      "eventStrain": 0,
+      "relief": 10.360719920692688,
+      "meanMood": 52.30502029220772,
+      "minimumMood": 17.1,
+      "meanComfort": 0.7095951346373153,
+      "daytimeSulking": 10.000000000000142,
+      "foodMade": 238,
+      "endFood": 57,
+      "endWood": 99,
+      "endFine": 16,
+      "festivalGoods": 31,
+      "departures": 0,
+      "deaths": 0,
+      "sulkingPersonHours": 34.00000000000006,
+      "hungryPersonHours": 0.5,
+      "projectBuildPersonHours": 5.833333333333335,
+      "reservedWorkerBuildHours": 5,
+      "reservedWorkerHaulHours": 9.666666666666666,
+      "reservedWorkerProductionHours": 64.83333333333299
+    },
+    {
+      "case": "24757-cottage",
+      "curve": "no-growth",
+      "policy": "save",
+      "checkpointHash": "3be834fa6ee540a7cf4f336beecdb2fb5dcf2c47890f277423fc12316103d71d",
+      "forkHour": 995,
+      "initialStrain": 17.51284570635304,
+      "initialComfort": 0.6892000000000001,
+      "workerId": 11,
+      "projectDef": null,
+      "projectId": null,
+      "completionHour": null,
+      "materials": {},
+      "observedHours": 336,
+      "status": "playing",
+      "addedCharters": 1,
+      "initialCharter": "bread",
+      "initialRequirements": [
+        {
+          "kind": "population",
+          "value": 10,
+          "target": 10
+        },
+        {
+          "kind": "tally",
+          "value": 24,
+          "target": 30
+        },
+        {
+          "kind": "avgMood",
+          "value": 0.8243257575757575,
+          "target": 1
+        }
+      ],
+      "endRequirements": [
+        {
+          "kind": "longTable",
+          "value": 0.7374999999999999,
+          "target": 1
+        }
+      ],
+      "endStrain": 6.864269329890739,
+      "passiveGrowth": 0,
+      "eventStrain": 0,
+      "relief": 10.648576376462302,
+      "meanMood": 52.32462887806624,
+      "minimumMood": 17.6,
+      "meanComfort": 0.7306342020746343,
+      "daytimeSulking": 23.00000000000051,
+      "foodMade": 266,
+      "endFood": 55,
+      "endWood": 56,
+      "endFine": 6,
+      "festivalGoods": 34,
+      "departures": 0,
+      "deaths": 0,
+      "sulkingPersonHours": 58.9999999999997,
+      "hungryPersonHours": 2.1666666666666665,
+      "projectBuildPersonHours": 0,
+      "reservedWorkerBuildHours": 4.499999999999999,
+      "reservedWorkerHaulHours": 71.99999999999986,
+      "reservedWorkerProductionHours": 0
+    },
+    {
+      "case": "42-cottage",
+      "curve": "current",
+      "policy": "comfort",
+      "checkpointHash": "0d4fee384e2bd597ec797e35ed361c2d5bc834e58ef714af7d4c77bc2e263525",
+      "forkHour": 1503,
+      "initialStrain": 6.984950960114869,
+      "initialComfort": 0.8714545454545455,
+      "workerId": 25,
+      "projectDef": "cottage",
+      "projectId": 44,
+      "completionHour": 19,
+      "materials": {
+        "wood": 6,
+        "planks": 10
+      },
+      "observedHours": 336,
+      "status": "playing",
+      "addedCharters": 1,
+      "initialCharter": "roof",
+      "initialRequirements": [
+        {
+          "kind": "population",
+          "value": 11,
+          "target": 10
+        },
+        {
+          "kind": "built",
+          "value": 0,
+          "target": 3
+        },
+        {
+          "kind": "tally",
+          "value": 69,
+          "target": 30
+        },
+        {
+          "kind": "avgMood",
+          "value": 1,
+          "target": 1
+        }
+      ],
+      "endRequirements": [
+        {
+          "kind": "longTable",
+          "value": 0.41874999999999996,
+          "target": 1
+        }
+      ],
+      "endStrain": 6.995585938958712,
+      "passiveGrowth": 7.9558344384139685,
+      "eventStrain": 3.000000000000001,
+      "relief": 10.945199459570128,
+      "meanMood": 70.32279265873015,
+      "minimumMood": 33.4,
+      "meanComfort": 0.8526281774562389,
+      "daytimeSulking": 0,
+      "foodMade": 197,
+      "endFood": 189,
+      "endWood": 582,
+      "endFine": 9,
+      "festivalGoods": 46,
+      "departures": 0,
+      "deaths": 0,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 10.833333333333329,
+      "projectBuildPersonHours": 6.000000000000002,
+      "reservedWorkerBuildHours": 2.1666666666666665,
+      "reservedWorkerHaulHours": 65.99999999999969,
+      "reservedWorkerProductionHours": 0
+    },
+    {
+      "case": "42-cottage",
+      "curve": "current",
+      "policy": "production",
+      "checkpointHash": "0d4fee384e2bd597ec797e35ed361c2d5bc834e58ef714af7d4c77bc2e263525",
+      "forkHour": 1503,
+      "initialStrain": 6.984950960114869,
+      "initialComfort": 0.8714545454545455,
+      "workerId": 25,
+      "projectDef": "kitchen",
+      "projectId": 44,
+      "completionHour": 19,
+      "materials": {
+        "wood": 18
+      },
+      "observedHours": 336,
+      "status": "playing",
+      "addedCharters": 1,
+      "initialCharter": "roof",
+      "initialRequirements": [
+        {
+          "kind": "population",
+          "value": 11,
+          "target": 10
+        },
+        {
+          "kind": "built",
+          "value": 0,
+          "target": 3
+        },
+        {
+          "kind": "tally",
+          "value": 69,
+          "target": 30
+        },
+        {
+          "kind": "avgMood",
+          "value": 1,
+          "target": 1
+        }
+      ],
+      "endRequirements": [
+        {
+          "kind": "longTable",
+          "value": 0.05,
+          "target": 1
+        }
+      ],
+      "endStrain": 6.190815620736403,
+      "passiveGrowth": 7.8739627154638265,
+      "eventStrain": 3,
+      "relief": 11.668098054842293,
+      "meanMood": 69.21011904761906,
+      "minimumMood": 34.7,
+      "meanComfort": 0.8676301558928052,
+      "daytimeSulking": 0,
+      "foodMade": 282,
+      "endFood": 150,
+      "endWood": 482,
+      "endFine": 4,
+      "festivalGoods": 46,
+      "departures": 0,
+      "deaths": 0,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 7.1666666666666705,
+      "projectBuildPersonHours": 7.0000000000000036,
+      "reservedWorkerBuildHours": 2.4999999999999996,
+      "reservedWorkerHaulHours": 13.33333333333332,
+      "reservedWorkerProductionHours": 54.833333333333094
+    },
+    {
+      "case": "42-cottage",
+      "curve": "current",
+      "policy": "save",
+      "checkpointHash": "0d4fee384e2bd597ec797e35ed361c2d5bc834e58ef714af7d4c77bc2e263525",
+      "forkHour": 1503,
+      "initialStrain": 6.984950960114869,
+      "initialComfort": 0.8714545454545455,
+      "workerId": 25,
+      "projectDef": null,
+      "projectId": null,
+      "completionHour": null,
+      "materials": {},
+      "observedHours": 336,
+      "status": "playing",
+      "addedCharters": 1,
+      "initialCharter": "roof",
+      "initialRequirements": [
+        {
+          "kind": "population",
+          "value": 11,
+          "target": 10
+        },
+        {
+          "kind": "built",
+          "value": 0,
+          "target": 3
+        },
+        {
+          "kind": "tally",
+          "value": 69,
+          "target": 30
+        },
+        {
+          "kind": "avgMood",
+          "value": 1,
+          "target": 1
+        }
+      ],
+      "endRequirements": [
+        {
+          "kind": "longTable",
+          "value": 0.525,
+          "target": 1
+        }
+      ],
+      "endStrain": 5.594561150665656,
+      "passiveGrowth": 8.173900552538878,
+      "eventStrain": 0,
+      "relief": 9.564290361988089,
+      "meanMood": 72.26601055194806,
+      "minimumMood": 40,
+      "meanComfort": 0.8306546222619837,
+      "daytimeSulking": 0,
+      "foodMade": 191,
+      "endFood": 145,
+      "endWood": 554,
+      "endFine": 4,
+      "festivalGoods": 22,
+      "departures": 0,
+      "deaths": 0,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 10.833333333333329,
+      "projectBuildPersonHours": 0,
+      "reservedWorkerBuildHours": 0,
+      "reservedWorkerHaulHours": 71.1666666666665,
+      "reservedWorkerProductionHours": 0
+    },
+    {
+      "case": "42-cottage",
+      "curve": "gentler",
+      "policy": "comfort",
+      "checkpointHash": "0d4fee384e2bd597ec797e35ed361c2d5bc834e58ef714af7d4c77bc2e263525",
+      "forkHour": 1503,
+      "initialStrain": 6.984950960114869,
+      "initialComfort": 0.8714545454545455,
+      "workerId": 25,
+      "projectDef": "cottage",
+      "projectId": 44,
+      "completionHour": 19,
+      "materials": {
+        "wood": 6,
+        "planks": 10
+      },
+      "observedHours": 336,
+      "status": "playing",
+      "addedCharters": 1,
+      "initialCharter": "roof",
+      "initialRequirements": [
+        {
+          "kind": "population",
+          "value": 11,
+          "target": 10
+        },
+        {
+          "kind": "built",
+          "value": 0,
+          "target": 3
+        },
+        {
+          "kind": "tally",
+          "value": 69,
+          "target": 30
+        },
+        {
+          "kind": "avgMood",
+          "value": 1,
+          "target": 1
+        }
+      ],
+      "endRequirements": [
+        {
+          "kind": "longTable",
+          "value": 0.1,
+          "target": 1
+        }
+      ],
+      "endStrain": 4.474244824384006,
+      "passiveGrowth": 4.338249787578998,
+      "eventStrain": 3,
+      "relief": 9.84895592330986,
+      "meanMood": 72.26835768398267,
+      "minimumMood": 29.9,
+      "meanComfort": 0.8531091118889874,
+      "daytimeSulking": 0,
+      "foodMade": 254,
+      "endFood": 190,
+      "endWood": 570,
+      "endFine": 20,
+      "festivalGoods": 36,
+      "departures": 0,
+      "deaths": 0,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 17.333333333333318,
+      "projectBuildPersonHours": 6.000000000000002,
+      "reservedWorkerBuildHours": 2.1666666666666665,
+      "reservedWorkerHaulHours": 67.33333333333306,
+      "reservedWorkerProductionHours": 0
+    },
+    {
+      "case": "42-cottage",
+      "curve": "gentler",
+      "policy": "production",
+      "checkpointHash": "0d4fee384e2bd597ec797e35ed361c2d5bc834e58ef714af7d4c77bc2e263525",
+      "forkHour": 1503,
+      "initialStrain": 6.984950960114869,
+      "initialComfort": 0.8714545454545455,
+      "workerId": 25,
+      "projectDef": "kitchen",
+      "projectId": 44,
+      "completionHour": 19,
+      "materials": {
+        "wood": 18
+      },
+      "observedHours": 336,
+      "status": "playing",
+      "addedCharters": 1,
+      "initialCharter": "roof",
+      "initialRequirements": [
+        {
+          "kind": "population",
+          "value": 11,
+          "target": 10
+        },
+        {
+          "kind": "built",
+          "value": 0,
+          "target": 3
+        },
+        {
+          "kind": "tally",
+          "value": 69,
+          "target": 30
+        },
+        {
+          "kind": "avgMood",
+          "value": 1,
+          "target": 1
+        }
+      ],
+      "endRequirements": [
+        {
+          "kind": "longTable",
+          "value": 0.1,
+          "target": 1
+        }
+      ],
+      "endStrain": 4.4788010384407295,
+      "passiveGrowth": 4.350450825877428,
+      "eventStrain": 3,
+      "relief": 9.856600747551568,
+      "meanMood": 70.10713956182707,
+      "minimumMood": 37.8,
+      "meanComfort": 0.8573194747465698,
+      "daytimeSulking": 0,
+      "foodMade": 292,
+      "endFood": 119,
+      "endWood": 440,
+      "endFine": 10,
+      "festivalGoods": 43,
+      "departures": 0,
+      "deaths": 0,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 10.666666666666663,
+      "projectBuildPersonHours": 7.0000000000000036,
+      "reservedWorkerBuildHours": 2.4999999999999996,
+      "reservedWorkerHaulHours": 16.49999999999998,
+      "reservedWorkerProductionHours": 52.499999999999794
+    },
+    {
+      "case": "42-cottage",
+      "curve": "gentler",
+      "policy": "save",
+      "checkpointHash": "0d4fee384e2bd597ec797e35ed361c2d5bc834e58ef714af7d4c77bc2e263525",
+      "forkHour": 1503,
+      "initialStrain": 6.984950960114869,
+      "initialComfort": 0.8714545454545455,
+      "workerId": 25,
+      "projectDef": null,
+      "projectId": null,
+      "completionHour": null,
+      "materials": {},
+      "observedHours": 336,
+      "status": "playing",
+      "addedCharters": 1,
+      "initialCharter": "roof",
+      "initialRequirements": [
+        {
+          "kind": "population",
+          "value": 11,
+          "target": 10
+        },
+        {
+          "kind": "built",
+          "value": 0,
+          "target": 3
+        },
+        {
+          "kind": "tally",
+          "value": 69,
+          "target": 30
+        },
+        {
+          "kind": "avgMood",
+          "value": 1,
+          "target": 1
+        }
+      ],
+      "endRequirements": [
+        {
+          "kind": "longTable",
+          "value": 0.41874999999999996,
+          "target": 1
+        }
+      ],
+      "endStrain": 4.5308299954673,
+      "passiveGrowth": 3.9621477474467133,
+      "eventStrain": 0,
+      "relief": 6.416268712094282,
+      "meanMood": 71.70599522005774,
+      "minimumMood": 37.9,
+      "meanComfort": 0.8545179519088877,
+      "daytimeSulking": 0,
+      "foodMade": 229,
+      "endFood": 185,
+      "endWood": 546,
+      "endFine": 3,
+      "festivalGoods": 22,
+      "departures": 0,
+      "deaths": 0,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 7.3333333333333375,
+      "projectBuildPersonHours": 0,
+      "reservedWorkerBuildHours": 0,
+      "reservedWorkerHaulHours": 69.33333333333312,
+      "reservedWorkerProductionHours": 0
+    },
+    {
+      "case": "42-cottage",
+      "curve": "no-growth",
+      "policy": "comfort",
+      "checkpointHash": "0d4fee384e2bd597ec797e35ed361c2d5bc834e58ef714af7d4c77bc2e263525",
+      "forkHour": 1503,
+      "initialStrain": 6.984950960114869,
+      "initialComfort": 0.8714545454545455,
+      "workerId": 25,
+      "projectDef": "cottage",
+      "projectId": 44,
+      "completionHour": 19,
+      "materials": {
+        "wood": 6,
+        "planks": 10
+      },
+      "observedHours": 336,
+      "status": "playing",
+      "addedCharters": 1,
+      "initialCharter": "roof",
+      "initialRequirements": [
+        {
+          "kind": "population",
+          "value": 11,
+          "target": 10
+        },
+        {
+          "kind": "built",
+          "value": 0,
+          "target": 3
+        },
+        {
+          "kind": "tally",
+          "value": 69,
+          "target": 30
+        },
+        {
+          "kind": "avgMood",
+          "value": 1,
+          "target": 1
+        }
+      ],
+      "endRequirements": [
+        {
+          "kind": "longTable",
+          "value": 0.525,
+          "target": 1
+        }
+      ],
+      "endStrain": 2.9954852880344607,
+      "passiveGrowth": 0,
+      "eventStrain": 3,
+      "relief": 6.989465672080408,
+      "meanMood": 69.72673836580091,
+      "minimumMood": 26.5,
+      "meanComfort": 0.8423197341801916,
+      "daytimeSulking": 0,
+      "foodMade": 191,
+      "endFood": 241,
+      "endWood": 587,
+      "endFine": 8,
+      "festivalGoods": 24,
+      "departures": 0,
+      "deaths": 0,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 8.000000000000005,
+      "projectBuildPersonHours": 6.000000000000002,
+      "reservedWorkerBuildHours": 2.1666666666666665,
+      "reservedWorkerHaulHours": 65.333333333333,
+      "reservedWorkerProductionHours": 0
+    },
+    {
+      "case": "42-cottage",
+      "curve": "no-growth",
+      "policy": "production",
+      "checkpointHash": "0d4fee384e2bd597ec797e35ed361c2d5bc834e58ef714af7d4c77bc2e263525",
+      "forkHour": 1503,
+      "initialStrain": 6.984950960114869,
+      "initialComfort": 0.8714545454545455,
+      "workerId": 25,
+      "projectDef": "kitchen",
+      "projectId": 44,
+      "completionHour": 19,
+      "materials": {
+        "wood": 18
+      },
+      "observedHours": 336,
+      "status": "playing",
+      "addedCharters": 1,
+      "initialCharter": "roof",
+      "initialRequirements": [
+        {
+          "kind": "population",
+          "value": 11,
+          "target": 10
+        },
+        {
+          "kind": "built",
+          "value": 0,
+          "target": 3
+        },
+        {
+          "kind": "tally",
+          "value": 69,
+          "target": 30
+        },
+        {
+          "kind": "avgMood",
+          "value": 1,
+          "target": 1
+        }
+      ],
+      "endRequirements": [
+        {
+          "kind": "longTable",
+          "value": 0.05,
+          "target": 1
+        }
+      ],
+      "endStrain": 2.9954852880344607,
+      "passiveGrowth": 0,
+      "eventStrain": 3,
+      "relief": 6.989465672080408,
+      "meanMood": 71.55740891053394,
+      "minimumMood": 39.5,
+      "meanComfort": 0.8496938656755084,
+      "daytimeSulking": 0,
+      "foodMade": 235,
+      "endFood": 218,
+      "endWood": 520,
+      "endFine": 0,
+      "festivalGoods": 24,
+      "departures": 0,
+      "deaths": 0,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 10.666666666666663,
+      "projectBuildPersonHours": 7.0000000000000036,
+      "reservedWorkerBuildHours": 2.4999999999999996,
+      "reservedWorkerHaulHours": 12.999999999999988,
+      "reservedWorkerProductionHours": 54.66666666666643
+    },
+    {
+      "case": "42-cottage",
+      "curve": "no-growth",
+      "policy": "save",
+      "checkpointHash": "0d4fee384e2bd597ec797e35ed361c2d5bc834e58ef714af7d4c77bc2e263525",
+      "forkHour": 1503,
+      "initialStrain": 6.984950960114869,
+      "initialComfort": 0.8714545454545455,
+      "workerId": 25,
+      "projectDef": null,
+      "projectId": null,
+      "completionHour": null,
+      "materials": {},
+      "observedHours": 336,
+      "status": "playing",
+      "addedCharters": 1,
+      "initialCharter": "roof",
+      "initialRequirements": [
+        {
+          "kind": "population",
+          "value": 11,
+          "target": 10
+        },
+        {
+          "kind": "built",
+          "value": 0,
+          "target": 3
+        },
+        {
+          "kind": "tally",
+          "value": 69,
+          "target": 30
+        },
+        {
+          "kind": "avgMood",
+          "value": 1,
+          "target": 1
+        }
+      ],
+      "endRequirements": [
+        {
+          "kind": "longTable",
+          "value": 0.1,
+          "target": 1
+        }
+      ],
+      "endStrain": 2.9954852880344607,
+      "passiveGrowth": 0,
+      "eventStrain": 3,
+      "relief": 6.989465672080408,
+      "meanMood": 72.61296672077928,
+      "minimumMood": 38,
+      "meanComfort": 0.8477526704328301,
+      "daytimeSulking": 0,
+      "foodMade": 191,
+      "endFood": 225,
+      "endWood": 462,
+      "endFine": 12,
+      "festivalGoods": 24,
+      "departures": 0,
+      "deaths": 0,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 9.333333333333334,
+      "projectBuildPersonHours": 0,
+      "reservedWorkerBuildHours": 0,
+      "reservedWorkerHaulHours": 70.99999999999983,
+      "reservedWorkerProductionHours": 0
+    },
+    {
+      "case": "1000-stage",
+      "curve": "current",
+      "policy": "comfort",
+      "checkpointHash": "8e9722490447262e7195e29c46801bc38fbc82e3bb159bc0f81e5181c64be339",
+      "forkHour": 1452,
+      "initialStrain": 9.473374249930854,
+      "initialComfort": 0.7164712229443788,
+      "workerId": 21,
+      "projectDef": "stage",
+      "projectId": 49,
+      "completionHour": 76,
+      "materials": {
+        "wood": 12,
+        "planks": 5
+      },
+      "observedHours": 336,
+      "status": "playing",
+      "addedCharters": 0,
+      "initialCharter": "longtable",
+      "initialRequirements": [
+        {
+          "kind": "longTable",
+          "value": 0.05,
+          "target": 1
+        }
+      ],
+      "endRequirements": [
+        {
+          "kind": "longTable",
+          "value": 0.6884615384615383,
+          "target": 1
+        }
+      ],
+      "endStrain": 7.398621698489626,
+      "passiveGrowth": 8.427581245568131,
+      "eventStrain": 3,
+      "relief": 13.502333797009364,
+      "meanMood": 71.32979815323561,
+      "minimumMood": 32.4,
+      "meanComfort": 0.757737247374204,
+      "daytimeSulking": 0,
+      "foodMade": 238,
+      "endFood": 118,
+      "endWood": 95,
+      "endFine": 8,
+      "festivalGoods": 50,
+      "departures": 0,
+      "deaths": 0,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 6.66666666666667,
+      "projectBuildPersonHours": 1.5,
+      "reservedWorkerBuildHours": 6.333333333333336,
+      "reservedWorkerHaulHours": 57.166666666666394,
+      "reservedWorkerProductionHours": 0
+    },
+    {
+      "case": "1000-stage",
+      "curve": "current",
+      "policy": "production",
+      "checkpointHash": "8e9722490447262e7195e29c46801bc38fbc82e3bb159bc0f81e5181c64be339",
+      "forkHour": 1452,
+      "initialStrain": 9.473374249930854,
+      "initialComfort": 0.7164712229443788,
+      "workerId": 21,
+      "projectDef": "kitchen",
+      "projectId": 49,
+      "completionHour": 23,
+      "materials": {
+        "wood": 18
+      },
+      "observedHours": 336,
+      "status": "playing",
+      "addedCharters": 0,
+      "initialCharter": "longtable",
+      "initialRequirements": [
+        {
+          "kind": "longTable",
+          "value": 0.05,
+          "target": 1
+        }
+      ],
+      "endRequirements": [
+        {
+          "kind": "longTable",
+          "value": 0.525,
+          "target": 1
+        }
+      ],
+      "endStrain": 6.975559032838303,
+      "passiveGrowth": 8.059123580389112,
+      "eventStrain": 3,
+      "relief": 13.556938797481664,
+      "meanMood": 70.70138888888894,
+      "minimumMood": 32.3,
+      "meanComfort": 0.7658064804704401,
+      "daytimeSulking": 0,
+      "foodMade": 226,
+      "endFood": 216,
+      "endWood": 40,
+      "endFine": 13,
+      "festivalGoods": 34,
+      "departures": 0,
+      "deaths": 0,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 8.333333333333337,
+      "projectBuildPersonHours": 8.500000000000004,
+      "reservedWorkerBuildHours": 0.9999999999999999,
+      "reservedWorkerHaulHours": 13.499999999999986,
+      "reservedWorkerProductionHours": 45.33333333333323
+    },
+    {
+      "case": "1000-stage",
+      "curve": "current",
+      "policy": "save",
+      "checkpointHash": "8e9722490447262e7195e29c46801bc38fbc82e3bb159bc0f81e5181c64be339",
+      "forkHour": 1452,
+      "initialStrain": 9.473374249930854,
+      "initialComfort": 0.7164712229443788,
+      "workerId": 21,
+      "projectDef": null,
+      "projectId": null,
+      "completionHour": null,
+      "materials": {},
+      "observedHours": 336,
+      "status": "playing",
+      "addedCharters": 0,
+      "initialCharter": "longtable",
+      "initialRequirements": [
+        {
+          "kind": "longTable",
+          "value": 0.05,
+          "target": 1
+        }
+      ],
+      "endRequirements": [
+        {
+          "kind": "longTable",
+          "value": 0.8519230769230769,
+          "target": 1
+        }
+      ],
+      "endStrain": 13.370464122333331,
+      "passiveGrowth": 8.340602577549078,
+      "eventStrain": 3,
+      "relief": 7.443512705146601,
+      "meanMood": 63.824263583638654,
+      "minimumMood": 11.299999999999997,
+      "meanComfort": 0.763030302589819,
+      "daytimeSulking": 23.16666666666674,
+      "foodMade": 247,
+      "endFood": 111,
+      "endWood": 10,
+      "endFine": 3,
+      "festivalGoods": 15,
+      "departures": 0,
+      "deaths": 0,
+      "sulkingPersonHours": 57.999999999999716,
+      "hungryPersonHours": 15.166666666666647,
+      "projectBuildPersonHours": 0,
+      "reservedWorkerBuildHours": 7.0000000000000036,
+      "reservedWorkerHaulHours": 53.666666666666444,
+      "reservedWorkerProductionHours": 0
+    },
+    {
+      "case": "1000-stage",
+      "curve": "gentler",
+      "policy": "comfort",
+      "checkpointHash": "8e9722490447262e7195e29c46801bc38fbc82e3bb159bc0f81e5181c64be339",
+      "forkHour": 1452,
+      "initialStrain": 9.473374249930854,
+      "initialComfort": 0.7164712229443788,
+      "workerId": 21,
+      "projectDef": "stage",
+      "projectId": 49,
+      "completionHour": 76,
+      "materials": {
+        "wood": 12,
+        "planks": 5
+      },
+      "observedHours": 336,
+      "status": "playing",
+      "addedCharters": 0,
+      "initialCharter": "longtable",
+      "initialRequirements": [
+        {
+          "kind": "longTable",
+          "value": 0.05,
+          "target": 1
+        }
+      ],
+      "endRequirements": [
+        {
+          "kind": "longTable",
+          "value": 0.6884615384615383,
+          "target": 1
+        }
+      ],
+      "endStrain": 6.648924183871641,
+      "passiveGrowth": 7.051075811009859,
+      "eventStrain": 3,
+      "relief": 12.875525877069073,
+      "meanMood": 71.80677274114771,
+      "minimumMood": 33.3,
+      "meanComfort": 0.7582544340374524,
+      "daytimeSulking": 0,
+      "foodMade": 238,
+      "endFood": 133,
+      "endWood": 73,
+      "endFine": 8,
+      "festivalGoods": 50,
+      "departures": 0,
+      "deaths": 0,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 6.66666666666667,
+      "projectBuildPersonHours": 1.5,
+      "reservedWorkerBuildHours": 6.333333333333336,
+      "reservedWorkerHaulHours": 57.166666666666394,
+      "reservedWorkerProductionHours": 0
+    },
+    {
+      "case": "1000-stage",
+      "curve": "gentler",
+      "policy": "production",
+      "checkpointHash": "8e9722490447262e7195e29c46801bc38fbc82e3bb159bc0f81e5181c64be339",
+      "forkHour": 1452,
+      "initialStrain": 9.473374249930854,
+      "initialComfort": 0.7164712229443788,
+      "workerId": 21,
+      "projectDef": "kitchen",
+      "projectId": 49,
+      "completionHour": 23,
+      "materials": {
+        "wood": 18
+      },
+      "observedHours": 336,
+      "status": "playing",
+      "addedCharters": 0,
+      "initialCharter": "longtable",
+      "initialRequirements": [
+        {
+          "kind": "longTable",
+          "value": 0.05,
+          "target": 1
+        }
+      ],
+      "endRequirements": [
+        {
+          "kind": "longTable",
+          "value": 0.8437499999999999,
+          "target": 1
+        }
+      ],
+      "endStrain": 10.646804003064755,
+      "passiveGrowth": 5.874029184319493,
+      "eventStrain": 3,
+      "relief": 7.7005994311855925,
+      "meanMood": 71.360689484127,
+      "minimumMood": 33,
+      "meanComfort": 0.8020872390864682,
+      "daytimeSulking": 0,
+      "foodMade": 210,
+      "endFood": 225,
+      "endWood": 24,
+      "endFine": 9,
+      "festivalGoods": 27,
+      "departures": 0,
+      "deaths": 0,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 6.66666666666667,
+      "projectBuildPersonHours": 8.500000000000004,
+      "reservedWorkerBuildHours": 0.9999999999999999,
+      "reservedWorkerHaulHours": 13.499999999999986,
+      "reservedWorkerProductionHours": 45.33333333333323
+    },
+    {
+      "case": "1000-stage",
+      "curve": "gentler",
+      "policy": "save",
+      "checkpointHash": "8e9722490447262e7195e29c46801bc38fbc82e3bb159bc0f81e5181c64be339",
+      "forkHour": 1452,
+      "initialStrain": 9.473374249930854,
+      "initialComfort": 0.7164712229443788,
+      "workerId": 21,
+      "projectDef": null,
+      "projectId": null,
+      "completionHour": null,
+      "materials": {},
+      "observedHours": 336,
+      "status": "playing",
+      "addedCharters": 0,
+      "initialCharter": "longtable",
+      "initialRequirements": [
+        {
+          "kind": "longTable",
+          "value": 0.05,
+          "target": 1
+        }
+      ],
+      "endRequirements": [
+        {
+          "kind": "longTable",
+          "value": 0.8892857142857142,
+          "target": 1
+        }
+      ],
+      "endStrain": 8.495075273276463,
+      "passiveGrowth": 7.850531050951548,
+      "eventStrain": 6.000000000000001,
+      "relief": 14.82883002760594,
+      "meanMood": 68.45650619222042,
+      "minimumMood": 25.4,
+      "meanComfort": 0.7389026047860044,
+      "daytimeSulking": 0,
+      "foodMade": 222,
+      "endFood": 194,
+      "endWood": 39,
+      "endFine": 9,
+      "festivalGoods": 47,
+      "departures": 0,
+      "deaths": 0,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 12.833333333333321,
+      "projectBuildPersonHours": 0,
+      "reservedWorkerBuildHours": 7.0000000000000036,
+      "reservedWorkerHaulHours": 52.99999999999979,
+      "reservedWorkerProductionHours": 0
+    },
+    {
+      "case": "1000-stage",
+      "curve": "no-growth",
+      "policy": "comfort",
+      "checkpointHash": "8e9722490447262e7195e29c46801bc38fbc82e3bb159bc0f81e5181c64be339",
+      "forkHour": 1452,
+      "initialStrain": 9.473374249930854,
+      "initialComfort": 0.7164712229443788,
+      "workerId": 21,
+      "projectDef": "stage",
+      "projectId": 49,
+      "completionHour": 76,
+      "materials": {
+        "wood": 12,
+        "planks": 5
+      },
+      "observedHours": 336,
+      "status": "playing",
+      "addedCharters": 0,
+      "initialCharter": "longtable",
+      "initialRequirements": [
+        {
+          "kind": "longTable",
+          "value": 0.05,
+          "target": 1
+        }
+      ],
+      "endRequirements": [
+        {
+          "kind": "longTable",
+          "value": 0.9145833333333333,
+          "target": 1
+        }
+      ],
+      "endStrain": 2.881800446828966,
+      "passiveGrowth": 0,
+      "eventStrain": 0,
+      "relief": 6.5915738031018885,
+      "meanMood": 72.97499999999998,
+      "minimumMood": 31.1,
+      "meanComfort": 0.761504727692901,
+      "daytimeSulking": 0,
+      "foodMade": 242,
+      "endFood": 227,
+      "endWood": 26,
+      "endFine": 19,
+      "festivalGoods": 15,
+      "departures": 0,
+      "deaths": 0,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 8.000000000000005,
+      "projectBuildPersonHours": 1.5,
+      "reservedWorkerBuildHours": 8.166666666666671,
+      "reservedWorkerHaulHours": 55.999999999999744,
+      "reservedWorkerProductionHours": 0
+    },
+    {
+      "case": "1000-stage",
+      "curve": "no-growth",
+      "policy": "production",
+      "checkpointHash": "8e9722490447262e7195e29c46801bc38fbc82e3bb159bc0f81e5181c64be339",
+      "forkHour": 1452,
+      "initialStrain": 9.473374249930854,
+      "initialComfort": 0.7164712229443788,
+      "workerId": 21,
+      "projectDef": "kitchen",
+      "projectId": 49,
+      "completionHour": 23,
+      "materials": {
+        "wood": 18
+      },
+      "observedHours": 336,
+      "status": "playing",
+      "addedCharters": 0,
+      "initialCharter": "longtable",
+      "initialRequirements": [
+        {
+          "kind": "longTable",
+          "value": 0.05,
+          "target": 1
+        }
+      ],
+      "endRequirements": [
+        {
+          "kind": "longTable",
+          "value": 0.7374999999999999,
+          "target": 1
+        }
+      ],
+      "endStrain": 7.310385283718539,
+      "passiveGrowth": 0,
+      "eventStrain": 3,
+      "relief": 5.162988966212316,
+      "meanMood": 71.54467528998782,
+      "minimumMood": 33.5,
+      "meanComfort": 0.7762837656806305,
+      "daytimeSulking": 0,
+      "foodMade": 246,
+      "endFood": 120,
+      "endWood": 22,
+      "endFine": 8,
+      "festivalGoods": 15,
+      "departures": 0,
+      "deaths": 0,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 8.833333333333336,
+      "projectBuildPersonHours": 8.500000000000004,
+      "reservedWorkerBuildHours": 0.9999999999999999,
+      "reservedWorkerHaulHours": 13.999999999999984,
+      "reservedWorkerProductionHours": 45.83333333333322
+    },
+    {
+      "case": "1000-stage",
+      "curve": "no-growth",
+      "policy": "save",
+      "checkpointHash": "8e9722490447262e7195e29c46801bc38fbc82e3bb159bc0f81e5181c64be339",
+      "forkHour": 1452,
+      "initialStrain": 9.473374249930854,
+      "initialComfort": 0.7164712229443788,
+      "workerId": 21,
+      "projectDef": null,
+      "projectId": null,
+      "completionHour": null,
+      "materials": {},
+      "observedHours": 336,
+      "status": "playing",
+      "addedCharters": 0,
+      "initialCharter": "longtable",
+      "initialRequirements": [
+        {
+          "kind": "longTable",
+          "value": 0.05,
+          "target": 1
+        }
+      ],
+      "endRequirements": [
+        {
+          "kind": "longTable",
+          "value": 0.99,
+          "target": 1
+        }
+      ],
+      "endStrain": 9.157693262455055,
+      "passiveGrowth": 0,
+      "eventStrain": 3,
+      "relief": 3.3156809874757993,
+      "meanMood": 69.88444940476194,
+      "minimumMood": 30.799999999999997,
+      "meanComfort": 0.7560441552271989,
+      "daytimeSulking": 0,
+      "foodMade": 189,
+      "endFood": 151,
+      "endWood": 49,
+      "endFine": 14,
+      "festivalGoods": 15,
+      "departures": 0,
+      "deaths": 0,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 15.83333333333331,
+      "projectBuildPersonHours": 0,
+      "reservedWorkerBuildHours": 8.000000000000005,
+      "reservedWorkerHaulHours": 54.66666666666643,
+      "reservedWorkerProductionHours": 0
+    },
+    {
+      "case": "303-stage",
+      "curve": "current",
+      "policy": "comfort",
+      "checkpointHash": "743b50af02d2b2b648da3106558bd9ab0e0c99dc2670c2d5a1265eceda532e9b",
+      "forkHour": 990,
+      "initialStrain": 8.662905794861357,
+      "initialComfort": 0.6900000000000002,
+      "workerId": 15,
+      "projectDef": "stage",
+      "projectId": 39,
+      "completionHour": 25,
+      "materials": {
+        "wood": 12,
+        "planks": 5
+      },
+      "observedHours": 336,
+      "status": "playing",
+      "addedCharters": 1,
+      "initialCharter": "bread",
+      "initialRequirements": [
+        {
+          "kind": "population",
+          "value": 10,
+          "target": 10
+        },
+        {
+          "kind": "tally",
+          "value": 5,
+          "target": 30
+        },
+        {
+          "kind": "avgMood",
+          "value": 1,
+          "target": 1
+        }
+      ],
+      "endRequirements": [
+        {
+          "kind": "longTable",
+          "value": 0.1,
+          "target": 1
+        }
+      ],
+      "endStrain": 4.319587220878509,
+      "passiveGrowth": 7.099907093427575,
+      "eventStrain": 0,
+      "relief": 11.443225667410424,
+      "meanMood": 69.26345869408371,
+      "minimumMood": 30.6,
+      "meanComfort": 0.6874675754156873,
+      "daytimeSulking": 0,
+      "foodMade": 236,
+      "endFood": 68,
+      "endWood": 35,
+      "endFine": 19,
+      "festivalGoods": 22,
+      "departures": 0,
+      "deaths": 0,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 0.9999999999999999,
+      "projectBuildPersonHours": 7.666666666666671,
+      "reservedWorkerBuildHours": 3.8333333333333317,
+      "reservedWorkerHaulHours": 70.83333333333316,
+      "reservedWorkerProductionHours": 0
+    },
+    {
+      "case": "303-stage",
+      "curve": "current",
+      "policy": "production",
+      "checkpointHash": "743b50af02d2b2b648da3106558bd9ab0e0c99dc2670c2d5a1265eceda532e9b",
+      "forkHour": 990,
+      "initialStrain": 8.662905794861357,
+      "initialComfort": 0.6900000000000002,
+      "workerId": 15,
+      "projectDef": "kitchen",
+      "projectId": 39,
+      "completionHour": 26,
+      "materials": {
+        "wood": 18
+      },
+      "observedHours": 336,
+      "status": "playing",
+      "addedCharters": 1,
+      "initialCharter": "bread",
+      "initialRequirements": [
+        {
+          "kind": "population",
+          "value": 10,
+          "target": 10
+        },
+        {
+          "kind": "tally",
+          "value": 5,
+          "target": 30
+        },
+        {
+          "kind": "avgMood",
+          "value": 1,
+          "target": 1
+        }
+      ],
+      "endRequirements": [
+        {
+          "kind": "longTable",
+          "value": 0.3125,
+          "target": 1
+        }
+      ],
+      "endStrain": 4.543021902164037,
+      "passiveGrowth": 6.29617435011188,
+      "eventStrain": 0,
+      "relief": 10.416058242809202,
+      "meanMood": 66.51140602453104,
+      "minimumMood": 34.6,
+      "meanComfort": 0.6833511923614498,
+      "daytimeSulking": 0,
+      "foodMade": 215,
+      "endFood": 27,
+      "endWood": 50,
+      "endFine": 6,
+      "festivalGoods": 22,
+      "departures": 0,
+      "deaths": 0,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 0,
+      "projectBuildPersonHours": 10.833333333333329,
+      "reservedWorkerBuildHours": 5,
+      "reservedWorkerHaulHours": 11.333333333333327,
+      "reservedWorkerProductionHours": 53.99999999999977
+    },
+    {
+      "case": "303-stage",
+      "curve": "current",
+      "policy": "save",
+      "checkpointHash": "743b50af02d2b2b648da3106558bd9ab0e0c99dc2670c2d5a1265eceda532e9b",
+      "forkHour": 990,
+      "initialStrain": 8.662905794861357,
+      "initialComfort": 0.6900000000000002,
+      "workerId": 15,
+      "projectDef": null,
+      "projectId": null,
+      "completionHour": null,
+      "materials": {},
+      "observedHours": 336,
+      "status": "playing",
+      "addedCharters": 1,
+      "initialCharter": "bread",
+      "initialRequirements": [
+        {
+          "kind": "population",
+          "value": 10,
+          "target": 10
+        },
+        {
+          "kind": "tally",
+          "value": 5,
+          "target": 30
+        },
+        {
+          "kind": "avgMood",
+          "value": 1,
+          "target": 1
+        }
+      ],
+      "endRequirements": [
+        {
+          "kind": "longTable",
+          "value": 0.1,
+          "target": 1
+        }
+      ],
+      "endStrain": 11.1189484418038,
+      "passiveGrowth": 7.038972432248951,
+      "eventStrain": 3,
+      "relief": 7.582929785306508,
+      "meanMood": 65.18285304972802,
+      "minimumMood": 36.7,
+      "meanComfort": 0.6935374472677731,
+      "daytimeSulking": 0,
+      "foodMade": 248,
+      "endFood": 99,
+      "endWood": 47,
+      "endFine": 10,
+      "festivalGoods": 22,
+      "departures": 0,
+      "deaths": 0,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 1.5,
+      "projectBuildPersonHours": 0,
+      "reservedWorkerBuildHours": 1.8333333333333335,
+      "reservedWorkerHaulHours": 63.99999999999963,
+      "reservedWorkerProductionHours": 0
+    },
+    {
+      "case": "303-stage",
+      "curve": "gentler",
+      "policy": "comfort",
+      "checkpointHash": "743b50af02d2b2b648da3106558bd9ab0e0c99dc2670c2d5a1265eceda532e9b",
+      "forkHour": 990,
+      "initialStrain": 8.662905794861357,
+      "initialComfort": 0.6900000000000002,
+      "workerId": 15,
+      "projectDef": "stage",
+      "projectId": 39,
+      "completionHour": 25,
+      "materials": {
+        "wood": 12,
+        "planks": 5
+      },
+      "observedHours": 336,
+      "status": "playing",
+      "addedCharters": 1,
+      "initialCharter": "bread",
+      "initialRequirements": [
+        {
+          "kind": "population",
+          "value": 10,
+          "target": 10
+        },
+        {
+          "kind": "tally",
+          "value": 5,
+          "target": 30
+        },
+        {
+          "kind": "avgMood",
+          "value": 1,
+          "target": 1
+        }
+      ],
+      "endRequirements": [
+        {
+          "kind": "longTable",
+          "value": 0.1,
+          "target": 1
+        }
+      ],
+      "endStrain": 4.087679145254759,
+      "passiveGrowth": 6.512758783876435,
+      "eventStrain": 0,
+      "relief": 11.087985433483034,
+      "meanMood": 69.4343317099567,
+      "minimumMood": 30.799999999999997,
+      "meanComfort": 0.6874675754156873,
+      "daytimeSulking": 0,
+      "foodMade": 236,
+      "endFood": 68,
+      "endWood": 35,
+      "endFine": 19,
+      "festivalGoods": 22,
+      "departures": 0,
+      "deaths": 0,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 0.9999999999999999,
+      "projectBuildPersonHours": 7.666666666666671,
+      "reservedWorkerBuildHours": 3.8333333333333317,
+      "reservedWorkerHaulHours": 70.83333333333316,
+      "reservedWorkerProductionHours": 0
+    },
+    {
+      "case": "303-stage",
+      "curve": "gentler",
+      "policy": "production",
+      "checkpointHash": "743b50af02d2b2b648da3106558bd9ab0e0c99dc2670c2d5a1265eceda532e9b",
+      "forkHour": 990,
+      "initialStrain": 8.662905794861357,
+      "initialComfort": 0.6900000000000002,
+      "workerId": 15,
+      "projectDef": "kitchen",
+      "projectId": 39,
+      "completionHour": 26,
+      "materials": {
+        "wood": 18
+      },
+      "observedHours": 336,
+      "status": "playing",
+      "addedCharters": 1,
+      "initialCharter": "bread",
+      "initialRequirements": [
+        {
+          "kind": "population",
+          "value": 10,
+          "target": 10
+        },
+        {
+          "kind": "tally",
+          "value": 5,
+          "target": 30
+        },
+        {
+          "kind": "avgMood",
+          "value": 1,
+          "target": 1
+        }
+      ],
+      "endRequirements": [
+        {
+          "kind": "longTable",
+          "value": 0.3125,
+          "target": 1
+        }
+      ],
+      "endStrain": 3.785561395331725,
+      "passiveGrowth": 5.282231043992191,
+      "eventStrain": 0,
+      "relief": 10.159575443521824,
+      "meanMood": 66.70491973304472,
+      "minimumMood": 34.8,
+      "meanComfort": 0.6833511923614498,
+      "daytimeSulking": 0,
+      "foodMade": 215,
+      "endFood": 27,
+      "endWood": 50,
+      "endFine": 6,
+      "festivalGoods": 22,
+      "departures": 0,
+      "deaths": 0,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 0,
+      "projectBuildPersonHours": 10.833333333333329,
+      "reservedWorkerBuildHours": 5,
+      "reservedWorkerHaulHours": 11.333333333333327,
+      "reservedWorkerProductionHours": 53.99999999999977
+    },
+    {
+      "case": "303-stage",
+      "curve": "gentler",
+      "policy": "save",
+      "checkpointHash": "743b50af02d2b2b648da3106558bd9ab0e0c99dc2670c2d5a1265eceda532e9b",
+      "forkHour": 990,
+      "initialStrain": 8.662905794861357,
+      "initialComfort": 0.6900000000000002,
+      "workerId": 15,
+      "projectDef": null,
+      "projectId": null,
+      "completionHour": null,
+      "materials": {},
+      "observedHours": 336,
+      "status": "playing",
+      "addedCharters": 1,
+      "initialCharter": "bread",
+      "initialRequirements": [
+        {
+          "kind": "population",
+          "value": 10,
+          "target": 10
+        },
+        {
+          "kind": "tally",
+          "value": 5,
+          "target": 30
+        },
+        {
+          "kind": "avgMood",
+          "value": 1,
+          "target": 1
+        }
+      ],
+      "endRequirements": [
+        {
+          "kind": "longTable",
+          "value": 0.1,
+          "target": 1
+        }
+      ],
+      "endStrain": 10.58514569946318,
+      "passiveGrowth": 6.365343418950839,
+      "eventStrain": 3,
+      "relief": 7.4431035143490165,
+      "meanMood": 65.3290797743923,
+      "minimumMood": 36.8,
+      "meanComfort": 0.6935374472677731,
+      "daytimeSulking": 0,
+      "foodMade": 248,
+      "endFood": 99,
+      "endWood": 47,
+      "endFine": 10,
+      "festivalGoods": 22,
+      "departures": 0,
+      "deaths": 0,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 1.5,
+      "projectBuildPersonHours": 0,
+      "reservedWorkerBuildHours": 1.8333333333333335,
+      "reservedWorkerHaulHours": 63.99999999999963,
+      "reservedWorkerProductionHours": 0
+    },
+    {
+      "case": "303-stage",
+      "curve": "no-growth",
+      "policy": "comfort",
+      "checkpointHash": "743b50af02d2b2b648da3106558bd9ab0e0c99dc2670c2d5a1265eceda532e9b",
+      "forkHour": 990,
+      "initialStrain": 8.662905794861357,
+      "initialComfort": 0.6900000000000002,
+      "workerId": 15,
+      "projectDef": "stage",
+      "projectId": 39,
+      "completionHour": 25,
+      "materials": {
+        "wood": 12,
+        "planks": 5
+      },
+      "observedHours": 336,
+      "status": "playing",
+      "addedCharters": 1,
+      "initialCharter": "bread",
+      "initialRequirements": [
+        {
+          "kind": "population",
+          "value": 10,
+          "target": 10
+        },
+        {
+          "kind": "tally",
+          "value": 5,
+          "target": 30
+        },
+        {
+          "kind": "avgMood",
+          "value": 1,
+          "target": 1
+        }
+      ],
+      "endRequirements": [
+        {
+          "kind": "longTable",
+          "value": 0.1,
+          "target": 1
+        }
+      ],
+      "endStrain": 3.6422104551270227,
+      "passiveGrowth": 0,
+      "eventStrain": 0,
+      "relief": 5.020695339734335,
+      "meanMood": 72.99103129509369,
+      "minimumMood": 44.3,
+      "meanComfort": 0.7073682196223436,
+      "daytimeSulking": 0,
+      "foodMade": 201,
+      "endFood": 106,
+      "endWood": 38,
+      "endFine": 20,
+      "festivalGoods": 22,
+      "departures": 0,
+      "deaths": 0,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 8.66666666666667,
+      "projectBuildPersonHours": 7.666666666666671,
+      "reservedWorkerBuildHours": 3.8333333333333317,
+      "reservedWorkerHaulHours": 70.83333333333316,
+      "reservedWorkerProductionHours": 0
+    },
+    {
+      "case": "303-stage",
+      "curve": "no-growth",
+      "policy": "production",
+      "checkpointHash": "743b50af02d2b2b648da3106558bd9ab0e0c99dc2670c2d5a1265eceda532e9b",
+      "forkHour": 990,
+      "initialStrain": 8.662905794861357,
+      "initialComfort": 0.6900000000000002,
+      "workerId": 15,
+      "projectDef": "kitchen",
+      "projectId": 39,
+      "completionHour": 26,
+      "materials": {
+        "wood": 18
+      },
+      "observedHours": 336,
+      "status": "playing",
+      "addedCharters": 1,
+      "initialCharter": "bread",
+      "initialRequirements": [
+        {
+          "kind": "population",
+          "value": 10,
+          "target": 10
+        },
+        {
+          "kind": "tally",
+          "value": 5,
+          "target": 30
+        },
+        {
+          "kind": "avgMood",
+          "value": 1,
+          "target": 1
+        }
+      ],
+      "endRequirements": [
+        {
+          "kind": "longTable",
+          "value": 0.1,
+          "target": 1
+        }
+      ],
+      "endStrain": 1.6742419027600026,
+      "passiveGrowth": 0,
+      "eventStrain": 0,
+      "relief": 6.988663892101355,
+      "meanMood": 65.57105384199141,
+      "minimumMood": 22.5,
+      "meanComfort": 0.6757622107554815,
+      "daytimeSulking": 0,
+      "foodMade": 226,
+      "endFood": 77,
+      "endWood": 51,
+      "endFine": 0,
+      "festivalGoods": 22,
+      "departures": 0,
+      "deaths": 0,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 2.999999999999999,
+      "projectBuildPersonHours": 10.833333333333329,
+      "reservedWorkerBuildHours": 5,
+      "reservedWorkerHaulHours": 9.833333333333332,
+      "reservedWorkerProductionHours": 50.66666666666649
+    },
+    {
+      "case": "303-stage",
+      "curve": "no-growth",
+      "policy": "save",
+      "checkpointHash": "743b50af02d2b2b648da3106558bd9ab0e0c99dc2670c2d5a1265eceda532e9b",
+      "forkHour": 990,
+      "initialStrain": 8.662905794861357,
+      "initialComfort": 0.6900000000000002,
+      "workerId": 15,
+      "projectDef": null,
+      "projectId": null,
+      "completionHour": null,
+      "materials": {},
+      "observedHours": 336,
+      "status": "playing",
+      "addedCharters": 1,
+      "initialCharter": "bread",
+      "initialRequirements": [
+        {
+          "kind": "population",
+          "value": 10,
+          "target": 10
+        },
+        {
+          "kind": "tally",
+          "value": 5,
+          "target": 30
+        },
+        {
+          "kind": "avgMood",
+          "value": 1,
+          "target": 1
+        }
+      ],
+      "endRequirements": [
+        {
+          "kind": "longTable",
+          "value": 0.1,
+          "target": 1
+        }
+      ],
+      "endStrain": 3.460099932370672,
+      "passiveGrowth": 0,
+      "eventStrain": 0,
+      "relief": 5.202805862490686,
+      "meanMood": 66.98050009018755,
+      "minimumMood": 33,
+      "meanComfort": 0.6703929317671317,
+      "daytimeSulking": 0,
+      "foodMade": 194,
+      "endFood": 57,
+      "endWood": 15,
+      "endFine": 17,
+      "festivalGoods": 21,
+      "departures": 0,
+      "deaths": 0,
+      "sulkingPersonHours": 0,
+      "hungryPersonHours": 0,
+      "projectBuildPersonHours": 0,
+      "reservedWorkerBuildHours": 1.8333333333333335,
+      "reservedWorkerHaulHours": 71.99999999999986,
+      "reservedWorkerProductionHours": 0
+    }
+  ]
+}
