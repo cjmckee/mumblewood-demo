@@ -2,7 +2,7 @@ import { createWorld, tick, apply, runHours, TICKS_PER_HOUR, World, Command, day
 import { IsoView } from './render/iso';
 import { UI } from './ui/ui';
 import { autoDecide, autoBuild } from './sim/autoplayer';
-import { saveWorld, loadSave, clearSave } from './save';
+import { saveWorld, loadSave, clearSave, runResultKey } from './save';
 
 /** in-game hours per real second at each speed setting (1x ≈ 90 s per day) */
 const SPEEDS = [0, 0.27, 0.55, 1.1];
@@ -16,7 +16,7 @@ async function boot() {
   // a small profile kept in this browser: run history now, unlocks later
   // v2: runs from the old six-settler start aren't comparable, so the run history starts fresh
   const PROFILE_KEY = 'mumblewood.profile.v2';
-  type Profile = { runs: { result: string; day: number; charters: number; at: string; name?: string }[]; unlocks: string[]; firstRunDone?: boolean };
+  type Profile = { runs: { id?: string; result: string; day: number; charters: number; at: string; name?: string }[]; unlocks: string[]; firstRunDone?: boolean };
   let profile: Profile = { runs: [], unlocks: [] };
   try { const raw = localStorage.getItem(PROFILE_KEY); if (raw) profile = { ...profile, ...JSON.parse(raw) }; } catch { /* storage unavailable */ }
   const saveProfile = () => { try { localStorage.setItem(PROFILE_KEY, JSON.stringify(profile)); } catch { /* storage unavailable */ } };
@@ -24,22 +24,39 @@ async function boot() {
   const saved = loadSave();
   let world: World = saved?.world ?? createWorld((Date.now() ^ (Math.random() * 1e9)) >>> 0);
   let recorded = false;
+  const recordResult = () => {
+    if (world.status === 'playing' || recorded) return;
+    recorded = true;
+    const id = runResultKey(world);
+    if (!profile.runs.some(run => run.id === id)) {
+      profile.runs.push({ id, result: world.status, day: day(world), charters: world.chartersDone.length, at: new Date().toISOString(), name: colonyName(world) });
+      saveProfile();
+    }
+    if (world.status === 'won') saveWorld(world); else clearSave();
+  };
   let speed = 1, acc = 0;
   // autosave: right after anything the player does, every in-game hour (at most every few seconds), and when the tab goes
   let dirty = false, lastSave = 0, lastSavedHour = Math.floor(world.hour);
   const save = () => { if (ui.resumeOpen) return; saveWorld(world); dirty = false; lastSave = performance.now(); lastSavedHour = Math.floor(world.hour); };
-  const send = (c: Command) => { const r = apply(world, c); dirty = true; return r; };
+  const send = (c: Command) => {
+    if (world.status !== 'playing') return 'This settlement is complete. Start a new settlement to play again.';
+    const r = apply(world, c); dirty = true; return r;
+  };
   const ui = new UI(root, () => world, send, view);
   ui.onSpeed = s => (speed = s);
   ui.profile = profile;
   ui.onProfile = saveProfile;
   ui.applyPrefs();
-  ui.resumeOpen = !!saved;
+  ui.resumeOpen = !!saved && world.status === 'playing';
+  if (saved && world.status === 'won') ui.resumeFinale(world);
   ui.resumeSavedAt = saved?.savedAt ?? '';
   ui.onRestart = () => {
+    recordResult(); // An immediate click must still record the completed settlement.
     clearSave();
     world = createWorld((Date.now() ^ (Math.random() * 1e9)) >>> 0); recorded = false;
-    acc = 0; view.resetWorld(); ui.detail = null; ui.resumeOpen = false; save(); ui.render(true);
+    speed = 1; ui.speed = 1; acc = 0;
+    view.resetWorld(); view.placing = null; view.pathMode = false;
+    ui.resetForNewSettlement(); save(); ui.render(true);
   };
   ui.onResume = () => { ui.resumeOpen = false; acc = 0; save(); ui.render(true); };
   const flush = () => { if (world.status === 'playing') save(); };
@@ -66,16 +83,14 @@ async function boot() {
     } else ui.nightSkip = false;
     if (world.status === 'playing' && !ui.resumeOpen && (dirty || Math.floor(world.hour) !== lastSavedHour) && now - lastSave > (dirty ? 300 : 5000)) save();
     if (world.status !== 'playing' && !recorded) {
-      recorded = true;
-      clearSave();
-      profile.runs.push({ result: world.status, day: day(world), charters: world.chartersDone.length, at: new Date().toISOString(), name: colonyName(world) });
-      saveProfile();
+      recordResult();
     }
     view.lastWorld = world;
     view.update(world, world.decisions.length ? 1 : acc, now);
     uiTimer += dt;
     if (uiTimer > 0.25) { uiTimer = 0; ui.render(); }
   });
+  recordResult();
   ui.render(true);
 
   // hooks for automated screenshots and debugging

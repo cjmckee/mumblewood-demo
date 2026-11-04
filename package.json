@@ -13,7 +13,9 @@
     "prototype:recruit": "node tools/recruit-prototype.mjs",
     "test:ui:charter": "node tools/charter-ui-check.mjs",
     "prototype:charter": "node tools/charter-prototype.mjs",
-    "test:ui:charter-animation": "node tools/charter-animation-check.mjs"
+    "test:ui:charter-animation": "node tools/charter-animation-check.mjs",
+    "prototype:finale": "node tools/final-prototype.mjs",
+    "test:ui:finale": "node tools/final-ui-check.mjs"
   },
   "keywords": [],
   "author": "",

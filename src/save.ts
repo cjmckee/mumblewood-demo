@@ -9,8 +9,11 @@ export const SAVE_VERSION = 1;
 
 export interface SaveInfo { world: World; savedAt: string }
 
+/** Stable while a finished world is frozen; reloading it must not add another ledger entry. */
+export const runResultKey = (w: World) => `${w.seed}:${w.status}:${w.hour}:${w.rngState}`;
+
 export function saveWorld(w: World): boolean {
-  if (w.status !== 'playing') return clearSave();
+  if (w.status === 'lost') return clearSave();
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify({ v: SAVE_VERSION, savedAt: new Date().toISOString(), world: w }));
     return true;
@@ -23,7 +26,8 @@ export function loadSave(): SaveInfo | null {
     if (!raw) return null;
     const s = JSON.parse(raw);
     const w = s?.world as World | undefined;
-    if (s?.v !== SAVE_VERSION || !w || w.status !== 'playing') return null;
+    if (s?.v !== SAVE_VERSION || !w || !['playing', 'won'].includes(w.status)) return null;
+    if (w.status === 'won' && (!Array.isArray(w.chartersDone) || w.chartersDone.length !== 3)) return null;
     w.recipeBatching ??= true;
     w.startDate ??= { season: 'summer', day: 6 }; // Preserve the calendar of existing saves.
     w.gold ??= 0; w.caravan ??= null;
