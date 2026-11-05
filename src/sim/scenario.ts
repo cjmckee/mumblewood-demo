@@ -35,8 +35,9 @@ export interface Start {
   /**
    * how much the colony's comfort (0 to 1, see comfortOf) changes the strain rise: rise × (base − comfort × slope).
    * With base 1.4 and slope 1: a neglected town (0.1) strains 1.3×, a middling one (0.4) 1×, a great one (1.0) 0.4×.
+   * An optional piecewise curve supports balance experiments; the shipped default remains linear.
    */
-  comfortScale: { base: number; slope: number };
+  comfortScale: import('./comfort').ComfortScale;
   /**
    * strain relief, each a share of the current strain so a deeper hole means a bigger climb back: finishing a charter, and
    * a festival the player calls (base share if everyone eats, more if most also get a drink, more again if most get
