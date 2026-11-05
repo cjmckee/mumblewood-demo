@@ -21,7 +21,8 @@
     "prototype:finale": "node tools/final-prototype.mjs",
     "test:ui:finale": "node tools/final-ui-check.mjs",
     "prototype:comfort-feedback": "node tools/comfort-feedback-prototype.mjs",
-    "test:ui:comfort-feedback": "node tools/comfort-feedback-ui-check.mjs"
+    "test:ui:comfort-feedback": "node tools/comfort-feedback-ui-check.mjs",
+    "test:ui:comfort-game": "node tools/comfort-game-ui-check.mjs"
   },
   "keywords": [],
   "author": "",

@@ -6,12 +6,13 @@ import {
   keepsFresh, findSpot, canPlace, laborers, centerOf, built, Building, efficiencyAt, pathAt, MAP_SIZE, blockedReason, Errand, patientsAt, clinicAdmissions, lost, bedridden, spoilingFood, accepts, roomIn, FOODS, GOODS,
   recipesOf, recipeOn, optionOn, optionsOf, currentRecipe, orderedRecipes, INPUT_CAPACITY, OUTBOX_CAP, siteOk, rerollCost, REROLL_STEP, stockOf, recipeReach, charterHelpers, charterDef,
   costOf, researchLeft, researchStillNeeds, desks, feastCheck, festivalPreview, mealTotal, drinkTotal,
-  comfortParts, comfortOf, colonyComfort, comfortGaps, comfortFactor, strainPerDay, footprint, activeNeeds, standingOf, STANDINGS, NeedKey, winterFuelPerDay,
+  comfortParts, comfortOf, colonyComfort, comfortGaps, comfortFactor, comfortMilestoneView, strainPerDay, footprint, activeNeeds, standingOf, STANDINGS, NeedKey, winterFuelPerDay,
   sellPrice, renownOf, pavilionOf, larderOf, FEAST_MEALS, charterCounted, charterRequirements, basicsDone, researchOpen, edibleTotal, storePrio, colonyName, nameFrom, NAME_MAX, wantMet, wantPenalty, wantSupported, wantGap, tradeOf, TRADE_DEFS, workPrio, hasWork,
 } from '../sim/world';
 import { charterPreview, metricRoutes, Route } from '../sim/charterplan';
 import { START } from '../sim/scenario';
 import { comfortMultiplier } from '../sim/comfort';
+import { comfortChip, comfortCard } from './comfort';
 import { assess, rankForPlayer, Ranked, defsOf } from '../sim/advisor';
 import { economy, Account } from '../sim/economy';
 import type { IsoView, Picked } from '../render/iso';
@@ -254,6 +255,7 @@ export class UI {
   /** "start a new colony" asks once before throwing away the run in progress */
   private confirmNew = false;
   private strainOpen = false;
+  private comfortOpen = false;
   private help: string | null = null;
   private dialogKey = '';
   private celebrationStarted = new WeakMap<Decision, number | null>();
@@ -263,7 +265,7 @@ export class UI {
   resumeFinale(w: World) { if (w.status === 'won') this.finaleStarted.set(w, null); }
   resetForNewSettlement() {
     this.detail = null; this.open = false; this.resumeOpen = false;
-    this.festivalOpen = false; this.strainOpen = false; this.help = null; this.picking = null;
+    this.festivalOpen = false; this.strainOpen = false; this.comfortOpen = false; this.help = null; this.picking = null;
     this.confirmNew = false; this.peeking = false;
     this.nameInit = ''; this.nameDraft = null; this.nameSeed = -1;
     this.lastModal = ''; this.lastSheet = ''; this.lastPlaceBar = ''; this.lastPeekBar = ''; this.dialogKey = '';
@@ -300,11 +302,12 @@ export class UI {
   private sheetKey = '';
   private sheetScroll = new Map<string, number>();
   private returnFocus: { act: string; arg: string } | null = null;
-  get blocksSimulation() { return this.festivalOpen || this.strainOpen || this.picking != null || this.help != null || this.naming(this.getWorld()); }
+  get blocksSimulation() { return this.festivalOpen || this.strainOpen || this.comfortOpen || this.picking != null || this.help != null || this.naming(this.getWorld()); }
   /** the first charter is picked and the colony hasn't been named yet */
   private naming(w: World) { return w.status === 'playing' && !w.named && !!(w.charter || w.chartersDone.length) && !this.resumeOpen; }
 
   private dismissDialog() {
+    if (this.comfortOpen) { this.comfortOpen = false; this.render(true); return; }
     if (this.getWorld().decisions.length || this.resumeOpen || this.getWorld().status !== 'playing') return;
     this.festivalOpen = false; this.strainOpen = false; this.picking = null; this.help = null;
     this.render(true);
@@ -585,6 +588,8 @@ export class UI {
         this.picking = null; this.lastModal = ''; break; }
       case 'errand-later': this.send({ type: 'resolve', option: 0 }); this.lastModal = ''; break;
       case 'festival-open': this.festivalOpen = true; this.lastModal = ''; break;
+      case 'comfort-open': this.comfortOpen = true; this.lastModal = ''; break;
+      case 'comfort-close': this.comfortOpen = false; this.lastModal = ''; break;
       case 'strain-open': this.strainOpen = true; this.lastModal = ''; break;
       case 'strain-close': this.strainOpen = false; this.lastModal = ''; break;
       case 'strain-festival': this.strainOpen = false; this.festivalOpen = true; this.lastModal = ''; break;
@@ -684,6 +689,7 @@ export class UI {
         </div>
       </div>
       <div class="res">${res}</div>
+      ${comfortChip(w)}
       <section class="status${this.charterCollapsed ? ' is-collapsed' : ''}" aria-label="Charter and colony status">
         <button type="button" class="status-toggle" data-act="charter-toggle" aria-expanded="${!this.charterCollapsed}" aria-controls="colony-status-details" aria-label="${this.charterCollapsed ? 'Expand' : 'Collapse'} charter details: ${esc(title)}">
           <span class="status-heading"><span class="ch-name">${esc(title)}</span><span class="ch-tier">${prog ? `Charter ${w.chartersDone.length + 1}/3 · ${Math.round(prog.ratio * 100)}%` : 'Colony status'}${issueCount ? ` · ⚠ ${issueCount}` : ''}</span></span>
@@ -791,7 +797,7 @@ export class UI {
     const worst = gaps.filter(g => g.avg < 0.7).slice(0, 2).map(g => NEED_FIX[g.need]);
     return `<div class="card-wrap event"><p class="eyebrow">Frontier strain</p><h2>Strain ${Math.round(w.strain)}, rising ${strainPerDay(w).toFixed(1)} a day</h2>
       <p class="lede">Comfort ${pct(comfort)} · improve the weakest needs to slow strain.</p>
-      <details data-key="strain-math"><summary>How strain works</summary><p class="prefs">Comfort <b>${pct(comfort)}</b>, so strain rises at <b>${factor.toFixed(2)}×</b>. A fully comfortable colony would rise at ${comfortMultiplier(1, START.comfortScale).toFixed(1)}×.</p>
+      <details data-key="strain-math"><summary>How strain works</summary><p class="prefs">Comfort <b>${pct(comfort)}</b>, so its base strain multiplier is <b>${factor.toFixed(2)}×</b>, before other bonuses. A fully comfortable colony has a base multiplier of ${comfortMultiplier(1, START.comfortScale).toFixed(1)}×.${comfortMilestoneView(w).strain < 1 ? ` Comfort rewards also reduce passive growth by ${Math.round((1 - comfortMilestoneView(w).strain) * 100)}%.` : ''}</p>
       </details><p class="terms">${STANDINGS[st]} needs</p>
       <div class="ledger">${rows}</div>
       <details data-key="strain-future"><summary>Season & next charter</summary>${seasonLine ? `<p class="terms">${esc(seasonLine)}</p>` : ''}${nextLine}</details>
@@ -1241,6 +1247,7 @@ export class UI {
     if (d?.kind === 'charter-complete' && this.resumeOpen) this.celebrationStarted.set(d, null);
     if (w.status !== 'playing') html = this.endScreen(w);
     else if (this.resumeOpen) html = this.resumeCard(w);
+    else if (this.comfortOpen) html = comfortCard(w);
     else if (d) {
       switch (d.kind) {
         case 'charter-complete':
@@ -1309,19 +1316,19 @@ export class UI {
     const decisionKey = d ? JSON.stringify(d) : '';
     if (decisionKey !== this.peekKey) { this.peeking = false; this.peekKey = decisionKey; }
     if (!d || this.resumeOpen || w.status !== 'playing') this.peeking = false;
-    if (html && d && !this.resumeOpen && w.status === 'playing') html = html.replace(/^(\s*<div class="card-wrap[^"]*"[^>]*>)/, `$1<button type="button" class="peek-btn" data-act="peek" title="Look at the colony" aria-label="Hide this choice and look at the colony">${EYE_GLYPH}</button>`);
+    if (html && d && !this.resumeOpen && !this.comfortOpen && w.status === 'playing') html = html.replace(/^(\s*<div class="card-wrap[^"]*"[^>]*>)/, `$1<button type="button" class="peek-btn" data-act="peek" title="Look at the colony" aria-label="Hide this choice and look at the colony">${EYE_GLYPH}</button>`);
     const bar = this.root.querySelector<HTMLElement>('#peekbar')!;
     const title = d ? (html.match(/<h2>(.*?)<\/h2>/)?.[1] ?? '') : '';
     if (w.status === 'won' && this.finalePeeking.has(w)) {
       const next = `<span class="pk-title">${esc(colonyName(w))} · town charter granted</span><button type="button" data-act="finale-back">Back to celebration</button>`;
       if (next !== this.lastPeekBar) { bar.innerHTML = next; this.lastPeekBar = next; }
       bar.hidden = false; html = '';
-    } else if (this.peeking) {
+    } else if (this.peeking && !this.comfortOpen) {
       const next = `<span class="pk-paused">Ⅱ Paused</span><span class="pk-title">${title}</span><button type="button" data-act="peek-back">Back to choice</button>`;
       if (next !== this.lastPeekBar) { bar.innerHTML = next; this.lastPeekBar = next; }
       bar.hidden = false; html = '';
     } else bar.hidden = true;
-    const nextDialogKey = d ? JSON.stringify(d) : this.naming(w) ? `name:${this.nameInit}` : this.help ? `help:${this.help}` : this.festivalOpen ? 'festival' : this.strainOpen ? 'strain' : this.picking != null ? `errand:${this.picking}` : this.resumeOpen ? 'resume' : w.status;
+    const nextDialogKey = this.comfortOpen && w.status === 'playing' && !this.resumeOpen ? 'comfort' : d ? JSON.stringify(d) : this.naming(w) ? `name:${this.nameInit}` : this.help ? `help:${this.help}` : this.festivalOpen ? 'festival' : this.strainOpen ? 'strain' : this.picking != null ? `errand:${this.picking}` : this.resumeOpen ? 'resume' : w.status;
     const changedDialog = nextDialogKey !== this.dialogKey;
     const wasOpen = !el.hidden;
     if (html && !wasOpen) {

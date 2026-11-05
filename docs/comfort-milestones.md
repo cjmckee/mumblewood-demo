@@ -1,6 +1,6 @@
-# Comfort milestones: opt-in prototype
+# Comfort milestones
 
-This implements three threshold tracks with a trailing 24-hour average. Any active track grants level 1; any two grant level 2; all three grant level 3. Rewards are cumulative. This is an experimental world setting, not the main game's new default or a claim that milestones are proven better than a continuous curve.
+This implements three threshold tracks with a trailing 24-hour average. Any active track grants level 1; any two grant level 2; all three grant level 3. Rewards are cumulative. Balanced rewards are enabled for normal player games, including resumed playing saves. Alternative reward profiles and raw simulation control worlds remain explicitly configurable for research. Existing saves without history begin a 24-hour warmup when resumed. See [the integrated feedback screen](comfort-feedback-prototype.md).
 
 ## Scores and charter requirements
 
