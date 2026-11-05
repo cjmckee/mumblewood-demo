@@ -44,7 +44,7 @@ If the shelf cannot hold the extra batch, the earned bonus waits in a saved buff
 * Six-hour, day and week advancement, showing rolling scores, requirements, level, mood, strain rate, construction, bonus batches and colony news.
 * All four reward sets plus rewards-off, with identical starting state on restart.
 
-The bounded investment policy matches the previous experiment: reserve one original worker and permit one new project for seven days; existing sites, normal events and recruitment remain active; normal construction and staffing resume for the follow-up week. Save keeps the worker in general labor. It is not unrestricted or optimal human play. `docs/comfort-milestone-checkpoints.json` preserves the checkpoint fixtures so the page builds without rerunning a scout. The main game does not enable the feature automatically. History, profile, bonus RNG, counters and pending output survive world JSON serialization when enabled.
+The bounded investment policy matches the previous experiment: reserve one original worker and permit one new project for seven days; existing sites, normal events and recruitment remain active; normal construction and staffing resume for the follow-up week. Save keeps the worker in general labor. It is not unrestricted or optimal human play. `docs/comfort-milestone-checkpoints.json` preserves the checkpoint fixtures so the page builds without rerunning a scout. These research continuations configure rewards explicitly. Normal player games enable balanced rewards automatically. History, profile, bonus RNG, counters and pending output survive world JSON serialization when enabled.
 
 ## Threshold calibration and matched tests
 
