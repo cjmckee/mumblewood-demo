@@ -2,7 +2,7 @@
 
 This presentation prototype lives on `codex/comfort-feedback-prototype`. It does not wire a new HUD into the game or enable milestone rewards for normal settlements; integration follows review.
 
-The compact comfort button opens one screen containing the current level, active rewards, all three rolling tracks and their requirements, the next unlock and a hint for the nearest missing track. The reward ladder expands within that same screen. There are no tabs, separate after-charter section or charter forecast link. A short explanation notes that requirements rise as charters are completed.
+The compact comfort button opens one screen containing the current level, active rewards, all three rolling tracks and their requirements, concise improvement hints beside tracks below their requirements. The reward ladder lists each level and its active/locked state within that same screen; there is no separate next-level card. There are no tabs, separate after-charter section or charter forecast link. A short explanation notes that requirements rise as charters are completed.
 
 Examples cover one, two and three active tracks, a village housing gap and an eight-hour warmup. Optional example controls adjust standing, averages and recorded history. These are labelled illustration data, not a live save. Scoring and reward calculations use the existing milestone helpers with balanced rewards; no scoring or balance rules change.
 

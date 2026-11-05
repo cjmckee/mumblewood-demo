@@ -5,6 +5,7 @@ const dialog = $('comfort-dialog') as HTMLDialogElement;
 const names = { homes: 'Homes', meals: 'Meals', evenings: 'Evenings' };
 const icons = { homes: 'cottage', meals: 'meal', evenings: 'stage' };
 const stages = ['Camp', 'Settlement', 'Village'];
+const improvements: Record<Track, string> = { homes: 'Add cozy cottage beds to improve homes.', meals: 'Serve better-quality cooked meals at a dining table.', evenings: 'Add a bard’s stage, or staff and supply a tavern, to improve evenings.' };
 const roman = ['0', 'I', 'II', 'III'];
 const examples = {
   preparing: { standing: 1, scores: [70, 75, 45], hours: 24 },
@@ -40,15 +41,11 @@ function trackRows(view: View) {
   return view.tracks.map(t => {
     const active = view.ready && meets(t);
     const status = !view.ready ? 'Gathering history' : active ? 'Active' : 'Inactive';
-    return `<article class="track-row ${active ? 'qualifies' : ''}"><div class="track-heading"><b>${icon(icons[t.track])}${names[t.track]}</b><span class="status">${status}</span></div><div class="track-numbers"><span>${pct(t.average)} <small>rolling average</small></span><span>${pct(t.requirement)} <small>needed</small></span></div><div class="meter" aria-hidden="true"><span style="width:${pct(t.average)}"></span><i style="left:${pct(t.requirement)}"></i></div></article>`;
+    return `<article class="track-row ${active ? 'qualifies' : ''}"><div class="track-heading"><b>${icon(icons[t.track])}${names[t.track]}</b><span class="status">${status}</span></div><div class="track-numbers"><span>${pct(t.average)} <small>rolling average</small></span><span>${pct(t.requirement)} <small>needed</small></span></div><div class="meter" aria-hidden="true"><span style="width:${pct(t.average)}"></span><i style="left:${pct(t.requirement)}"></i></div>${!meets(t) ? `<p class="track-hint">${improvements[t.track]}</p>` : ''}</article>`;
   }).join('');
 }
 function nowPanel(v: View) {
-  const inactive = v.tracks.filter(t => !meets(t)).sort((a, b) => (a.requirement - a.average) - (b.requirement - b.average));
-  const target = inactive[0];
-  const actions: Record<Track, string> = { homes: 'Provide cozy cottage beds for more settlers.', meals: 'Serve better-quality cooked meals at a table.', evenings: 'Improve recreation with music or tavern evenings.' };
-  const nextReward = v.level === 0 ? '5% slower strain growth' : v.level === 1 ? '5% faster workshop work' : '5% chance of doubled workshop output';
-  return `<section id="comfort-overview" aria-label="Current comfort"><div class="level-card"><span class="eyebrow">Current comfort</span><h3>Level ${roman[v.level]} <span>${v.ready ? `${v.level}/3 tracks active` : 'First day in progress'}</span></h3><p>${!v.ready ? `Rewards start after a full 24 hours of history. ${24 - v.samples} more hours to record.` : v.level ? perks(v.level).join('<br>') : 'No comfort rewards active yet.'}</p></div><p class="explain">Each track uses provision over the last 24 hours. A brief dip affects part of that average; rewards change when the average crosses the requirement. Requirements rise as charters are completed.</p>${trackRows(v)}<section class="next-step"><p class="eyebrow">${!v.ready ? 'While history builds' : v.level === 3 ? 'Keep it thriving' : 'Your next level'}</p><h4>${!v.ready ? 'Keep provision steady through the first day' : v.level === 3 ? 'All three tracks are active' : `Level ${roman[Math.min(3, v.level + 1)]} adds ${nextReward}`}</h4><p>${target ? `${names[target.track]}: ${Math.round((target.requirement - target.average) * 100)} points below the requirement. ${actions[target.track]} Improvements need time to affect the rolling average.` : 'Keep provision above the requirements to retain your rewards.'}</p></section>${rewardLadder(v.level)}</section>`;
+  return `<section id="comfort-overview" aria-label="Current comfort"><div class="level-card"><span class="eyebrow">Current comfort</span><h3>Level ${roman[v.level]} <span>${v.ready ? `${v.level}/3 tracks active` : 'First day in progress'}</span></h3><p>${!v.ready ? `Rewards start after a full 24 hours of history. ${24 - v.samples} more hours to record.` : v.level ? perks(v.level).join('<br>') : 'No comfort rewards active yet.'}</p></div><p class="explain">Each track uses provision over the last 24 hours. A brief dip affects part of that average; rewards change when the average crosses the requirement. Requirements rise as charters are completed.</p>${trackRows(v)}${rewardLadder(v.level)}</section>`;
 }
 function rewardLadder(level: number) {
   const rewards = ['5% slower strain growth', 'Also 5% faster workshop work', 'Also 5% chance of doubled workshop output'];

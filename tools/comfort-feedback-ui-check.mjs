@@ -15,8 +15,12 @@ try {
   await page.locator('#open-comfort').focus(); await page.keyboard.press('Enter');
   assert.equal(await page.locator('dialog').evaluate(d => d.open), true);
   assert.equal(await page.locator('.track-row.qualifies').count(), 2);
-  assert.match(await page.locator('.next-step').innerText(), /Evenings: 5 points below/);
-  assert.match(await page.locator('.next-step').innerText(), /Level III adds 5% chance/);
+  assert.equal(await page.locator('.next-step').count(), 0);
+  assert.equal(await page.locator('.track-hint').count(), 1);
+  assert.match(await page.locator('.track-hint').innerText(), /bard’s stage.*tavern/);
+  await page.locator('.ladder summary').click();
+  assert.equal(await page.locator('.ladder li.good').count(), 2);
+  assert.equal(await page.locator('.ladder li').last().locator('small').innerText(), 'Locked');
   await page.screenshot({ path: `dist/comfort-feedback/${width}-now.png`, fullPage: true });
   await page.keyboard.press('Escape');
   assert.equal(await page.locator('dialog').evaluate(d => d.open), false);
@@ -25,7 +29,8 @@ try {
   assert.equal(await page.locator('#hud-level').innerText(), 'Comfort III');
   await page.locator('#open-comfort').click();
   assert.equal(await page.locator('.track-row.qualifies').count(), 3);
-  assert.match(await page.locator('.next-step').innerText(), /All three tracks are active/);
+  assert.equal(await page.locator('.track-hint').count(), 0);
+  assert.equal(await page.locator('.ladder li.good').count(), 3);
   await page.locator('#close-dialog').click();
   await page.locator('#example-scenario').selectOption('warming');
   assert.match(await page.locator('#hud-count').innerText(), /8\/24h/);
