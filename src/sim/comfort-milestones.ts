@@ -1,4 +1,4 @@
-/** Opt-in prototype. Stable scores keep history comparable when charter requirements rise. */
+/** Stable scores keep history comparable when charter requirements rise. Player games use balanced rewards. */
 export const TRACKS = ['homes', 'meals', 'evenings'] as const;
 export type Track = typeof TRACKS[number];
 export type RewardProfile = 'balanced' | 'steady' | 'abundance' | 'resilience';

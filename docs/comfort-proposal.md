@@ -4,9 +4,9 @@
 
 Make the existing comfort system more impactful and easier to understand before adding goods or production chains. Comfort measures living conditions and controls future strain growth. Personal wants affect mood separately. Current comfort balance is unchanged by the charter celebration work below.
 
-## Balance experiment — implemented, opt-in
+## Comfort rewards — enabled for player games
 
-The latest [milestone prototype](comfort-milestones.md) explores a separate hypothesis: rolling homes/meals/evenings thresholds, rising charter expectations, and cumulative strain/speed/double-output rewards. It includes a playable phone preview and reward comparisons. It remains opt-in, alongside the continuous-curve experiments below; neither system has been selected as the final balance.
+The agreed [comfort milestones](comfort-milestones.md) are enabled for new and resumed playing settlements: rolling homes/meals/evenings thresholds, rising charter expectations, and cumulative balanced strain/speed/double-output rewards. The [live comfort screen](comfort-feedback-prototype.md) shows scores, requirements, rewards and improvement hints. Existing saves without history begin a 24-hour warmup. Alternate reward profiles and the continuous-curve experiments below remain research options; the normal continuous strain curve stays linear. Further tuning awaits player feedback.
 
 The current normal multiplier is `1.4 − comfort`. For ten settlers around day 20, moving from 60% to 90% comfort saves about two strain points over ten days, assuming the conditions remain fixed and no other modifiers or relief. That can be hard to perceive beside direct mood effects.
 
@@ -26,7 +26,7 @@ Compare matched comfort-first and charter-first strategies. Measure strain, mood
 
 ## Feedback proposal — follow-up
 
-Show comfort, current strain growth and the weakest actionable needs together. Explain the return on an improvement. Preview the next standing's expectations before charter completion so players can prepare. The new completion card explains the change at the moment it occurs; it does not replace advance warning.
+The integrated HUD and single comfort screen show the current level, rolling scores versus requirements, active rewards and improvement hints. The strain dialog explains the base multiplier and active comfort reduction. Charter celebrations explain changing expectations when a charter completes. A separate forecast or next-level card was removed during review; it is not part of the accepted screen.
 
 ## Charter celebration — implemented
 
@@ -37,7 +37,7 @@ After the first and second completed charters, show a paused card before the nex
 3. Explain new comfort needs and increased housing/meal standards. Seasonal changes appear only when they become newly relevant. Show the separate increase in unmet personal-want mood cost.
 4. Continue to the existing choices; the next charter is still chosen before its cornerstone.
 
-The acknowledgement is saved with the decision queue. Reloading or inspecting the colony cannot replay rewards. The third charter retains the victory screen. The player can inspect the colony while the card waits; simulation remains paused. Existing saves need no migration and do not receive retrospective cards.
+The acknowledgement is saved with the decision queue. Reloading or inspecting the colony cannot replay rewards. The third charter shows the final animated celebration, settlement statistics, thanks and the option to start a new settlement. The player can inspect the colony while the card waits; simulation remains paused. Existing saves need no migration and do not receive retrospective cards.
 
 Review: `npm run build && npm run prototype:charter`, then open `dist/charter-prototype/settlement.html` or `village.html`. The pages are standalone presentation previews with Replay, Settlement/Village and Reduce motion controls. They use the same card and scene components as the game, without WebGL, game startup, local storage or external assets. Actual completion is covered by `tools/charter-transition-check.ts`. Serve the repository on port 8765 and run `npm run test:ui:charter` for browser checks and screenshots.
 
@@ -52,4 +52,4 @@ A 2.4-second SVG/CSS scene now plays in the celebration header:
 - System reduced motion and the game's calm setting show the finished illustration immediately. Resumed cards also show the final scene. Live redraws preserve elapsed time, and inspecting the colony does not restart the sequence.
 - Retains the same saved acknowledgement and reward data; the illustration grants no buildings and changes no simulation timing or payouts.
 
-The comfort curves are now opt-in experiments; advance warning remains a proposal. Run `npm run test:ui:charter-animation` after building the game and preview (with the repository served locally) to check motion, redraw continuity, early Continue, inspection, offline preview and reduced motion. `PREVIEW_ORIGIN` selects a local server other than `http://127.0.0.1:8765`. The check captures exact-timestamp frames for animation recordings in `dist/charter-prototype/frames/`.
+Alternate comfort curves remain opt-in research experiments; balanced milestone rewards and the live feedback screen are enabled for player games. Run `npm run test:ui:charter-animation` after building the game and preview (with the repository served locally) to check motion, redraw continuity, early Continue, inspection, offline preview and reduced motion. `PREVIEW_ORIGIN` selects a local server other than `http://127.0.0.1:8765`. The check captures exact-timestamp frames for animation recordings in `dist/charter-prototype/frames/`.

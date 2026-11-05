@@ -1,0 +1,55 @@
+import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
+import { readFileSync } from 'node:fs';
+const { chromium } = createRequire(import.meta.url)('playwright');
+const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', args: ['--no-sandbox'] });
+try {
+ for (const width of [1440, 390, 320]) {
+  const context = await browser.newContext({ viewport: { width, height: 900 }, offline: true });
+  const page = await context.newPage(), errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.setContent(readFileSync('dist/comfort-feedback/index.html', 'utf8'));
+  assert.equal(await page.locator('#hud-level').innerText(), 'Comfort II');
+  assert.equal(await page.locator('[role=tab], #open-next, #charter-warning').count(), 0);
+  await page.screenshot({ path: `dist/comfort-feedback/${width}-hud.png`, fullPage: true });
+  await page.locator('#open-comfort').focus(); await page.keyboard.press('Enter');
+  assert.equal(await page.locator('dialog').evaluate(d => d.open), true);
+  assert.equal(await page.locator('.track-row.qualifies').count(), 2);
+  assert.equal(await page.locator('.next-step').count(), 0);
+  assert.equal(await page.locator('.track-hint').count(), 1);
+  assert.match(await page.locator('.track-hint').innerText(), /bard’s stage.*tavern/);
+  await page.locator('.ladder summary').click();
+  assert.equal(await page.locator('.ladder li.good').count(), 2);
+  assert.equal(await page.locator('.ladder li').last().locator('small').innerText(), 'Locked');
+  await page.screenshot({ path: `dist/comfort-feedback/${width}-now.png`, fullPage: true });
+  await page.keyboard.press('Escape');
+  assert.equal(await page.locator('dialog').evaluate(d => d.open), false);
+  assert.equal(await page.locator('#open-comfort').evaluate(e => e === document.activeElement), true);
+  await page.locator('#example-scenario').selectOption('thriving');
+  assert.equal(await page.locator('#hud-level').innerText(), 'Comfort III');
+  await page.locator('#open-comfort').click();
+  assert.equal(await page.locator('.track-row.qualifies').count(), 3);
+  assert.equal(await page.locator('.track-hint').count(), 0);
+  assert.equal(await page.locator('.ladder li.good').count(), 3);
+  await page.locator('#close-dialog').click();
+  await page.locator('#example-scenario').selectOption('warming');
+  assert.match(await page.locator('#hud-count').innerText(), /8\/24h/);
+  await page.locator('#open-comfort').click();
+  assert.equal(await page.locator('.track-row.qualifies').count(), 0);
+  assert.match(await page.locator('#comfort-body').innerText(), /16 more hours/);
+  await page.keyboard.press('Escape');
+  await page.locator('#example-scenario').selectOption('village');
+  await page.locator('#open-comfort').click();
+  assert.equal(await page.locator('.track-row').count(), 3);
+  assert.equal(await page.locator('[role=tab]').count(), 0);
+  await page.keyboard.press('Escape');
+  await page.locator('#example-scenario').selectOption('preparing');
+  await page.locator('.examples summary').click();
+  await page.locator('#example-evenings').fill('50');
+  assert.equal(await page.locator('#hud-level').innerText(), 'Comfort III', 'exact threshold equality activates a track');
+  assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'page fits viewport');
+  assert.deepEqual(errors, []);
+  await context.close();
+  console.log(`${width}px: single-screen HUD/details, active rewards, warmup, standing thresholds, keyboard and focus passed`);
+ }
+} finally { await browser.close(); }

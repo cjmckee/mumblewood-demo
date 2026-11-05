@@ -49,7 +49,7 @@ Later events, festivals, recruitment and choices diverge. Whole-continuation mea
 
 ## Recommendation
 
-The [milestone prototype](comfort-milestones.md) adds opt-in rolling homes/meals/evenings tracks, rising charter requirements and four cumulative reward sets, including full-batch doubling. The playable phone preview and matched choice tests retain the old default. These are new design hypotheses, not a finding that milestones are the best system.
+The [milestone system](comfort-milestones.md) adds rolling homes/meals/evenings tracks, rising charter requirements and cumulative rewards, including full-batch doubling. Balanced rewards are now enabled for normal player games with the live feedback screen. Historical matched choice tests retain explicit control settings and alternate profiles; their results do not establish a best reward system.
 
 The [investment-choice follow-up](comfort-investment.md) compares a cottage/stage, an extra kitchen and saving from four affordable checkpoints under current/gentler/no-growth. The passive-strain payoff from these small upgrades is modest; provision can improve comfort too. This does not establish gentler as the correct curve or justify new items.
 
@@ -71,4 +71,4 @@ npm run check
 
 The probe writes full checkpoints, summaries and daily traces under `dist/comfort-probe/<seed>/`. `docs/comfort-curve-results.json` is a compact export of those runs. The comparison generator embeds that checked-in export so the review page builds without rerunning the simulations. It has no network dependencies; the controls compare both candidates with the default using the same calculation as the simulation.
 
-For an independent experiment, set `START.comfortScale.curve` to `STRONG_COMFORT_CURVE` or `REWARD_COMFORT_CURVE` before ticking the world. This is a scenario setting, not a user-save field. No production default has been promoted.
+For an independent experiment, set `START.comfortScale.curve` to `STRONG_COMFORT_CURVE` or `REWARD_COMFORT_CURVE` before ticking the world. This is a scenario setting, not a user-save field. No alternative continuous strain curve has been promoted; balanced milestone rewards are enabled separately for player games.

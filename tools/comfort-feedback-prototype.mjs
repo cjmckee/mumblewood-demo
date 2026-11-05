@@ -1,0 +1,12 @@
+import { build } from 'esbuild';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+const result = await build({ entryPoints: ['tools/comfort-feedback-entry.ts'], bundle: true, minify: true, format: 'iife', target: 'es2020', write: false });
+const art = await build({ stdin: { contents: "export { icon } from './src/ui/icons';", resolveDir: process.cwd() }, bundle: true, format: 'esm', write: false });
+const { icon } = await import(`data:text/javascript;base64,${Buffer.from(art.outputFiles[0].text).toString('base64')}`);
+const tree = (x, y, s) => `<g transform="translate(${x} ${y}) scale(${s})"><path d="M-2 0h4v25h-4z" fill="#65523a"/><path d="m0-30 18 35h-9l16 20h-50l16-20h-9z" fill="#304d37"/></g>`;
+const building = (id, x, y, size) => `<g transform="translate(${x} ${y}) scale(${size / 24})">${icon(id).replace(/^<svg[^>]*>/, '').replace(/<\/svg>$/, '')}</g>`;
+const woodland = `<svg class="woodland" viewBox="0 0 950 280" role="img" aria-label="An illustrated woodland settlement with cottages, a dining hall and lanterns."><ellipse cx="470" cy="205" rx="380" ry="60" fill="#334b32"/><path d="M200 215q240-90 510 0" stroke="#9b8558" stroke-width="12" fill="none" opacity=".4"/>${[80, 150, 795, 860, 910].map((x, i) => tree(x, 125 + i % 2 * 30, 1.5)).join('')}${building('cottage', 270, 95, 110)}${building('cottage', 550, 80, 100)}${building('dining', 420, 125, 105)}${building('leanto', 180, 150, 95)}${building('flowerbed', 655, 185, 60)}${building('lantern', 375, 192, 46)}${building('lantern', 520, 195, 45)}</svg>`;
+const html = readFileSync('tools/comfort-feedback.html', 'utf8').replace('<!--WOODLAND-->', () => woodland).replace('/*BUNDLE*/', () => result.outputFiles[0].text.replace(/<\/script/gi, '<\\/script'));
+mkdirSync('dist/comfort-feedback', { recursive: true });
+writeFileSync('dist/comfort-feedback/index.html', html);
+console.log('dist/comfort-feedback/index.html');
