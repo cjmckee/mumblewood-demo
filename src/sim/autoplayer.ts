@@ -1041,7 +1041,8 @@ export function staffByNeed(w: World): { woodcutter: number; rawFood: number; wh
   return { woodcutter, rawFood, why: `wood: use ${woodUse.toFixed(0)}/day, stock ${Math.floor(w.res.wood)} of ${Math.round(woodTarget)}, ${woodPer.toFixed(1)} per worker → ${woodcutter} · raw food: use ${rawUse.toFixed(0)}/day, stock ${Math.floor(rawStock(w))} of ${Math.round(rawTarget)}, ${rawPer.toFixed(1)} per worker → ${rawFood}` };
 }
 
-export function autoBuild(w: World) {
+/** Disable new construction when a caller manages a bounded project budget; staffing and food rules still run. */
+export function autoBuild(w: World, options: { construction?: boolean } = {}) {
   rememberEconomy(w);
   if (BOT.recipes) manageRecipes(w);
   const kind = charterKind(w);
@@ -1061,7 +1062,7 @@ export function autoBuild(w: World) {
   } : undefined;
   // running low on food opens an extra site, so a new forager never waits behind flowerbeds
   const maxSites = 2 + (foodTotal(w) < pop * 4 ? 1 : 0);
-  if (sites(w).length < maxSites) {
+  if (options.construction !== false && sites(w).length < maxSites) {
     const want: string[] = [];
     // wood is the economy: keep about one woodcutter per three settlers, more while short
 
@@ -1185,7 +1186,7 @@ export function autoBuild(w: World) {
   }
   // lay paths from each doorway towards the hearth: right away for path charters, otherwise once wood is comfortable
   const planned = w.paths.filter(p => p === 1).length;
-  if (w.res.wood > 60 && Math.round(w.hour) % 24 === 9) {
+  if (options.construction !== false && w.res.wood > 60 && Math.round(w.hour) % 24 === 9) {
     for (const b of built(w)) {
       if (bdef(b).decor || bdef(b).walkable || b.def === 'hearth') continue;
       let { x, y } = doorTile(b.def, b.x, b.y, b.rot);
@@ -1196,7 +1197,7 @@ export function autoBuild(w: World) {
     }
   }
   // experiment: a small high-priority food pile between the kitchen and the dining hall
-  if (BOT.foodDepot && !w.buildings.some(b => b.uid === depots.get(w)) && built(w).some(b => b.def === 'storehouse') && built(w).some(b => b.def === 'dining')) {
+  if (options.construction !== false && BOT.foodDepot && !w.buildings.some(b => b.uid === depots.get(w)) && built(w).some(b => b.def === 'storehouse') && built(w).some(b => b.def === 'dining')) {
     const near = centroid(w, ['dining', 'kitchen']);
     const spot = findSpot(w, 'stockpile', near.x, near.y, true);
     if (spot && !apply(w, { type: 'place', def: 'stockpile', x: spot.x, y: spot.y })) depots.set(w, w.buildings[w.buildings.length - 1].uid);

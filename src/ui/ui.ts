@@ -6,11 +6,12 @@ import {
   keepsFresh, findSpot, canPlace, laborers, centerOf, built, Building, efficiencyAt, pathAt, MAP_SIZE, blockedReason, Errand, patientsAt, clinicAdmissions, lost, bedridden, spoilingFood, accepts, roomIn, FOODS, GOODS,
   recipesOf, recipeOn, optionOn, optionsOf, currentRecipe, orderedRecipes, INPUT_CAPACITY, OUTBOX_CAP, siteOk, rerollCost, REROLL_STEP, stockOf, recipeReach, charterHelpers, charterDef,
   costOf, researchLeft, researchStillNeeds, desks, feastCheck, festivalPreview, mealTotal, drinkTotal,
-  comfortParts, comfortOf, colonyComfort, comfortGaps, strainPerDay, footprint, activeNeeds, standingOf, STANDINGS, NeedKey, winterFuelPerDay,
+  comfortParts, comfortOf, colonyComfort, comfortGaps, comfortFactor, strainPerDay, footprint, activeNeeds, standingOf, STANDINGS, NeedKey, winterFuelPerDay,
   sellPrice, renownOf, pavilionOf, larderOf, FEAST_MEALS, charterCounted, charterRequirements, basicsDone, researchOpen, edibleTotal, storePrio, colonyName, nameFrom, NAME_MAX, wantMet, wantPenalty, wantSupported, wantGap, tradeOf, TRADE_DEFS, workPrio, hasWork,
 } from '../sim/world';
 import { charterPreview, metricRoutes, Route } from '../sim/charterplan';
 import { START } from '../sim/scenario';
+import { comfortMultiplier } from '../sim/comfort';
 import { assess, rankForPlayer, Ranked, defsOf } from '../sim/advisor';
 import { economy, Account } from '../sim/economy';
 import type { IsoView, Picked } from '../render/iso';
@@ -785,12 +786,12 @@ export class UI {
       : sea.season === 'spring' && st >= 1 ? (START.seasons.springFresh ? 'Spring: people want something fresh now and then: berries, apples, fish or skewers.' : 'Spring: home heating ends, crops return, and fishing improves. Mud slows off-path travel and construction.')
       : sea.season === 'summer' && st >= 1 ? 'Summer: people want a drink each day in the heat.' : '';
     const pct = (x: number) => `${Math.round(x * 100)}%`;
-    const factor = Math.max(0.2, START.comfortScale.base - comfort * START.comfortScale.slope);
+    const factor = comfortFactor(w, comfort);
     const rows = gaps.map(g => `<button type="button" data-act="need" data-arg="${g.need}" class="lg-row ${g.avg >= 0.7 ? 'lg-good' : 'lg-bad'}"><span>${NEED_NAMES[g.need]}</span><i><b style="width:${Math.round(g.avg * 100)}%"></b></i><em>${pct(g.avg)} →</em></button>`).join('');
     const worst = gaps.filter(g => g.avg < 0.7).slice(0, 2).map(g => NEED_FIX[g.need]);
     return `<div class="card-wrap event"><p class="eyebrow">Frontier strain</p><h2>Strain ${Math.round(w.strain)}, rising ${strainPerDay(w).toFixed(1)} a day</h2>
       <p class="lede">Comfort ${pct(comfort)} · improve the weakest needs to slow strain.</p>
-      <details data-key="strain-math"><summary>How strain works</summary><p class="prefs">Comfort <b>${pct(comfort)}</b>, so strain rises at <b>${factor.toFixed(2)}×</b>. A fully comfortable colony would rise at ${Math.max(0.2, START.comfortScale.base - START.comfortScale.slope).toFixed(1)}×.</p>
+      <details data-key="strain-math"><summary>How strain works</summary><p class="prefs">Comfort <b>${pct(comfort)}</b>, so strain rises at <b>${factor.toFixed(2)}×</b>. A fully comfortable colony would rise at ${comfortMultiplier(1, START.comfortScale).toFixed(1)}×.</p>
       </details><p class="terms">${STANDINGS[st]} needs</p>
       <div class="ledger">${rows}</div>
       <details data-key="strain-future"><summary>Season & next charter</summary>${seasonLine ? `<p class="terms">${esc(seasonLine)}</p>` : ''}${nextLine}</details>

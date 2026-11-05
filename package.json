@@ -14,6 +14,10 @@
     "test:ui:charter": "node tools/charter-ui-check.mjs",
     "prototype:charter": "node tools/charter-prototype.mjs",
     "test:ui:charter-animation": "node tools/charter-animation-check.mjs",
+    "prototype:comfort": "node tools/comfort-prototype.mjs",
+    "test:ui:comfort": "node tools/comfort-ui-check.mjs",
+    "prototype:milestones": "node tools/comfort-milestones-prototype.mjs",
+    "test:ui:milestones": "node tools/comfort-milestones-ui-check.mjs",
     "prototype:finale": "node tools/final-prototype.mjs",
     "test:ui:finale": "node tools/final-ui-check.mjs"
   },

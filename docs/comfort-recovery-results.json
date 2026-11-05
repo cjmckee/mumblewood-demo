@@ -1,0 +1,1121 @@
+{
+  "sourceBaseCommit": "908c10ea5f219a6c9dd04c1f117be1fb99df16ea",
+  "method": "Three selected situations from two seeds. Each has two curves and shock/control arms for 14 days, repeated with ordinary events and with future storyteller events deferred and routine recruits declined. These are 24 continuations, not independent samples. Festivals remain active. All service arms defer the founders feast.",
+  "controlled": {
+    "variant": "controlled",
+    "commonRestrictions": "New storyteller events deferred beyond the window; routine recruit offers declined. Other simulation, trade, weather, disease and festival rules remain active.",
+    "durationHours": 336,
+    "serviceInterruptionHours": 48,
+    "results": [
+      {
+        "scenario": "food",
+        "curve": "current",
+        "shock": false,
+        "variant": "controlled",
+        "checkpointHash": "4002fb035fcd74d807475551d2cc720521f7b78292873fc551f1ddbaa1a43ebc",
+        "interventionHash": "7da21197e35cf0ad00d150f5c5b558e8ae50b735d9fb2a0c19ad36ed648a0cea",
+        "intervention": {
+          "kind": "food",
+          "shock": false
+        },
+        "forkHour": 447.1666666666667,
+        "observedHours": 335.99999999999994,
+        "outcome": "playing",
+        "initialPopulation": 6,
+        "endPopulation": 6,
+        "minFood": 11,
+        "minimumMood": 20.5,
+        "peakStrain": 7.558485531161813,
+        "endStrain": 7.558485531161813,
+        "losses": 0,
+        "reliefEvents": 0,
+        "resourceRecoveryHours": 0,
+        "recoveryCriterion": "At least two accessible stored food units per settler and nobody hungry, sustained for 12 hours.",
+        "housingMaterialsUsed": {
+          "wood": 0,
+          "planks": 0,
+          "bricks": 0,
+          "wicker": 0
+        },
+        "hungryPersonHours": 8.333333333333332,
+        "homelessPersonHours": 0,
+        "sulkerPersonHours": 0,
+        "tavernStaffHours": 0,
+        "buildingPersonHours": 26.66666666666666
+      },
+      {
+        "scenario": "food",
+        "curve": "current",
+        "shock": true,
+        "variant": "controlled",
+        "checkpointHash": "4002fb035fcd74d807475551d2cc720521f7b78292873fc551f1ddbaa1a43ebc",
+        "interventionHash": "316517f77f3ca3c959e9f9bff97c8f6e486fca476d31b2b0f94f46eb322c83a1",
+        "intervention": {
+          "kind": "food",
+          "shock": true,
+          "removed": {
+            "stew": 12,
+            "berries": 5
+          },
+          "foodBefore": 20,
+          "foodAfter": 3
+        },
+        "forkHour": 447.1666666666667,
+        "observedHours": 335.99999999999994,
+        "outcome": "playing",
+        "initialPopulation": 6,
+        "endPopulation": 6,
+        "minFood": 3,
+        "minimumMood": 16.299999999999997,
+        "peakStrain": 6.987825152767509,
+        "endStrain": 6.987825152767509,
+        "losses": 0,
+        "reliefEvents": 0,
+        "resourceRecoveryHours": 22,
+        "recoveryCriterion": "At least two accessible stored food units per settler and nobody hungry, sustained for 12 hours.",
+        "housingMaterialsUsed": {
+          "wood": 0,
+          "planks": 0,
+          "bricks": 0,
+          "wicker": 0
+        },
+        "hungryPersonHours": 10.166666666666663,
+        "homelessPersonHours": 0,
+        "sulkerPersonHours": 9.000000000000002,
+        "tavernStaffHours": 0,
+        "buildingPersonHours": 23.833333333333396
+      },
+      {
+        "scenario": "food",
+        "curve": "gentler",
+        "shock": false,
+        "variant": "controlled",
+        "checkpointHash": "4002fb035fcd74d807475551d2cc720521f7b78292873fc551f1ddbaa1a43ebc",
+        "interventionHash": "7da21197e35cf0ad00d150f5c5b558e8ae50b735d9fb2a0c19ad36ed648a0cea",
+        "intervention": {
+          "kind": "food",
+          "shock": false
+        },
+        "forkHour": 447.1666666666667,
+        "observedHours": 335.99999999999994,
+        "outcome": "playing",
+        "initialPopulation": 6,
+        "endPopulation": 6,
+        "minFood": 11,
+        "minimumMood": 20.5,
+        "peakStrain": 6.757448668549914,
+        "endStrain": 6.757448668549914,
+        "losses": 0,
+        "reliefEvents": 0,
+        "resourceRecoveryHours": 0,
+        "recoveryCriterion": "At least two accessible stored food units per settler and nobody hungry, sustained for 12 hours.",
+        "housingMaterialsUsed": {
+          "wood": 0,
+          "planks": 0,
+          "bricks": 0,
+          "wicker": 0
+        },
+        "hungryPersonHours": 8.333333333333332,
+        "homelessPersonHours": 0,
+        "sulkerPersonHours": 0,
+        "tavernStaffHours": 0,
+        "buildingPersonHours": 26.66666666666666
+      },
+      {
+        "scenario": "food",
+        "curve": "gentler",
+        "shock": true,
+        "variant": "controlled",
+        "checkpointHash": "4002fb035fcd74d807475551d2cc720521f7b78292873fc551f1ddbaa1a43ebc",
+        "interventionHash": "316517f77f3ca3c959e9f9bff97c8f6e486fca476d31b2b0f94f46eb322c83a1",
+        "intervention": {
+          "kind": "food",
+          "shock": true,
+          "removed": {
+            "stew": 12,
+            "berries": 5
+          },
+          "foodBefore": 20,
+          "foodAfter": 3
+        },
+        "forkHour": 447.1666666666667,
+        "observedHours": 335.99999999999994,
+        "outcome": "playing",
+        "initialPopulation": 6,
+        "endPopulation": 6,
+        "minFood": 3,
+        "minimumMood": 16.299999999999997,
+        "peakStrain": 6.013902916327267,
+        "endStrain": 6.013902916327267,
+        "losses": 0,
+        "reliefEvents": 0,
+        "resourceRecoveryHours": 22,
+        "recoveryCriterion": "At least two accessible stored food units per settler and nobody hungry, sustained for 12 hours.",
+        "housingMaterialsUsed": {
+          "wood": 0,
+          "planks": 0,
+          "bricks": 0,
+          "wicker": 0
+        },
+        "hungryPersonHours": 10.166666666666663,
+        "homelessPersonHours": 0,
+        "sulkerPersonHours": 9.000000000000002,
+        "tavernStaffHours": 0,
+        "buildingPersonHours": 23.833333333333396
+      },
+      {
+        "scenario": "housing",
+        "curve": "current",
+        "shock": false,
+        "variant": "controlled",
+        "checkpointHash": "2da1a21a371c6976fdf7d0c78129a2d2765480029e6d268f15722d725da31df8",
+        "interventionHash": "3122141604c89312512e997321eaaced579e2f4805eb4e44292e588bcb8e953f",
+        "intervention": {
+          "kind": "housing",
+          "shock": false
+        },
+        "forkHour": 486,
+        "observedHours": 336,
+        "outcome": "playing",
+        "initialPopulation": 8,
+        "endPopulation": 8,
+        "minFood": 11,
+        "minimumMood": 28.1,
+        "peakStrain": 8.866586876608702,
+        "endStrain": 8.866586876608702,
+        "losses": 0,
+        "reliefEvents": 0,
+        "resourceRecoveryHours": 0,
+        "recoveryCriterion": "Everyone has a bed and initial population capacity is restored, sustained for 24 hours.",
+        "housingMaterialsUsed": {
+          "wood": 8,
+          "planks": 0,
+          "bricks": 0,
+          "wicker": 0
+        },
+        "hungryPersonHours": 23.33333333333336,
+        "homelessPersonHours": 0,
+        "sulkerPersonHours": 0,
+        "tavernStaffHours": 0,
+        "buildingPersonHours": 45.83333333333331
+      },
+      {
+        "scenario": "housing",
+        "curve": "current",
+        "shock": true,
+        "variant": "controlled",
+        "checkpointHash": "2da1a21a371c6976fdf7d0c78129a2d2765480029e6d268f15722d725da31df8",
+        "interventionHash": "0fbfd1dcde7f5b0d765886232bb60994e9dca530492e44fc58f16400a33a932d",
+        "intervention": {
+          "kind": "housing",
+          "shock": true,
+          "returningRecruit": {
+            "id": 12,
+            "name": "Percival Pottsworth"
+          },
+          "populationBefore": 8,
+          "populationAfter": 9
+        },
+        "forkHour": 486,
+        "observedHours": 336,
+        "outcome": "playing",
+        "initialPopulation": 8,
+        "endPopulation": 9,
+        "minFood": 15,
+        "minimumMood": 30.1,
+        "peakStrain": 9.30788832139311,
+        "endStrain": 9.30788832139311,
+        "losses": 0,
+        "reliefEvents": 0,
+        "resourceRecoveryHours": 30,
+        "recoveryCriterion": "Everyone has a bed and initial population capacity is restored, sustained for 24 hours.",
+        "housingMaterialsUsed": {
+          "wood": 8,
+          "planks": 0,
+          "bricks": 0,
+          "wicker": 0
+        },
+        "hungryPersonHours": 23.16666666666669,
+        "homelessPersonHours": 29.66666666666674,
+        "sulkerPersonHours": 0,
+        "tavernStaffHours": 0,
+        "buildingPersonHours": 49.16666666666671
+      },
+      {
+        "scenario": "housing",
+        "curve": "gentler",
+        "shock": false,
+        "variant": "controlled",
+        "checkpointHash": "2da1a21a371c6976fdf7d0c78129a2d2765480029e6d268f15722d725da31df8",
+        "interventionHash": "3122141604c89312512e997321eaaced579e2f4805eb4e44292e588bcb8e953f",
+        "intervention": {
+          "kind": "housing",
+          "shock": false
+        },
+        "forkHour": 486,
+        "observedHours": 336,
+        "outcome": "playing",
+        "initialPopulation": 8,
+        "endPopulation": 8,
+        "minFood": 13,
+        "minimumMood": 28,
+        "peakStrain": 8.188803320328164,
+        "endStrain": 8.188803320328164,
+        "losses": 0,
+        "reliefEvents": 0,
+        "resourceRecoveryHours": 0,
+        "recoveryCriterion": "Everyone has a bed and initial population capacity is restored, sustained for 24 hours.",
+        "housingMaterialsUsed": {
+          "wood": 8,
+          "planks": 0,
+          "bricks": 0,
+          "wicker": 0
+        },
+        "hungryPersonHours": 27.83333333333338,
+        "homelessPersonHours": 0,
+        "sulkerPersonHours": 0,
+        "tavernStaffHours": 0,
+        "buildingPersonHours": 43.16666666666672
+      },
+      {
+        "scenario": "housing",
+        "curve": "gentler",
+        "shock": true,
+        "variant": "controlled",
+        "checkpointHash": "2da1a21a371c6976fdf7d0c78129a2d2765480029e6d268f15722d725da31df8",
+        "interventionHash": "0fbfd1dcde7f5b0d765886232bb60994e9dca530492e44fc58f16400a33a932d",
+        "intervention": {
+          "kind": "housing",
+          "shock": true,
+          "returningRecruit": {
+            "id": 12,
+            "name": "Percival Pottsworth"
+          },
+          "populationBefore": 8,
+          "populationAfter": 9
+        },
+        "forkHour": 486,
+        "observedHours": 336,
+        "outcome": "playing",
+        "initialPopulation": 8,
+        "endPopulation": 9,
+        "minFood": 15,
+        "minimumMood": 30.1,
+        "peakStrain": 8.660513510538786,
+        "endStrain": 8.660513510538786,
+        "losses": 0,
+        "reliefEvents": 0,
+        "resourceRecoveryHours": 30,
+        "recoveryCriterion": "Everyone has a bed and initial population capacity is restored, sustained for 24 hours.",
+        "housingMaterialsUsed": {
+          "wood": 8,
+          "planks": 0,
+          "bricks": 0,
+          "wicker": 0
+        },
+        "hungryPersonHours": 23.16666666666669,
+        "homelessPersonHours": 29.66666666666674,
+        "sulkerPersonHours": 0,
+        "tavernStaffHours": 0,
+        "buildingPersonHours": 49.16666666666671
+      },
+      {
+        "scenario": "service",
+        "curve": "current",
+        "shock": false,
+        "variant": "controlled",
+        "checkpointHash": "dea0f2a30c74f45bad1f4f374c0774af7c3f11ba6c32a4d4fa39e759cb42ff55",
+        "interventionHash": "327d097d0e9d3d5b5238ee18aa8aea0c1143d2cc52d855680d190233d6e3ad2a",
+        "intervention": {
+          "kind": "service",
+          "shock": false,
+          "commonPolicy": "Reserve the serving trade for a bartender; defer the founders feast during the observation window.",
+          "divertedServiceHours": 0
+        },
+        "forkHour": 1507,
+        "observedHours": 336,
+        "outcome": "playing",
+        "initialPopulation": 12,
+        "endPopulation": 12,
+        "minFood": 54,
+        "minimumMood": 19.299999999999997,
+        "peakStrain": 16.237809091125527,
+        "endStrain": 15.735749087457275,
+        "losses": 0,
+        "reliefEvents": 1,
+        "resourceRecoveryHours": 0,
+        "recoveryCriterion": "After hour 48, a staffed tavern and a new regular drink stock charge since release; excludes festival charges.",
+        "housingMaterialsUsed": {
+          "wood": 18,
+          "planks": 30,
+          "bricks": 0,
+          "wicker": 0
+        },
+        "hungryPersonHours": 10.833333333333325,
+        "homelessPersonHours": 0,
+        "sulkerPersonHours": 23.000000000000025,
+        "tavernStaffHours": 119.0000000000012,
+        "buildingPersonHours": 117.50000000000016
+      },
+      {
+        "scenario": "service",
+        "curve": "current",
+        "shock": true,
+        "variant": "controlled",
+        "checkpointHash": "dea0f2a30c74f45bad1f4f374c0774af7c3f11ba6c32a4d4fa39e759cb42ff55",
+        "interventionHash": "d468e47b8fdbd265020b9b3669dba8ddda1e38c9fb7f997e9784a06c500395fa",
+        "intervention": {
+          "kind": "service",
+          "shock": true,
+          "commonPolicy": "Reserve the serving trade for a bartender; defer the founders feast during the observation window.",
+          "divertedServiceHours": 48
+        },
+        "forkHour": 1507,
+        "observedHours": 336,
+        "outcome": "playing",
+        "initialPopulation": 12,
+        "endPopulation": 12,
+        "minFood": 53,
+        "minimumMood": 16,
+        "peakStrain": 16.237809091125527,
+        "endStrain": 14.923013026752436,
+        "losses": 0,
+        "reliefEvents": 1,
+        "resourceRecoveryHours": 49,
+        "recoveryCriterion": "After hour 48, a staffed tavern and a new regular drink stock charge since release; excludes festival charges.",
+        "housingMaterialsUsed": {
+          "wood": 18,
+          "planks": 30,
+          "bricks": 0,
+          "wicker": 0
+        },
+        "hungryPersonHours": 15.499999999999996,
+        "homelessPersonHours": 0,
+        "sulkerPersonHours": 18.999999999999996,
+        "tavernStaffHours": 105.0000000000008,
+        "buildingPersonHours": 122.99999999999999
+      },
+      {
+        "scenario": "service",
+        "curve": "gentler",
+        "shock": false,
+        "variant": "controlled",
+        "checkpointHash": "dea0f2a30c74f45bad1f4f374c0774af7c3f11ba6c32a4d4fa39e759cb42ff55",
+        "interventionHash": "327d097d0e9d3d5b5238ee18aa8aea0c1143d2cc52d855680d190233d6e3ad2a",
+        "intervention": {
+          "kind": "service",
+          "shock": false,
+          "commonPolicy": "Reserve the serving trade for a bartender; defer the founders feast during the observation window.",
+          "divertedServiceHours": 0
+        },
+        "forkHour": 1507,
+        "observedHours": 336,
+        "outcome": "playing",
+        "initialPopulation": 12,
+        "endPopulation": 12,
+        "minFood": 54,
+        "minimumMood": 20.200000000000003,
+        "peakStrain": 16.056351047627132,
+        "endStrain": 2.540629474383105,
+        "losses": 0,
+        "reliefEvents": 2,
+        "resourceRecoveryHours": 0,
+        "recoveryCriterion": "After hour 48, a staffed tavern and a new regular drink stock charge since release; excludes festival charges.",
+        "housingMaterialsUsed": {
+          "wood": 18,
+          "planks": 30,
+          "bricks": 0,
+          "wicker": 0
+        },
+        "hungryPersonHours": 19.5,
+        "homelessPersonHours": 0,
+        "sulkerPersonHours": 3.9999999999999982,
+        "tavernStaffHours": 119.0000000000012,
+        "buildingPersonHours": 119.00000000000013
+      },
+      {
+        "scenario": "service",
+        "curve": "gentler",
+        "shock": true,
+        "variant": "controlled",
+        "checkpointHash": "dea0f2a30c74f45bad1f4f374c0774af7c3f11ba6c32a4d4fa39e759cb42ff55",
+        "interventionHash": "d468e47b8fdbd265020b9b3669dba8ddda1e38c9fb7f997e9784a06c500395fa",
+        "intervention": {
+          "kind": "service",
+          "shock": true,
+          "commonPolicy": "Reserve the serving trade for a bartender; defer the founders feast during the observation window.",
+          "divertedServiceHours": 48
+        },
+        "forkHour": 1507,
+        "observedHours": 336,
+        "outcome": "playing",
+        "initialPopulation": 12,
+        "endPopulation": 12,
+        "minFood": 49,
+        "minimumMood": 16.200000000000003,
+        "peakStrain": 16.056351047627132,
+        "endStrain": 5.607356853190347,
+        "losses": 0,
+        "reliefEvents": 2,
+        "resourceRecoveryHours": 49,
+        "recoveryCriterion": "After hour 48, a staffed tavern and a new regular drink stock charge since release; excludes festival charges.",
+        "housingMaterialsUsed": {
+          "wood": 18,
+          "planks": 30,
+          "bricks": 0,
+          "wicker": 0
+        },
+        "hungryPersonHours": 15.666666666666654,
+        "homelessPersonHours": 0,
+        "sulkerPersonHours": 38.999999999999986,
+        "tavernStaffHours": 104.00000000000077,
+        "buildingPersonHours": 114.83333333333326
+      }
+    ]
+  },
+  "eventOn": {
+    "durationHours": 336,
+    "serviceInterruptionHours": 48,
+    "results": [
+      {
+        "scenario": "food",
+        "curve": "current",
+        "shock": false,
+        "checkpointHash": "4002fb035fcd74d807475551d2cc720521f7b78292873fc551f1ddbaa1a43ebc",
+        "interventionHash": "eb164733344a046420c2617e7a4a7b4b46b1b8f34e09e333a5315a8afc4daae2",
+        "intervention": {
+          "kind": "food",
+          "shock": false
+        },
+        "forkHour": 447.1666666666667,
+        "observedHours": 335.99999999999994,
+        "outcome": "playing",
+        "initialPopulation": 6,
+        "endPopulation": 10,
+        "minFood": 12,
+        "minimumMood": 20.700000000000003,
+        "peakStrain": 8.286059985605526,
+        "endStrain": 8.286059985605526,
+        "losses": 0,
+        "reliefEvents": 0,
+        "resourceRecoveryHours": 0,
+        "recoveryCriterion": "At least two accessible stored food units per settler and nobody hungry, sustained for 12 hours.",
+        "housingMaterialsUsed": {
+          "wood": 22,
+          "planks": 6,
+          "bricks": 0,
+          "wicker": 0
+        },
+        "hungryPersonHours": 18.499999999999996,
+        "homelessPersonHours": 0,
+        "sulkerPersonHours": 0,
+        "tavernStaffHours": 0,
+        "buildingPersonHours": 42.166666666666636
+      },
+      {
+        "scenario": "food",
+        "curve": "current",
+        "shock": true,
+        "checkpointHash": "4002fb035fcd74d807475551d2cc720521f7b78292873fc551f1ddbaa1a43ebc",
+        "interventionHash": "17b8f1cba19e32b720271a344fe1f48c61affeca2aec0ca653a16e75b9c70c30",
+        "intervention": {
+          "kind": "food",
+          "shock": true,
+          "removed": {
+            "stew": 12,
+            "berries": 5
+          },
+          "foodBefore": 20,
+          "foodAfter": 3
+        },
+        "forkHour": 447.1666666666667,
+        "observedHours": 335.99999999999994,
+        "outcome": "playing",
+        "initialPopulation": 6,
+        "endPopulation": 10,
+        "minFood": 3,
+        "minimumMood": 20,
+        "peakStrain": 11.42261286937464,
+        "endStrain": 11.42261286937464,
+        "losses": 0,
+        "reliefEvents": 0,
+        "resourceRecoveryHours": 21,
+        "recoveryCriterion": "At least two accessible stored food units per settler and nobody hungry, sustained for 12 hours.",
+        "housingMaterialsUsed": {
+          "wood": 16,
+          "planks": 0,
+          "bricks": 0,
+          "wicker": 0
+        },
+        "hungryPersonHours": 11.333333333333334,
+        "homelessPersonHours": 55.49999999999975,
+        "sulkerPersonHours": 0,
+        "tavernStaffHours": 0,
+        "buildingPersonHours": 41.83333333333333
+      },
+      {
+        "scenario": "food",
+        "curve": "gentler",
+        "shock": false,
+        "checkpointHash": "4002fb035fcd74d807475551d2cc720521f7b78292873fc551f1ddbaa1a43ebc",
+        "interventionHash": "eb164733344a046420c2617e7a4a7b4b46b1b8f34e09e333a5315a8afc4daae2",
+        "intervention": {
+          "kind": "food",
+          "shock": false
+        },
+        "forkHour": 447.1666666666667,
+        "observedHours": 335.99999999999994,
+        "outcome": "playing",
+        "initialPopulation": 6,
+        "endPopulation": 10,
+        "minFood": 12,
+        "minimumMood": 23.7,
+        "peakStrain": 7.619689368597733,
+        "endStrain": 7.619689368597733,
+        "losses": 0,
+        "reliefEvents": 0,
+        "resourceRecoveryHours": 0,
+        "recoveryCriterion": "At least two accessible stored food units per settler and nobody hungry, sustained for 12 hours.",
+        "housingMaterialsUsed": {
+          "wood": 22,
+          "planks": 10,
+          "bricks": 0,
+          "wicker": 0
+        },
+        "hungryPersonHours": 14.499999999999982,
+        "homelessPersonHours": 0,
+        "sulkerPersonHours": 0,
+        "tavernStaffHours": 0,
+        "buildingPersonHours": 58.49999999999998
+      },
+      {
+        "scenario": "food",
+        "curve": "gentler",
+        "shock": true,
+        "checkpointHash": "4002fb035fcd74d807475551d2cc720521f7b78292873fc551f1ddbaa1a43ebc",
+        "interventionHash": "17b8f1cba19e32b720271a344fe1f48c61affeca2aec0ca653a16e75b9c70c30",
+        "intervention": {
+          "kind": "food",
+          "shock": true,
+          "removed": {
+            "stew": 12,
+            "berries": 5
+          },
+          "foodBefore": 20,
+          "foodAfter": 3
+        },
+        "forkHour": 447.1666666666667,
+        "observedHours": 335.99999999999994,
+        "outcome": "playing",
+        "initialPopulation": 6,
+        "endPopulation": 10,
+        "minFood": 3,
+        "minimumMood": 16.700000000000003,
+        "peakStrain": 10.664241961504024,
+        "endStrain": 10.664241961504024,
+        "losses": 0,
+        "reliefEvents": 0,
+        "resourceRecoveryHours": 21,
+        "recoveryCriterion": "At least two accessible stored food units per settler and nobody hungry, sustained for 12 hours.",
+        "housingMaterialsUsed": {
+          "wood": 16,
+          "planks": 0,
+          "bricks": 0,
+          "wicker": 0
+        },
+        "hungryPersonHours": 13.666666666666652,
+        "homelessPersonHours": 55.49999999999975,
+        "sulkerPersonHours": 2.1666666666666665,
+        "tavernStaffHours": 0,
+        "buildingPersonHours": 42.5
+      },
+      {
+        "scenario": "housing",
+        "curve": "current",
+        "shock": false,
+        "checkpointHash": "2da1a21a371c6976fdf7d0c78129a2d2765480029e6d268f15722d725da31df8",
+        "interventionHash": "25d8594ef18c8f354715c85c26f7049fa71737c65095128a59e8b5fa6ca8cfd0",
+        "intervention": {
+          "kind": "housing",
+          "shock": false
+        },
+        "forkHour": 486,
+        "observedHours": 336,
+        "outcome": "playing",
+        "initialPopulation": 8,
+        "endPopulation": 10,
+        "minFood": 18,
+        "minimumMood": 22.8,
+        "peakStrain": 9.353362337620663,
+        "endStrain": 9.353362337620663,
+        "losses": 0,
+        "reliefEvents": 0,
+        "resourceRecoveryHours": 0,
+        "recoveryCriterion": "Everyone has a bed and initial population capacity is restored, sustained for 24 hours.",
+        "housingMaterialsUsed": {
+          "wood": 22,
+          "planks": 10,
+          "bricks": 0,
+          "wicker": 0
+        },
+        "hungryPersonHours": 22.500000000000007,
+        "homelessPersonHours": 0,
+        "sulkerPersonHours": 0,
+        "tavernStaffHours": 0,
+        "buildingPersonHours": 71.00000000000011
+      },
+      {
+        "scenario": "housing",
+        "curve": "current",
+        "shock": true,
+        "checkpointHash": "2da1a21a371c6976fdf7d0c78129a2d2765480029e6d268f15722d725da31df8",
+        "interventionHash": "f1486c6dbf91fbad35fdb8a9c9802fb51c849235ddc9534c2b4022610ad30a10",
+        "intervention": {
+          "kind": "housing",
+          "shock": true,
+          "returningRecruit": {
+            "id": 12,
+            "name": "Percival Pottsworth"
+          },
+          "populationBefore": 8,
+          "populationAfter": 9
+        },
+        "forkHour": 486,
+        "observedHours": 336,
+        "outcome": "playing",
+        "initialPopulation": 8,
+        "endPopulation": 10,
+        "minFood": 12,
+        "minimumMood": 21.8,
+        "peakStrain": 12.395629308127514,
+        "endStrain": 12.395629308127514,
+        "losses": 0,
+        "reliefEvents": 0,
+        "resourceRecoveryHours": 30,
+        "recoveryCriterion": "Everyone has a bed and initial population capacity is restored, sustained for 24 hours.",
+        "housingMaterialsUsed": {
+          "wood": 16,
+          "planks": 0,
+          "bricks": 0,
+          "wicker": 0
+        },
+        "hungryPersonHours": 13.499999999999986,
+        "homelessPersonHours": 29.66666666666674,
+        "sulkerPersonHours": 0,
+        "tavernStaffHours": 0,
+        "buildingPersonHours": 75.83333333333334
+      },
+      {
+        "scenario": "housing",
+        "curve": "gentler",
+        "shock": false,
+        "checkpointHash": "2da1a21a371c6976fdf7d0c78129a2d2765480029e6d268f15722d725da31df8",
+        "interventionHash": "25d8594ef18c8f354715c85c26f7049fa71737c65095128a59e8b5fa6ca8cfd0",
+        "intervention": {
+          "kind": "housing",
+          "shock": false
+        },
+        "forkHour": 486,
+        "observedHours": 336,
+        "outcome": "playing",
+        "initialPopulation": 8,
+        "endPopulation": 10,
+        "minFood": 8,
+        "minimumMood": 23.200000000000003,
+        "peakStrain": 8.259099329473548,
+        "endStrain": 8.259099329473548,
+        "losses": 0,
+        "reliefEvents": 0,
+        "resourceRecoveryHours": 0,
+        "recoveryCriterion": "Everyone has a bed and initial population capacity is restored, sustained for 24 hours.",
+        "housingMaterialsUsed": {
+          "wood": 16,
+          "planks": 0,
+          "bricks": 0,
+          "wicker": 0
+        },
+        "hungryPersonHours": 29.500000000000068,
+        "homelessPersonHours": 0,
+        "sulkerPersonHours": 0,
+        "tavernStaffHours": 0,
+        "buildingPersonHours": 56.666666666666615
+      },
+      {
+        "scenario": "housing",
+        "curve": "gentler",
+        "shock": true,
+        "checkpointHash": "2da1a21a371c6976fdf7d0c78129a2d2765480029e6d268f15722d725da31df8",
+        "interventionHash": "f1486c6dbf91fbad35fdb8a9c9802fb51c849235ddc9534c2b4022610ad30a10",
+        "intervention": {
+          "kind": "housing",
+          "shock": true,
+          "returningRecruit": {
+            "id": 12,
+            "name": "Percival Pottsworth"
+          },
+          "populationBefore": 8,
+          "populationAfter": 9
+        },
+        "forkHour": 486,
+        "observedHours": 336,
+        "outcome": "playing",
+        "initialPopulation": 8,
+        "endPopulation": 10,
+        "minFood": 12,
+        "minimumMood": 22.1,
+        "peakStrain": 11.670841199064178,
+        "endStrain": 11.670841199064178,
+        "losses": 0,
+        "reliefEvents": 0,
+        "resourceRecoveryHours": 30,
+        "recoveryCriterion": "Everyone has a bed and initial population capacity is restored, sustained for 24 hours.",
+        "housingMaterialsUsed": {
+          "wood": 16,
+          "planks": 0,
+          "bricks": 0,
+          "wicker": 0
+        },
+        "hungryPersonHours": 13.499999999999986,
+        "homelessPersonHours": 29.66666666666674,
+        "sulkerPersonHours": 0,
+        "tavernStaffHours": 0,
+        "buildingPersonHours": 75.83333333333334
+      },
+      {
+        "scenario": "service",
+        "curve": "current",
+        "shock": false,
+        "checkpointHash": "dea0f2a30c74f45bad1f4f374c0774af7c3f11ba6c32a4d4fa39e759cb42ff55",
+        "interventionHash": "73c8db6e576430e4375d17ad714020a0d47d20858856ac6541170cadede398a0",
+        "intervention": {
+          "kind": "service",
+          "shock": false,
+          "commonPolicy": "Reserve the serving trade for a bartender; defer the founders feast during the observation window.",
+          "divertedServiceHours": 0
+        },
+        "forkHour": 1507,
+        "observedHours": 336,
+        "outcome": "playing",
+        "initialPopulation": 12,
+        "endPopulation": 13,
+        "minFood": 38,
+        "minimumMood": 20.799999999999997,
+        "peakStrain": 16.237809091125527,
+        "endStrain": 10.771133520959342,
+        "losses": 0,
+        "reliefEvents": 2,
+        "resourceRecoveryHours": 0,
+        "recoveryCriterion": "After hour 48, a staffed tavern and a new regular drink stock charge since release; excludes festival charges.",
+        "housingMaterialsUsed": {
+          "wood": 24,
+          "planks": 33,
+          "bricks": 0,
+          "wicker": 7
+        },
+        "hungryPersonHours": 14.16666666666665,
+        "homelessPersonHours": 0,
+        "sulkerPersonHours": 3.9999999999999982,
+        "tavernStaffHours": 123.00000000000131,
+        "buildingPersonHours": 113.33333333333353
+      },
+      {
+        "scenario": "service",
+        "curve": "current",
+        "shock": true,
+        "checkpointHash": "dea0f2a30c74f45bad1f4f374c0774af7c3f11ba6c32a4d4fa39e759cb42ff55",
+        "interventionHash": "d70db8a55cbbe3fee56fc5d425c5f219cac91f08fff64b538f2be87bfe419743",
+        "intervention": {
+          "kind": "service",
+          "shock": true,
+          "commonPolicy": "Reserve the serving trade for a bartender; defer the founders feast during the observation window.",
+          "divertedServiceHours": 48
+        },
+        "forkHour": 1507,
+        "observedHours": 336,
+        "outcome": "playing",
+        "initialPopulation": 12,
+        "endPopulation": 13,
+        "minFood": 32,
+        "minimumMood": 14.700000000000003,
+        "peakStrain": 16.253616267479053,
+        "endStrain": 10.33886765912349,
+        "losses": 0,
+        "reliefEvents": 2,
+        "resourceRecoveryHours": 49,
+        "recoveryCriterion": "After hour 48, a staffed tavern and a new regular drink stock charge since release; excludes festival charges.",
+        "housingMaterialsUsed": {
+          "wood": 18,
+          "planks": 20,
+          "bricks": 0,
+          "wicker": 10
+        },
+        "hungryPersonHours": 12.99999999999999,
+        "homelessPersonHours": 0,
+        "sulkerPersonHours": 25.00000000000004,
+        "tavernStaffHours": 103.00000000000074,
+        "buildingPersonHours": 121.00000000000023
+      },
+      {
+        "scenario": "service",
+        "curve": "gentler",
+        "shock": false,
+        "checkpointHash": "dea0f2a30c74f45bad1f4f374c0774af7c3f11ba6c32a4d4fa39e759cb42ff55",
+        "interventionHash": "73c8db6e576430e4375d17ad714020a0d47d20858856ac6541170cadede398a0",
+        "intervention": {
+          "kind": "service",
+          "shock": false,
+          "commonPolicy": "Reserve the serving trade for a bartender; defer the founders feast during the observation window.",
+          "divertedServiceHours": 0
+        },
+        "forkHour": 1507,
+        "observedHours": 336,
+        "outcome": "playing",
+        "initialPopulation": 12,
+        "endPopulation": 12,
+        "minFood": 54,
+        "minimumMood": 21,
+        "peakStrain": 16.056351047627132,
+        "endStrain": 10.076609345923643,
+        "losses": 0,
+        "reliefEvents": 2,
+        "resourceRecoveryHours": 0,
+        "recoveryCriterion": "After hour 48, a staffed tavern and a new regular drink stock charge since release; excludes festival charges.",
+        "housingMaterialsUsed": {
+          "wood": 18,
+          "planks": 23,
+          "bricks": 0,
+          "wicker": 7
+        },
+        "hungryPersonHours": 15.499999999999993,
+        "homelessPersonHours": 0,
+        "sulkerPersonHours": 3.9999999999999982,
+        "tavernStaffHours": 120.00000000000122,
+        "buildingPersonHours": 115.66666666666673
+      },
+      {
+        "scenario": "service",
+        "curve": "gentler",
+        "shock": true,
+        "checkpointHash": "dea0f2a30c74f45bad1f4f374c0774af7c3f11ba6c32a4d4fa39e759cb42ff55",
+        "interventionHash": "d70db8a55cbbe3fee56fc5d425c5f219cac91f08fff64b538f2be87bfe419743",
+        "intervention": {
+          "kind": "service",
+          "shock": true,
+          "commonPolicy": "Reserve the serving trade for a bartender; defer the founders feast during the observation window.",
+          "divertedServiceHours": 48
+        },
+        "forkHour": 1507,
+        "observedHours": 336,
+        "outcome": "playing",
+        "initialPopulation": 12,
+        "endPopulation": 13,
+        "minFood": 40,
+        "minimumMood": 15.100000000000001,
+        "peakStrain": 16.07257950637721,
+        "endStrain": 2.2232616382368438,
+        "losses": 0,
+        "reliefEvents": 5,
+        "resourceRecoveryHours": 49,
+        "recoveryCriterion": "After hour 48, a staffed tavern and a new regular drink stock charge since release; excludes festival charges.",
+        "housingMaterialsUsed": {
+          "wood": 12,
+          "planks": 10,
+          "bricks": 0,
+          "wicker": 10
+        },
+        "hungryPersonHours": 16.666666666666643,
+        "homelessPersonHours": 0,
+        "sulkerPersonHours": 33.00000000000007,
+        "tavernStaffHours": 104.00000000000077,
+        "buildingPersonHours": 102.33333333333333
+      }
+    ]
+  },
+  "first48Hours": [
+    {
+      "scenario": "food",
+      "curve": "current",
+      "shock": false,
+      "hours": 48,
+      "strainChange": 0.40472966529369714,
+      "minimumMood": 20.5,
+      "sulkerPersonHours": 0
+    },
+    {
+      "scenario": "food",
+      "curve": "current",
+      "shock": true,
+      "hours": 48,
+      "strainChange": 0.42519515966956867,
+      "minimumMood": 16.299999999999997,
+      "sulkerPersonHours": 9.000000000000002
+    },
+    {
+      "scenario": "food",
+      "curve": "gentler",
+      "shock": false,
+      "hours": 48,
+      "strainChange": 0.2962767824196053,
+      "minimumMood": 20.5,
+      "sulkerPersonHours": 0
+    },
+    {
+      "scenario": "food",
+      "curve": "gentler",
+      "shock": true,
+      "hours": 48,
+      "strainChange": 0.33581914043694017,
+      "minimumMood": 16.299999999999997,
+      "sulkerPersonHours": 9.000000000000002
+    },
+    {
+      "scenario": "housing",
+      "curve": "current",
+      "shock": false,
+      "hours": 48,
+      "strainChange": 0.47942214287053275,
+      "minimumMood": 30.299999999999997,
+      "sulkerPersonHours": 0
+    },
+    {
+      "scenario": "housing",
+      "curve": "current",
+      "shock": true,
+      "hours": 48,
+      "strainChange": 0.5362415082465333,
+      "minimumMood": 30.1,
+      "sulkerPersonHours": 0
+    },
+    {
+      "scenario": "housing",
+      "curve": "gentler",
+      "shock": false,
+      "hours": 48,
+      "strainChange": 0.3502951563302208,
+      "minimumMood": 30.299999999999997,
+      "sulkerPersonHours": 0
+    },
+    {
+      "scenario": "housing",
+      "curve": "gentler",
+      "shock": true,
+      "hours": 48,
+      "strainChange": 0.41777334707754576,
+      "minimumMood": 30.1,
+      "sulkerPersonHours": 0
+    },
+    {
+      "scenario": "service",
+      "curve": "current",
+      "shock": false,
+      "hours": 48,
+      "strainChange": -4.884653254695401,
+      "minimumMood": 22.5,
+      "sulkerPersonHours": 3.9999999999999982
+    },
+    {
+      "scenario": "service",
+      "curve": "current",
+      "shock": true,
+      "hours": 48,
+      "strainChange": -5.69738931540024,
+      "minimumMood": 16,
+      "sulkerPersonHours": 18.999999999999996
+    },
+    {
+      "scenario": "service",
+      "curve": "gentler",
+      "shock": false,
+      "hours": 48,
+      "strainChange": 0.4022495851192236,
+      "minimumMood": 22.5,
+      "sulkerPersonHours": 3.9999999999999982
+    },
+    {
+      "scenario": "service",
+      "curve": "gentler",
+      "shock": true,
+      "hours": 48,
+      "strainChange": 0.4022495851192236,
+      "minimumMood": 16.200000000000003,
+      "sulkerPersonHours": 18.999999999999996
+    }
+  ],
+  "delay": [
+    {
+      "curve": "current",
+      "charter": "goodtable",
+      "forkHour": 447,
+      "completionHour": 1417,
+      "firstMet": {
+        "avgMood": 536,
+        "population": 668,
+        "tally": 1339
+      },
+      "blockedHours": {
+        "population": 221,
+        "tally": 892,
+        "avgMood": 921
+      }
+    },
+    {
+      "curve": "gentler",
+      "charter": "goodtable",
+      "forkHour": 447,
+      "completionHour": 2097,
+      "firstMet": {
+        "avgMood": 535,
+        "population": 702,
+        "tally": 2097
+      },
+      "blockedHours": {
+        "population": 255,
+        "tally": 1650,
+        "avgMood": 1137
+      }
+    }
+  ],
+  "logisticsCounterfactual": [
+    {
+      "repair": false,
+      "startHour": 1428,
+      "endHour": 2036,
+      "completedSecondCharter": true,
+      "workerId": 4,
+      "basketId": 6,
+      "early": {
+        "elapsed": 6,
+        "basket": 2,
+        "resAcorns": 2,
+        "flourMade": 24,
+        "workerTask": null,
+        "carrying": null
+      }
+    },
+    {
+      "repair": true,
+      "startHour": 1428,
+      "endHour": 1866,
+      "completedSecondCharter": true,
+      "workerId": 4,
+      "basketId": 6,
+      "early": {
+        "elapsed": 6,
+        "basket": 0,
+        "resAcorns": 1,
+        "flourMade": 26,
+        "workerTask": {
+          "kind": "supply",
+          "to": 19,
+          "res": "wood",
+          "amount": 15,
+          "via": 17
+        },
+        "carrying": {
+          "res": "wood",
+          "amount": 0
+        }
+      }
+    }
+  ]
+}
