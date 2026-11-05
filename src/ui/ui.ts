@@ -21,6 +21,7 @@ import { buildingStatus, saleQuantity } from './status';
 import { replaceMarkup, escapeHtml as esc } from './dom';
 import { installTooltips } from './tooltips';
 import { charterCompletionCard } from './charter-celebration';
+import { finalCelebrationCard } from './final-celebration';
 import { animateCharterScene } from './charter-scene';
 import { NEED_NAMES, NEED_BUILD } from './needs';
 import { Destination, buildingDestination, fixDestination, producers } from './navigation';
@@ -256,6 +257,17 @@ export class UI {
   private help: string | null = null;
   private dialogKey = '';
   private celebrationStarted = new WeakMap<Decision, number | null>();
+  private finaleStarted = new WeakMap<World, number | null>();
+  private finalePeeking = new WeakSet<World>();
+  /** Reloading a finished settlement shows the completed illustration, without replaying the win. */
+  resumeFinale(w: World) { if (w.status === 'won') this.finaleStarted.set(w, null); }
+  resetForNewSettlement() {
+    this.detail = null; this.open = false; this.resumeOpen = false;
+    this.festivalOpen = false; this.strainOpen = false; this.help = null; this.picking = null;
+    this.confirmNew = false; this.peeking = false;
+    this.nameInit = ''; this.nameDraft = null; this.nameSeed = -1;
+    this.lastModal = ''; this.lastSheet = ''; this.lastPlaceBar = ''; this.lastPeekBar = ''; this.dialogKey = '';
+  }
   private colonistFilter = 'all';
   /** the decision card is hidden so the player can look at the colony; play stays paused until they choose */
   private peeking = false;
@@ -496,6 +508,8 @@ export class UI {
       case 'study': { const err = this.send({ type: 'study', id: arg }); if (err) this.toast(err); this.lastModal = ''; break; }
       case 'peek': this.peeking = true; this.lastModal = ''; break;
       case 'peek-back': this.peeking = false; this.lastModal = ''; break;
+      case 'finale-peek': this.finalePeeking.add(w); this.lastModal = ''; break;
+      case 'finale-back': this.finalePeeking.delete(w); this.lastModal = ''; break;
       case 'storage-help': this.navigate(buildingDestination(w, 'storehouse', true)); break;
       case 'food-rules': this.navigate({ kind: 'food', label: 'Food rules' }); break;
       case 'need': { const def = arg === 'table' ? 'dining' : NEED_BUILD[arg as NeedKey]; this.navigate(buildingDestination(w, def, !['shelter', 'surroundings', 'warmth'].includes(arg))); break; }
@@ -1298,7 +1312,11 @@ export class UI {
     if (html && d && !this.resumeOpen && w.status === 'playing') html = html.replace(/^(\s*<div class="card-wrap[^"]*"[^>]*>)/, `$1<button type="button" class="peek-btn" data-act="peek" title="Look at the colony" aria-label="Hide this choice and look at the colony">${EYE_GLYPH}</button>`);
     const bar = this.root.querySelector<HTMLElement>('#peekbar')!;
     const title = d ? (html.match(/<h2>(.*?)<\/h2>/)?.[1] ?? '') : '';
-    if (this.peeking) {
+    if (w.status === 'won' && this.finalePeeking.has(w)) {
+      const next = `<span class="pk-title">${esc(colonyName(w))} · town charter granted</span><button type="button" data-act="finale-back">Back to celebration</button>`;
+      if (next !== this.lastPeekBar) { bar.innerHTML = next; this.lastPeekBar = next; }
+      bar.hidden = false; html = '';
+    } else if (this.peeking) {
       const next = `<span class="pk-paused">Ⅱ Paused</span><span class="pk-title">${title}</span><button type="button" data-act="peek-back">Back to choice</button>`;
       if (next !== this.lastPeekBar) { bar.innerHTML = next; this.lastPeekBar = next; }
       bar.hidden = false; html = '';
@@ -1313,7 +1331,10 @@ export class UI {
     if (force || html !== this.lastModal) { replaceMarkup(el, html, !changedDialog); this.lastModal = html; }
     el.hidden = !html;
     const scene = el.querySelector<SVGElement>('.cc-scene');
-    if (scene && d?.kind === 'charter-complete') {
+    if (scene && w.status === 'won') {
+      const began = this.finaleStarted.get(w);
+      animateCharterScene(scene, began == null ? null : performance.now() - began, this.prefs.calm);
+    } else if (scene && d?.kind === 'charter-complete') {
       const began = this.celebrationStarted.get(d);
       animateCharterScene(scene, began == null ? null : performance.now() - began, this.prefs.calm);
     }
@@ -1432,6 +1453,10 @@ export class UI {
 
   private endScreen(w: World) {
     const won = w.status === 'won';
+    if (won) {
+      if (!this.finaleStarted.has(w)) this.finaleStarted.set(w, performance.now());
+      return finalCelebrationCard(w, this.ledger());
+    }
     const s = w.stats;
     return `<div class="card-wrap end ${won ? 'won' : 'lost'}"><p class="eyebrow">${won ? 'Victory' : `${esc(colonyName(w))} collapsed`}</p>
       <h2>${won ? `${esc(colonyName(w))} is a town` : 'The kettle remains'}</h2>

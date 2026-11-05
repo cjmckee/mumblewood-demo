@@ -17,7 +17,9 @@
     "prototype:comfort": "node tools/comfort-prototype.mjs",
     "test:ui:comfort": "node tools/comfort-ui-check.mjs",
     "prototype:milestones": "node tools/comfort-milestones-prototype.mjs",
-    "test:ui:milestones": "node tools/comfort-milestones-ui-check.mjs"
+    "test:ui:milestones": "node tools/comfort-milestones-ui-check.mjs",
+    "prototype:finale": "node tools/final-prototype.mjs",
+    "test:ui:finale": "node tools/final-ui-check.mjs"
   },
   "keywords": [],
   "author": "",

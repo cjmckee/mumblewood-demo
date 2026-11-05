@@ -68,8 +68,10 @@ try {
     assert.doesNotMatch(await page.locator('.cc-expectations').innerText(), /A cold drink/);
     await page.evaluate(() => { const g = window.__game; g.world.startDate = { season: 'spring', day: 1 }; g.ui.render(true); });
     assert.doesNotMatch(await page.locator('.cc-expectations').innerText(), /Something fresh/);
-    await page.evaluate(() => { const g = window.__game; g.world.decisions = []; g.world.status = 'won'; g.ui.render(true); });
-    assert.equal(await page.locator('.charter-celebration').count(), 0);
+    await page.evaluate(() => { const g = window.__game; g.world.decisions = []; g.world.chartersDone = ['settled', 'bread', 'hall']; g.world.status = 'won'; g.ui.render(true); });
+    assert.equal(await page.locator('.charter-celebration:not(.final-celebration)').count(), 0);
+    assert.equal(await page.locator('.final-celebration').count(), 1, 'the third charter uses its own finale');
+    assert.equal(await page.locator('.cc-continue').count(), 0, 'no fourth charter is promised');
     assert.deepEqual(errors, []);
     console.log(`${device}: both transitions, seasonal copy, viewport fit, keyboard, peek, save/resume, rewards and next choices passed`);
     await ctx.close();

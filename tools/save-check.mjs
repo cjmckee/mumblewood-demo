@@ -6,7 +6,7 @@ const { chromium } = createRequire(import.meta.url)('playwright');
 const page_ = fileURLToPath(new URL('../dist/mumblewood.html', import.meta.url));
 const out = process.argv[2] ?? 'dist';
 let fails = 0; const ok = (c, m) => { console.log(`${c ? 'ok  ' : 'FAIL'} ${m}`); if (!c) fails++; };
-const browser = await chromium.launch({ ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}), args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader'] });
+const browser = await chromium.launch({ ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}), args: ['--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader'] });
 const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
 const p = await ctx.newPage();
 const errors = []; p.on('pageerror', e => errors.push(e.message));
@@ -64,10 +64,10 @@ await p.screenshot({ path: `${out}/phone-menu-restart.png` });
 await p.click('.mnew [data-act=restart-cancel]'); await p.waitForTimeout(200);
 ok((await state()).day > 1, 'Keep playing keeps the colony');
 
-// a finished run clears the save, so the next visit starts fresh
+// A collapsed run clears the save; completed towns retain their final results.
 await p.evaluate(() => { window.__game.world.status = 'lost'; });
 await p.waitForTimeout(500);
-ok(await p.evaluate(() => localStorage.getItem('mumblewood.save.v1') === null), 'a finished run clears the save');
+ok(await p.evaluate(() => localStorage.getItem('mumblewood.save.v1') === null), 'a collapsed run clears the save');
 await p.reload(); await ready();
 s = await state();
 ok(s.day === 1 && !s.text.includes('welcome back'), 'and the next visit starts a new colony');
