@@ -6,11 +6,11 @@ import {
   keepsFresh, findSpot, canPlace, laborers, centerOf, built, Building, efficiencyAt, pathAt, MAP_SIZE, blockedReason, Errand, patientsAt, clinicAdmissions, lost, bedridden, spoilingFood, accepts, roomIn, FOODS, GOODS,
   recipesOf, recipeOn, optionOn, optionsOf, currentRecipe, orderedRecipes, INPUT_CAPACITY, OUTBOX_CAP, siteOk, rerollCost, REROLL_STEP, stockOf, recipeReach, charterHelpers, charterDef,
   costOf, researchLeft, researchStillNeeds, desks, feastCheck, mealTotal, drinkTotal,
-  strainPerDay, footprint, standingOf, BREAKING, GRUMBLE, breakPoint, breakKindFor, inspired, STANDINGS, NeedKey, winterFuelPerDay,
+  strainPerDay, footprint, standingOf, yieldIn, BREAKING, GRUMBLE, breakPoint, breakKindFor, inspired, STANDINGS, NeedKey, winterFuelPerDay,
   sellPrice, renownOf, pavilionOf, larderOf, FEAST_MEALS, charterCounted, charterRequirements, basicsDone, researchOpen, edibleTotal, storePrio, colonyName, nameFrom, NAME_MAX, wantMet, wantPenalty, wantSupported, wantGap, tradeOf, TRADE_DEFS, workPrio, hasWork,
 } from '../sim/world';
 import { charterPreview, metricRoutes, Route } from '../sim/charterplan';
-import { START } from '../sim/scenario';
+import { START, SEASONS, Season } from '../sim/scenario';
 import { assess, rankForPlayer, Ranked, defsOf } from '../sim/advisor';
 import { economy, Account } from '../sim/economy';
 import type { IsoView, Picked } from '../render/iso';
@@ -682,7 +682,7 @@ export class UI {
       + (rest.length || this.allGoods ? `<button type="button" class="chip more" data-act="all-goods" aria-pressed="${this.allGoods}" title="${this.allGoods ? 'Fewer goods' : 'Every good'}">${this.allGoods ? '−' : `+${rest.length}`}</button>` : '');
     const html = `
       <div class="bar">
-        <div class="clock"><span class="day">Day ${day(w)}</span><span class="when"><span class="time">${hh}:00<span class="phase"> · ${timeOfDay(h)}</span></span><button type="button" data-act="help" data-arg="season" class="season s-${sea.season}" title="${SEASON_NAMES[sea.season]}, day ${sea.dayOf} of ${START.seasons.days}${sea.season !== 'winter' ? `; winter in ${sea.toWinter} days` : ''}">${sea.season === 'autumn' ? `Winter in ${sea.toWinter}d` : `${SEASON_NAMES[sea.season]} ${sea.dayOf}/${START.seasons.days}`}</button></span></div>
+        <div class="clock"><span class="day">Day ${day(w)}</span><span class="when"><span class="time">${hh}:00<span class="phase"> · ${timeOfDay(h)}</span></span><button type="button" data-act="help" data-arg="season" class="season s-${sea.season}" title="${SEASON_NAMES[sea.season]}, day ${sea.dayOf} of ${START.seasons.days}${sea.season !== 'winter' ? `; winter in ${sea.toWinter} days` : ''}">${sea.season === 'autumn' ? `❄ Winter in ${sea.toWinter}d` : `${sea.season === 'winter' ? '❄ ' : ''}${SEASON_NAMES[sea.season]} ${sea.dayOf}/${START.seasons.days}`}</button></span></div>
         <div class="speeds" role="group" aria-label="Game speed">
           ${[['0', 'Pause'], ['1', '1×'], ['2', '2×'], ['3', '3×']].map(([s, l]) => { const on = this.speed === Number(s), night = on && this.nightSkip && s !== '0'; return `<button type="button" data-act="speed" data-arg="${s}" class="${on ? 'on' : ''}${night ? ' night' : ''}" aria-pressed="${on}"${night ? ` title="Everyone's asleep: ${Number(s) * 4}× until someone wakes"` : ''}>${night ? `${MOON}${Number(s) * 4}×` : l}</button>`; }).join('')}
         </div>
@@ -769,7 +769,8 @@ export class UI {
     let title = 'Colony help', body = '';
     if (this.help === 'season') {
       title = `${SEASON_NAMES[sea.season]} · day ${sea.dayOf}/${START.seasons.days}`;
-      body = `<p class="lede">${sea.season === 'winter' ? `Heating needs about ${Math.round(winterFuelPerDay(w))} wood/day.` : `Winter in ${sea.toWinter} days · heating will need about ${Math.round(winterFuelPerDay(w,true))} wood/day.`}</p><div class="actions"><button type="button" class="ghost" data-act="need" data-arg="warmth">Warm homes →</button><button type="button" class="ghost" data-act="need" data-arg="fresh">Fresh food →</button><button type="button" class="ghost" data-act="need" data-arg="drink">Drinks →</button></div><p class="terms">Spring: ${START.seasons.springFresh ? 'fresh food' : 'crops and fishing recover; mud slows travel'}. Summer: drinks. Winter: warm homes. Expectations grow with town standing.</p>`;
+      const next = SEASONS[(SEASONS.indexOf(sea.season) + 1) % 4], left = START.seasons.days - sea.dayOf + 1;
+      body = `<p class="lede">${SEASON_NAMES[next]} in ${left} day${left === 1 ? '' : 's'}.</p>${seasonEffects(w, sea.season, 'Now')}${seasonEffects(w, next, 'Next')}`;
     } else if (this.help === 'loss') {
       title = `${lost(w)}/${START.collapse.lost} settlers lost`;
       body = `<p class="lede">The colony collapses at ${START.collapse.lost} lost settlers or ${START.collapse.minAlive} survivors.</p><ul class="thoughts">${w.colonists.filter(c => c.left).map(c=>`<li><span>${esc(c.name)}</span><b>${c.died ? 'Died' : 'Left'}</b></li>`).join('') || '<li>No settlers lost.</li>'}</ul>`;
@@ -959,7 +960,7 @@ export class UI {
     const matches = (d: typeof BUILDING_BY_ID[string]) => this.catalogGroup === 'all' || buildingGroup(d.id) === this.catalogGroup;
     const short = (def: typeof BUILDING_BY_ID[string]) => Object.entries(def.cost).some(([k, n]) => stockOf(w, k as InputKey) < (n ?? 0));
     const outputs = (def: typeof BUILDING_BY_ID[string]) => [...new Set((def.recipes ?? []).map(r => r.output))].map(o => icon(o)).join('');
-    const card = (def: typeof BUILDING_BY_ID[string]) => `<div class="bp compact${short(def) ? ' short' : ''}"><details data-key="catalog-${def.id}"><summary><span class="bp-ico">${icon(def.id,'bico')}</span><span class="bp-main"><b>${esc(def.name)}</b><small class="cost">${costHtml(def.cost,w)}${outputs(def) ? `<span class="outs" aria-label="makes">${outputs(def)}</span>` : ''}</small></span></summary><p>${esc(def.blurb)}</p></details><button type="button" class="place" data-act="build" data-arg="${def.id}" aria-label="Place ${esc(def.name)}">${ROUTE_GLYPH.build}</button></div>`;
+    const card = (def: typeof BUILDING_BY_ID[string]) => `<div class="bp compact${short(def) ? ' short' : ''}"><details data-key="catalog-${def.id}"><summary><span class="bp-ico">${icon(def.id,'bico')}</span><span class="bp-main"><b>${esc(def.name)}${snowChip(def.id)}</b><small class="cost">${costHtml(def.cost,w)}${outputs(def) ? `<span class="outs" aria-label="makes">${outputs(def)}</span>` : ''}</small></span></summary><p>${esc(def.blurb)}</p></details><button type="button" class="place" data-act="build" data-arg="${def.id}" aria-label="Place ${esc(def.name)}">${ROUTE_GLYPH.build}</button></div>`;
     const missing = BUILDINGS.filter(d => !w.owned.includes(d.id) && matches(d)).map(d => {
       const r = researchLeft(w).find(r => r.unlocks.includes(d.id));
       return `<button type="button" class="row compact" data-act="catalog-help" data-arg="${d.id}"><span class="who"><b>${icon(d.id)} ${esc(d.name)}</b><small>${r ? `Research ${esc(r.name)}` : 'Blueprint needed'}</small></span><span>→</span></button>`;
@@ -1115,7 +1116,7 @@ export class UI {
       staff += `<p class="prefs">Sleeps ${def.beds}${sleepers ? `: ${sleepers}` : ''}.</p>`;
     }
     return `<div class="detail"><div class="d-head"><button type="button" class="ghost back" data-act="back">← Buildings</button></div>
-      <h2 class="bh">${icon(def.id, 'hico')}${esc(def.name)}</h2><p class="blurb">${esc(def.blurb)}</p>${recipe}${staff}</div>`;
+      <h2 class="bh">${icon(def.id, 'hico')}${esc(def.name)}${snowChip(def.id)}</h2><p class="blurb">${esc(def.blurb)}</p>${recipe}${staff}</div>`;
   }
 
   private deskLines(w: World) {
@@ -1593,3 +1594,24 @@ function breakingBanner(w: World, c: Colonist) {
   return `<div class="banner ${c.mood < BREAKING ? 'bad' : 'warn'}"><p>${esc(next)}</p><ul>${worst.map(t => `<li>${esc(t.label)} <b>${t.value}</b></li>`).join('')}</ul></div>`;
 }
 const BREAK_VERB: Record<string, string> = { sulk: 'sulk and refuse to work', binge: 'binge on the best meals in store', bender: 'drink the colony dry and be laid up', wander: 'storm off into the woods', brawl: 'pick a fight with whoever they like least', smash: 'smash up their workshop' };
+
+// ---------- seasons: what each one does, shown rather than prescribed ----------
+/** a small snowflake with a building's winter rate, when winter slows or stops it */
+function snowChip(defId: string) {
+  const y = yieldIn(defId, 'winter');
+  return y === 1 ? '' : `<span class="snow" title="In winter: ${y === 0 ? 'stops' : `${Math.round(y * 100)}%`}">❄ ${y === 0 ? 'stops' : `${Math.round(y * 100)}%`}</span>`;
+}
+/** what a season does, for the buildings this colony has or could build: a list like a storm's effects */
+function seasonEffects(w: World, season: Season, heading: string) {
+  const relevant = new Set([...w.buildings.map(b => b.def), ...w.owned]);
+  const rows = Object.keys(START.seasons.yield).filter(id => relevant.has(id) && BUILDING_BY_ID[id]).map(id => ({ id, y: yieldIn(id, season) })).filter(r => r.y !== 1)
+    .sort((a, b) => a.y - b.y)
+    .map(r => `<li><span>${icon(r.id)} ${esc(BUILDING_BY_ID[r.id].name)}</span><b class="${r.y < 1 ? 'neg' : 'pos'}">${r.y === 0 ? 'stops' : `${Math.round(r.y * 100)}%`}</b></li>`);
+  if (season === 'winter') {
+    rows.push(`<li><span>${icon('wood')} Homes and the hearth burn wood</span><b class="neg">~${Math.round(winterFuelPerDay(w, seasonOf(w).season !== 'winter'))}/day</b></li>`);
+    rows.push(`<li><span>Cold homes bring chills and a mood penalty</span><b class="neg">❄</b></li>`);
+    const [a, z] = START.seasons.work.winter; rows.push(`<li><span>Shorter working days</span><b>${a}:00–${z}:00</b></li>`);
+  }
+  const build = START.seasons.build[season]; if (build && build !== 1) rows.push(`<li><span>Building</span><b class="neg">${Math.round(build * 100)}%</b></li>`);
+  return rows.length ? `<h3>${esc(heading)}: ${SEASON_NAMES[season].toLowerCase()}</h3><ul class="thoughts season-fx">${rows.join('')}</ul>` : `<h3>${esc(heading)}: ${SEASON_NAMES[season].toLowerCase()}</h3><p class="muted">Nothing out of the ordinary.</p>`;
+}

@@ -31,7 +31,7 @@ export interface Start {
    * strain builds up each hour by rate × √population, faster as the run goes on (1 + day / rampDays). The square root
    * means a bigger colony strains a little faster, not twice as fast: growing is a trade-off, not a trap.
    */
-  /** strain's daily rise: rate × √colonists, growing by rampDays. Was 0.15 scaled by comfort (about 0.6× in play); comfort is gone, so 0.085, which keeps strain where it was */
+  /** strain's daily rise: rate × √colonists, growing by rampDays. Was 0.15 scaled by comfort (about 0.6× in play); comfort is gone. 0.07 with a spring start and breaks (see the pressure plan) */
   strain: { rate: number; rampDays: number };
   /** strain added by each break, and by each settler who leaves (strain is a point of mood off everyone) */
   breaks: { strain: number; leftStrain: number };
@@ -149,7 +149,7 @@ export const START: Start = {
   wants: { per: 2, met: 6, unmet: [1, 3, 6], on: true },
   draftEvery: 5,
   collapse: { lost: 6, minAlive: 0 },
-  strain: { rate: 0.085, rampDays: 40 },
+  strain: { rate: 0.07, rampDays: 40 },
   breaks: { strain: 0.5, leftStrain: 2 },
   relief: { charter: 0.3 },
   hearth: { base: 0.125, perPerson: 0.03 },
@@ -168,13 +168,14 @@ export const START: Start = {
     yield: {
       flaxfield: { winter: 0, autumn: 1.5 },
       trapper: { winter: 0.75 },
-      forager: { spring: 0.8, summer: 1.25, winter: 0.75 },
-      herbgarden: { spring: 0.8, winter: 0.5 },
+      forager: { spring: 0.8, summer: 1.25, winter: 0.25 },
+      herbgarden: { spring: 0.8, winter: 0.25 },
       orchard: { spring: 0.4, autumn: 1.5, winter: 0 },
       field: { spring: 0.4, autumn: 1.5, winter: 0 },
       apiary: { spring: 0.8, summer: 1.25, winter: 0 },
       cellar: { autumn: 1.5 },
-      dock: { spring: 1.25 },
+      dock: { spring: 1.25, winter: 0.5 },
+      woodcutter: { winter: 0.8 },
       claypit: { winter: 0.5 },
     },
     harshYield: 0.9,

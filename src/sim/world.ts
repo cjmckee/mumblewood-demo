@@ -2852,6 +2852,8 @@ export const lastDayHours = (w: World) => Math.max(1, Math.min(24, (w.flowLog ??
 /** the hours work starts and stops today */
 export const workHours = (w: World) => START.seasons.work[seasonOf(w).season];
 /** how much a building turns out this season, against normal */
+/** a building's yield in a season, before a harsher later winter: 1 when the season doesn't touch it */
+export const yieldIn = (defId: string, season: Season) => rule(START.seasons.yield[defId] ?? {}, season, 1);
 export const seasonYield = (w: World, defId: string) => {
   const t = START.seasons.yield[defId]; if (!t) return 1;
   const s = seasonOf(w), y = rule(t, s.season, 1);
