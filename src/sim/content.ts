@@ -371,6 +371,7 @@ export interface TraitDef {
 export const TRAITS: TraitDef[] = [
   { id: 'grumbler', name: 'Grumbler', desc: 'Complains constantly. Coworkers −3 mood.', group: 'temper' },
   { id: 'sunny', name: 'Sunny', desc: '+5 mood. Coworkers +2 mood.', group: 'temper' },
+  { id: 'hothead', name: 'Hothead', desc: 'Quick to anger. When they break, they wreck their workshop.', group: 'temper' },
   { id: 'glutton', name: 'Glutton', desc: 'Gets hungry 60% faster. Meals are +4 better.' },
   { id: 'picky', name: 'Picky eater', desc: 'Raw food is a personal insult: −8 instead of −3.' },
   { id: 'romantic', name: 'Hopeless romantic', desc: 'Falls in love 3× as easily. Breakups hit twice as hard.' },
@@ -588,6 +589,9 @@ export const ILLNESSES: IllnessDef[] = [
   { id: 'splinter', name: 'Heroic splinter', start: 16, worsen: 0.15 },
   { id: 'chill', name: 'Winter chill', start: 18, worsen: 0.35 },
   { id: 'bitten', name: 'Wolf bite', start: 28, worsen: 0.2 },
+  // from breaks
+  { id: 'hangover', name: 'Hangover', start: 14, worsen: 0 },
+  { id: 'bruised', name: 'Black eye and bruises', start: 18, worsen: 0.05 },
 ];
 
 // ---------- Research ----------

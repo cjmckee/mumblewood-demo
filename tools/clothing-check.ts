@@ -28,7 +28,7 @@ for(const route of [['flaxfield','weaver','cloth'],['trapper','tanner','leather'
  measurements.push({route:route[0],days:10,coats:w.flows['coats:+tailor'],material:w.flows[`${route[2]}:+${route[1]}`]});
 }
 const w=createWorld(42);w.nextEventHour=1e9;w.res.coats=1;reconcileStock(w);
-w.hour=20*24+8; // winter 1
+w.hour=30*24+8; // winter 1 (runs start in spring)
 for(const c of alive(w)){c.hunger=100;c.fun=100;c.job=null;c.prios=focusedPrios(null);}
 run(w,5);
 assert.equal(alive(w).filter(hasCoat).length,1,'one coat can protect only one settler');
@@ -38,23 +38,23 @@ const c=alive(w).find(hasCoat)!;const before=c.coatHours!;
 run(w,2);assert.equal(c.coatHours,before-2,'wear while worn');
 c.cold=true;const clothed=chillChance(w,c);const life=c.coatHours!;c.coatHours=0;
 assert.equal(clothed,chillChance(w,c)*CLOTHING.chillRiskMultiplier,'coat reduces cold illness risk');c.coatHours=life;
-w.hour=30*24+8; // spring 1
+w.hour=40*24+8; // spring 1
 run(w,5);assert(c.coatStoredAt!=null,'personal coat is physically stored in spring');
 const stored=c.coatHours!;run(w,24);assert.equal(c.coatHours,stored,'stored coats do not wear');
-w.hour=60*24+8; // second winter
+w.hour=70*24+8; // second winter
 run(w,5);assert(hasCoat(c),'settler retrieves their own coat');assert(c.coatHours!<=stored&&c.coatHours!>stored-6,'retrieval preserves condition');assert.equal(w.flows['coats:-equipped'],1,'retrieval does not create or consume another coat');
 c.coatHours=1;run(w,1);assert.equal(c.coatHours,0,'worn coat expires');
 assert.equal(w.flows['coats:-wornOut'],1,'expiry is recorded');
-const fuel=createWorld(9);fuel.nextEventHour=1e9;fuel.hour=20*24+8;fuel.res.wood=0;reconcileStock(fuel);
+const fuel=createWorld(9);fuel.nextEventHour=1e9;fuel.hour=30*24+8;fuel.res.wood=0;reconcileStock(fuel);
 const bundled=alive(fuel)[0];bundled.coatHours=CLOTHING.lifetimeHours;run(fuel,1);
 assert.equal(bundled.cold,true,'wearing a coat does not heat an unfuelled home');
 const coatThought=bundled.thoughts.find(t=>t.label==='Cold, but bundled in a warm coat');
 assert(coatThought && coatThought.value===-3,'a coat halves the actual cold-home mood penalty');
-const fresh=createWorld(7);assert.equal(seasonOf(fresh).dayOf,1);assert.equal(seasonOf(fresh).season,'summer');assert.equal(seasonOf(fresh).toWinter,20);
-assert.equal(seasonOn(21).season,'winter');assert.equal(seasonOn(16,{season:'summer',day:6}).season,'winter');
+const fresh=createWorld(7);assert.equal(seasonOf(fresh).dayOf,1);assert.equal(seasonOf(fresh).season,'spring');assert.equal(seasonOf(fresh).toWinter,30);
+assert.equal(seasonOn(31).season,'winter');assert.equal(seasonOn(16,{season:'summer',day:6}).season,'winter');
 const alternate=createWorld(7,{colonists:5,startDate:{season:'spring',day:3}});assert.equal(alive(alternate).length,5);assert.equal(seasonOf(alternate).dayOf,3);assert.equal(seasonOf(alternate).season,'spring');
 assert.throws(()=>createWorld(7,{startDate:{season:'summer',day:11}}));
-w.hour=20*24;assert.equal(seasonYield(w,'flaxfield'),0);assert(seasonYield(w,'trapper')>0,'animal route works in winter');
+w.hour=30*24;assert.equal(seasonYield(w,'flaxfield'),0);assert(seasonYield(w,'trapper')>0,'animal route works in winter');
 // Real save round-trip and migration without a browser DOM.
 const data=new Map<string,string>();Object.assign(globalThis,{localStorage:{getItem:(k:string)=>data.get(k)??null,setItem:(k:string,v:string)=>data.set(k,v),removeItem:(k:string)=>data.delete(k)}});
 assert(saveWorld(alternate));const loaded=loadSave()!;assert.deepEqual(loaded.world.startDate,alternate.startDate);

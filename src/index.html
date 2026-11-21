@@ -188,6 +188,11 @@ h3.first { margin-top: 4px; }
 .rels { display: flex; flex-wrap: wrap; gap: 6px; }
 .rel { font-size: 12px; padding: 4px 10px; border-radius: 999px; background: #262d26; }
 .rel.love { color: var(--love); } .rel.friend { color: var(--good); } .rel.rival { color: var(--bad); }
+.banner { margin: 8px 0; padding: 8px 10px; border-radius: 10px; font-size: 13px; }
+.banner p { margin: 0; }
+.banner ul { margin: 4px 0 0; padding-left: 18px; }
+.banner.bad { background: #4a2420; color: #ffd3c8; } .banner.warn { background: #3d331c; color: #f4dc9c; } .banner.good { background: #4a3a14; color: #ffe7a8; }
+.mood.breaking b { color: #ff7a5c; }
 /* the work grid: priority 1 brightest, 4 faint, blank never */
 .wgrid { display: grid; gap: 3px; margin: 8px 0 6px; overflow-x: auto; }
 .wg-row { display: grid; grid-template-columns: 44px repeat(10, minmax(28px, 1fr)); gap: 3px; align-items: center; }

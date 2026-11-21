@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {createWorld,debugGrow,findSpot,apply,alive} from '../src/sim/world';
 import {clothingJob,BOT} from '../src/sim/autoplayer';
 const saved=BOT.clothingBatch;BOT.clothingBatch=true;
-const w=createWorld(42);debugGrow(w,10);w.hour=10*24+12;w.res.stew=100;w.owned.push('trapper','tanner','tailor');
+const w=createWorld(42);debugGrow(w,10);w.hour=20*24+12;w.res.stew=100;w.owned.push('trapper','tanner','tailor');
 const put=(id:string)=>{const s=findSpot(w,id);assert(s);assert.equal(apply(w,{type:'place',def:id,...s}),null);const b=w.buildings.at(-1)!;b.built=true;return b;};
 put('trapper');assert.equal(clothingJob(w),'trapper','prime one coat while processors are being built');
 w.res.hides=4;assert.equal(clothingJob(w),undefined,'four hides are enough until processing exists');

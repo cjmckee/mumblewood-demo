@@ -33,6 +33,8 @@ export interface Start {
    */
   /** strain's daily rise: rate × √colonists, growing by rampDays. Was 0.15 scaled by comfort (about 0.6× in play); comfort is gone, so 0.085, which keeps strain where it was */
   strain: { rate: number; rampDays: number };
+  /** strain added by each break, and by each settler who leaves (strain is a point of mood off everyone) */
+  breaks: { strain: number; leftStrain: number };
   /** strain relief from finishing a charter, a share of the current strain so a deeper hole means a bigger climb back */
   relief: { charter: number };
   /** wood the hearth burns per night hour: a small fire for a small colony that grows with it, up to 1 */
@@ -148,6 +150,7 @@ export const START: Start = {
   draftEvery: 5,
   collapse: { lost: 6, minAlive: 0 },
   strain: { rate: 0.085, rampDays: 40 },
+  breaks: { strain: 0.5, leftStrain: 2 },
   relief: { charter: 0.3 },
   hearth: { base: 0.125, perPerson: 0.03 },
   woodReserve: 10,
@@ -157,7 +160,7 @@ export const START: Start = {
   outbreakFrom: { day: 6, pop: 5 },
   seasons: {
     days: 10,
-    start: { season: 'summer', day: 1 },
+    start: { season: 'spring', day: 1 },
     work: { spring: [6, 18], summer: [5, 18], autumn: [6, 18], winter: [7, 18] },
     build: { spring: 0.85, winter: 0.85 },
     offPath: { spring: 0.85, winter: 0.85 },
