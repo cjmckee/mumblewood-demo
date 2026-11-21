@@ -38,12 +38,8 @@ export interface Start {
    * An optional piecewise curve supports balance experiments; the shipped default remains linear.
    */
   comfortScale: import('./comfort').ComfortScale;
-  /**
-   * strain relief, each a share of the current strain so a deeper hole means a bigger climb back: finishing a charter, and
-   * a festival the player calls (base share if everyone eats, more if most also get a drink, more again if most get
-   * something they love), with a wait between festivals
-   */
-  relief: { charter: number; festival: { base: number; drinks: number; loved: number; waitDays: number } };
+  /** strain relief from finishing a charter, a share of the current strain so a deeper hole means a bigger climb back */
+  relief: { charter: number };
   /** wood the hearth burns per night hour: a small fire for a small colony that grows with it, up to 1 */
   hearth: { base: number; perPerson: number };
   /** wood workshops (and the research desk) leave in storage for the hearth */
@@ -142,8 +138,6 @@ export interface SeasonRules {
   springFresh: boolean;
   /** Experimental relative comfort weight for the existing summer drink need; default 1. */
   summerDrinkWeight?: number;
-  /** mood when winter comes, for having held a harvest festival in autumn or not */
-  harvestHome: { held: number; missed: number; hours: number };
 }
 
 export const START: Start = {
@@ -160,7 +154,7 @@ export const START: Start = {
   collapse: { lost: 6, minAlive: 0 },
   strain: { rate: 0.15, rampDays: 40 },
   comfortScale: { base: 1.4, slope: 1 },
-  relief: { charter: 0.3, festival: { base: 0.15, drinks: 0.05, loved: 0.05, waitDays: 4 } },
+  relief: { charter: 0.3 },
   hearth: { base: 0.125, perPerson: 0.03 },
   woodReserve: 10,
   body: { hungerHours: 34, eatBelow: 45, walk: 7, spoilPerDay: 0.035 },
@@ -196,7 +190,6 @@ export const START: Start = {
     prep: { from: 10, full: 3, share: 0.3, fuel: 0.6 },
     stricterFromYear: 0,
     springFresh: false,
-    harvestHome: { held: 4, missed: -4, hours: 96 },
   },
   story: { base: 3, perDay: 0.15, perPop: 0.4, majorGap: 6, majorChance: 0.6, moderateChance: 0.55, majorFrom: 12, repeatDays: 10 },
   trade: {

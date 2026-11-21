@@ -5,7 +5,7 @@ import {
   day, hourOfDay, opinion, workersAt, MAX_DEPARTURES, sites, siteWork, remainingCost, storageCap, stored,
   keepsFresh, findSpot, canPlace, laborers, centerOf, built, Building, efficiencyAt, pathAt, MAP_SIZE, blockedReason, Errand, patientsAt, clinicAdmissions, lost, bedridden, spoilingFood, accepts, roomIn, FOODS, GOODS,
   recipesOf, recipeOn, optionOn, optionsOf, currentRecipe, orderedRecipes, INPUT_CAPACITY, OUTBOX_CAP, siteOk, rerollCost, REROLL_STEP, stockOf, recipeReach, charterHelpers, charterDef,
-  costOf, researchLeft, researchStillNeeds, desks, feastCheck, festivalPreview, mealTotal, drinkTotal,
+  costOf, researchLeft, researchStillNeeds, desks, feastCheck, mealTotal, drinkTotal,
   comfortParts, comfortOf, colonyComfort, comfortGaps, comfortFactor, comfortMilestoneView, strainPerDay, footprint, activeNeeds, standingOf, STANDINGS, NeedKey, winterFuelPerDay,
   sellPrice, renownOf, pavilionOf, larderOf, FEAST_MEALS, charterCounted, charterRequirements, basicsDone, researchOpen, edibleTotal, storePrio, colonyName, nameFrom, NAME_MAX, wantMet, wantPenalty, wantSupported, wantGap, tradeOf, TRADE_DEFS, workPrio, hasWork,
 } from '../sim/world';
@@ -208,7 +208,7 @@ const CATEGORY_MEMBERS = { meal: membersOf('meal'), drink: membersOf('drink'), f
 /** a cornerstone's icon: the building or good it's about, where there is one */
 const CORNERSTONE_ICON: Record<string, string> = {
   communalPot: 'stew', warmHearth: 'wood', hearthSongs: 'tavern', homesteaders: 'cottage', hearthkeepers: 'wood', lumberGuild: 'woodcutter',
-  rentCollector: 'gold', pilgrimsRoad: 'caravan', rootCellars: 'cellar', merchantsFavour: 'caravan', openRoad: 'leanto', feastDays: 'dining',
+  rentCollector: 'gold', pilgrimsRoad: 'caravan', rootCellars: 'cellar', merchantsFavour: 'caravan', openRoad: 'leanto',
   brewersGuild: 'brewery', fishingRights: 'dock', masonsLodge: 'sawmill', bakersRow: 'bakery', crownsFavour: 'gold', barnRaising: 'carpenter', ironWill: 'statue',
 };
 const PREFS_KEY = 'mumblewood.ui.prefs.v1';
@@ -247,7 +247,6 @@ export class UI {
   private picking: number | null = null; // errand id whose colonist picker is open
   /** the pavilion whose larder release is waiting for a second tap */
   private releaseArm: number | null = null;
-  private festivalOpen = false;
   /** a saved run was found on boot: the game waits on the welcome-back card */
   resumeOpen = false;
   resumeSavedAt = '';
@@ -265,7 +264,7 @@ export class UI {
   resumeFinale(w: World) { if (w.status === 'won') this.finaleStarted.set(w, null); }
   resetForNewSettlement() {
     this.detail = null; this.open = false; this.resumeOpen = false;
-    this.festivalOpen = false; this.strainOpen = false; this.comfortOpen = false; this.help = null; this.picking = null;
+    this.strainOpen = false; this.comfortOpen = false; this.help = null; this.picking = null;
     this.confirmNew = false; this.peeking = false;
     this.nameInit = ''; this.nameDraft = null; this.nameSeed = -1;
     this.lastModal = ''; this.lastSheet = ''; this.lastPlaceBar = ''; this.lastPeekBar = ''; this.dialogKey = '';
@@ -304,14 +303,14 @@ export class UI {
   private sheetKey = '';
   private sheetScroll = new Map<string, number>();
   private returnFocus: { act: string; arg: string } | null = null;
-  get blocksSimulation() { const w0 = this.getWorld(); return (w0.status === 'playing' && !w0.decisions.length && alive(w0).some(c => c.settling)) || this.festivalOpen || this.strainOpen || this.comfortOpen || this.picking != null || this.help != null || this.naming(this.getWorld()); }
+  get blocksSimulation() { const w0 = this.getWorld(); return (w0.status === 'playing' && !w0.decisions.length && alive(w0).some(c => c.settling)) || this.strainOpen || this.comfortOpen || this.picking != null || this.help != null || this.naming(this.getWorld()); }
   /** the first charter is picked and the colony hasn't been named yet */
   private naming(w: World) { return w.status === 'playing' && !w.named && !!(w.charter || w.chartersDone.length) && !this.resumeOpen; }
 
   private dismissDialog() {
     if (this.comfortOpen) { this.comfortOpen = false; this.render(true); return; }
     if (this.getWorld().decisions.length || this.resumeOpen || this.getWorld().status !== 'playing') return;
-    this.festivalOpen = false; this.strainOpen = false; this.picking = null; this.help = null;
+    this.strainOpen = false; this.picking = null; this.help = null;
     this.render(true);
   }
 
@@ -364,7 +363,7 @@ export class UI {
     if (tab === 'colonists') this.colonistFilter = 'all';
     this.tab = tab; this.open = true; this.detail = null; this.view.selected = null;
     this.destination = null; this.peopleFilter = null; this.resource = null;
-    this.festivalOpen = false; this.strainOpen = false; this.picking = null; this.help = null;
+    this.strainOpen = false; this.picking = null; this.help = null;
   }
 
   private navigate(d: Destination) {
@@ -388,8 +387,7 @@ export class UI {
     const f = c.fixes[i];
     let ico = '', how: 'staff' | 'build' | 'study' | 'draft' | 'swap' | 'open' = 'open', act = 'fix', arg = `${c.id}:${i}`, label = '';
     if (!f) {
-      if (c.id === 'festival' || c.id === 'moodcharter') { ico = icon('meal'); act = 'festival-open'; arg = ''; label = 'Plan a festival'; }
-      else if (c.id === 'leaving') { ico = PERSON_GLYPH; act = 'issue-people'; arg = c.id; label = 'See who'; }
+      if (c.id === 'leaving') { ico = PERSON_GLYPH; act = 'issue-people'; arg = c.id; label = 'See who'; }
       else if (c.id === 'stretched' || c.id === 'slack') { ico = TAB_GLYPH.ledger; act = 'ledger-laborers'; arg = ''; label = 'Laborers in the ledger'; }
       else { ico = TAB_GLYPH.ledger; act = 'tab'; arg = 'ledger'; label = 'Open the ledger'; }
     } else {
@@ -592,14 +590,10 @@ export class UI {
         else { const err = this.send({ type: 'sendOnErrand', errand: eid, colonist: cid }); if (err) this.toast(err); }
         this.picking = null; this.lastModal = ''; break; }
       case 'errand-later': this.send({ type: 'resolve', option: 0 }); this.lastModal = ''; break;
-      case 'festival-open': this.festivalOpen = true; this.lastModal = ''; break;
       case 'comfort-open': this.comfortOpen = true; this.lastModal = ''; break;
       case 'comfort-close': this.comfortOpen = false; this.lastModal = ''; break;
       case 'strain-open': this.strainOpen = true; this.lastModal = ''; break;
       case 'strain-close': this.strainOpen = false; this.lastModal = ''; break;
-      case 'strain-festival': this.strainOpen = false; this.festivalOpen = true; this.lastModal = ''; break;
-      case 'festival-close': this.festivalOpen = false; this.lastModal = ''; break;
-      case 'festival-call': { const err = this.send({ type: 'callFestival' }); this.toast(err ?? 'Festival called. Everyone gathers at the hearth at dusk.'); this.festivalOpen = false; this.lastModal = ''; break; }
     }
     this.render(true);
   }
@@ -708,7 +702,7 @@ export class UI {
           ${researchChip}${concernCards(w)}
         </div>
         <div class="threats">
-          <button type="button" class="strain" data-act="strain-open" title="Frontier strain: a mood penalty that rises every day, faster when people's needs go unmet. Tap for why."><span>Strain</span><b>${strain}</b><small class="rate">▲ ${strainPerDay(w).toFixed(1)}/day</small></button>${this.festivalChip(w)}
+          <button type="button" class="strain" data-act="strain-open" title="Frontier strain: a mood penalty that rises every day, faster when people's needs go unmet. Tap for why."><span>Strain</span><b>${strain}</b><small class="rate">▲ ${strainPerDay(w).toFixed(1)}/day</small></button>
           <button type="button" data-act="help" data-arg="loss" class="leavers" title="If ${sc.collapse.lost} settlers leave or die${sc.collapse.minAlive ? `, or only ${sc.collapse.minAlive} remain` : ''}, the colony collapses"><span>Lost</span><div class="pips">${pips}</div></button>
         </div>
         </div>
@@ -776,7 +770,7 @@ export class UI {
     let title = 'Colony help', body = '';
     if (this.help === 'season') {
       title = `${SEASON_NAMES[sea.season]} · day ${sea.dayOf}/${START.seasons.days}`;
-      body = `<p class="lede">${sea.season === 'winter' ? `Heating needs about ${Math.round(winterFuelPerDay(w))} wood/day.` : `Winter in ${sea.toWinter} days · heating will need about ${Math.round(winterFuelPerDay(w,true))} wood/day.`}</p><div class="actions"><button type="button" class="ghost" data-act="need" data-arg="warmth">Warm homes →</button><button type="button" class="ghost" data-act="need" data-arg="fresh">Fresh food →</button><button type="button" class="ghost" data-act="need" data-arg="drink">Drinks →</button></div><p class="terms">Spring: ${START.seasons.springFresh ? 'fresh food' : 'crops and fishing recover; mud slows travel'}. Summer: drinks. Autumn: harvest festival. Winter: warm homes. Expectations grow with town standing.</p>`;
+      body = `<p class="lede">${sea.season === 'winter' ? `Heating needs about ${Math.round(winterFuelPerDay(w))} wood/day.` : `Winter in ${sea.toWinter} days · heating will need about ${Math.round(winterFuelPerDay(w,true))} wood/day.`}</p><div class="actions"><button type="button" class="ghost" data-act="need" data-arg="warmth">Warm homes →</button><button type="button" class="ghost" data-act="need" data-arg="fresh">Fresh food →</button><button type="button" class="ghost" data-act="need" data-arg="drink">Drinks →</button></div><p class="terms">Spring: ${START.seasons.springFresh ? 'fresh food' : 'crops and fishing recover; mud slows travel'}. Summer: drinks. Winter: warm homes. Expectations grow with town standing.</p>`;
     } else if (this.help === 'loss') {
       title = `${lost(w)}/${START.collapse.lost} settlers lost`;
       body = `<p class="lede">The colony collapses at ${START.collapse.lost} lost settlers or ${START.collapse.minAlive} survivors.</p><ul class="thoughts">${w.colonists.filter(c => c.left).map(c=>`<li><span>${esc(c.name)}</span><b>${c.died ? 'Died' : 'Left'}</b></li>`).join('') || '<li>No settlers lost.</li>'}</ul>`;
@@ -793,7 +787,7 @@ export class UI {
     const next = st + 1 < STANDINGS.length ? activeNeeds(w, st + 1).filter(k => !activeNeeds(w).includes(k)) : [];
     const nextLine = st + 1 < STANDINGS.length ? `<p class="terms">At the next charter the town becomes a <b>${STANDINGS[st + 1].toLowerCase()}</b>, and people expect more${next.length ? `: ${next.map(k => NEED_NAMES[k].toLowerCase()).join(', ')} start to count` : ''}${st + 1 >= 2 ? ', a shack counts half, and meals want a table' : ', and cooked meals replace any old food'}.</p>` : `<p class="terms">A village expects the most it ever will${START.seasons.stricterFromYear > 0 ? ', though from the second year everyone gets a little pickier' : ''}.</p>`;
     const seasonLine = sea.season === 'winter' ? `Winter: everyone needs a warm home. Homes and the hearth burn about ${Math.round(winterFuelPerDay(w))} wood a day.`
-      : sea.season === 'autumn' ? `Autumn: winter in ${sea.toWinter} day${sea.toWinter === 1 ? '' : 's'}. Homes and the hearth will burn about ${Math.round(winterFuelPerDay(w, true))} wood a day, and people expect a harvest festival first.`
+      : sea.season === 'autumn' ? `Autumn: winter in ${sea.toWinter} day${sea.toWinter === 1 ? '' : 's'}. Homes and the hearth will burn about ${Math.round(winterFuelPerDay(w, true))} wood a day.`
       : sea.season === 'spring' && st >= 1 ? (START.seasons.springFresh ? 'Spring: people want something fresh now and then: berries, apples, fish or skewers.' : 'Spring: home heating ends, crops return, and fishing improves. Mud slows off-path travel and construction.')
       : sea.season === 'summer' && st >= 1 ? 'Summer: people want a drink each day in the heat.' : '';
     const pct = (x: number) => `${Math.round(x * 100)}%`;
@@ -807,38 +801,10 @@ export class UI {
       <div class="ledger">${rows}</div>
       <details data-key="strain-future"><summary>Season & next charter</summary>${seasonLine ? `<p class="terms">${esc(seasonLine)}</p>` : ''}${nextLine}</details>
       
-      <p class="terms">It eases when a charter is finished (by ${pct(START.relief.charter)}) or when you hold a festival.</p>
-      <div class="opts">${!w.festival?.called && !festivalPreview(w).wait ? `<button type="button" class="opt" data-act="strain-festival"><b>Plan a festival</b><span>${festivalPreview(w).relief >= 0.5 ? `Eases strain by about ${Math.round(festivalPreview(w).relief)}` : 'Strain is low, so it would ease very little'}</span></button>` : ''}</div>
-      <button type="button" class="ghost skip" data-act="strain-close">Close</button></div>`;
+      <p class="terms">It eases when a charter is finished (by ${pct(START.relief.charter)}).</p>
+      <div class="opts">      <button type="button" class="ghost skip" data-act="strain-close">Close</button></div>`;
   }
 
-  private festivalChip(w: World) {
-    const f = w.festival;
-    if (f?.called) return '<small class="fest on">festival at dusk</small>';
-    const wait = Math.max(0, Math.ceil((f?.readyAt ?? 0) - w.hour));
-    if (wait) return `<small class="fest">festival in ${wait < 24 ? `${wait}h` : `${Math.ceil(wait / 24)}d`}</small>`;
-    return `<button type="button" class="fest" data-act="festival-open">Festival</button>`;
-  }
-
-  private festivalCard(w: World) {
-    const p = festivalPreview(w);
-    const r = START.relief.festival;
-    const pct = (x: number) => `${Math.round(x * 100)}%`;
-    const can = !w.festival?.called && !p.wait && mealTotal(w) >= 1;
-    const short = p.fed < p.guests ? ` ${p.guests - p.fed} would go without, which eases less.` : '';
-    return `<div class="card-wrap event"><p class="eyebrow">At the hearth, at dusk</p><h2>Call a festival?</h2>
-      <p class="lede">At dusk · ${p.guests} guests · strain −${Math.round(p.relief)}</p>${short ? `<p class="warnline">⚠ ${p.guests - p.fed} guests without a meal</p>` : ''}
-      <ul class="thoughts">
-        <li><span>Settlers coming</span><b>${p.guests}</b></li>
-        <li><span>${icon('meal')}Meals · ${Math.floor(mealTotal(w))} stored</span><b>${p.fed}</b></li>
-        <li><span>${icon('drink')}Drinks · ${Math.floor(drinkTotal(w))} stored</span><b>${p.drank}</b></li>
-        <li><span>Getting a favourite</span><b>${p.loved}</b></li>
-        <li><span>Strain eased</span><b>${Math.round(p.relief)} (${pct(p.share)})</b></li>
-      </ul>
-      <details data-key="festival-math"><summary>How relief works</summary><p class="terms">${pct(r.base)} if everyone eats, ${pct(r.drinks)} more if most have a drink, ${pct(r.loved)} more if most get a favourite. Then ${r.waitDays} days before the next one. Everyone except bedridden settlers attends; favourites are chosen first.</p></details>
-      <div class="opts"><button type="button" class="opt" data-act="festival-call" ${can ? '' : 'disabled'}><b>Call festival</b><span>${can ? (p.relief >= 0.5 ? `Eases strain by about ${Math.round(p.relief)}` : 'Strain is low, so it would ease very little') : mealTotal(w) < 1 ? 'There are no meals to share' : 'Not ready yet'}</span></button></div>
-      <button type="button" class="ghost skip" data-act="festival-close">Not now</button></div>`;
-  }
 
   /** passing troubles from events (a drought, a blight, a frozen well), with how long they have left */
   private effectChips(w: World) {
@@ -1321,7 +1287,6 @@ export class UI {
         <button type="button" class="act nok" data-act="name-ok">Confirm</button></div>`;
     }
     if (!html && this.help) html = this.helpCard(w);
-    if (!html && this.festivalOpen) html = this.festivalCard(w);
     if (!html && this.strainOpen) html = this.strainCard(w);
     if (!html && this.picking != null) { const e = w.errands.find(x => x.id === this.picking); if (e) html = this.errandPicker(w, e, false); else this.picking = null; }
     if (html && w.status === 'playing') html = html.replace('<p class="eyebrow">', '<p class="eyebrow">Ⅱ Paused · ');
@@ -1341,7 +1306,7 @@ export class UI {
       if (next !== this.lastPeekBar) { bar.innerHTML = next; this.lastPeekBar = next; }
       bar.hidden = false; html = '';
     } else bar.hidden = true;
-    const nextDialogKey = this.comfortOpen && w.status === 'playing' && !this.resumeOpen ? 'comfort' : d ? JSON.stringify(d) : arriving ? `arrive:${arriving.id}` : this.naming(w) ? `name:${this.nameInit}` : this.help ? `help:${this.help}` : this.festivalOpen ? 'festival' : this.strainOpen ? 'strain' : this.picking != null ? `errand:${this.picking}` : this.resumeOpen ? 'resume' : w.status;
+    const nextDialogKey = this.comfortOpen && w.status === 'playing' && !this.resumeOpen ? 'comfort' : d ? JSON.stringify(d) : arriving ? `arrive:${arriving.id}` : this.naming(w) ? `name:${this.nameInit}` : this.help ? `help:${this.help}` : this.strainOpen ? 'strain' : this.picking != null ? `errand:${this.picking}` : this.resumeOpen ? 'resume' : w.status;
     const changedDialog = nextDialogKey !== this.dialogKey;
     const wasOpen = !el.hidden;
     if (html && !wasOpen) {
@@ -1581,7 +1546,6 @@ function concernFacts(w: World, c: Ranked) {
     case 'storage': return fact(icon('stockpile'), `${Math.floor(stored(w))}/${storageCap(w)}`, true);
     case 'planks': return fact(icon('fine'), String(Math.floor(stockOf(w, 'fine'))), true);
     case 'stretched': case 'slack': return fact(LABORER_GLYPH, `${Math.round(e.busyShare * 100)}%`);
-    case 'festival': return fact(STRAIN_GLYPH, String(Math.round(w.strain)));
     case 'moodcharter': return fact(MOOD_GLYPH, String(Math.round(avgMood(w))));
     case 'desk': return fact(icon('desk'), staff('desk'), true);
     default: return '';

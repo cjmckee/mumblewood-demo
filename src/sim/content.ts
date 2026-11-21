@@ -390,7 +390,7 @@ export const PERKS: PerkDef[] = [
   { id: 'saintsDay', name: "Saint Pomfrey's blessing", desc: '+6 mood for everyone, forever.' },
   { id: 'warmHearth', name: 'Everburning hearth', desc: 'The hearth burns no wood at all, and evenings there are +2.' },
   { id: 'hearthSongs', name: 'Hearth songs', desc: 'Strain eases by 1 every evening the tavern is open and staffed.' },
-  { id: 'postRider', name: 'A post rider', desc: 'Charters and festivals ease 20% more strain.' },
+  { id: 'postRider', name: 'A post rider', desc: 'Charters ease 20% more strain.' },
   { id: 'homesteaders', name: 'Homesteaders', desc: 'Comfort counts for 30% more against strain.' },
   { id: 'hearthkeepers', name: 'Hearthkeepers', desc: 'Homes burn half as much wood in winter.' },
   { id: 'lumberGuild', name: 'Lumber guild', desc: 'Woodcutters bring in 50% more wood.' },
@@ -399,7 +399,6 @@ export const PERKS: PerkDef[] = [
   { id: 'rootCellars', name: 'Root cellars', desc: 'Nothing spoils in winter.' },
   { id: 'merchantsFavour', name: 'Merchant’s favour', desc: 'The caravan sells for 20% less and pays 20% more.' },
   { id: 'openRoad', name: 'Open road', desc: 'Settlers ask to join every day, all year, and each stage has room for 2 more.', cost: 'Strain grows 10% faster.' },
-  { id: 'feastDays', name: 'Feast days', desc: 'Festivals ease 50% more strain.' },
   // guilds: a big boost to one chain, worth it only if the colony runs on that chain
   { id: 'brewersGuild', name: 'Brewers\u2019 guild', desc: 'Breweries and cider presses work 75% faster.' },
   { id: 'fishingRights', name: 'Fishing rights', desc: 'Fishing docks and smokehouses work 75% faster.' },

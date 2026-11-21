@@ -80,7 +80,7 @@ try {
           mood: meanMood, lowestMood: Math.min(...people.map(c => c.mood)), strain: w.strain, comfort: colonyComfort(w),
           food: edibleTotal(w), charter: w.charter, chartersDone: [...w.chartersDone],
           departures: w.stats.departures - start.stats.departures, deaths: w.stats.deaths - start.stats.deaths,
-          festivals: (w.festival?.held ?? 0) - (start.festival?.held ?? 0), festivalGoods: festivalGoods(w) - festivalGoods(start),
+          festivals: 0, festivalGoods: festivalGoods(w) - festivalGoods(start),
           daytimeSulkingPersonHours: daytimeSulking(w) - daytimeSulking(start), storyEvents: storyEvents(w) - storyEvents(start),
           ...exposure };
         trace.push(row);
