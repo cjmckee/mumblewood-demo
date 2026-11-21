@@ -1,11 +1,11 @@
 // npx tsx tools/tavern-serving-check.ts
 import assert from 'node:assert/strict';
-import {createWorld,apply,findSpot,spotOf,tick,TICKS_PER_HOUR,drinkTotal,onHand,World} from '../src/sim/world';
+import {createWorld,apply,findSpot,spotOf,tick,TICKS_PER_HOUR,drinkTotal,onHand,World,focusedPrios} from '../src/sim/world';
 import {saveWorld,loadSave} from '../src/save';
 function fixture(stock:number,cellaring=false){
  const w=createWorld(42,{colonists:2});w.owned.push('tavern');const s=findSpot(w,'tavern');assert(s);assert.equal(apply(w,{type:'place',def:'tavern',...s}),null);
  const pub=w.buildings.at(-1)!;pub.built=true;apply(w,{type:'assign',colonist:w.colonists[0].id,building:pub.uid});
- const c=w.colonists[1],p=spotOf(pub);c.x=p.x;c.y=p.y;c.fun=0;c.hunger=100;c.job=null;
+ const c=w.colonists[1],p=spotOf(pub);c.x=p.x;c.y=p.y;c.fun=0;c.hunger=100;c.job=null;c.prios=focusedPrios(null);
  w.hour=18;w.nextEventHour=1e9;w.decisions=[];w.res.ale=stock;w.res.stew=100;
  if(cellaring)w.research!.done.push('cellaring');return {w,c,pub};
 }

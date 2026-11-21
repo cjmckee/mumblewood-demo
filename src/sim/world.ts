@@ -70,6 +70,10 @@ export interface Colonist {
   prios?: Partial<Record<WorkKind, number>>;
   /** just arrived: the player hasn't looked over their work yet (the arrival card) */
   settling?: boolean;
+  /** what they did each working hour lately, for the work wants: a trade, building or hauling (last 72 hours) */
+  worked?: { h: number; k: JobKind | 'building' | 'hauling' }[];
+  /** the last hour they worked beside a friend */
+  withFriendAt?: number;
   /** personal wants, from arrival (missing in older saves: none) */
   wants?: WantId[];
   /** the days they had a drink at the tavern, lately (for the tippler want) */
@@ -2691,6 +2695,29 @@ export function wantMet(w: World, c: Colonist, id: WantId): boolean {
     case 'musicLover': return hasBuilt(w, 'stage');
     case 'greenThumb': { const home = buildingByUid(w, c.bed); if (!home) return false; const h = spotOf(home); return built(w).some(b => (b.def === 'flowerbed' || b.def === 'herbgarden') && dist(spotOf(b), h) <= 5); }
     case 'homebody': { const home = buildingByUid(w, c.bed); return !!home && bdef(home).bedQuality === 'cozy'; }
+    case 'outdoorsy': { const r = workSince(w, c, 48); return r.length >= 6 && r.filter(k => OUTDOOR.includes(k)).length >= r.length * 0.6; }
+    case 'restless': return new Set(workSince(w, c, 72).filter(k => k !== 'hauling')).size >= 3;
+    case 'aboveHauling': return workSince(w, c, 48).filter(k => k === 'hauling').length <= 1;
+    case 'workBuddy': return (c.withFriendAt ?? -1e9) >= w.hour - 24;
+  }
+}
+const OUTDOOR: string[] = ['chopping', 'foraging', 'fishing', 'building'];
+/** the kinds of work they did in each working hour of the last few hours */
+const workSince = (w: World, c: Colonist, hours: number) => (c.worked ?? []).filter(x => x.h > w.hour - hours).map(x => x.k);
+/** once an hour in the working day: note what everyone is doing, and who's working beside a friend */
+function logWork(w: World) {
+  const [wake, dusk] = workHours(w), h = hourOfDay(w);
+  if (h < wake || h >= dusk) return;
+  for (const c of alive(w)) {
+    let k: JobKind | 'building' | 'hauling' | null = null;
+    const job = buildingByUid(w, c.job);
+    if (job && c.activity === 'working' && bdef(job).job) {
+      k = bdef(job).job!;
+      if (workersAt(w, job.uid).some(o => o.id !== c.id && opinion(w, c.id, o.id) > 25)) c.withFriendAt = w.hour;
+    } else if (c.task) k = c.task.kind === 'build' || c.task.kind === 'deliver' || c.task.kind === 'pave' ? 'building' : 'hauling';
+    if (!k) continue;
+    (c.worked ??= []).push({ h: Math.floor(w.hour), k });
+    c.worked = c.worked.filter(x => x.h > w.hour - 72);
   }
 }
 /** could the colony meet this want for a newcomer, with what it has now? */
@@ -2704,6 +2731,9 @@ export function wantSupported(w: World, id: WantId): boolean {
     case 'musicLover': return has('stage');
     case 'greenThumb': return has('flowerbed') || has('herbgarden');
     case 'homebody': return has('cottage');
+    // met through the work grid and who works where: always within reach
+    case 'outdoorsy': case 'restless': case 'aboveHauling': return true;
+    case 'workBuddy': return built(w).some(b => (bdef(b).slots ?? 0) >= 2);
   }
 }
 /** what a want needs that the colony lacks, in a few words ("a stage", "3 kinds of meal") */
@@ -2716,6 +2746,10 @@ export function wantGap(w: World, id: WantId): string {
     case 'musicLover': return 'a bard\u2019s stage';
     case 'greenThumb': return 'a flower bed';
     case 'homebody': return 'a cottage';
+    case 'outdoorsy': return 'outdoor work first in their grid';
+    case 'restless': return 'three kinds of work in their grid';
+    case 'aboveHauling': return 'enough work that they never haul';
+    case 'workBuddy': return 'a friend at the same workplace';
   }
 }
 /** what an unmet want costs at the town's standing: people come to expect more */
@@ -2890,6 +2924,7 @@ function hourly(w: World) {
   storyHour(w);
   for (const b of w.buildings) if (!b.built && (b.def === 'hall' || b.def === 'pavilion')) b.headcount = finaleHeadcount(w);
   tradeHour(w);
+  logWork(w);
   const h = Math.round(hourOfDay(w)) % 24;
   const pop = alive(w).length;
   const d = day(w) - 1 + (hourOfDay(w) - 6) / 24;
