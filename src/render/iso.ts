@@ -8,6 +8,7 @@ import type { Colonist } from '../sim/world';
 import { buildingStatus } from '../ui/status';
 import { seasonOf } from '../sim/seasons';
 import type { Season } from '../sim/scenario';
+import { seasonYield } from '../sim/world';
 import { World, Building, MAP_SIZE, BUILD_MIN, BUILD_MAX, CENTER, alive, hourOfDay, workersAt, bdef, siteWork, canPlace, spotOf, built, footprint, doorTile, dims, turnPoint, terrainAt, T_TREE, T_BUSH, T_WATER, T_APPLE, T_FLOWERS, T_SOIL, T_CLAY, T_OAK } from '../sim/world';
 
 const TW = 64, TH = 32; // tile width/height in px
@@ -400,6 +401,21 @@ export class IsoView {
         badge.moveTo(p.sx, y - 4).lineTo(p.sx, y + 1).stroke({ width: 2, color: 0x292b20 });
         badge.circle(p.sx, y + 4, 1.1).fill(0x292b20); o.c.addChild(badge);
       }
+      // the season: a workplace it stops (or one the player paused) fades; one it slows wears a snowflake
+      if (b.built && bdef(b).slots && bdef(b).job) {
+        const y0 = seasonYield(w, b.def), p = iso(b.x + dims(b).w / 2, b.y + dims(b).h / 2);
+        const x = p.sx + (buildingStatus(w, b).warning ? 20 : 0), y = p.sy - 30 - bdef(b).height * 22;
+        if (y0 <= 0 || b.paused) {
+          o.c.alpha = 0.55;
+          const g = new Graphics(); g.circle(x, y, 9).fill(0x5a6068).stroke({ width: 2, color: 0x292b20 });
+          if (b.paused) g.rect(x - 4, y - 4, 2.6, 8).fill(0xe8eef2).rect(x + 1.4, y - 4, 2.6, 8).fill(0xe8eef2);
+          else snowflake(g, x, y, 0xe8eef2);
+          o.c.addChild(g);
+        } else if (y0 < 1 && this.season === 'winter') {
+          const g = new Graphics(); g.circle(x, y, 9).fill(0x2b5f86).stroke({ width: 2, color: 0x292b20 });
+          snowflake(g, x, y, 0xdff1ff); o.c.addChild(g);
+        }
+      }
       this.bGfx.set(b.uid, o);
       this.objects.addChild(o.c);
     }
@@ -623,5 +639,13 @@ export class IsoView {
     const { width, height } = this.app.screen;
     const p = iso(x, y);
     this.camera.position.set(width / 2 - p.sx * this.zoom, height * frac - p.sy * this.zoom);
+  }
+}
+
+/** a six-armed snowflake, for buildings the season slows or stops */
+function snowflake(g: Graphics, x: number, y: number, color: number) {
+  for (let i = 0; i < 3; i++) {
+    const a = (i * Math.PI) / 3, dx = Math.cos(a) * 5.5, dy = Math.sin(a) * 5.5;
+    g.moveTo(x - dx, y - dy).lineTo(x + dx, y + dy).stroke({ width: 1.8, color });
   }
 }

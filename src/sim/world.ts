@@ -137,6 +137,8 @@ export interface Building {
    *  the same levels: their trade's workers go to higher ones first */
   prio?: 0 | 1 | 2;
   high: boolean;
+  /** paused by the player: nobody works here until it's resumed */
+  paused?: boolean;
   /** workshops: indices of recipes the player has switched off */
   off?: number[];
   /** workshops: single options of a category or slot input the player has switched off, as "slot:good" */
@@ -1097,6 +1099,7 @@ export type Command =
   | { type: 'prios'; colonist: number; prios: Partial<Record<WorkKind, number>> }
   | { type: 'settle'; colonist: number }
   | { type: 'workPriority'; building: number; prio: 0 | 1 | 2 }
+  | { type: 'pause'; building: number; paused: boolean }
   | { type: 'place'; def: string; x: number; y: number; rot?: number }
   | { type: 'cancel'; building: number }
   | { type: 'path'; x: number; y: number; on: boolean }
@@ -1181,6 +1184,13 @@ export function apply(w: World, cmd: Command): string | null {
     }
     case 'settle': {
       const c = colonistById(w, cmd.colonist); if (c) { delete c.settling; w.version++; }
+      return null;
+    }
+    case 'pause': {
+      const b = buildingByUid(w, cmd.building); if (!b) return 'No such building.';
+      if (cmd.paused) b.paused = true; else delete b.paused;
+      for (const c of alive(w)) pickWork(w, c);
+      w.version++;
       return null;
     }
     case 'workPriority': {
@@ -1911,7 +1921,7 @@ export const workPrio = (b: Building): number => b.prio ?? 1;
 export function hasWork(w: World, b: Building): boolean {
   const def = bdef(b);
   if (!b.built || !def.slots || !def.job) return false;
-  if (seasonYield(w, def.id) <= 0) return false;
+  if (seasonYield(w, def.id) <= 0 || b.paused) return false;
   if (def.patients) return alive(w).some(o => bedridden(o)) || !!recipesOf(b).length && !blockedReason(w, b);
   if (def.id === 'tavern') { const [, dusk] = workHours(w); const h = hourOfDay(w); return h >= dusk - 1 || h < 2; }
   if (b.batch) return true;
