@@ -2,6 +2,7 @@
 // It reads the active charter and plays towards it, the way a person would.
 import { WANT_BY_ID, WantId, BUILDING_BY_ID, BUILDINGS, CATEGORIES, CharterMetric, RESEARCH_BY_ID, EVENTS, ResourceId, MEALS, RAW_FOODS, RESOURCES, Recipe, InputKey, membersOf, recipeRate, LORE_BOOST, GUILD_BOOST, RENOWN, TIER, TIER_STAGE, SLOTS, FINALE_COLONISTS, JobKind, JOB_KINDS } from './content';
 import { assess, Concern, defsOf, KIND_DEFS } from './advisor';
+import { isFocused } from './world';
 import { World, feastUnservedDrinks, feastUnservedMeals, orderedRecipes, costOf, tallyOf, renownOf, FEAST_MEALS, FEAST_DRINKS, workshopInputPlan, apply, alive, beds, mealTotal, sites, findSpot, CENTER, avgMood, built, MAP_SIZE, pathAt, terrainAt, T_WATER, bdef, workersAt, blockedReason, opinion, Building, Colonist, hourOfDay, charterProgress, buildingByUid, storageFree, storages, FOODS, GOODS, bedridden, foodTotal, currentRecipe, drinkTotal, siteOk, enabledRecipes, recipesOf, rerollCost, stockOf, usableHere, charterDef, charterHelpers, feastCheck, desks, researchLeft, festivalPreview, edibleTotal, doorTile, centerOf, winterStores, storageCap, stored, lastDay, lastDayHours, remainingCost, seasonYield, recipeOn, spotOf, canPlace, coversPath, efficiencyAt, footprint, BUILD_MIN, BUILD_MAX, blockedGrid, storePrio, workHours, tradeOf, workPrio, wantMet, wantSupported } from './world';
 import { seasonOf } from './seasons';
 import { draftLinks } from './charterplan';
@@ -1521,6 +1522,8 @@ export function autoStaff(w: World) {
   }
   const able = (c: Colonist) => !bedridden(c) && c.errand == null;
   const setTrade = (c: Colonist, t: JobKind | null) => apply(w, { type: 'trade', colonist: c.id, trade: t });
+  // the bot plans in trades: anyone on a full work grid (a new arrival) starts as a laborer, as before the grid
+  for (const c of alive(w)) if (!isFocused(w, c)) setTrade(c, null);
   // the doctor: with someone laid up, a healthy medic, never one who's ill themselves
   const urgent = BOT.urgentClinic && alive(w).some(bedridden);
   const canDo = (c: Colonist, job: JobKind) => able(c) && !(urgent && job === 'medicine' && c.illness);

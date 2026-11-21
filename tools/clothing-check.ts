@@ -1,6 +1,6 @@
 // End-to-end routes, personal equipment and seasonal storage. Run: npx tsx tools/clothing-check.ts
 import assert from 'node:assert/strict';
-import { createWorld, debugGrow, apply, findSpot, alive, runHours, reconcileStock, hasCoat, chillChance, seasonYield, World } from '../src/sim/world';
+import { createWorld, debugGrow, apply, findSpot, alive, runHours, reconcileStock, hasCoat, chillChance, focusedPrios, seasonYield, World } from '../src/sim/world';
 import { CLOTHING } from '../src/sim/content';
 import { seasonOf, seasonOn } from '../src/sim/seasons';
 import { loadSave, saveWorld } from '../src/save';
@@ -29,7 +29,7 @@ for(const route of [['flaxfield','weaver','cloth'],['trapper','tanner','leather'
 }
 const w=createWorld(42);w.nextEventHour=1e9;w.res.coats=1;reconcileStock(w);
 w.hour=20*24+8; // winter 1
-for(const c of alive(w)){c.hunger=100;c.fun=100;c.job=null;}
+for(const c of alive(w)){c.hunger=100;c.fun=100;c.job=null;c.prios=focusedPrios(null);}
 run(w,5);
 assert.equal(alive(w).filter(hasCoat).length,1,'one coat can protect only one settler');
 assert.equal(w.res.coats,0,'equipped coat leaves tradeable stock');

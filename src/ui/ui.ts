@@ -1,7 +1,7 @@
 // DOM overlay: HUD, bottom sheet, decision modals. Talks to the sim only through commands.
-import { LORE_BOOST, EventNeed, EventOption, BUILDINGS, membersOf, isGroup, BUILDING_BY_ID, EVENTS, RESEARCH, RESEARCH_BY_ID, BRANCHES_AFTER, JOB_NAMES, WANT_BY_ID, WantId, TRADE_NAMES, TRADE_ICON, PERK_BY_ID, TRADER_BY_ID, RESOURCES, TRAIT_BY_ID, ResourceId, SKILL_NAMES, JOB_KINDS, JobKind, Recipe, InputKey, inputName, recipeRate, batchHours, Stars, CATEGORIES } from '../sim/content';
+import { LORE_BOOST, EventNeed, EventOption, BUILDINGS, membersOf, isGroup, BUILDING_BY_ID, EVENTS, RESEARCH, RESEARCH_BY_ID, BRANCHES_AFTER, JOB_NAMES, WANT_BY_ID, WantId, TRADE_NAMES, TRADE_ICON, PERK_BY_ID, TRADER_BY_ID, RESOURCES, TRAIT_BY_ID, ResourceId, SKILL_NAMES, JOB_KINDS, JobKind, WORK_KINDS, WorkKind, WORK_LABEL, WORK_ICON, Recipe, InputKey, inputName, recipeRate, batchHours, Stars, CATEGORIES } from '../sim/content';
 import {
-  World, Command, Decision, Colonist, alive, avgMood, beds, buildingByUid, charterProgress, colonistById,
+  World, Command, Decision, Colonist, prioOf, alive, avgMood, beds, buildingByUid, charterProgress, colonistById,
   day, hourOfDay, opinion, workersAt, MAX_DEPARTURES, sites, siteWork, remainingCost, storageCap, stored,
   keepsFresh, findSpot, canPlace, laborers, centerOf, built, Building, efficiencyAt, pathAt, MAP_SIZE, blockedReason, Errand, patientsAt, clinicAdmissions, lost, bedridden, spoilingFood, accepts, roomIn, FOODS, GOODS,
   recipesOf, recipeOn, optionOn, optionsOf, currentRecipe, orderedRecipes, INPUT_CAPACITY, OUTBOX_CAP, siteOk, rerollCost, REROLL_STEP, stockOf, recipeReach, charterHelpers, charterDef,
@@ -292,6 +292,8 @@ export class UI {
   /** the HUD shows every good, not the grouped totals */
   allGoods = false;
   private colonistSort = 'mood';
+  /** the colonists tab: the roster, or everyone's work grid */
+  private colonistView: 'list' | 'work' = 'list';
   private buildingFilter = 'all';
   private buildMode = 'manage';
   private catalogGroup = 'all';
@@ -302,7 +304,7 @@ export class UI {
   private sheetKey = '';
   private sheetScroll = new Map<string, number>();
   private returnFocus: { act: string; arg: string } | null = null;
-  get blocksSimulation() { return this.festivalOpen || this.strainOpen || this.comfortOpen || this.picking != null || this.help != null || this.naming(this.getWorld()); }
+  get blocksSimulation() { const w0 = this.getWorld(); return (w0.status === 'playing' && !w0.decisions.length && alive(w0).some(c => c.settling)) || this.festivalOpen || this.strainOpen || this.comfortOpen || this.picking != null || this.help != null || this.naming(this.getWorld()); }
   /** the first charter is picked and the colony hasn't been named yet */
   private naming(w: World) { return w.status === 'playing' && !w.named && !!(w.charter || w.chartersDone.length) && !this.resumeOpen; }
 
@@ -473,6 +475,9 @@ export class UI {
       case 'help-close': this.help = null; break;
       case 'colonist-filter': this.colonistFilter = arg; break;
       case 'colonist-sort': this.colonistSort = arg; break;
+      case 'colonist-view': this.colonistView = arg === 'work' ? 'work' : 'list'; break;
+      case 'prio': { const [cid, k] = arg.split(':'); const c = colonistById(this.getWorld(), Number(cid)); if (c) { const cur = prioOf(this.getWorld(), c, k as WorkKind); this.send({ type: 'prio', colonist: c.id, work: k as WorkKind, level: cur === 0 ? 1 : cur === 4 ? 0 : cur + 1 }); } break; }
+      case 'settle': this.send({ type: 'settle', colonist: Number(arg) }); break;
       case 'building-filter': this.buildingFilter = arg; break;
       case 'build-mode': this.buildMode = arg; this.destination = null; break;
       case 'catalog-group': this.catalogGroup = arg; break;
@@ -553,7 +558,7 @@ export class UI {
         this.send({ type: 'storageFilter', building: b.uid, allow: next }); break;
       }
       case 'food': { const f = arg as ResourceId; this.send({ type: 'foodRule', food: f, allowed: w.forbidden.includes(f) }); break; }
-      case 'auto': this.send({ type: 'autoAssign' }); this.toast('The foreman has reassigned everyone.'); break;
+      case 'auto': this.send({ type: 'autoAssign' }); this.toast('Everyone\u2019s work is back to what suits them.'); break;
       case 'resolve': this.send({ type: 'resolve', option: Number(arg) }); this.lastModal = ''; break;
       case 'reroll': { const err = this.send({ type: 'reroll' }); if (err) this.toast(err); this.lastModal = ''; break; }
       case 'trade-buy': { const [r, n] = arg.split(':'); const err = this.send({ type: 'buy', res: r as ResourceId, n: Number(n) }); if (err) this.toast(err); this.lastModal = ''; break; }
@@ -903,6 +908,7 @@ export class UI {
   }
 
   private colonistList(w: World) {
+    if (this.colonistView === 'work') return this.workGrid(w);
     const rows = alive(w).filter(c => (!this.peopleFilter || this.peopleFilter.includes(c.id)) && matchesPerson(c, this.colonistFilter)).sort((a, b) => this.colonistSort === 'name' ? a.name.localeCompare(b.name) : a.mood - b.mood || a.id - b.id).map(c => {
       const partner = colonistById(w, c.partner);
       const job = buildingByUid(w, c.job), state = personState(c);
@@ -914,7 +920,8 @@ export class UI {
       </button>`;
     }).join('');
     return `<div class="list-head"><span class="stats"><span title="Colonists">${PERSON_GLYPH}${alive(w).length}</span><span title="Beds">${icon('leanto')}${beds(w)}</span><span title="Laborers: build, haul, clean">${LABORER_GLYPH}${laborers(w).length}</span><span title="Average mood">${MOOD_GLYPH}${Math.round(avgMood(w))}</span></span>
-      <button type="button" class="ghost" data-act="auto">Auto-assign jobs</button></div>
+      <button type="button" class="ghost" data-act="auto">Reset work</button></div>
+      <div class="segs two">${(['list', 'work'] as const).map(v => `<button type="button" class="seg${this.colonistView === v ? ' on' : ''}" data-act="colonist-view" data-arg="${v}" aria-pressed="${this.colonistView === v}">${v === 'list' ? 'People' : 'Work'}</button>`).join('')}</div>
       <div class="filters">${selectHtml('colonist-filter', 'Show colonists', this.colonistFilter, [['all','Everyone'],['ill','Ill'],['hungry','Hungry'],['unhoused','No bed'],['sulking','Sulking'],['free','No job']])}${selectHtml('colonist-sort', 'Sort colonists', this.colonistSort, [['mood','Lowest mood'],['name','Name']])}</div>${concernCards(w)}${this.peopleFilter ? '<button type="button" class="ghost" data-act="tab" data-arg="colonists">Show everyone</button>' : ''}<div class="rows">${rows || '<p class="empty">No matching colonists.</p>'}</div>
       <details data-key="food-rules"><summary id="food-rules">Food and drink rules · ${w.forbidden.length} reserved</summary><p class="muted hint">Reserved food and drink stay in storage for charters and feasts: nobody eats them, and the tavern doesn't pour them.</p>
       <div class="foodrules">${([...FOODS, ...CATEGORIES.drink.members] as ResourceId[]).map(f => {
@@ -938,13 +945,6 @@ export class UI {
       ...rivals.map(x => `<button type="button" class="rel rival" data-act="colonist" data-arg="${x.o.id}">${avatar(x.o,'avatar-mini')} × ${esc(first(x.o))} →</button>`),
     ].join('') || '<span class="muted">No strong feelings about anyone yet.</span>';
     const job = buildingByUid(w, c.job), trade = tradeOf(w, c);
-    // a trade per kind of work the colony has a building for: how many follow it, and how many places its buildings have
-    const jobs = JOB_KINDS.filter(k => built(w).some(b => BUILDING_BY_ID[b.def].job === k && BUILDING_BY_ID[b.def].slots > 0)).map(k => {
-      const n = alive(w).filter(o => tradeOf(w, o) === k).length;
-      const places = built(w).filter(b => BUILDING_BY_ID[b.def].job === k).reduce((m, b) => m + BUILDING_BY_ID[b.def].slots, 0);
-      const fit = k === c.likes ? ' likes' : k === c.dislikes ? ' dislikes' : '';
-      return `<button type="button" class="job${trade === k ? ' on' : ''}${fit}" data-act="trade" data-arg="${c.id}:${k}"><span class="jn">${icon(TRADE_ICON[k])}${TRADE_NAMES[k]}</span><small>${SKILL_NAMES[k]} ${Math.floor(c.skills[k])} · ${n}/${places}${fit === ' likes' ? ' · loves this' : fit === ' dislikes' ? ' · hates this' : ''}</small></button>`;
-    }).join('');
     const illness = c.illness ? `<section class="urgent"><b>✚ ${esc(c.illness.name)} · ${Math.round(c.illness.severity)}/100</b>${meter(c.illness.severity, 'Illness severity')}<div class="actions"><button type="button" class="ghost" data-act="need" data-arg="health">${esc(buildingDestination(w, 'clinic', true).label)} →</button></div><small>${c.illness.contagious ? 'At 100, this illness can be fatal.' : 'At 100, leaves for treatment.'}</small></section>` : '';
     const personalFixes = assess(w).filter(issue=>issue.personIds.includes(c.id) && issue.fixes.length).slice(0,2);
     const remedies = personalFixes.map(issue=>`<button type="button" class="ghost" data-act="fix" data-arg="${issue.id}:0">${esc(fixDestination(w,issue.fixes[0]).label)} →</button>`).join('');
@@ -955,16 +955,27 @@ export class UI {
         <div class="mood-big ${moodClass(c.mood, c.sulking)}" title="Mood ${Math.round(c.mood)}, heading to ${Math.round(c.moodTarget)}"><b>${Math.round(c.mood)}</b>${MOOD_TREND[moodDirection(c)] ? `<small>${MOOD_TREND[moodDirection(c)]} ${Math.round(c.moodTarget)}</small>` : ''}</div></div>
       ${c.sulking ? '<p class="warnline">☁ Sulking · works again above mood 32</p>' : c.mood < 15 ? '<p class="warnline">⚠ May leave</p>' : ''}${illness}
       ${worst ? `<p class="warnline">${logText(w,worst.label)} <b>−${Math.abs(Math.round(worst.value))}</b></p>` : ''}
-      <div class="actions">${remedies}${job ? `<button type="button" class="ghost" data-act="building" data-arg="${job.uid}">${icon(job.def)} ${esc(BUILDING_BY_ID[job.def].name)} →</button>` : ''}${c.bed != null ? `<button type="button" class="ghost" data-act="building" data-arg="${c.bed}">⌂ Home →</button>` : '<button type="button" class="ghost" data-act="need" data-arg="shelter">⌂ Find a bed →</button>'}<button type="button" class="ghost" data-act="jobs">⚒ Change job ↓</button></div>
+      <div class="actions">${remedies}${job ? `<button type="button" class="ghost" data-act="building" data-arg="${job.uid}">${icon(job.def)} ${esc(BUILDING_BY_ID[job.def].name)} →</button>` : ''}${c.bed != null ? `<button type="button" class="ghost" data-act="building" data-arg="${c.bed}">⌂ Home →</button>` : '<button type="button" class="ghost" data-act="need" data-arg="shelter">⌂ Find a bed →</button>'}<button type="button" class="ghost" data-act="jobs">⚒ Work ↓</button></div>
       <p class="prefs">${icon('coats')} ${(c.coatHours ?? 0) > 0 ? `${c.coatStoredAt != null ? 'Coat stored' : 'Warm coat'} · ${Math.ceil(c.coatHours! / 24)} days of wear` : 'No coat · collects one in winter'} <button type="button" class="text-link" data-act="source" data-arg="coats">Coat supply →</button></p>
       ${(c.wants ?? []).length ? `<h3>Wants</h3><p class="traits wants">${wantChips(w, c)}</p>` : ''}
       <h3>Needs · ${Math.round(comfortOf(w, c) * 100)}%</h3>${comfortRows(w, c)}
-      <details data-key="person-jobs"><summary id="person-jobs">⚒ ${trade ? `${TRADE_NAMES[trade]} · ${job ? esc(BUILDING_BY_ID[job.def].name) : 'no work, laboring'}` : 'Laborer'}</summary><p class="muted">${laborers(w).length} laborers free · a trade works its highest-priority building with work.</p><div class="jobs">${jobs}<button type="button" class="job${trade == null ? ' on' : ''}" data-act="trade" data-arg="${c.id}:none">Laborer<small>Build · haul · clean</small></button></div></details>
+      <h3 id="person-jobs">Work <small class="muted">· now ${esc(nowDoing(w, c))}</small></h3>${prioRow(w, c)}<p class="muted hint">Tap to change: 1 first, 4 last, blank never. With nothing to do, they haul.</p>
       <details data-key="thoughts"><summary>Mood breakdown</summary>${moodLedger(c)}<ul class="thoughts">${thoughts}</ul></details>
       <details data-key="skills"><summary>Skills & preferences</summary><p class="prefs">♥ ${JOB_NAMES[c.likes]} · × ${JOB_NAMES[c.dislikes]}${tasteLine(c)} · hunger ${Math.round(c.hunger)} · fun ${Math.round(c.fun)}</p><div class="skills">${skillKinds(c).map(k => `<div class="skill${k === c.likes ? ' fav' : ''}"><span>${SKILL_NAMES[k]}</span><i><b style="width:${c.skills[k] * 10}%"></b></i><em>${Math.floor(c.skills[k])}</em></div>`).join('')}</div></details>
       <details data-key="traits"><summary>Traits · joined day ${c.joinedDay}</summary><div class="traits">${traits}</div></details>
       <details data-key="relationships"><summary>Relationships</summary><div class="rels">${rel}</div></details>
     </div>`;
+  }
+
+  /** everyone's work grid at once: a row per settler, a column per kind of work */
+  private workGrid(w: World) {
+    const people = alive(w).slice().sort((a, b) => a.name.localeCompare(b.name));
+    const head = `<div class="wg-row wg-head"><span></span>${WORK_KINDS.map(k => `<span title="${WORK_LABEL[k]}">${icon(WORK_ICON[k])}<small>${WORK_LABEL[k]}</small></span>`).join('')}</div>`;
+    const rows = people.map(c => `<div class="wg-row"><button type="button" class="wg-who" data-act="colonist" data-arg="${c.id}" title="${esc(c.name)} · ${esc(nowDoing(w, c))}">${avatar(c, 'avatar-mini')}<small>${esc(first(c))}</small></button>${WORK_KINDS.map(k => prioCell(w, c, k)).join('')}</div>`).join('');
+    return `<div class="segs two">${(['list', 'work'] as const).map(v => `<button type="button" class="seg${this.colonistView === v ? ' on' : ''}" data-act="colonist-view" data-arg="${v}" aria-pressed="${this.colonistView === v}">${v === 'list' ? 'People' : 'Work'}</button>`).join('')}</div>
+      <div class="wgrid">${head}${rows}</div>
+      <p class="muted hint">Tap a cell: 1 first, 4 last, blank never. ♥ loves it, × hates it. Number under the cell: skill. With nothing on their list, settlers haul.</p>
+      <button type="button" class="ghost" data-act="auto">Reset everyone's work</button>`;
   }
 
   private buildList(w: World) {
@@ -1301,6 +1312,8 @@ export class UI {
         }
       }
     }
+    const arriving = w.status === 'playing' && !d ? alive(w).find(c => c.settling) : undefined;
+    if (!html && arriving) html = arrivalCard(w, arriving);
     if (!html && this.naming(w)) {
       if (!this.nameInit || this.nameSeed !== w.seed) { this.nameInit = colonyName(w); this.nameSeed = w.seed; this.nameDraft = null; }
       html = `<div class="card-wrap naming"><p class="eyebrow">A new settlement</p><h2>Name your colony</h2>
@@ -1328,7 +1341,7 @@ export class UI {
       if (next !== this.lastPeekBar) { bar.innerHTML = next; this.lastPeekBar = next; }
       bar.hidden = false; html = '';
     } else bar.hidden = true;
-    const nextDialogKey = this.comfortOpen && w.status === 'playing' && !this.resumeOpen ? 'comfort' : d ? JSON.stringify(d) : this.naming(w) ? `name:${this.nameInit}` : this.help ? `help:${this.help}` : this.festivalOpen ? 'festival' : this.strainOpen ? 'strain' : this.picking != null ? `errand:${this.picking}` : this.resumeOpen ? 'resume' : w.status;
+    const nextDialogKey = this.comfortOpen && w.status === 'playing' && !this.resumeOpen ? 'comfort' : d ? JSON.stringify(d) : arriving ? `arrive:${arriving.id}` : this.naming(w) ? `name:${this.nameInit}` : this.help ? `help:${this.help}` : this.festivalOpen ? 'festival' : this.strainOpen ? 'strain' : this.picking != null ? `errand:${this.picking}` : this.resumeOpen ? 'resume' : w.status;
     const changedDialog = nextDialogKey !== this.dialogKey;
     const wasOpen = !el.hidden;
     if (html && !wasOpen) {
@@ -1622,4 +1635,36 @@ function ledger(w: World, selected: InputKey | 'gold' | null = null) {
     <div class="lt-bar">${segs}</div>
     <p class="lt-key">${['hauling', 'building', 'cleaning', 'eating', 'idle'].map(k => `<span class="lt-${k}"><i></i>${k} ${pct(k)}%</span>`).join('')}</p>
     <p class="prefs">${laborNote}</p>`;
+}
+
+// ---------- the work grid ----------
+const PRIO_CLASS = ['off', 'p1', 'p2', 'p3', 'p4'];
+/** one cell of someone's work grid: their priority, their skill, and whether they love or hate it */
+function prioCell(w: World, c: Colonist, k: WorkKind) {
+  const p = prioOf(w, c, k), job = k === 'building' ? null : k as JobKind;
+  const fit = job === c.likes ? '♥' : job === c.dislikes ? '×' : '';
+  const skill = job ? Math.floor(c.skills[job]) : '';
+  return `<button type="button" class="wcell ${PRIO_CLASS[p]}${fit === '♥' ? ' loves' : fit ? ' hates' : ''}" data-act="prio" data-arg="${c.id}:${k}" aria-label="${esc(first(c))}, ${WORK_LABEL[k]}: ${p ? `priority ${p}` : 'never'}${job ? `, skill ${skill}` : ''}${fit === '♥' ? ', loves it' : fit ? ', hates it' : ''}"><b>${p || ''}</b>${fit ? `<i>${fit}</i>` : ''}<small>${skill}</small></button>`;
+}
+/** someone's whole work row, with icons and labels: the colonist card and the arrival card */
+function prioRow(w: World, c: Colonist) {
+  return `<div class="prow">${WORK_KINDS.map(k => `<div class="pcol"><span class="pk">${icon(WORK_ICON[k])}<small>${WORK_LABEL[k]}</small></span>${prioCell(w, c, k)}</div>`).join('')}</div>`;
+}
+/** what they're doing right now, in a few words */
+function nowDoing(w: World, c: Colonist) {
+  const b = buildingByUid(w, c.job);
+  if (b) return `${BUILDING_BY_ID[b.def].name.toLowerCase()}${c.trade ? ` (${WORK_LABEL[c.trade].toLowerCase()})` : ''}`;
+  if (c.task?.kind === 'build' || c.task?.kind === 'deliver') return 'building';
+  return c.task ? 'hauling' : 'nothing to do';
+}
+/** a newcomer: look them over and set their work before they start */
+function arrivalCard(w: World, c: Colonist) {
+  const traits = c.traits.map(t => TRAIT_BY_ID[t]).filter(Boolean).map(t => `<span class="trait"><b>${esc(t.name)}</b> ${esc(t.desc)}</span>`).join('');
+  const wants = (c.wants ?? []).map(id => WANT_BY_ID[id]).filter(Boolean).map(x => `<span class="trait"><b>${esc(x.name)}</b> ${esc(x.desc)}</span>`).join('');
+  return `<div class="card-wrap arrival"><p class="eyebrow">A new settler</p>
+    <div class="who-big">${avatar(c, 'avatar-large')}<div><h2>${esc(c.name)}</h2><p>♥ ${esc(JOB_NAMES[c.likes])} · × ${esc(JOB_NAMES[c.dislikes])}</p></div></div>
+    <div class="traits">${traits}${wants}</div>
+    <h3>Their work</h3>${prioRow(w, c)}
+    <p class="muted hint">Tap to change: 1 first, 4 last, blank never. The number under each cell is their skill.</p>
+    <button type="button" class="act" data-act="settle" data-arg="${c.id}">Settle in</button></div>`;
 }

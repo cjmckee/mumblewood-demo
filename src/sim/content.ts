@@ -134,6 +134,17 @@ export const SKILL_NAMES: Record<JobKind, string> = {
   crafting: 'Crafting', brewing: 'Brewing', serving: 'Serving', medicine: 'Medicine', studying: 'Studying',
 };
 export const JOB_KINDS = Object.keys(JOB_NAMES) as JobKind[];
+/** a column of the work grid: every trade, plus building (construction and delivering its materials). Hauling isn't a
+ * column: it's what anyone does when nothing on their list has work. */
+export type WorkKind = JobKind | 'building';
+export const WORK_KINDS: WorkKind[] = [...JOB_KINDS, 'building'];
+export const WORK_LABEL: Record<WorkKind, string> = {
+  chopping: 'Chop', foraging: 'Forage', fishing: 'Fish', cooking: 'Cook', crafting: 'Craft', brewing: 'Brew',
+  serving: 'Bar', medicine: 'Doctor', studying: 'Study', building: 'Build',
+};
+export const WORK_ICON: Record<WorkKind, string> = { ...TRADE_ICON, building: 'planks' } as Record<WorkKind, string>;
+/** work priority: 1 is done first, 4 last, 0 never */
+export const PRIO_LEVELS = [1, 2, 3, 4] as const;
 
 /** Groups of goods a recipe, need or charter can ask for: "any drink", "any meal". */
 export type Category = 'rawFood' | 'meal' | 'drink' | 'fine' | 'remedy';

@@ -1,6 +1,6 @@
 // Deterministic colony simulation. No DOM, no rendering: runs in the browser and in Node.
 import {
-  CLOTHING, BUILDING_BY_ID, BuildingDef, CHARTERS, CharterDef, EVENTS, FIRST_NAMES, JOB_NAMES, JobKind, JOB_KINDS,
+  CLOTHING, BUILDING_BY_ID, BuildingDef, CHARTERS, CharterDef, EVENTS, FIRST_NAMES, JOB_NAMES, JobKind, JOB_KINDS, WorkKind, WORK_KINDS,
   MEALS, PERKS, RAW_FOODS, ResourceId, SHIRTS, SKINS, SURNAMES, TRAITS, TRAIT_BY_ID, BUILDINGS, buildWork,
   JOB_EVENTS, JobEventDef, ILLNESSES, RESOURCES, Recipe, InputKey, CATEGORIES, isGroup, membersOf, inputName, recipeRate, batchHours, SITES, SiteId, MEAL_MOOD, DRINK_MOOD, TIER, TIER_RANK, GoodTier, tradeable, TallyHow, RENOWN, RENOWN_KIND_MIN, atLeast,
   CharterMetric, RESEARCH, RESEARCH_BY_ID, BRANCHES_AFTER, PRICE, TRADERS, TRADER_BY_ID, LORE_BOOST, GUILD_BOOST, Tier, EventDef,
@@ -65,6 +65,13 @@ export interface Colonist {
    * priority first, and labor (haul, build) when none does. Null: a laborer. Missing in older saves: read from job.
    */
   trade?: JobKind | null;
+  /**
+   * the work grid: each kind of work at priority 1 (first) to 4 (last), or 0 (never). Every hour they take the most
+   * important work that has something to do, and haul when nothing does. Missing in older saves: read from trade.
+   */
+  prios?: Partial<Record<WorkKind, number>>;
+  /** just arrived: the player hasn't looked over their work yet (the arrival card) */
+  settling?: boolean;
   /** personal wants, from arrival (missing in older saves: none) */
   wants?: WantId[];
   /** the days they had a drink at the tavern, lately (for the tippler want) */
@@ -850,6 +857,7 @@ function makeColonist(w: World, usedNames: Set<string>): Colonist {
     activity: 'idle', place: null, inside: null,
     memories: [], thoughts: [], hadCompany: true, hadCompanyLastNight: true, drankTonight: false,
     joinedDay: 1, beauty: 0, skills, illness: null, errand: null, died: false, starvingHours: 0,
+    prios: defaultPrios({ likes, dislikes, skills }),
   };
 }
 
@@ -1085,6 +1093,9 @@ function blueprintDecision(w: World, avoid: string[] = []): Decision {
 export type Command =
   | { type: 'assign'; colonist: number; building: number | null }
   | { type: 'trade'; colonist: number; trade: JobKind | null }
+  | { type: 'prio'; colonist: number; work: WorkKind; level: number }
+  | { type: 'prios'; colonist: number; prios: Partial<Record<WorkKind, number>> }
+  | { type: 'settle'; colonist: number }
   | { type: 'workPriority'; building: number; prio: 0 | 1 | 2 }
   | { type: 'place'; def: string; x: number; y: number; rot?: number }
   | { type: 'cancel'; building: number }
@@ -1138,27 +1149,46 @@ export function apply(w: World, cmd: Command): string | null {
   switch (cmd.type) {
     case 'assign': {
       const c = colonistById(w, cmd.colonist); if (!c || c.left) return 'No such colonist.';
-      if (cmd.building == null) { c.job = null; c.trade = null; return null; }
+      if (cmd.building == null) { c.job = null; c.trade = null; c.prios = focusedPrios(null); return null; }
       const b = buildingByUid(w, cmd.building); if (!b) return 'No such building.';
       if (!b.built) return `${bdef(b).name} isn’t built yet.`;
       const others = workersAt(w, b.uid).filter(o => o.id !== c.id);
       if (others.length >= bdef(b).slots) return `${bdef(b).name} is full.`;
       // assigning to a building takes up its trade, starting there
       dropTask(w, c);
-      c.job = b.uid; c.trade = bdef(b).job ?? null; return null;
+      c.job = b.uid; c.trade = bdef(b).job ?? null; c.prios = focusedPrios(c.trade); return null;
     }
+    // one trade and building, nothing else: the old way of working, which the bot still uses
     case 'trade': {
       const c = colonistById(w, cmd.colonist); if (!c || c.left) return 'No such colonist.';
       if (cmd.trade != null && !TRADE_DEFS[cmd.trade]?.length) return 'No such trade.';
-      if ((c.trade ?? null) === cmd.trade) return null;
-      dropTask(w, c); c.trade = cmd.trade; c.job = null; pickWork(w, c); w.version++;
+      if (isFocused(w, c) && tradeOf(w, c) === cmd.trade) return null;
+      dropTask(w, c); c.trade = cmd.trade; c.prios = focusedPrios(cmd.trade); c.job = null; pickWork(w, c); w.version++;
+      return null;
+    }
+    case 'prio': {
+      const c = colonistById(w, cmd.colonist); if (!c || c.left) return 'No such colonist.';
+      if (!WORK_KINDS.includes(cmd.work)) return 'No such work.';
+      const level = Math.max(0, Math.min(4, Math.round(cmd.level)));
+      prioOf(w, c, cmd.work);
+      c.prios![cmd.work] = level; c.trade = tradeOf(w, c); pickWork(w, c); w.version++;
+      return null;
+    }
+    case 'prios': {
+      const c = colonistById(w, cmd.colonist); if (!c || c.left) return 'No such colonist.';
+      c.prios = {}; for (const k of WORK_KINDS) c.prios[k] = Math.max(0, Math.min(4, Math.round(cmd.prios[k] ?? 0)));
+      c.trade = tradeOf(w, c); pickWork(w, c); w.version++;
+      return null;
+    }
+    case 'settle': {
+      const c = colonistById(w, cmd.colonist); if (c) { delete c.settling; w.version++; }
       return null;
     }
     case 'workPriority': {
       const b = buildingByUid(w, cmd.building);
       if (!b || !bdef(b).slots) return 'Only a building with workers has a work priority.';
       b.prio = cmd.prio; w.version++;
-      for (const c of alive(w)) if (c.trade === bdef(b).job) pickWork(w, c);
+      for (const c of alive(w)) pickWork(w, c);
       return null;
     }
     case 'place': {
@@ -1366,9 +1396,9 @@ function resolveDecision(w: World, option: number): string | null {
       if (c) {
         if (c.fee) { spend(w, c.fee, 'settler'); addLog(w, `${first(c)} counts the ${c.fee} gold twice and unpacks a very good set of tools.`, 'good'); delete c.fee; }
         c.joinedDay = day(w);
+        c.settling = true;
         w.colonists.push(c);
         assignBeds(w);
-        if (w.autoAssignNew) fillSlots(w);
         addLog(w, `${c.name} arrives with a suspicious amount of luggage.`, 'good');
         w.stats.peakPop = Math.max(w.stats.peakPop, alive(w).length);
       } else addLog(w, 'The recruits are sent on their way. One of them waves sadly.');
@@ -1505,7 +1535,7 @@ function finishErrand(w: World, e: Errand, success: boolean) {
       if (success) {
         const names = new Set(w.colonists.map(x => first(x)));
         const n = makeColonist(w, names); n.x = e.x; n.y = e.y; n.px = n.x; n.py = n.y; n.joinedDay = day(w);
-        w.colonists.push(n); assignBeds(w); if (w.autoAssignNew) fillSlots(w);
+        n.settling = true; w.colonists.push(n); assignBeds(w);
         w.stats.peakPop = Math.max(w.stats.peakPop, alive(w).length);
         addLog(w, `${who} pulled ${n.name} out of the bog. ${first(n)} decides to stay.`, 'good');
       } else { everyone(w, 'bog', 'We ignored someone in a bog', -2, 24); addLog(w, 'The traveller hauled themselves out of the bog and left, muttering about manners.', 'bad'); }
@@ -1741,7 +1771,7 @@ function applyEventEffect(w: World, effect: string) {
     case 'deserterTake': {
       const names = new Set(w.colonists.map(x => first(x)));
       const n = makeColonist(w, names); skilled(w, n); delete n.fee; n.joinedDay = day(w);
-      w.colonists.push(n); assignBeds(w); if (w.autoAssignNew) fillSlots(w);
+      n.settling = true; w.colonists.push(n); assignBeds(w);
       w.stats.peakPop = Math.max(w.stats.peakPop, alive(w).length);
       w.strain += 3; addLog(w, `${n.name} unpacks a saw and a false name. People talk. Strain rises by 3.`);
       break;
@@ -1818,23 +1848,54 @@ export function blockedReason(w: World, b: Building): string | null {
 
 /** How many colonists to keep free as laborers (builders and haulers). */
 export function laborersWanted(w: World) { return Math.max(2, Math.ceil(alive(w).length / 4)); }
-/** Fill empty job slots with laborers, keeping enough laborers free to build and haul. */
+/** anyone without a work grid gets the default one */
 export function fillSlots(w: World) {
-  const keepFree = laborersWanted(w);
-  const free = alive(w).filter(c => tradeOf(w, c) == null);
-  const blds = built(w).filter(b => bdef(b).slots > 0 && !blockedReason(w, b)).sort((a, b) => buildingPriority(w, b) - buildingPriority(w, a));
-  for (const b of blds) {
-    while (free.length > keepFree && workersAt(w, b.uid).length < bdef(b).slots) {
-      const co = workersAt(w, b.uid);
-      free.sort((p, q) => slotScore(w, q, b, co) - slotScore(w, p, b, co));
-      const c = free.shift()!;
-      dropTask(w, c); c.job = b.uid; c.trade = bdef(b).job ?? null;
-    }
-  }
+  for (const c of alive(w)) if (!c.prios) c.prios = defaultPrios(c);
 }
+/** reset everyone's work grid to the default for their skills */
 export function autoAssign(w: World) {
-  for (const c of alive(w)) { c.job = null; c.trade = null; }
-  fillSlots(w);
+  for (const c of alive(w)) { c.prios = defaultPrios(c); c.trade = tradeOf(w, c); pickWork(w, c); }
+}
+
+// ---------- The work grid ----------
+/**
+ * a new settler's grid: what they love first, building and their best other skill next, everything else after, what
+ * they hate last. Nothing is off, so nobody stands idle while there's work they could do.
+ */
+export function defaultPrios(c: Pick<Colonist, 'likes' | 'dislikes' | 'skills'>): Partial<Record<WorkKind, number>> {
+  const p: Partial<Record<WorkKind, number>> = {};
+  for (const k of JOB_KINDS) p[k] = 3;
+  const best = JOB_KINDS.filter(k => k !== c.likes && k !== c.dislikes).sort((a, z) => c.skills[z] - c.skills[a])[0];
+  if (best) p[best] = 2;
+  p.building = 2;
+  p[c.likes] = 1;
+  p[c.dislikes] = 4;
+  return p;
+}
+/** one trade first, then building, nothing else: how trades worked before the grid */
+export function focusedPrios(trade: JobKind | null): Partial<Record<WorkKind, number>> {
+  const p: Partial<Record<WorkKind, number>> = {};
+  for (const k of WORK_KINDS) p[k] = 0;
+  if (trade) { p[trade] = 1; p.building = 2; } else p.building = 1;
+  return p;
+}
+/** someone's priority for a kind of work; older saves read the grid from their trade */
+export function prioOf(w: World, c: Colonist, k: WorkKind): number {
+  if (!c.prios) {
+    const t = c.trade !== undefined ? c.trade : c.job != null ? bdef(buildingByUid(w, c.job) ?? ({ def: '' } as Building))?.job ?? null : null;
+    c.prios = focusedPrios(t ?? null);
+  }
+  return c.prios[k] ?? 0;
+}
+/** a grid that is exactly one trade (or none) and building */
+export function isFocused(w: World, c: Colonist) {
+  const on = WORK_KINDS.filter(k => prioOf(w, c, k) > 0);
+  if (on.length === 1) return on[0] === 'building' && prioOf(w, c, 'building') === 1;
+  return on.length === 2 && on.includes('building') && prioOf(w, c, 'building') === 2 && on.some(k => k !== 'building' && prioOf(w, c, k) === 1);
+}
+/** building work this colonist could do: a site that needs materials or hands, and isn't closed to them */
+function buildWorkFor(w: World, c: Colonist) {
+  return sites(w).some(b => { const gate = bdef(b).moodGate; return !gate || c.mood >= gate; });
 }
 
 // ---------- Trades ----------
@@ -1846,8 +1907,9 @@ export const TRADE_DEFS: Record<JobKind, string[]> = (() => {
 })();
 /** someone's trade; saves from before trades read it from where they work */
 export function tradeOf(w: World, c: Colonist): JobKind | null {
-  if (c.trade === undefined) c.trade = c.job != null ? bdef(buildingByUid(w, c.job) ?? ({ def: '' } as Building))?.job ?? null : null;
-  return c.trade ?? null;
+  let best: JobKind | null = null, bp = 9;
+  for (const k of JOB_KINDS) { const p = prioOf(w, c, k); if (p > 0 && (p < bp || (p === bp && best && c.skills[k] > c.skills[best]))) { bp = p; best = k; } }
+  return best;
 }
 /** a building's work priority: 2 high, 1 medium (the default), 0 low */
 export const workPrio = (b: Building): number => b.prio ?? 1;
@@ -1884,21 +1946,28 @@ function workScore(w: World, c: Colonist, b: Building) {
   for (const o of workersAt(w, b.uid)) if (o.id !== c.id && (opinion(w, c.id, o.id) < -30 || opinion(w, o.id, c.id) < -30)) s -= 30;
   return s - dist(spotOf(b), c) * 0.5;
 }
-/** send a tradesperson to the best building of their trade with work and a free place, or to laboring if none has any */
+/**
+ * The work grid: take the most important kind of work (priority 1 first) that has something to do. Within a priority,
+ * the best building by its work priority, skill, coworkers and the walk. Building work at the same priority comes after
+ * a workshop with work. With nothing at any priority, they haul (and build, if building isn't off).
+ */
 export function pickWork(w: World, c: Colonist) {
-  const trade = tradeOf(w, c);
-  if (trade == null || c.left) { c.job = null; return; }
-  // laid up: their place is free for someone else until they're back on their feet
-  if (bedridden(c)) { c.job = null; return; }
+  if (c.left || bedridden(c)) { c.job = null; return; }
   const cur = buildingByUid(w, c.job);
-  let best: Building | undefined, bs = -Infinity;
-  for (const b of built(w)) {
-    if (bdef(b).job !== trade || !hasWork(w, b)) continue;
-    if (b !== cur && workersAt(w, b.uid).length >= bdef(b).slots) continue;
-    const sc = workScore(w, c, b);
-    if (sc > bs) { bs = sc; best = b; }
+  let best: Building | undefined, labor = false;
+  for (let lvl = 1; lvl <= 4 && !best && !labor; lvl++) {
+    let bs = -Infinity;
+    for (const b of built(w)) {
+      const job = bdef(b).job;
+      if (!job || prioOf(w, c, job) !== lvl || !hasWork(w, b)) continue;
+      if (b !== cur && workersAt(w, b.uid).length >= bdef(b).slots) continue;
+      const sc = workScore(w, c, b) + c.skills[job] * 4;
+      if (sc > bs) { bs = sc; best = b; }
+    }
+    if (!best && prioOf(w, c, 'building') === lvl && buildWorkFor(w, c)) labor = true;
   }
-  if (best?.uid === c.job) return;
+  c.trade = best ? bdef(best).job ?? null : tradeOf(w, c);
+  if (best?.uid === c.job || (!best && c.job == null)) return;
   // finish carrying what's in hand before moving on: they look again next hour
   if (c.carrying) return;
   if (c.task) dropTask(w, c);
@@ -1906,8 +1975,8 @@ export function pickWork(w: World, c: Colonist) {
 }
 /** once an hour, everyone with a trade checks where the work is, most skilled first so they get the first pick */
 export function tradeHour(w: World) {
-  const people = alive(w).filter(c => tradeOf(w, c) != null);
-  people.sort((a, z) => z.skills[z.trade!] - a.skills[a.trade!]);
+  const top = (c: Colonist) => { const t = tradeOf(w, c); return t ? c.skills[t] : 0; };
+  const people = alive(w).slice().sort((a, z) => top(z) - top(a));
   for (const c of people) pickWork(w, c);
 }
 
@@ -1929,8 +1998,9 @@ function taskCount(w: World, pred: (t: Task) => boolean) { return alive(w).filte
 
 function chooseTask(w: World, c: Colonist): Task | null {
   const opts: { t: Task; pri: number; x: number; y: number }[] = [];
-  // construction: deliver materials, then build
-  for (const b of sites(w)) {
+  // construction: deliver materials, then build (unless building is off in their work grid)
+  const builds = prioOf(w, c, 'building') > 0;
+  for (const b of builds ? sites(w) : []) {
     // the Crown's Hall: nobody grumpy lays a stone for the Crown
     const gate = bdef(b).moodGate; if (gate && c.mood < gate) continue;
     const left = remainingCost(b);
@@ -1958,7 +2028,7 @@ function chooseTask(w: World, c: Colonist): Task | null {
   // a stocked pavilion still takes a serving for a guest its larder is short of: someone who came after it was
   // stocked. One whole serving each, the kind they'd like best.
   const pav = pavilionOf(w);
-  if (pav?.built && !w.feast?.done && !w.feast?.called) {
+  if (builds && pav?.built && !w.feast?.done && !w.feast?.called) {
     const s = spotOf(pav);
     const guests = alive(w).filter(x => !x.sulking && !bedridden(x));
     for (const goods of [FEAST_MEALS, FEAST_DRINKS]) {
