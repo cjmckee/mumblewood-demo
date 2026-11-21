@@ -6,7 +6,7 @@ import {
   keepsFresh, findSpot, canPlace, laborers, centerOf, built, Building, efficiencyAt, pathAt, MAP_SIZE, blockedReason, Errand, patientsAt, clinicAdmissions, lost, bedridden, spoilingFood, accepts, roomIn, FOODS, GOODS,
   recipesOf, recipeOn, optionOn, optionsOf, currentRecipe, orderedRecipes, INPUT_CAPACITY, OUTBOX_CAP, siteOk, rerollCost, REROLL_STEP, stockOf, recipeReach, charterHelpers, charterDef,
   costOf, researchLeft, researchStillNeeds, desks, feastCheck, mealTotal, drinkTotal,
-  strainPerDay, footprint, standingOf, STANDINGS, NeedKey, winterFuelPerDay,
+  strainPerDay, footprint, standingOf, BREAKING, GRUMBLE, breakPoint, breakKindFor, inspired, STANDINGS, NeedKey, winterFuelPerDay,
   sellPrice, renownOf, pavilionOf, larderOf, FEAST_MEALS, charterCounted, charterRequirements, basicsDone, researchOpen, edibleTotal, storePrio, colonyName, nameFrom, NAME_MAX, wantMet, wantPenalty, wantSupported, wantGap, tradeOf, TRADE_DEFS, workPrio, hasWork,
 } from '../sim/world';
 import { charterPreview, metricRoutes, Route } from '../sim/charterplan';
@@ -74,14 +74,20 @@ function activityText(w: World, c: Colonist) {
 }
 const skillKinds = (c: Colonist) => (Object.keys(c.skills) as JobKind[]);
 function topSkills(c: Colonist) { return [...skillKinds(c)].sort((a, b) => c.skills[b] - c.skills[a]).slice(0, 2).map(k => `${SKILL_NAMES[k].toLowerCase()} ${Math.floor(c.skills[k])}`).join(', '); }
-function moodClass(m: number, sulking: boolean) { return sulking ? 'sulk' : m >= 60 ? 'good' : m >= 35 ? 'warn' : 'bad'; }
+function moodClass(m: number, sulking: boolean) { return sulking ? 'sulk' : m < BREAKING ? 'bad breaking' : m >= 60 ? 'good' : m >= 35 ? 'warn' : 'bad'; }
 
 const personLink = (c: Colonist, portrait = true) => `<button type="button" class="text-link" data-act="colonist" data-arg="${c.id}">${portrait ? avatar(c,'avatar-mini') : ''}${esc(c.name)} →</button>`;
 const moodDirection = (c: Colonist) => c.moodTarget > c.mood + 1 ? '↑' : c.moodTarget < c.mood - 1 ? '↓' : '↔';
 const meter = (value: number, label: string) => `<meter min="0" max="100" value="${Math.max(0,Math.min(100,value))}" aria-label="${esc(label)}">${Math.round(value)}%</meter>`;
 function selectHtml(action: string, label: string, value: string, options: string[][]) { return `<label class="select-label"><span class="sr-only">${label}</span><select data-act="${action}" aria-label="${label}">${options.map(([v,l]) => `<option value="${v}" ${v === value ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`; }
 function matchesPerson(c: Colonist, filter: string) { return filter === 'ill' ? !!c.illness : filter === 'hungry' ? c.hunger < 25 : filter === 'unhoused' ? c.bed == null : filter === 'sulking' ? c.sulking : filter === 'free' ? c.job == null : true; }
-function personState(c: Colonist) { return [c.illness ? `✚ ${c.illness.name}` : '', c.hunger < 25 ? '⚠ Hungry' : '', c.bed == null ? '⌂ No bed' : '', c.sulking ? '☁ Sulking' : ''].filter(Boolean).join(' · '); }
+const BREAK_LABEL: Record<string, string> = { sulk: '☁ Sulking', binge: '☁ Sulking after a binge', bender: '☁ On a bender', wander: '☁ Wandered off', brawl: '☁ After a brawl', smash: '☁ Smashed the workshop' };
+function personState(c: Colonist, hour: number) {
+  return [c.illness ? `✚ ${c.illness.name}` : '', c.hunger < 25 ? '⚠ Hungry' : '', c.bed == null ? '⌂ No bed' : '',
+    c.sulking ? BREAK_LABEL[c.breakKind ?? 'sulk'] ?? '☁ Sulking' : '',
+    !c.sulking && c.mood < BREAKING ? '⚡ Close to breaking' : '', (c.inspiredUntil ?? -1) > hour ? '★ Inspired' : '',
+  ].filter(Boolean).join(' · ');
+}
 function buildingGroup(id: string) { const d = BUILDING_BY_ID[id]; return d.storage ? 'storage' : d.beds || d.seats || d.decor || d.patients || ['hearth','tavern','stage','bathhouse'].includes(id) ? 'comfort' : d.job === 'cooking' || d.job === 'brewing' || d.job === 'foraging' || d.job === 'fishing' ? 'food' : 'work'; }
 
 function logText(w: World, text: string) {
@@ -857,7 +863,7 @@ export class UI {
     if (this.colonistView === 'work') return this.workGrid(w);
     const rows = alive(w).filter(c => (!this.peopleFilter || this.peopleFilter.includes(c.id)) && matchesPerson(c, this.colonistFilter)).sort((a, b) => this.colonistSort === 'name' ? a.name.localeCompare(b.name) : a.mood - b.mood || a.id - b.id).map(c => {
       const partner = colonistById(w, c.partner);
-      const job = buildingByUid(w, c.job), state = personState(c);
+      const job = buildingByUid(w, c.job), state = personState(c, w.hour);
       return `<button type="button" class="row person" data-act="colonist" data-arg="${c.id}" aria-label="${esc(`${c.name}, ${job ? BUILDING_BY_ID[job.def].name : 'laborer'}, mood ${Math.round(c.mood)}${state ? `, ${state}` : ''}`)}">
         ${avatar(c)}
         <span class="who"><b>${esc(c.name)}${partner ? ' <i class="heart" aria-hidden="true">♥</i>' : ''}</b><small class="job-line">${job ? `${icon(job.def)}${esc(BUILDING_BY_ID[job.def].name)}` : `${LABORER_GLYPH}Laborer`}</small></span>
@@ -904,7 +910,7 @@ export class UI {
       <div class="actions">${remedies}${job ? `<button type="button" class="ghost" data-act="building" data-arg="${job.uid}">${icon(job.def)} ${esc(BUILDING_BY_ID[job.def].name)} →</button>` : ''}${c.bed != null ? `<button type="button" class="ghost" data-act="building" data-arg="${c.bed}">⌂ Home →</button>` : '<button type="button" class="ghost" data-act="need" data-arg="shelter">⌂ Find a bed →</button>'}<button type="button" class="ghost" data-act="jobs">⚒ Work ↓</button></div>
       <p class="prefs">${icon('coats')} ${(c.coatHours ?? 0) > 0 ? `${c.coatStoredAt != null ? 'Coat stored' : 'Warm coat'} · ${Math.ceil(c.coatHours! / 24)} days of wear` : 'No coat · collects one in winter'} <button type="button" class="text-link" data-act="source" data-arg="coats">Coat supply →</button></p>
       ${(c.wants ?? []).length ? `<h3>Wants</h3><p class="traits wants">${wantChips(w, c)}</p>` : ''}
-      <h3>Mood</h3>${moodLedger(c)}<ul class="thoughts">${thoughts}</ul>
+      ${breakingBanner(w, c)}<h3>Mood</h3>${moodLedger(c)}<ul class="thoughts">${thoughts}</ul>
       <h3 id="person-jobs">Work <small class="muted">· now ${esc(nowDoing(w, c))}</small></h3>${prioRow(w, c)}<p class="muted hint">Tap to change: 1 first, 4 last, blank never. With nothing to do, they haul.</p>
       <details data-key="skills"><summary>Skills & preferences</summary><p class="prefs">♥ ${JOB_NAMES[c.likes]} · × ${JOB_NAMES[c.dislikes]}${tasteLine(c)} · hunger ${Math.round(c.hunger)} · fun ${Math.round(c.fun)}</p><div class="skills">${skillKinds(c).map(k => `<div class="skill${k === c.likes ? ' fav' : ''}"><span>${SKILL_NAMES[k]}</span><i><b style="width:${c.skills[k] * 10}%"></b></i><em>${Math.floor(c.skills[k])}</em></div>`).join('')}</div></details>
       <details data-key="traits"><summary>Traits · joined day ${c.joinedDay}</summary><div class="traits">${traits}</div></details>
@@ -1575,3 +1581,15 @@ function arrivalCard(w: World, c: Colonist) {
     <p class="muted hint">Tap to change: 1 first, 4 last, blank never. The number under each cell is their skill.</p>
     <button type="button" class="act" data-act="settle" data-arg="${c.id}">Settle in</button></div>`;
 }
+
+/** the top of a colonist card when their mood is in trouble, or they're inspired */
+function breakingBanner(w: World, c: Colonist) {
+  const insp = inspired(w, c);
+  if (insp) return `<p class="banner good">★ Inspired for ${Math.ceil((c.inspiredUntil! - w.hour))}h: ${insp === 'speed' ? 'working 50% faster' : 'every batch they finish makes one extra'}.</p>`;
+  if (c.sulking) return `<p class="banner bad">${esc(BREAK_LABEL[c.breakKind ?? 'sulk'] ?? 'Sulking')} until about ${String(Math.floor((c.breakUntil ?? w.hour) % 24)).padStart(2, '0')}:00.</p>`;
+  if (c.mood >= GRUMBLE) return '';
+  const worst = c.thoughts.filter(t => t.value < 0).sort((a, b) => a.value - b.value).slice(0, 3);
+  const next = c.mood < BREAKING ? `Close to breaking: below ${breakPoint(c)} they'll ${BREAK_VERB[breakKindFor(w, c)]}.` : 'Grumbling: working slower, and dragging housemates and coworkers down.';
+  return `<div class="banner ${c.mood < BREAKING ? 'bad' : 'warn'}"><p>${esc(next)}</p><ul>${worst.map(t => `<li>${esc(t.label)} <b>${t.value}</b></li>`).join('')}</ul></div>`;
+}
+const BREAK_VERB: Record<string, string> = { sulk: 'sulk and refuse to work', binge: 'binge on the best meals in store', bender: 'drink the colony dry and be laid up', wander: 'storm off into the woods', brawl: 'pick a fight with whoever they like least', smash: 'smash up their workshop' };

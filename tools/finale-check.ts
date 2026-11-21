@@ -173,8 +173,8 @@ function pavilion(w: World, larder: Partial<Record<string, number>>, full = true
   ok(strainPerDay(w) === low, `strain no longer depends on comfort (${low.toFixed(2)} a day)`);
   // winter: warmth counts at every standing, and a home with no wood is cold
   const wi = createWorld(93); clear(wi); debugGrow(wi, 4);
-  wi.hour = (21 - 1) * 24 + 12; // summer 1 start: day 21 is the first day of winter
-  ok(seasonOf(wi).season === 'winter' && seasonOf(wi).winter === 1, `day 21 is the first winter (${seasonOf(wi).season} ${seasonOf(wi).winter})`);
+  wi.hour = (31 - 1) * 24 + 12; // a spring start: day 31 is the first day of winter
+  ok(seasonOf(wi).season === 'winter' && seasonOf(wi).winter === 1, `day 31 is the first winter (${seasonOf(wi).season} ${seasonOf(wi).winter})`);
   // decisions pause the clock, so clear them as the hours go
   const hours = (n: number) => { for (let i = 0; i < n; i++) { clear(wi); runHours(wi, 1); } clear(wi); };
   wi.res.wood = 0; hours(2);

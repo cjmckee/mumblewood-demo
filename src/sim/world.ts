@@ -56,6 +56,9 @@ export interface Colonist {
   path: { x: number; y: number }[]; goalKey: string; goalReached: boolean;
   hunger: number; fun: number; mood: number; moodTarget: number;
   sulking: boolean; lowMoodHours: number; left: boolean;
+  /** the mood ladder: their last break (kind, when, until), and their last spell of inspiration */
+  brokeAt?: number; breakKind?: BreakKind; breakUntil?: number;
+  inspiredAt?: number; inspiredUntil?: number; inspiration?: 'speed' | 'output';
   /** where they're working right now: a building of their trade, picked hourly (see tradeHour). Null: laboring */
   job: number | null; bed: number | null; partner: number | null;
   /**
@@ -113,6 +116,8 @@ export interface Colonist {
   coatStoredAt?: number;
   coatAction?: 'store' | 'collect';
 }
+/** what a settler does when their mood breaks; their traits pick it */
+export type BreakKind = 'sulk' | 'binge' | 'bender' | 'wander' | 'brawl' | 'smash';
 export interface Building {
   uid: number; def: string; x: number; y: number;
   built: boolean; progress: number;
@@ -2219,7 +2224,8 @@ function goalFor(w: World, c: Colonist): Goal {
       if (tavern) return at(tavern, 1.1, false, 'tav');
       return hearthSpot(1.9);
     }
-    case 'sulking': return hearthSpot(2.9);
+    // a wanderer sulks well away from the hearth, out towards the trees
+    case 'sulking': return c.breakKind === 'wander' ? hearthSpot(7) : hearthSpot(2.9);
     case 'sick': {
       const clinic = clinicFor(w,c);
       if (clinic) return at(clinic, 0, true);
@@ -2412,6 +2418,8 @@ function workSpeed(w: World, c: Colonist, skill?: JobKind) {
   if (has(c, 'diligent')) s *= 1.3;
   if (hasPerk(w, 'overtime')) s *= 1.25;
   if (c.mood > 70) s *= 1.1;
+  if (c.mood < GRUMBLE) s *= 0.85;
+  if (inspired(w, c) === 'speed') s *= 1.5;
   return s;
 }
 
@@ -2440,8 +2448,9 @@ function produce(w: World, dt: number) {
       bt.done += bt.rate * workSpeed(w, c, def.job) * dt * b.eff * seasonYield(w, def.id) * (def.id === 'woodcutter' && hasPerk(w, 'lumberGuild') ? 1.5 : 1) * craftBoost(w, def.id) * passing(w, def.id) * (bt.indoor ? rule(START.seasons.indoor, seasonOf(w).season, 1) : 1);
       // the whole batch comes out at the end of its work
       if (bt.done >= bt.make - 1e-9) {
-        b.outbox[bt.output] = (b.outbox[bt.output] ?? 0) + bt.make;
-        flow(w, `${bt.output}:+${b.def}`, bt.make);
+        const extra = inspired(w, c) === 'output' ? 1 : 0;
+        b.outbox[bt.output] = (b.outbox[bt.output] ?? 0) + bt.make + extra;
+        flow(w, `${bt.output}:+${b.def}`, bt.make + extra);
         b.batch = undefined;
       }
       if (def.job) practice(c, def.job, dt);
@@ -2766,6 +2775,9 @@ function computeThoughts(w: World, c: Colonist): Thought[] {
   // a growing town expects better than a shack
   else if (standingOf(w) >= 1) add(standingOf(w) >= 2 ? 'A village, and I\u2019m still in a shack' : 'Still in a shack', standingOf(w) >= 2 ? -2 : -1);
   if (w.hearthCold && hourOfDay(w) >= 18) add('The hearth went cold', -3);
+  // grumbling is catching: someone very unhappy at home or at work drags the rest down
+  const near = alive(w).filter(o => o.id !== c.id && o.mood < GRUMBLE && ((c.bed != null && o.bed === c.bed) || (c.job != null && o.job === c.job)));
+  for (const o of near.slice(0, 2)) add(`${first(o)}\u2019s grumbling`, -2);
   if (c.cold) add(hasCoat(c) ? 'Cold, but bundled in a warm coat' : bed ? 'A cold home: no wood for the fire' : 'Freezing out in the open', (bed ? -6 : -8) * (hasCoat(c) ? CLOTHING.coldMoodMultiplier : 1));
   if (has(c, 'vain') && (!bed || bdef(bed).bedQuality !== 'cozy')) add('Vain: deserves a cottage', -5);
   const job = buildingByUid(w, c.job);
@@ -3000,10 +3012,7 @@ function hourly(w: World) {
     c.moodTarget = Math.max(0, Math.min(100, 50 + c.thoughts.reduce((s, x) => s + x.value, 0)));
     c.mood += Math.max(-6, Math.min(10, c.moodTarget - c.mood));
 
-    if (!c.sulking && c.mood < 20) { c.sulking = true; dropTask(w, c); addLog(w, `${first(c)} is sulking behind the woodpile and refuses to work.`, 'bad'); }
-    else if (c.sulking && c.mood > 32) { c.sulking = false; addLog(w, `${first(c)} has stopped sulking. For now.`); }
-    c.lowMoodHours = c.mood < 10 ? c.lowMoodHours + 1 : 0;
-    if (c.lowMoodHours >= 20) leave(w, c);
+    moodLadder(w, c);
   }
   // employed colonists finishing the workday drop unstarted tasks
   if (h === 18) for (const c of alive(w)) if (c.task && !c.carrying) c.task = null;
@@ -3046,6 +3055,102 @@ function die(w: World, c: Colonist, cause: string) {
     else addMemory(w, o, `death${c.id}`, `${first(c)} died`, -3, 24);
   }
   assignBeds(w); w.version++;
+}
+
+// ---------- The mood ladder ----------
+/** below this for a whole day, they leave */
+export const LEAVE_BELOW = 12;
+/** below this, they grumble: slower work, and a drag on housemates and coworkers */
+export const GRUMBLE = 35;
+/** below this, close to breaking: the roster shows it */
+export const BREAKING = 25;
+/** below this, they break; stoic and sunny settlers hold on a little longer */
+export const breakPoint = (c: Colonist) => (has(c, 'stoic') || has(c, 'sunny') ? 15 : 20);
+/** inspired right now, and how */
+export const inspired = (w: World, c: Colonist) => (c.inspiredUntil ?? -1) > w.hour ? c.inspiration : undefined;
+/** which break their traits lead to */
+export function breakKindFor(w: World, c: Colonist): BreakKind {
+  if (has(c, 'hothead') && smashTarget(w, c)) return 'smash';
+  if ((has(c, 'grumbler') || has(c, 'drama')) && alive(w).some(o => o.id !== c.id && !o.left)) return 'brawl';
+  if (has(c, 'glutton')) return 'binge';
+  if (c.wants?.includes('tippler') || has(c, 'tippler')) return 'bender';
+  if (has(c, 'loner') || has(c, 'butterfly')) return 'wander';
+  return 'sulk';
+}
+function smashTarget(w: World, c: Colonist) {
+  const cur = buildingByUid(w, c.job);
+  if (cur?.built && bdef(cur).recipes) return cur;
+  const t = tradeOf(w, c);
+  return built(w).find(b => bdef(b).job === t && bdef(b).recipes);
+}
+/** once an hour, after their mood: inspiration, breaks, and leaving */
+function moodLadder(w: World, c: Colonist) {
+  // a break runs its course
+  if (c.sulking && w.hour >= (c.breakUntil ?? 0)) {
+    c.sulking = false;
+    if (c.breakKind === 'wander') {
+      if (nextRand(w) < 0.25) { fallIll(w, c, 'ankle'); addLog(w, `${first(c)} limps back out of the woods with a sprained ankle.`, 'bad'); }
+      else addLog(w, `${first(c)} wanders back in from the woods, a little calmer.`);
+    } else addLog(w, `${first(c)} has calmed down. For now.`);
+  }
+  if (!c.sulking && c.mood < breakPoint(c) && w.hour - (c.brokeAt ?? -1e9) >= 72 && !bedridden(c)) startBreak(w, c);
+  if (c.mood >= 80 && w.hour - (c.inspiredAt ?? -1e9) >= 120) {
+    c.inspiredAt = w.hour; c.inspiredUntil = w.hour + 24;
+    c.inspiration = has(c, 'diligent') || has(c, 'lazy') ? 'speed' : 'output';
+    addLog(w, `${first(c)} is inspired! ${c.inspiration === 'speed' ? 'Working at a gallop for a day.' : 'Every batch they finish today makes one extra.'}`, 'good');
+  }
+  c.lowMoodHours = c.mood < LEAVE_BELOW ? c.lowMoodHours + 1 : 0;
+  if (c.lowMoodHours >= 24) {
+    // they take a few meals with them, and the strain of it stays behind
+    let took = 0;
+    for (const r of [...MEALS, ...RAW_FOODS]) while (took < 3 && w.res[r] >= 1) { w.res[r] -= 1; flow(w, `${r}:-left`, 1); took++; }
+    w.strain = Math.min(100, w.strain + START.breaks.leftStrain);
+    for (const o of alive(w)) if (o.id !== c.id && opinion(w, o.id, c.id) > 30) addMemory(w, o, `gone${c.id}`, `${first(c)} left`, -6, 48);
+    leave(w, c);
+  }
+}
+const BEST_FIRST = (rs: ResourceId[]) => [...rs].sort((p, q) => TIER_RANK[TIER[q] ?? 'processed'] - TIER_RANK[TIER[p] ?? 'processed']);
+/** take up to n of the best goods in store, one at a time; returns how many */
+function gorge(w: World, rs: ResourceId[], n: number, why: string) {
+  let got = 0;
+  for (const r of BEST_FIRST(rs)) while (got < n && w.res[r] >= 1) { w.res[r] -= 1; flow(w, `${r}:-${why}`, 1); got++; }
+  return got;
+}
+function startBreak(w: World, c: Colonist) {
+  const kind = breakKindFor(w, c);
+  c.brokeAt = w.hour; c.breakKind = kind; c.breakUntil = w.hour + 12 + Math.floor(nextRand(w) * 13);
+  w.strain = Math.min(100, w.strain + START.breaks.strain);
+  dropTask(w, c);
+  switch (kind) {
+    case 'sulk': c.sulking = true; addLog(w, `${first(c)} is sulking behind the woodpile and refuses to work.`, 'bad'); break;
+    case 'binge': {
+      const n = gorge(w, MEALS, 4, 'binge'); c.hunger = 100; c.sulking = true; c.breakUntil = w.hour + 12;
+      addLog(w, n ? `${first(c)} broke into the larder and ate ${n} of the best meals in one sitting.` : `${first(c)} ransacked an empty larder and is sulking about it.`, 'bad'); break;
+    }
+    case 'bender': {
+      const n = gorge(w, CATEGORIES.drink.members, 4, 'bender');
+      if (n) { fallIll(w, c, 'hangover'); addLog(w, `${first(c)} drank ${n} of the colony\u2019s drinks in one night and is now very sorry.`, 'bad'); }
+      else { c.sulking = true; addLog(w, `${first(c)} found nothing to drink and is sulking about it.`, 'bad'); }
+      break;
+    }
+    case 'wander': c.sulking = true; c.breakUntil = w.hour + 24; addLog(w, `${first(c)} has stormed off into the woods.`, 'bad'); break;
+    case 'brawl': {
+      const others = alive(w).filter(o => o.id !== c.id);
+      const foe = others.sort((a, b) => opinion(w, c.id, a.id) - opinion(w, c.id, b.id))[0];
+      changeOpinion(w, c, foe, -20); changeOpinion(w, foe, c, -20);
+      addMemory(w, c, `brawl${foe.id}`, `Fought with ${first(foe)}`, -6, 48); addMemory(w, foe, `brawl${c.id}`, `Attacked by ${first(c)}`, -8, 48);
+      fallIll(w, c, 'bruised'); fallIll(w, foe, 'bruised');
+      addLog(w, `${first(c)} picked a fight with ${first(foe)}. Both are laid up with black eyes.`, 'bad'); break;
+    }
+    case 'smash': {
+      const b = smashTarget(w, c)!;
+      b.inbox = {}; b.outbox = {}; b.batch = undefined;
+      b.built = false; b.delivered = { ...costOf(b) } as Building['delivered']; b.progress = siteWork(b) * 0.5;
+      for (const o of alive(w)) if (o.job === b.uid) { o.job = null; dropTask(w, o); }
+      c.sulking = true;
+      addLog(w, `${first(c)} has smashed up the ${bdef(b).name.toLowerCase()}. Everything on its shelves is ruined, and it needs rebuilding.`, 'bad'); w.version++; break;
+    }
+  }
 }
 
 function leave(w: World, c: Colonist, carted = false) {

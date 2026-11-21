@@ -16,11 +16,11 @@ try{
  assert.deepEqual(healthy.buildings,base.buildings,'healthy colonies retain their normal construction priorities');
  const farm=createWorld(8919,{colonists:14});farm.owned.push('field','mill','bakery');farm.charter='bread';farm.res.berries=200;farm.res.stew=100;farm.res.wood=100;
  for(const id of ['field','mill','bakery']){const pos=findSpot(farm,id);assert(pos);assert.equal(apply(farm,{type:'place',def:id,...pos}),null);farm.buildings.at(-1)!.built=true;}
- const field=farm.buildings.find(b=>b.def==='field')!;farm.hour=480;BOT.seasonalStaffing=false;
+ const field=farm.buildings.find(b=>b.def==='field')!;farm.hour=720;BOT.seasonalStaffing=false;
  assert((staffPlan(farm).get(field.uid)??0)>0,'old winter plan allocates a dormant field');
  BOT.seasonalStaffing=true;assert.equal(staffPlan(farm).get(field.uid),0,'winter plan allocates no dormant field workers');
  apply(farm,{type:'assign',colonist:farm.colonists[0].id,building:field.uid});autoStaff(farm);assert.equal(workersAt(farm,field.uid).length,0,'actual reassignment releases winter field workers');
- farm.hour=720;autoStaff(farm);assert(seasonYield(farm,'field')>0);assert(workersAt(farm,field.uid).length>0,'field becomes eligible again in spring');
+ farm.hour=960;autoStaff(farm);assert(seasonYield(farm,'field')>0);assert(workersAt(farm,field.uid).length>0,'field becomes eligible again in spring');
  const med=createWorld(8919,{colonists:6});med.owned.push('clinic');med.res.berries=200;med.res.wood=100;
  const cp=findSpot(med,'clinic');assert(cp);assert.equal(apply(med,{type:'place',def:'clinic',...cp}),null);const clinic=med.buildings.at(-1)!;clinic.built=true;
  const illDoctor=med.colonists[0],patient=med.colonists[1],healthyMedic=med.colonists[2];
