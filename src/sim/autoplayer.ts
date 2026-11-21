@@ -951,7 +951,7 @@ function randomTrade(w: World, rand: () => number) {
 
 /** what a cornerstone is worth to this colony now: a standing value, and the run's own circumstances for the ones that depend on them */
 const PERK_BASE: Record<string, number> = {
-  homesteaders: 18, ironWill: 18, postRider: 16, saintsDay: 16, warmHearth: 14, lumberGuild: 14, barnRaising: 13, overtime: 13,
+  ironWill: 18, postRider: 16, saintsDay: 16, warmHearth: 14, lumberGuild: 14, barnRaising: 13, overtime: 13,
   hearthkeepers: 8, communalPot: 6, hearthSongs: 2, crownsFavour: 6, merchantsFavour: 8, rootCellars: 7,
   pilgrimsRoad: 5, openRoad: 3, rentCollector: 2, brewersGuild: 0, fishingRights: 0, masonsLodge: 0, bakersRow: 0,
 };

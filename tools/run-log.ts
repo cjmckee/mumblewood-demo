@@ -1,7 +1,7 @@
 // One bot run, logged every few days: size, mood, strain, the charter's parts, trades and where they work, the
 // staffing plan, the finale's site and routes, stock, sites, blocked workshops and the log's big moments.
 // Usage: npx tsx tools/run-log.ts <seed> [everyDays=2]
-import { createWorld, tick, day, alive, avgMood, TICKS_PER_HOUR, built, workersAt, charterRequirements, blockedReason, strainPerDay, remainingCost, feastCheck, colonyComfort } from '../src/sim/world';
+import { createWorld, tick, day, alive, avgMood, TICKS_PER_HOUR, built, workersAt, charterRequirements, blockedReason, strainPerDay, remainingCost, feastCheck } from '../src/sim/world';
 import { autoDecide, autoBuild, finaleRoutes, charterChain, staffPlan } from '../src/sim/autoplayer';
 const seed = Number(process.argv[2]), every = Number(process.argv[3] ?? 2);
 const w = createWorld(seed); let r = seed; const rand = () => ((r = (r * 1103515245 + 12345) >>> 0) / 4294967296);
@@ -19,7 +19,7 @@ while (w.status === 'playing' && day(w) <= 90) {
     const routes = finaleRoutes(w).map(x => `${x.key}→${x.good} via ${x.steps.map(s => s.def + ':' + s.output).join('>')}`).join(' | ');
     const stock = KEY.filter(k => (w.res as any)[k] >= 1).map(k => `${k} ${Math.floor((w.res as any)[k])}`).join(', ');
     const blocked = built(w).filter(b => blockedReason(w, b)).map(b => `${b.def}: ${blockedReason(w, b)}`);
-    console.log(`=== d${day(w)} pop ${alive(w).length} mood ${avgMood(w).toFixed(0)} (min ${Math.min(...alive(w).map(c => c.mood)).toFixed(0)}, sulk ${alive(w).filter(c => c.sulking).length}) strain ${w.strain.toFixed(1)} (+${strainPerDay(w).toFixed(2)}/d) comfort ${(colonyComfort(w)*100).toFixed(0)}% | ${w.charter} [${req}]`);
+    console.log(`=== d${day(w)} pop ${alive(w).length} mood ${avgMood(w).toFixed(0)} (min ${Math.min(...alive(w).map(c => c.mood)).toFixed(0)}, sulk ${alive(w).filter(c => c.sulking).length}) strain ${w.strain.toFixed(1)} (+${strainPerDay(w).toFixed(2)}/d) | ${w.charter} [${req}]`);
     console.log(`  trades ${JSON.stringify(tr)} at ${JSON.stringify(jobs)}`);
     console.log(`  plan ${[...staffPlan(w)].filter(([, n]) => n).map(([u, n]) => w.buildings.find(b => b.uid === u)!.def + ':' + n).join(',')} · chain ${charterChain(w).join(',')}`);
     if (fin || routes) console.log(`  finale ${fin} · routes ${routes}${w.charter === 'longtable' ? ' · feast ' + JSON.stringify(feastCheck(w)) : ''}`);

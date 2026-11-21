@@ -3,7 +3,6 @@ import { IsoView } from './render/iso';
 import { UI } from './ui/ui';
 import { autoDecide, autoBuild } from './sim/autoplayer';
 import { saveWorld, loadSave, clearSave, runResultKey } from './save';
-import { preparePlayerSettlement } from './settlement';
 
 /** in-game hours per real second at each speed setting (1x ≈ 90 s per day) */
 const SPEEDS = [0, 0.27, 0.55, 1.1];
@@ -23,7 +22,7 @@ async function boot() {
   const saveProfile = () => { try { localStorage.setItem(PROFILE_KEY, JSON.stringify(profile)); } catch { /* storage unavailable */ } };
   // a run in progress resumes where it left off; the game waits on the "welcome back" card until the player chooses
   const saved = loadSave();
-  let world: World = preparePlayerSettlement(saved?.world ?? createWorld((Date.now() ^ (Math.random() * 1e9)) >>> 0));
+  let world: World = saved?.world ?? createWorld((Date.now() ^ (Math.random() * 1e9)) >>> 0);
   let recorded = false;
   const recordResult = () => {
     if (world.status === 'playing' || recorded) return;
@@ -54,7 +53,7 @@ async function boot() {
   ui.onRestart = () => {
     recordResult(); // An immediate click must still record the completed settlement.
     clearSave();
-    world = preparePlayerSettlement(createWorld((Date.now() ^ (Math.random() * 1e9)) >>> 0)); recorded = false;
+    world = createWorld((Date.now() ^ (Math.random() * 1e9)) >>> 0); recorded = false;
     speed = 1; ui.speed = 1; acc = 0;
     view.resetWorld(); view.placing = null; view.pathMode = false;
     ui.resetForNewSettlement(); save(); ui.render(true);

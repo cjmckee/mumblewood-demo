@@ -1,6 +1,6 @@
 // What goes wrong around winter: stores, cold, sickness, mood and comfort on days either side of both winters, and every
 // settler lost, by cause and by season. Usage: npx tsx tools/winter.ts [runs=30]
-import { createWorld, tick, day, alive, TICKS_PER_HOUR, World, foodTotal, standingOf, colonyComfort, comfortGaps, avgMood } from '../src/sim/world';
+import { createWorld, tick, day, alive, TICKS_PER_HOUR, World, foodTotal, standingOf, avgMood } from '../src/sim/world';
 import { autoDecide, autoBuild } from '../src/sim/autoplayer';
 import { seasonOf } from '../src/sim/seasons';
 const N = Number(process.argv[2] ?? 30);
@@ -18,7 +18,7 @@ for (let i = 0; i < N; i++) {
     if (Math.round(w.hour) % 24 === 12 && days.includes(d)) {
       const a = (agg[d] ??= { n: 0, food: 0, wood: 0, cold: 0, sick: 0, mood: 0, pop: 0, comfort: 0, strain: 0 });
       a.n++; a.food += foodTotal(w); a.wood += w.res.wood; a.cold += alive(w).filter(c => c.cold).length; a.sick += alive(w).filter(c => c.illness).length;
-      a.mood += avgMood(w); a.pop += alive(w).length; a.comfort += colonyComfort(w); a.strain += w.strain;
+      a.mood += avgMood(w); a.pop += alive(w).length; a.strain += w.strain;
     }
   }
   for (const l of w.log) {

@@ -3,7 +3,7 @@
 // npx tsx tools/ladder-check.ts
 import assert from 'node:assert/strict';
 import { BUILDINGS, MEAL_MOOD, DRINK_MOOD, TIER, TIER_MOOD, TIER_STAGE, TRADERS, membersOf, InputKey, ResourceId, SiteId, SITES, tradeable, CATEGORIES, MEALS, DRINKS, BASE_RATE, STAR_MULT, BuildingDef, GoodTier, RESOURCES } from '../src/sim/content';
-import { createWorld, findSpot, apply, alive, runHours, reconcileStock, debugGrow, siteOk, comfortParts, World, Building, MEAL_TIER_COMFORT, SETTLEMENT_MEAL_COMFORT } from '../src/sim/world';
+import { createWorld, findSpot, apply, alive, runHours, reconcileStock, debugGrow, siteOk, World, Building } from '../src/sim/world';
 
 let n = 0; const ok = (cond: unknown, msg: string) => { assert(cond, msg); n++; };
 const FOOD = [...MEALS, ...DRINKS];
@@ -123,21 +123,6 @@ const used = (w: World, r: ResourceId, at: string) => (w.flows[`${r}:-${at}`] ??
 { const w = shop(5, 'smokehouse', 2, { driedMushrooms: 20, bread: 20, fish: 0, smokedFish: 0 }); ok(made(w, 'hotpot', 'smokehouse') && used(w, 'driedMushrooms', 'smokehouse'), 'hotpot from dried mushrooms and bread, with no fish'); }
 { const w = shop(5, 'stillhouse', 1, { cider: 20, herbs: 20 }); ok(made(w, 'mulled', 'stillhouse') && used(w, 'cider', 'stillhouse'), 'a mulled cup from cider and herbs at the still house'); }
 { const w = shop(5, 'smokehouse', 3, { skewers: 20, mulled: 20 }); ok(made(w, 'platter', 'smokehouse'), 'a braised platter from skewers and a mulled cup'); }
-
-// 6. Comfort follows the tier of the last meal: steeply in a village, gently in a settlement.
-{
-  const w = createWorld(9); debugGrow(w, 4); w.chartersDone = ['a', 'b']; const c = alive(w)[0];
-  c.hunger = 80; c.lastMeal = { cooked: true, table: true, loved: false, tier: 'quality' };
-  const fine = comfortParts(w, c).meals!;
-  c.lastMeal = { cooked: true, table: true, loved: false, tier: 'processed' };
-  const plain = comfortParts(w, c).meals!;
-  ok(fine === MEAL_TIER_COMFORT.quality && plain === MEAL_TIER_COMFORT.processed && fine > plain * 3, `a quality meal counts ${fine}, stew ${plain}`);
-  c.lastMeal = { cooked: true, table: true, loved: false };
-  ok(comfortParts(w, c).meals === MEAL_TIER_COMFORT.refined, 'a meal from an older save counts as refined');
-  w.chartersDone = ['a']; c.lastMeal = { cooked: true, table: true, loved: false, tier: 'processed' };
-  const stew1 = comfortParts(w, c).meals!; c.lastMeal = { cooked: true, table: true, loved: false, tier: 'quality' };
-  ok(stew1 === SETTLEMENT_MEAL_COMFORT.processed && comfortParts(w, c).meals === 1, `a settlement is content with stew (${stew1}) and better fare is a bonus (${comfortParts(w, c).meals})`);
-}
 
 // 7. Traders never carry refined goods or better.
 ok(TRADERS.every(t => t.sells.every(tradeable)), 'no trader lists a refined good or better');
