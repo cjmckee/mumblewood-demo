@@ -1,7 +1,7 @@
 // DOM overlay: HUD, bottom sheet, decision modals. Talks to the sim only through commands.
 import { LORE_BOOST, EventNeed, EventOption, BUILDINGS, membersOf, isGroup, BUILDING_BY_ID, EVENTS, RESEARCH, RESEARCH_BY_ID, BRANCHES_AFTER, JOB_NAMES, WANT_BY_ID, WantId, TRADE_NAMES, TRADE_ICON, PERK_BY_ID, TRADER_BY_ID, RESOURCES, TRAIT_BY_ID, ResourceId, SKILL_NAMES, JOB_KINDS, JobKind, WORK_KINDS, WorkKind, WORK_LABEL, WORK_ICON, Recipe, InputKey, inputName, recipeRate, batchHours, Stars, CATEGORIES } from '../sim/content';
 import {
-  World, Command, Decision, Colonist, prioOf, alive, avgMood, beds, buildingByUid, charterProgress, colonistById,
+  World, Command, Decision, Colonist, prioOf, seasonYield, alive, avgMood, beds, buildingByUid, charterProgress, colonistById,
   day, hourOfDay, opinion, workersAt, MAX_DEPARTURES, sites, siteWork, remainingCost, storageCap, stored,
   keepsFresh, findSpot, canPlace, laborers, centerOf, built, Building, efficiencyAt, pathAt, MAP_SIZE, blockedReason, Errand, patientsAt, clinicAdmissions, lost, bedridden, spoilingFood, accepts, roomIn, FOODS, GOODS,
   recipesOf, recipeOn, optionOn, optionsOf, currentRecipe, orderedRecipes, INPUT_CAPACITY, OUTBOX_CAP, siteOk, rerollCost, REROLL_STEP, stockOf, recipeReach, charterHelpers, charterDef,
@@ -548,6 +548,7 @@ export class UI {
       case 'option-toggle': { const [bid, k, g] = arg.split(':'); const b = buildingByUid(w, Number(bid)); if (!b) break; this.send({ type: 'toggleOption', building: b.uid, key: k as InputKey, good: g as ResourceId, on: !optionOn(b, k as InputKey, g as ResourceId) }); break; }
       case 'recipe-toggle': { const [bid, i] = arg.split(':').map(Number); const b = buildingByUid(w, bid); if (!b) break; this.send({ type: 'toggleRecipe', building: bid, recipe: i, on: !recipeOn(b, i) }); break; }
       case 'trade': { const [cid, t] = arg.split(':'); const err = this.send({ type: 'trade', colonist: Number(cid), trade: t === 'none' ? null : t as JobKind }); if (err) this.toast(err); break; }
+      case 'pause': { const [bid, on] = arg.split(':').map(Number); this.send({ type: 'pause', building: bid, paused: on === 1 }); break; }
       case 'work-prio': { const [bid, m] = arg.split(':').map(Number); this.send({ type: 'workPriority', building: bid, prio: m as 0 | 1 | 2 }); break; }
       case 'store-prio': { const [bid, m] = arg.split(':').map(Number); this.send({ type: 'storagePriority', building: bid, prio: m as 0 | 1 | 2 }); break; }
       case 'store-item': {
@@ -1116,7 +1117,7 @@ export class UI {
       staff += `<p class="prefs">Sleeps ${def.beds}${sleepers ? `: ${sleepers}` : ''}.</p>`;
     }
     return `<div class="detail"><div class="d-head"><button type="button" class="ghost back" data-act="back">← Buildings</button></div>
-      <h2 class="bh">${icon(def.id, 'hico')}${esc(def.name)}${snowChip(def.id)}</h2><p class="blurb">${esc(def.blurb)}</p>${recipe}${staff}</div>`;
+      <h2 class="bh">${icon(def.id, 'hico')}${esc(def.name)}${snowChip(def.id)}</h2><p class="blurb">${esc(def.blurb)}</p>${pauseRow(w, b)}${recipe}${staff}</div>`;
   }
 
   private deskLines(w: World) {
@@ -1614,4 +1615,13 @@ function seasonEffects(w: World, season: Season, heading: string) {
   }
   const build = START.seasons.build[season]; if (build && build !== 1) rows.push(`<li><span>Building</span><b class="neg">${Math.round(build * 100)}%</b></li>`);
   return rows.length ? `<h3>${esc(heading)}: ${SEASON_NAMES[season].toLowerCase()}</h3><ul class="thoughts season-fx">${rows.join('')}</ul>` : `<h3>${esc(heading)}: ${SEASON_NAMES[season].toLowerCase()}</h3><p class="muted">Nothing out of the ordinary.</p>`;
+}
+
+/** pause or resume a workplace; one that the season has stopped says so instead */
+function pauseRow(w: World, b: Building) {
+  const def = BUILDING_BY_ID[b.def];
+  if (!def.slots || !def.job) return '';
+  const dormant = seasonYield(w, def.id) <= 0;
+  return `<div class="pause-row">${dormant ? `<span class="snow">❄ Dormant for the season</span>` : b.paused ? '<span class="paused">Paused: nobody works here</span>' : ''}
+    <button type="button" class="ghost" data-act="pause" data-arg="${b.uid}:${b.paused ? 0 : 1}">${b.paused ? 'Resume work' : 'Pause work here'}</button></div>`;
 }
