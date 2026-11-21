@@ -343,8 +343,9 @@ export const SITES: { id: SiteId; name: string; blurb: string; feeds: string }[]
  * A settler's personal wants: two each, known from the day they arrive (on the recruit card). A met want is always
  * worth START.wants.met mood; an unmet one costs more as the town's standing rises and people come to expect it.
  */
-export type WantId = 'sweetTooth' | 'gourmand' | 'tippler' | 'bather' | 'musicLover' | 'greenThumb' | 'homebody';
-export interface WantDef { id: WantId; name: string; desc: string; met: string; unmet: string; buildings: string[] }
+export type WantId = 'sweetTooth' | 'gourmand' | 'tippler' | 'bather' | 'musicLover' | 'greenThumb' | 'homebody' | 'outdoorsy' | 'restless' | 'aboveHauling' | 'workBuddy';
+/** work: met through the work grid and who works where, not by building something */
+export interface WantDef { id: WantId; name: string; desc: string; met: string; unmet: string; buildings: string[]; work?: boolean }
 export const WANTS: WantDef[] = [
   { id: 'sweetTooth', name: 'Sweet tooth', desc: 'A sweet meal every few days: fruit pie, porridge or banquet pie.', met: 'Had something sweet', unmet: 'Nothing sweet in days', buildings: ['pieoven', 'bakery', 'malthouse'] },
   { id: 'gourmand', name: 'Gourmand', desc: 'Three kinds of meal over five days.', met: 'A varied table', unmet: 'The same old food', buildings: ['smokehouse', 'pieoven', 'bakery', 'malthouse'] },
@@ -353,6 +354,11 @@ export const WANTS: WantDef[] = [
   { id: 'musicLover', name: 'Music lover', desc: 'Music in the evenings from a bard\u2019s stage.', met: 'Music in the evenings', unmet: 'No music in this town', buildings: ['stage'] },
   { id: 'greenThumb', name: 'Green thumb', desc: 'A flower bed or herb garden near home.', met: 'Flowers by the door', unmet: 'Not a flower near home', buildings: ['flowerbed', 'herbgarden'] },
   { id: 'homebody', name: 'Homebody', desc: 'A cottage, not a shack.', met: 'A proper home', unmet: 'Stuck in a shack', buildings: ['cottage'] },
+  // met through their work: the grid, and who works beside whom
+  { id: 'outdoorsy', name: 'Outdoorsy', desc: 'Mostly outdoor work: chopping, foraging, fishing or building.', met: 'Out in the fresh air', unmet: 'Cooped up indoors', buildings: [], work: true },
+  { id: 'restless', name: 'Restless', desc: 'Three different kinds of work over three days.', met: 'A bit of everything', unmet: 'The same work every day', buildings: [], work: true },
+  { id: 'aboveHauling', name: 'Above hauling', desc: 'No hauling for two days. Give them enough work that they never run out.', met: 'Nobody\u2019s pack mule', unmet: 'Made to haul crates', buildings: [], work: true },
+  { id: 'workBuddy', name: 'Work buddy', desc: 'A shift beside a friend every day.', met: 'Worked beside a friend', unmet: 'Nobody to talk to at work', buildings: [], work: true },
 ];
 export const WANT_BY_ID = Object.fromEntries(WANTS.map(x => [x.id, x])) as Record<WantId, WantDef>;
 export interface TraitDef {
