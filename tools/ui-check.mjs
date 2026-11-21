@@ -106,7 +106,7 @@ for (const [device,width,height] of [['desktop',1440,900],['phone',390,844],['sm
   });
   check(await state(()=>document.querySelector('.urgent [data-act=need][data-arg=health]')&&document.querySelector('[data-act=jobs]')&&document.querySelector('[data-act=source][data-arg=coats]')),`${device}: illness and job remedies are exposed`);
   await p.locator('[data-act=jobs]').click();
-  check(await state(()=>document.querySelector('[data-key=person-jobs]').open),`${device}: change job expands assignment`);
+  check(await state(()=>document.querySelector('#person-jobs')&&document.querySelectorAll('.prow [data-act=prio]').length===10),`${device}: the colonist card shows their whole work row`);
   await p.screenshot({path:`${out}/${device}-colonist.png`});
   // Long decisions must retain a reachable top and scrollable bottom.
   await p.evaluate(()=>{const g=window.__game;g.world.decisions=[{kind:'recruit',options:g.world.colonists.slice(0,3)}];g.ui.render(true)});
