@@ -407,7 +407,10 @@ document.addEventListener('click', e => {
   if (ds.charterAct !== undefined) { const why = doCharterAction(w); if (why) toast(why, 'bad'); save(); }
   if (ds.choose) { choose(w, +ds.choose); ui.peeking = false; save(); }
   if (ds.peek !== undefined) ui.peeking = true;
-  if (ds.newrun !== undefined) { if (w.outcome || confirm('Start a new run? This one will be lost.')) { w = fresh(); ui.sheet = null; ui.logSeen = 0; save(); resize(); } }
+  if (ds.newrun !== undefined) {
+    if (w.outcome || ds.armed) { w = fresh(); ui.sheet = null; ui.logSeen = 0; save(); resize(); }
+    else { t.dataset.armed = '1'; t.textContent = 'Tap again to lose this run'; return; }
+  }
   render();
 });
 $('peekbar').addEventListener('click', () => { ui.peeking = false; render(); });
