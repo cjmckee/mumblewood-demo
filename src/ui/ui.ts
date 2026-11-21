@@ -6,13 +6,11 @@ import {
   keepsFresh, findSpot, canPlace, laborers, centerOf, built, Building, efficiencyAt, pathAt, MAP_SIZE, blockedReason, Errand, patientsAt, clinicAdmissions, lost, bedridden, spoilingFood, accepts, roomIn, FOODS, GOODS,
   recipesOf, recipeOn, optionOn, optionsOf, currentRecipe, orderedRecipes, INPUT_CAPACITY, OUTBOX_CAP, siteOk, rerollCost, REROLL_STEP, stockOf, recipeReach, charterHelpers, charterDef,
   costOf, researchLeft, researchStillNeeds, desks, feastCheck, mealTotal, drinkTotal,
-  comfortParts, comfortOf, colonyComfort, comfortGaps, comfortFactor, comfortMilestoneView, strainPerDay, footprint, activeNeeds, standingOf, STANDINGS, NeedKey, winterFuelPerDay,
+  strainPerDay, footprint, standingOf, STANDINGS, NeedKey, winterFuelPerDay,
   sellPrice, renownOf, pavilionOf, larderOf, FEAST_MEALS, charterCounted, charterRequirements, basicsDone, researchOpen, edibleTotal, storePrio, colonyName, nameFrom, NAME_MAX, wantMet, wantPenalty, wantSupported, wantGap, tradeOf, TRADE_DEFS, workPrio, hasWork,
 } from '../sim/world';
 import { charterPreview, metricRoutes, Route } from '../sim/charterplan';
 import { START } from '../sim/scenario';
-import { comfortMultiplier } from '../sim/comfort';
-import { comfortChip, comfortCard } from './comfort';
 import { assess, rankForPlayer, Ranked, defsOf } from '../sim/advisor';
 import { economy, Account } from '../sim/economy';
 import type { IsoView, Picked } from '../render/iso';
@@ -254,7 +252,6 @@ export class UI {
   /** "start a new colony" asks once before throwing away the run in progress */
   private confirmNew = false;
   private strainOpen = false;
-  private comfortOpen = false;
   private help: string | null = null;
   private dialogKey = '';
   private celebrationStarted = new WeakMap<Decision, number | null>();
@@ -264,7 +261,7 @@ export class UI {
   resumeFinale(w: World) { if (w.status === 'won') this.finaleStarted.set(w, null); }
   resetForNewSettlement() {
     this.detail = null; this.open = false; this.resumeOpen = false;
-    this.strainOpen = false; this.comfortOpen = false; this.help = null; this.picking = null;
+    this.strainOpen = false; this.help = null; this.picking = null;
     this.confirmNew = false; this.peeking = false;
     this.nameInit = ''; this.nameDraft = null; this.nameSeed = -1;
     this.lastModal = ''; this.lastSheet = ''; this.lastPlaceBar = ''; this.lastPeekBar = ''; this.dialogKey = '';
@@ -303,12 +300,11 @@ export class UI {
   private sheetKey = '';
   private sheetScroll = new Map<string, number>();
   private returnFocus: { act: string; arg: string } | null = null;
-  get blocksSimulation() { const w0 = this.getWorld(); return (w0.status === 'playing' && !w0.decisions.length && alive(w0).some(c => c.settling)) || this.strainOpen || this.comfortOpen || this.picking != null || this.help != null || this.naming(this.getWorld()); }
+  get blocksSimulation() { const w0 = this.getWorld(); return (w0.status === 'playing' && !w0.decisions.length && alive(w0).some(c => c.settling)) || this.strainOpen || this.picking != null || this.help != null || this.naming(this.getWorld()); }
   /** the first charter is picked and the colony hasn't been named yet */
   private naming(w: World) { return w.status === 'playing' && !w.named && !!(w.charter || w.chartersDone.length) && !this.resumeOpen; }
 
   private dismissDialog() {
-    if (this.comfortOpen) { this.comfortOpen = false; this.render(true); return; }
     if (this.getWorld().decisions.length || this.resumeOpen || this.getWorld().status !== 'playing') return;
     this.strainOpen = false; this.picking = null; this.help = null;
     this.render(true);
@@ -590,8 +586,6 @@ export class UI {
         else { const err = this.send({ type: 'sendOnErrand', errand: eid, colonist: cid }); if (err) this.toast(err); }
         this.picking = null; this.lastModal = ''; break; }
       case 'errand-later': this.send({ type: 'resolve', option: 0 }); this.lastModal = ''; break;
-      case 'comfort-open': this.comfortOpen = true; this.lastModal = ''; break;
-      case 'comfort-close': this.comfortOpen = false; this.lastModal = ''; break;
       case 'strain-open': this.strainOpen = true; this.lastModal = ''; break;
       case 'strain-close': this.strainOpen = false; this.lastModal = ''; break;
     }
@@ -688,7 +682,6 @@ export class UI {
         </div>
       </div>
       <div class="res">${res}</div>
-      ${comfortChip(w)}
       <section class="status${this.charterCollapsed ? ' is-collapsed' : ''}" aria-label="Charter and colony status">
         <button type="button" class="status-toggle" data-act="charter-toggle" aria-expanded="${!this.charterCollapsed}" aria-controls="colony-status-details" aria-label="${this.charterCollapsed ? 'Expand' : 'Collapse'} charter details: ${esc(title)}">
           <span class="status-heading"><span class="ch-name">${esc(title)}</span><span class="ch-tier">${prog ? `Charter ${w.chartersDone.length + 1}/3 · ${Math.round(prog.ratio * 100)}%` : 'Colony status'}${issueCount ? ` · ⚠ ${issueCount}` : ''}</span></span>
@@ -781,28 +774,15 @@ export class UI {
   }
 
   private strainCard(w: World) {
-    const comfort = colonyComfort(w);
-    const gaps = comfortGaps(w);
-    const st = standingOf(w), sea = seasonOf(w);
-    const next = st + 1 < STANDINGS.length ? activeNeeds(w, st + 1).filter(k => !activeNeeds(w).includes(k)) : [];
-    const nextLine = st + 1 < STANDINGS.length ? `<p class="terms">At the next charter the town becomes a <b>${STANDINGS[st + 1].toLowerCase()}</b>, and people expect more${next.length ? `: ${next.map(k => NEED_NAMES[k].toLowerCase()).join(', ')} start to count` : ''}${st + 1 >= 2 ? ', a shack counts half, and meals want a table' : ', and cooked meals replace any old food'}.</p>` : `<p class="terms">A village expects the most it ever will${START.seasons.stricterFromYear > 0 ? ', though from the second year everyone gets a little pickier' : ''}.</p>`;
+    const sea = seasonOf(w);
     const seasonLine = sea.season === 'winter' ? `Winter: everyone needs a warm home. Homes and the hearth burn about ${Math.round(winterFuelPerDay(w))} wood a day.`
-      : sea.season === 'autumn' ? `Autumn: winter in ${sea.toWinter} day${sea.toWinter === 1 ? '' : 's'}. Homes and the hearth will burn about ${Math.round(winterFuelPerDay(w, true))} wood a day.`
-      : sea.season === 'spring' && st >= 1 ? (START.seasons.springFresh ? 'Spring: people want something fresh now and then: berries, apples, fish or skewers.' : 'Spring: home heating ends, crops return, and fishing improves. Mud slows off-path travel and construction.')
-      : sea.season === 'summer' && st >= 1 ? 'Summer: people want a drink each day in the heat.' : '';
+      : sea.season === 'autumn' ? `Autumn: winter in ${sea.toWinter} day${sea.toWinter === 1 ? '' : 's'}. Homes and the hearth will burn about ${Math.round(winterFuelPerDay(w, true))} wood a day.` : '';
     const pct = (x: number) => `${Math.round(x * 100)}%`;
-    const factor = comfortFactor(w, comfort);
-    const rows = gaps.map(g => `<button type="button" data-act="need" data-arg="${g.need}" class="lg-row ${g.avg >= 0.7 ? 'lg-good' : 'lg-bad'}"><span>${NEED_NAMES[g.need]}</span><i><b style="width:${Math.round(g.avg * 100)}%"></b></i><em>${pct(g.avg)} →</em></button>`).join('');
-    const worst = gaps.filter(g => g.avg < 0.7).slice(0, 2).map(g => NEED_FIX[g.need]);
     return `<div class="card-wrap event"><p class="eyebrow">Frontier strain</p><h2>Strain ${Math.round(w.strain)}, rising ${strainPerDay(w).toFixed(1)} a day</h2>
-      <p class="lede">Comfort ${pct(comfort)} · improve the weakest needs to slow strain.</p>
-      <details data-key="strain-math"><summary>How strain works</summary><p class="prefs">Comfort <b>${pct(comfort)}</b>, so its base strain multiplier is <b>${factor.toFixed(2)}×</b>, before other bonuses. A fully comfortable colony has a base multiplier of ${comfortMultiplier(1, START.comfortScale).toFixed(1)}×.${comfortMilestoneView(w).strain < 1 ? ` Comfort rewards also reduce passive growth by ${Math.round((1 - comfortMilestoneView(w).strain) * 100)}%.` : ''}</p>
-      </details><p class="terms">${STANDINGS[st]} needs</p>
-      <div class="ledger">${rows}</div>
-      <details data-key="strain-future"><summary>Season & next charter</summary>${seasonLine ? `<p class="terms">${esc(seasonLine)}</p>` : ''}${nextLine}</details>
-      
+      <p class="lede">Every settler's mood drops by the strain. It rises a little each day, faster in a bigger colony and later in the run.</p>
+      ${seasonLine ? `<p class="terms">${esc(seasonLine)}</p>` : ''}
       <p class="terms">It eases when a charter is finished (by ${pct(START.relief.charter)}).</p>
-      <div class="opts">      <button type="button" class="ghost skip" data-act="strain-close">Close</button></div>`;
+      <div class="opts"><button type="button" class="ghost skip" data-act="strain-close">Close</button></div>`;
   }
 
 
@@ -924,9 +904,8 @@ export class UI {
       <div class="actions">${remedies}${job ? `<button type="button" class="ghost" data-act="building" data-arg="${job.uid}">${icon(job.def)} ${esc(BUILDING_BY_ID[job.def].name)} →</button>` : ''}${c.bed != null ? `<button type="button" class="ghost" data-act="building" data-arg="${c.bed}">⌂ Home →</button>` : '<button type="button" class="ghost" data-act="need" data-arg="shelter">⌂ Find a bed →</button>'}<button type="button" class="ghost" data-act="jobs">⚒ Work ↓</button></div>
       <p class="prefs">${icon('coats')} ${(c.coatHours ?? 0) > 0 ? `${c.coatStoredAt != null ? 'Coat stored' : 'Warm coat'} · ${Math.ceil(c.coatHours! / 24)} days of wear` : 'No coat · collects one in winter'} <button type="button" class="text-link" data-act="source" data-arg="coats">Coat supply →</button></p>
       ${(c.wants ?? []).length ? `<h3>Wants</h3><p class="traits wants">${wantChips(w, c)}</p>` : ''}
-      <h3>Needs · ${Math.round(comfortOf(w, c) * 100)}%</h3>${comfortRows(w, c)}
+      <h3>Mood</h3>${moodLedger(c)}<ul class="thoughts">${thoughts}</ul>
       <h3 id="person-jobs">Work <small class="muted">· now ${esc(nowDoing(w, c))}</small></h3>${prioRow(w, c)}<p class="muted hint">Tap to change: 1 first, 4 last, blank never. With nothing to do, they haul.</p>
-      <details data-key="thoughts"><summary>Mood breakdown</summary>${moodLedger(c)}<ul class="thoughts">${thoughts}</ul></details>
       <details data-key="skills"><summary>Skills & preferences</summary><p class="prefs">♥ ${JOB_NAMES[c.likes]} · × ${JOB_NAMES[c.dislikes]}${tasteLine(c)} · hunger ${Math.round(c.hunger)} · fun ${Math.round(c.fun)}</p><div class="skills">${skillKinds(c).map(k => `<div class="skill${k === c.likes ? ' fav' : ''}"><span>${SKILL_NAMES[k]}</span><i><b style="width:${c.skills[k] * 10}%"></b></i><em>${Math.floor(c.skills[k])}</em></div>`).join('')}</div></details>
       <details data-key="traits"><summary>Traits · joined day ${c.joinedDay}</summary><div class="traits">${traits}</div></details>
       <details data-key="relationships"><summary>Relationships</summary><div class="rels">${rel}</div></details>
@@ -1224,7 +1203,6 @@ export class UI {
     if (d?.kind === 'charter-complete' && this.resumeOpen) this.celebrationStarted.set(d, null);
     if (w.status !== 'playing') html = this.endScreen(w);
     else if (this.resumeOpen) html = this.resumeCard(w);
-    else if (this.comfortOpen) html = comfortCard(w);
     else if (d) {
       switch (d.kind) {
         case 'charter-complete':
@@ -1294,19 +1272,19 @@ export class UI {
     const decisionKey = d ? JSON.stringify(d) : '';
     if (decisionKey !== this.peekKey) { this.peeking = false; this.peekKey = decisionKey; }
     if (!d || this.resumeOpen || w.status !== 'playing') this.peeking = false;
-    if (html && d && !this.resumeOpen && !this.comfortOpen && w.status === 'playing') html = html.replace(/^(\s*<div class="card-wrap[^"]*"[^>]*>)/, `$1<button type="button" class="peek-btn" data-act="peek" title="Look at the colony" aria-label="Hide this choice and look at the colony">${EYE_GLYPH}</button>`);
+    if (html && d && !this.resumeOpen && w.status === 'playing') html = html.replace(/^(\s*<div class="card-wrap[^"]*"[^>]*>)/, `$1<button type="button" class="peek-btn" data-act="peek" title="Look at the colony" aria-label="Hide this choice and look at the colony">${EYE_GLYPH}</button>`);
     const bar = this.root.querySelector<HTMLElement>('#peekbar')!;
     const title = d ? (html.match(/<h2>(.*?)<\/h2>/)?.[1] ?? '') : '';
     if (w.status === 'won' && this.finalePeeking.has(w)) {
       const next = `<span class="pk-title">${esc(colonyName(w))} · town charter granted</span><button type="button" data-act="finale-back">Back to celebration</button>`;
       if (next !== this.lastPeekBar) { bar.innerHTML = next; this.lastPeekBar = next; }
       bar.hidden = false; html = '';
-    } else if (this.peeking && !this.comfortOpen) {
+    } else if (this.peeking) {
       const next = `<span class="pk-paused">Ⅱ Paused</span><span class="pk-title">${title}</span><button type="button" data-act="peek-back">Back to choice</button>`;
       if (next !== this.lastPeekBar) { bar.innerHTML = next; this.lastPeekBar = next; }
       bar.hidden = false; html = '';
     } else bar.hidden = true;
-    const nextDialogKey = this.comfortOpen && w.status === 'playing' && !this.resumeOpen ? 'comfort' : d ? JSON.stringify(d) : arriving ? `arrive:${arriving.id}` : this.naming(w) ? `name:${this.nameInit}` : this.help ? `help:${this.help}` : this.strainOpen ? 'strain' : this.picking != null ? `errand:${this.picking}` : this.resumeOpen ? 'resume' : w.status;
+    const nextDialogKey = d ? JSON.stringify(d) : arriving ? `arrive:${arriving.id}` : this.naming(w) ? `name:${this.nameInit}` : this.help ? `help:${this.help}` : this.strainOpen ? 'strain' : this.picking != null ? `errand:${this.picking}` : this.resumeOpen ? 'resume' : w.status;
     const changedDialog = nextDialogKey !== this.dialogKey;
     const wasOpen = !el.hidden;
     if (html && !wasOpen) {
@@ -1471,41 +1449,6 @@ function storeLabel(b: Building) {
   return `${b.allow.length} kinds`;
 }
 
-const NEED_FIX: Record<NeedKey, string> = {
-  shelter: 'beds for everyone, cottages better still',
-  food: 'enough food in storage',
-  fire: 'wood for the hearth at night',
-  meals: 'cooked meals at a table; better fare counts more, and a village expects it',
-  variety: 'a second kind of meal, so nobody eats the same thing for days',
-  evenings: 'something to do in the evening: a tavern, a stage',
-  health: 'a clinic with a doctor for the sick',
-  surroundings: 'paths and decorations where people spend time',
-  fresh: 'berries, apples, fish or skewers now and then',
-  drink: 'a drink at the tavern',
-  warmth: 'beds for everyone and wood for every home’s fire',
-};
-/** one settler's comfort, need by need, with what would raise each */
-function comfortRows(w: World, c: Colonist) {
-  const p = comfortParts(w, c);
-  const v = (k: NeedKey) => p[k] ?? 0;
-  const why: Record<NeedKey, string> = {
-    shelter: v('shelter') >= 1 ? (c.bed != null ? 'a bed of their own' : '') : v('shelter') > 0 ? 'a shack (a cottage would be better)' : 'sleeping on the ground',
-    food: v('food') >= 1 ? 'fed' : 'hungry',
-    fire: v('fire') >= 1 ? 'the hearth is lit' : 'the hearth went cold',
-    meals: v('meals') <= 0 ? 'raw food or going hungry' : standingOf(w) >= 1 && c.lastMeal?.tier ? `${c.lastMeal.tier} fare${c.lastMeal.table ? ' at a table' : ', not at a table'}${c.lastMeal.tier !== 'quality' && c.lastMeal.tier !== 'magnificent' ? ' · better fare counts more' : ''}`
-      : v('meals') >= 1 ? 'a favourite meal at a table' : v('meals') >= 0.85 ? 'a cooked meal at a table' : 'cooked, but not at a table',
-    variety: v('variety') >= 1 ? 'a varied table' : v('variety') > 0 ? 'the same meal every day' : 'no proper meals lately',
-    evenings: v('evenings') >= 0.8 ? 'well entertained' : v('evenings') > 0.3 ? 'some fun' : 'bored',
-    health: v('health') >= 1 ? 'healthy' : v('health') > 0 ? 'ill, being looked after' : 'ill, nobody treating them',
-    surroundings: v('surroundings') >= 0.75 ? 'pleasant' : v('surroundings') > 0.25 ? 'plain' : 'drab',
-    fresh: v('fresh') >= 1 ? 'had something fresh' : 'nothing fresh in days',
-    drink: v('drink') >= 1 ? 'had a drink today' : 'parched',
-    warmth: v('warmth') >= 1 ? 'warm at home' : c.bed == null ? 'out in the cold' : 'no wood for the fire',
-  };
-  return `<div class="ledger">${activeNeeds(w).map(k => `<button type="button" data-act="need" data-arg="${k}" class="lg-row need ${v(k) >= 0.7 ? 'lg-good' : 'lg-bad'}"><span>${icon(NEED_BUILD[k])} ${NEED_NAMES[k]}<small>${esc(why[k])}</small></span><i><b style="width:${Math.round(v(k) * 100)}%"></b></i><em>${Math.round(v(k) * 100)}%</em><span class="sr-only">Open remedy</span></button>`).join('')}</div>`;
-}
-
-/** base 50, plus the good, minus the gripes, minus this colonist's share of frontier wear */
 function moodLedger(c: Colonist) {
   const wear = c.thoughts.filter(t => t.label.startsWith('The frontier')).reduce((n, t) => n + t.value, 0);
   const good = c.thoughts.filter(t => t.value > 0).reduce((n, t) => n + t.value, 0);

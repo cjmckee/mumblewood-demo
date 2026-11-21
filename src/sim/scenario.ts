@@ -31,13 +31,8 @@ export interface Start {
    * strain builds up each hour by rate × √population, faster as the run goes on (1 + day / rampDays). The square root
    * means a bigger colony strains a little faster, not twice as fast: growing is a trade-off, not a trap.
    */
+  /** strain's daily rise: rate × √colonists, growing by rampDays. Was 0.15 scaled by comfort (about 0.6× in play); comfort is gone, so 0.085, which keeps strain where it was */
   strain: { rate: number; rampDays: number };
-  /**
-   * how much the colony's comfort (0 to 1, see comfortOf) changes the strain rise: rise × (base − comfort × slope).
-   * With base 1.4 and slope 1: a neglected town (0.1) strains 1.3×, a middling one (0.4) 1×, a great one (1.0) 0.4×.
-   * An optional piecewise curve supports balance experiments; the shipped default remains linear.
-   */
-  comfortScale: import('./comfort').ComfortScale;
   /** strain relief from finishing a charter, a share of the current strain so a deeper hole means a bigger climb back */
   relief: { charter: number };
   /** wood the hearth burns per night hour: a small fire for a small colony that grows with it, up to 1 */
@@ -152,8 +147,7 @@ export const START: Start = {
   wants: { per: 2, met: 6, unmet: [1, 3, 6], on: true },
   draftEvery: 5,
   collapse: { lost: 6, minAlive: 0 },
-  strain: { rate: 0.15, rampDays: 40 },
-  comfortScale: { base: 1.4, slope: 1 },
+  strain: { rate: 0.085, rampDays: 40 },
   relief: { charter: 0.3 },
   hearth: { base: 0.125, perPerson: 0.03 },
   woodReserve: 10,

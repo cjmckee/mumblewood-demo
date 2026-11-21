@@ -7,8 +7,6 @@ import {
   FINALE_COLONISTS, WANTS, WANT_BY_ID, WantId,
 } from './content';
 import { planInputBatch } from './batching';
-import { comfortMultiplier } from './comfort';
-import { MilestoneState, RewardProfile, milestoneView, rollDouble } from './comfort-milestones';
 import { draftLinks } from './charterplan';
 import { START, Season, SEASONS } from './scenario';
 import { seasonOf, seasonOn, rule, SEASON_NAMES } from './seasons';
@@ -139,7 +137,6 @@ export interface Building {
   /** a workshop's batch under way: its ingredients are already used, and it makes `make` whole units once `done` reaches `make` */
   batch?: { output: ResourceId; make: number; done: number; rate: number; indoor: boolean };
   /** Earned double output waits here if the workshop shelf cannot hold it yet. */
-  comfortBonus?: { output: ResourceId; amount: number };
   /** buildings built in stages (the Crown's Hall): which stage is under way */
   stage?: number;
   /** finales: how many colonists the bill is for (a magnificent meal and a quality drink each), kept up to date while it's unbuilt */
@@ -176,8 +173,6 @@ export type Decision =
 export interface LogEntry { day: number; hour: number; text: string; tone: 'good' | 'bad' | 'neutral' | 'love' }
 
 export interface World {
-  /** Opt-in comfort reward prototype, including its rolling history and independent random stream. */
-  comfortMilestones?: MilestoneState;
   recipeBatching?: boolean;
   startDate?: { season: Season; day: number };
   seed: number; rngState: number;
@@ -250,8 +245,6 @@ export interface World {
   charterHolds?: number[];
   /** the founders' feast for the Long Table: called for tonight, when it can next be called, and whether it worked */
   feast?: { called: boolean; readyAt: number; done: boolean; last?: string };
-  /** the colony's comfort, 0 to 1, refreshed hourly; it sets how fast strain rises */
-  comfort?: number;
   /** the hearth ran out of wood tonight */
   hearthCold?: boolean;
 }
@@ -2419,20 +2412,8 @@ function workSpeed(w: World, c: Colonist, skill?: JobKind) {
 }
 
 function produce(w: World, dt: number) {
-  const milestone = w.comfortMilestones ? comfortMilestoneView(w) : { speed: 1, doubleChance: 0 };
   for (const b of built(w)) {
     const def = bdef(b); if (!def.recipes) continue;
-    if (b.comfortBonus) {
-      const n = Math.min(b.comfortBonus.amount, Math.max(0, OUTBOX_CAP - sum(b.outbox)));
-      if (n > 0) {
-        b.outbox[b.comfortBonus.output] = (b.outbox[b.comfortBonus.output] ?? 0) + n;
-        flow(w, `${b.comfortBonus.output}:+${b.def}`, n);
-        flow(w, `${b.comfortBonus.output}:comfort-bonus`, n);
-        b.comfortBonus.amount -= n;
-      }
-      if (b.comfortBonus.amount <= 1e-9) b.comfortBonus = undefined;
-      else continue;
-    }
     for (const c of workersAt(w, b.uid)) {
       if (c.activity !== 'working' || !c.goalReached) continue;
       // start a batch: the current recipe if its ingredients are here, else any switched-on one whose are. Its
@@ -2452,21 +2433,11 @@ function produce(w: World, dt: number) {
         b.batch = { output: rec.output, make: rec.make, done: 0, rate: recipeRate(rec), indoor: Object.keys(rec.take).length > 0 };
       }
       const bt = b.batch;
-      bt.done += bt.rate * workSpeed(w, c, def.job) * dt * b.eff * seasonYield(w, def.id) * (def.id === 'woodcutter' && hasPerk(w, 'lumberGuild') ? 1.5 : 1) * craftBoost(w, def.id) * passing(w, def.id) * (bt.indoor ? rule(START.seasons.indoor, seasonOf(w).season, 1) * milestone.speed : 1);
+      bt.done += bt.rate * workSpeed(w, c, def.job) * dt * b.eff * seasonYield(w, def.id) * (def.id === 'woodcutter' && hasPerk(w, 'lumberGuild') ? 1.5 : 1) * craftBoost(w, def.id) * passing(w, def.id) * (bt.indoor ? rule(START.seasons.indoor, seasonOf(w).season, 1) : 1);
       // the whole batch comes out at the end of its work
       if (bt.done >= bt.make - 1e-9) {
         b.outbox[bt.output] = (b.outbox[bt.output] ?? 0) + bt.make;
         flow(w, `${bt.output}:+${b.def}`, bt.make);
-        if (bt.indoor && w.comfortMilestones && milestone.doubleChance > 0) {
-          w.comfortMilestones.eligibleBatches++;
-          if (rollDouble(w.comfortMilestones, milestone.doubleChance)) {
-            // Double the entire batch with no second input charge. Never discard an
-            // earned bonus or overfill the shelf: backpressure holds the extra output.
-            b.comfortBonus = { output: bt.output, amount: bt.make };
-            w.comfortMilestones.bonusBatches++;
-            w.comfortMilestones.bonusUnits += bt.make;
-          }
-        }
         b.batch = undefined;
       }
       if (def.job) practice(c, def.job, dt);
@@ -2475,7 +2446,6 @@ function produce(w: World, dt: number) {
         const id = def.job === 'chopping' || def.job === 'crafting' ? pick(w, ['thumb', 'splinter', 'ankle']) : pick(w, ['splinter', 'ankle']);
         fallIll(w, c, id); addLog(w, `${first(c)} has a ${c.illness!.name.toLowerCase()} and goes off to lie down.`, 'bad');
       }
-      if (b.comfortBonus) break;
     }
   }
   // study at the research desk
@@ -2759,6 +2729,9 @@ function computeThoughts(w: World, c: Colonist): Thought[] {
   const bed = buildingByUid(w, c.bed);
   if (!bed) add('Sleeping on the ground', -7);
   else if (bdef(bed).bedQuality === 'cozy') add('Sleeps in a cozy cottage', 5);
+  // a growing town expects better than a shack
+  else if (standingOf(w) >= 1) add(standingOf(w) >= 2 ? 'A village, and I\u2019m still in a shack' : 'Still in a shack', standingOf(w) >= 2 ? -2 : -1);
+  if (w.hearthCold && hourOfDay(w) >= 18) add('The hearth went cold', -3);
   if (c.cold) add(hasCoat(c) ? 'Cold, but bundled in a warm coat' : bed ? 'A cold home: no wood for the fire' : 'Freezing out in the open', (bed ? -6 : -8) * (hasCoat(c) ? CLOTHING.coldMoodMultiplier : 1));
   if (has(c, 'vain') && (!bed || bdef(bed).bedQuality !== 'cozy')) add('Vain: deserves a cottage', -5);
   const job = buildingByUid(w, c.job);
@@ -2797,114 +2770,26 @@ function computeThoughts(w: World, c: Colonist): Thought[] {
   return t.sort((a, b) => a.value - b.value);
 }
 
-// ---------- Comfort and standing ----------
+// ---------- Standing ----------
 /**
- * How well the colony meets one settler's standing needs, 0 to 1: the conditions the player built and supplied, not how
- * they feel today (mood includes luck and strain itself, and strain driving strain would be a death spiral).
- *
- * Which needs count depends on the town's standing, which charters raise: a camp only asks for a bed, food and a fire;
- * a settlement wants cooked meals, a clinic and evenings; a village wants proper homes, meals at a table, more than one
- * kind of meal and pleasant surroundings. From the second year every need asks a little more. Each season adds one:
- * a drink in summer and warmth in winter (at every standing). Spring recovers without an extra food requirement;
- * the old fresh-food requirement is retained behind a comparison setting. Each
- * counted need weighs the same, with partial credit.
+ * The town's standing rises with each charter: camp, settlement, village. People come to expect more: an unmet want
+ * costs more (see wantPenalty), and a shack stops feeling like enough. Every need shows up only as a line on someone's
+ * mood; there's no separate comfort score.
  */
 export const NEED_KEYS = ['shelter', 'food', 'fire', 'meals', 'variety', 'health', 'evenings', 'surroundings', 'fresh', 'drink', 'warmth'] as const;
+/** kinds of need, for pointing the player at what meets them (see ui/needs.ts) */
 export type NeedKey = typeof NEED_KEYS[number];
-/** kept for older callers: the needs a settlement counts outside the seasons */
-export const COMFORT_NEEDS = ['shelter', 'meals', 'evenings', 'health', 'surroundings'] as const;
-export type ComfortNeed = NeedKey;
 export const STANDINGS = ['Camp', 'Settlement', 'Village'] as const;
 /** 0 camp, 1 settlement, 2 village: one step per charter granted */
 export const standingOf = (w: World) => Math.min(STANDINGS.length - 1, w.chartersDone.length);
-export function enableComfortMilestones(w: World, profile: RewardProfile) {
-  if (w.comfortMilestones) { w.comfortMilestones.profile = profile; return; }
-  w.comfortMilestones = { profile, history: [], rng: ((w.rngState ^ 0x9e3779b9) >>> 0) || 1, eligibleBatches: 0, bonusBatches: 0, bonusUnits: 0 };
-}
-export const comfortMilestoneView = (w: World) => milestoneView(w.comfortMilestones, standingOf(w), w.hour);
-export function sampleComfortMilestones(w: World) {
-  const state = w.comfortMilestones; if (!state) return;
-  const people = alive(w), n = Math.max(1, people.length);
-  const sample = { hour: Math.floor(w.hour), homes: 0, meals: 0, evenings: 0 };
-  for (const c of people) {
-    const bed = buildingByUid(w, c.bed);
-    sample.homes += bed ? bdef(bed).bedQuality === 'cozy' ? 1 : 0.6 : 0;
-    const meal = c.lastMeal;
-    sample.meals += c.hunger >= 25 && meal?.cooked ? ({ processed: 0.5, simple: 0.65, refined: 0.8, quality: 1, magnificent: 1 }[meal.tier ?? 'processed']) * (meal.table ? 1 : 0.8) : 0;
-    sample.evenings += Math.max(0, Math.min(1, c.fun / 100));
-  }
-  sample.homes /= n; sample.meals /= n; sample.evenings /= n;
-  state.history = [...state.history.filter(s => s.hour > sample.hour - 24 && s.hour !== sample.hour), sample].sort((a, b) => a.hour - b.hour);
-}
-const STANDING_NEEDS: NeedKey[][] = [
-  ['shelter', 'food', 'fire'],
-  ['shelter', 'meals', 'health', 'evenings'],
-  ['shelter', 'meals', 'variety', 'health', 'evenings', 'surroundings'],
-];
-/** the needs that count toward comfort right now (or at another standing, for showing what comes next) */
-export function activeNeeds(w: World, standing = standingOf(w)): NeedKey[] {
-  const season = seasonOf(w).season;
-  const extra: NeedKey[] = season === 'winter' ? ['warmth'] : standing >= 1 && season === 'spring' && START.seasons.springFresh !== false ? ['fresh'] : standing >= 1 && season === 'summer' ? ['drink'] : [];
-  return [...STANDING_NEEDS[standing], ...extra];
-}
+/** raw foods that count as fresh in spring */
 const FRESH: ResourceId[] = ['berries', 'apples', 'fish', 'skewers'];
-/** village standing: how much a cooked meal of each tier counts toward the meals need, before the table and favourites */
-export const MEAL_TIER_COMFORT: Record<GoodTier, number> = { processed: 0.3, simple: 0.5, refined: 0.75, quality: 1, magnificent: 1 };
-/** settlement standing: a cooked meal of each tier, before the table and favourites (stew is fine; better is a bonus) */
-export const SETTLEMENT_MEAL_COMFORT: Record<GoodTier, number> = { processed: 0.7, simple: 0.8, refined: 0.9, quality: 1, magnificent: 1 };
-/** distinct meals eaten in the last few days */
+/** distinct meals eaten in the last few hours */
 const mealKinds = (w: World, c: Colonist, hours: number) => new Set((c.ate ?? []).filter(a => a.h >= w.hour - hours && MEALS.includes(a.r)).map(a => a.r)).size;
-export function comfortParts(w: World, c: Colonist, standing = standingOf(w)): Partial<Record<NeedKey, number>> {
-  const later = START.seasons.stricterFromYear > 0 && seasonOf(w).year >= START.seasons.stricterFromYear;
-  const bed = buildingByUid(w, c.bed);
-  const cozy = !!bed && bdef(bed).bedQuality === 'cozy';
-  const m = c.lastMeal;
-  const fed = c.hunger >= 25;
-  const out: Partial<Record<NeedKey, number>> = {};
-  for (const k of activeNeeds(w, standing)) {
-    switch (k) {
-      case 'shelter': out[k] = !bed ? 0 : cozy || standing === 0 ? 1 : standing === 1 ? (later ? 0.6 : 0.75) : (later ? 0.25 : 0.5); break;
-      case 'food': out[k] = fed ? 1 : 0; break;
-      case 'fire': out[k] = w.hearthCold ? 0 : 1; break;
-      case 'meals': {
-        if (!fed || !m?.cooked) { out[k] = 0; break; }
-        // what was eaten matters from the first charter on: a settlement is happy enough with stew, so better fare is a
-        // bonus there; a village expects more, so stew counts for little and a quality meal counts in full
-        const tierPart = (standing >= 2 ? MEAL_TIER_COMFORT : SETTLEMENT_MEAL_COMFORT)[m.tier ?? 'refined'];
-        out[k] = Math.min(1, tierPart * (m.table ? 1 : standing >= 2 ? 0.7 : 0.8) + (m.loved ? 0.1 : 0));
-        break;
-      }
-      case 'variety': { const n = mealKinds(w, c, 72); out[k] = later ? (n >= 3 ? 1 : n === 2 ? 0.6 : n === 1 ? 0.2 : 0) : (n >= 2 ? 1 : n === 1 ? 0.4 : 0); break; }
-      case 'health': out[k] = !c.illness ? 1 : c.activity === 'sick' && c.place != null && bdef(buildingByUid(w, c.place)!).patients ? 0.6 : 0; break;
-      case 'evenings': { const floor = standing >= 2 ? (later ? 35 : 30) : 20; out[k] = Math.max(0, Math.min(1, (c.fun - floor) / 50)); break; }
-      case 'surroundings': out[k] = Math.max(0, Math.min(1, (c.beauty + (later ? 0 : 1)) / 4)); break;
-      case 'fresh': out[k] = (c.ate ?? []).some(a => a.h >= w.hour - 72 && FRESH.includes(a.r)) ? 1 : 0; break;
-      case 'drink': out[k] = c.lastDrink != null && c.lastDrink >= w.hour - 30 ? 1 : 0; break;
-      case 'warmth': out[k] = c.cold ? 0 : 1; break;
-    }
-  }
-  return out;
-}
-export const comfortOf = (w: World, c: Colonist) => {
-  const parts=comfortParts(w,c),p=Object.values(parts);
-  const extra=parts.drink==null?0:(START.seasons.summerDrinkWeight??1)-1;
-  return p.length ? (p.reduce((n,x)=>n+(x??0),0)+(parts.drink??0)*extra)/(p.length+extra) : 1;
-};
-export function colonyComfort(w: World) { const a = alive(w); return a.length ? a.reduce((n, c) => n + comfortOf(w, c), 0) / a.length : 0; }
-/** the colony's average for each counted need, lowest first: what's speeding strain up */
-export function comfortGaps(w: World, standing = standingOf(w)) {
-  const a = alive(w); if (!a.length) return [];
-  const keys = activeNeeds(w, standing);
-  const sums = Object.fromEntries(keys.map(k => [k, 0])) as Record<NeedKey, number>;
-  for (const c of a) { const p = comfortParts(w, c, standing); for (const k of keys) sums[k] += p[k] ?? 0; }
-  return keys.map(k => ({ need: k, avg: sums[k] / a.length })).sort((x, y) => x.avg - y.avg);
-}
-/** how much the colony's comfort scales the strain rise right now */
-export const comfortFactor = (w: World, comfort = w.comfort ?? colonyComfort(w)) => comfortMultiplier(comfort * (hasPerk(w, 'homesteaders') ? 1.3 : 1), START.comfortScale);
-/** strain rise per day at the colony's current size, day and comfort (before boons) */
+/** strain rise per day at the colony's current size and day (before boons) */
 export function strainPerDay(w: World) {
   const d = day(w) - 1 + (hourOfDay(w) - 6) / 24;
-  return START.strain.rate * Math.sqrt(alive(w).length) * (1 + Math.max(0, d) / START.strain.rampDays) * comfortFactor(w) * (hasPerk(w, 'ironWill') ? 0.65 : 1) * (hasPerk(w, 'openRoad') ? 1.1 : 1) * (hasPerk(w, 'crownsFavour') ? 1.15 : 1) * (w.comfortMilestones ? comfortMilestoneView(w).strain : 1);
+  return START.strain.rate * Math.sqrt(alive(w).length) * (1 + Math.max(0, d) / START.strain.rampDays) * (hasPerk(w, 'ironWill') ? 0.65 : 1) * (hasPerk(w, 'openRoad') ? 1.1 : 1) * (hasPerk(w, 'crownsFavour') ? 1.15 : 1);
 }
 
 /** what happened in the last 24 hours, from the running flow totals */
@@ -3011,8 +2896,6 @@ function hourly(w: World) {
   const sc = START;
   // strain builds up with the colony's size and the run's length, faster when people's needs go unmet and slower when
   // they're met; relief (charters) brings it back down
-  w.comfort = colonyComfort(w);
-  sampleComfortMilestones(w);
   w.strain += strainPerDay(w) / 24;
   void sc; void d; void pop;
 

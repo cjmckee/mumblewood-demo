@@ -391,7 +391,6 @@ export const PERKS: PerkDef[] = [
   { id: 'warmHearth', name: 'Everburning hearth', desc: 'The hearth burns no wood at all, and evenings there are +2.' },
   { id: 'hearthSongs', name: 'Hearth songs', desc: 'Strain eases by 1 every evening the tavern is open and staffed.' },
   { id: 'postRider', name: 'A post rider', desc: 'Charters ease 20% more strain.' },
-  { id: 'homesteaders', name: 'Homesteaders', desc: 'Comfort counts for 30% more against strain.' },
   { id: 'hearthkeepers', name: 'Hearthkeepers', desc: 'Homes burn half as much wood in winter.' },
   { id: 'lumberGuild', name: 'Lumber guild', desc: 'Woodcutters bring in 50% more wood.' },
   { id: 'rentCollector', name: 'Rent collector', desc: 'Rent is doubled.', cost: 'Everyone is −2 mood about it, forever.' },

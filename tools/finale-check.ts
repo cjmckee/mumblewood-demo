@@ -1,6 +1,6 @@
 // Forced checks for the start and the finales, without the bot's judgement in the way.
 // Usage: npx tsx tools/finale-check.ts
-import { createWorld, apply, runHours, findSpot, World, alive, built, desks, workersAt, charterProgress, feastCheck, costOf, laborers, day, debugGrow, comfortParts, comfortOf, strainPerDay, comfortFactor, activeNeeds } from '../src/sim/world';
+import { createWorld, apply, runHours, findSpot, World, alive, built, desks, workersAt, charterProgress, feastCheck, costOf, laborers, day, debugGrow, strainPerDay } from '../src/sim/world';
 import { seasonOf } from '../src/sim/seasons';
 import { BUILDING_BY_ID, MEALS, FINALE_COLONISTS } from '../src/sim/content';
 import { START } from '../src/sim/scenario';
@@ -155,36 +155,26 @@ function pavilion(w: World, larder: Partial<Record<string, number>>, full = true
   void built; void charterProgress;
 }
 
-// ---- comfort sets how fast strain rises ----
+// ---- needs are mood lines: a growing town expects better than a shack ----
 {
   const w = createWorld(92); clear(w); debugGrow(w, 6);
-  // a settlement (one charter done): cooked meals, health and evenings count, and in summer a drink
-  w.chartersDone = ['settled'];
-  const c = alive(w)[0];
-  c.lastMeal = { cooked: false, table: false, loved: false }; c.hunger = 80; c.fun = 10; c.beauty = -1; c.bed = null; c.illness = null;
-  ok(comfortParts(w, c, 1).meals === 0 && comfortParts(w, c, 1).shelter === 0, 'raw food and no bed: meals and shelter at 0');
-  c.lastMeal = { cooked: true, table: true, loved: true, tier: 'quality' };
-  ok(Math.abs((comfortParts(w, c, 1).meals ?? 0) - 1) < 1e-9, 'a favourite quality meal at a table: meals at 100%');
-  c.hunger = 10;
-  ok(comfortParts(w, c, 1).meals === 0, 'going hungry counts as no meal');
-  for (const x of alive(w)) { x.lastMeal = { cooked: false, table: false, loved: false }; x.fun = 0; x.beauty = -1; x.bed = null; x.illness = null; }
-  w.comfort = undefined;
-  const low = strainPerDay(w), lowC = alive(w).reduce((n, x) => n + comfortOf(w, x), 0) / alive(w).length;
-  for (const x of alive(w)) { x.lastMeal = { cooked: true, table: true, loved: true }; x.hunger = 90; x.fun = 90; x.beauty = 4; x.lastDrink = w.hour; }
-  const lean = w.buildings.find(b => b.def === 'leanto')!; for (const x of alive(w)) x.bed = lean.uid;
-  const high = strainPerDay(w), highC = alive(w).reduce((n, x) => n + comfortOf(w, x), 0) / alive(w).length;
-  ok(lowC < 0.25 && highC > 0.85, `comfort runs from ${Math.round(lowC * 100)}% to ${Math.round(highC * 100)}%`);
-  ok(high < low * 0.5, `a comfortable colony strains under half as fast (${high.toFixed(2)} against ${low.toFixed(2)} a day)`);
-  // the ladder: a camp asks only for a bed, food and a fire; a village wants more of the same home
-  ok(JSON.stringify(activeNeeds(w, 0)) === JSON.stringify(['shelter', 'food', 'fire']), `a camp in summer counts shelter, food and a fire (${activeNeeds(w, 0).join(', ')})`);
-  ok(activeNeeds(w, 1).includes('drink') && !activeNeeds(w, 0).includes('drink'), 'a settlement in summer wants a drink; a camp doesn\u2019t');
-  ok((comfortParts(w, c, 0).shelter ?? 0) === 1 && (comfortParts(w, c, 2).shelter ?? 0) === 0.5, `a shack is all a camp asks, and half what a village does (${comfortParts(w, c, 2).shelter})`);
-  ok(activeNeeds(w, 2).includes('variety') && activeNeeds(w, 2).includes('surroundings'), 'a village wants variety and pleasant surroundings');
+  const lean = w.buildings.find(b => b.def === 'leanto')!;
+  const c = alive(w)[0]; c.bed = lean.uid;
+  const line = () => { runHours(w, 1); clear(w); return c.thoughts.find(t => t.label === 'Still in a shack' || t.label.startsWith('A village, and'))?.value ?? 0; };
+  ok(line() === 0, 'a camp doesn\u2019t mind a shack');
+  w.chartersDone = ['settled']; c.bed = lean.uid;
+  ok(line() === -1, 'a settlement: still in a shack, \u22121');
+  w.chartersDone = ['settled', 'bread']; c.bed = lean.uid;
+  ok(line() === -2, 'a village: still in a shack, \u22122');
+  // strain rises at a steady rate: the same with everyone miserable or content
+  for (const x of alive(w)) { x.fun = 0; x.bed = null; }
+  const low = strainPerDay(w);
+  for (const x of alive(w)) { x.fun = 90; x.bed = lean.uid; }
+  ok(strainPerDay(w) === low, `strain no longer depends on comfort (${low.toFixed(2)} a day)`);
   // winter: warmth counts at every standing, and a home with no wood is cold
   const wi = createWorld(93); clear(wi); debugGrow(wi, 4);
   wi.hour = (21 - 1) * 24 + 12; // summer 1 start: day 21 is the first day of winter
   ok(seasonOf(wi).season === 'winter' && seasonOf(wi).winter === 1, `day 21 is the first winter (${seasonOf(wi).season} ${seasonOf(wi).winter})`);
-  ok(activeNeeds(wi, 0).includes('warmth'), 'a camp in winter needs warmth');
   // decisions pause the clock, so clear them as the hours go
   const hours = (n: number) => { for (let i = 0; i < n; i++) { clear(wi); runHours(wi, 1); } clear(wi); };
   wi.res.wood = 0; hours(2);
@@ -221,8 +211,6 @@ function pavilion(w: World, larder: Partial<Record<string, number>>, full = true
   // cornerstones
   w.perks.push('postRider'); w.strain = 20; w.res.ale = 10; ev(w, 'bard', 0);
   ok(Math.abs(w.strain - 14.4) < 0.01, `a post rider adds 20%: the bard eases 28% (${w.strain.toFixed(1)})`);
-  w.comfort = 0.5; const before = comfortFactor(w); w.perks.push('homesteaders');
-  ok(comfortFactor(w) < before - 0.09, `homesteaders: comfort 50% counts as 60% (${before.toFixed(2)}× → ${comfortFactor(w).toFixed(2)}×)`);
   // strain events only come when strain bites
   const calm = createWorld(94); clear(calm); calm.strain = 2; let seen = 0;
   for (let i = 0; i < 300; i++) { calm.nextEventHour = calm.hour; runHours(calm, 1); for (const d of calm.decisions) if (d.kind === 'event' && ['letters', 'homesick'].includes(d.eventId)) seen++; clear(calm); calm.strain = 2; }
