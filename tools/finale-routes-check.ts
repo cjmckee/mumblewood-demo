@@ -1,7 +1,7 @@
 // Finale routes: the bot works each finale category (magnificent meals, quality drinks) along one chosen chain, and
 // reserves the drinks on it so the tavern doesn't pour them. Also: the drink rules themselves.
 // Usage: npx tsx tools/finale-routes-check.ts
-import { createWorld, apply, World, findSpot, festivalPreview, drinkableTotal } from '../src/sim/world';
+import { createWorld, apply, World, findSpot, drinkableTotal } from '../src/sim/world';
 import { cheapestRoute, finaleOwed, finaleRoutes, finaleGoods, ROUTE_AVOID, autoFoodRules } from '../src/sim/autoplayer';
 import { alive, costOf, debugGrow, finaleHeadcount, recruitInterval, feastCheck } from '../src/sim/world';
 import { START } from '../src/sim/scenario';
@@ -58,15 +58,13 @@ const path = (r?: { steps: { def: string; output: string }[] }) => r ? r.steps.m
   check(first === again && first.split(',').length === 2, `one route for each category, kept from hour to hour (${first} → ${again})`);
 }
 {
-  // drink rules: a reserved drink isn't poured at the festival or the tavern
+  // drink rules: a reserved drink isn't poured at the tavern
   const w = town([]);
   for (const k of Object.keys(w.res)) (w.res as Record<string, number>)[k] = 0;
   w.res.stew = 30; w.res.hippocras = 30;
-  const poured = festivalPreview(w).drinks;
+  const poured = drinkableTotal(w);
   apply(w, { type: 'foodRule', food: 'hippocras', allowed: false });
-  check(poured > 0 && festivalPreview(w).drinks === 0 && drinkableTotal(w) === 0, `reserved hippocras isn't poured (${poured} at the festival before, ${festivalPreview(w).drinks} after)`);
-  apply(w, { type: 'foodRule', food: 'stew', allowed: false });
-  check(festivalPreview(w).meals === 0, 'nor is reserved stew served at the festival');
+  check(poured > 0 && drinkableTotal(w) === 0, `reserved hippocras isn't poured (${poured} drinkable before, ${drinkableTotal(w)} after)`);
 }
 {
   // the bot reserves its routes' drinks while the finale owes them, and lets them go after

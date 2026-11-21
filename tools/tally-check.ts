@@ -19,10 +19,10 @@ ok(CHARTERS.filter(c => c.tier === 2).every(c => parts(c.metric).some(p => p.kin
   w.decisions = [{ kind: 'charter', tier: 1, options: ['settled', 'woodsmoke', 'firstplanks'] }];
   apply(w, { type: 'resolve', option: 0 });
   ok(w.charter === 'settled' && w.tally && !Object.keys(w.tally.eaten).length, 'picking a charter starts an empty tally');
-  flow(w, 'pie:-eaten', 1); flow(w, 'stew:-festival', 2); flow(w, 'smokedFish:-spoiled', 5); flow(w, 'stew:-sold', 3);
+  flow(w, 'pie:-eaten', 1); flow(w, 'stew:-wedding', 2); flow(w, 'smokedFish:-spoiled', 5); flow(w, 'stew:-sold', 3);
   flow(w, 'mulled:-drunk', 1); flow(w, 'ale:-feast', 1); flow(w, 'ale:-bard', 6); flow(w, 'ale:-ciderpress', 2);
   flow(w, 'tonic:-clinic', 0.15); flow(w, 'planks:+sawmill', 4); flow(w, 'planks:+caravan', 9);
-  ok(tallyOf(w, 'eaten', MEALS) === 3, 'eaten counts meals and festival plates, not spoiled or sold food');
+  ok(tallyOf(w, 'eaten', MEALS) === 3, 'eaten counts meals and wedding plates, not spoiled or sold food');
   ok(tallyOf(w, 'drunk', CATEGORIES.drink.members) === 2, 'drunk counts the tavern and the feast, not the bard’s fee or mulling');
   ok(Math.abs(tallyOf(w, 'used', ['tonic']) - 0.15) < 1e-9, 'used counts what the doctor uses');
   ok(tallyOf(w, 'made', ['planks']) === 4, 'made counts workshops, not planks bought from the caravan');

@@ -254,8 +254,6 @@ export interface World {
   comfort?: number;
   /** the hearth ran out of wood tonight */
   hearthCold?: boolean;
-  /** the festival at the hearth: called for dusk, when it can next be called, and how the last one went */
-  festival?: { called: boolean; readyAt: number; held: number; last?: string; at?: number };
 }
 
 export const TICKS_PER_HOUR = 6;
@@ -394,8 +392,8 @@ export function useUp(w: World, r: ResourceId, n: number, why: string): number {
 }
 /** mood from the first drink of the evening, by kind */
 export function flow(w: World, key: string, n: number) { if (w.flows) w.flows[key] = (w.flows[key] ?? 0) + n; if (w.tally) tallyFlow(w.tally, key, n); }
-/** where settlers enjoy food and drink: their own meals, the tavern, festivals, the founders' feast, weddings */
-const ENJOYED_AT = new Set(['-eaten', '-drunk', '-festival', '-feast', '-wedding']);
+/** where settlers enjoy food and drink: their own meals, the tavern, the founders' feast, weddings */
+const ENJOYED_AT = new Set(['-eaten', '-drunk', '-feast', '-wedding']);
 /** count a flow toward the charter's tallies: meals eaten, drinks drunk, remedies the doctor used, goods a workshop made */
 function tallyFlow(t: NonNullable<World['tally']>, key: string, n: number) {
   const i = key.indexOf(':'), r = key.slice(0, i) as ResourceId, src = key.slice(i + 1);
@@ -1119,8 +1117,7 @@ export type Command =
   | { type: 'buyBlueprint'; id: string }
   | { type: 'visitCaravan' }
   | { type: 'reroll' }
-  | { type: 'callFeast' }
-  | { type: 'callFestival' };
+  | { type: 'callFeast' };
 
 /** what a site still needs, by cost key; a category key counts every good of that kind already delivered */
 export function remainingCost(b: Building): Partial<Record<InputKey, number>> {
@@ -1313,15 +1310,6 @@ export function apply(w: World, cmd: Command): string | null {
     case 'foodRule': {
       w.forbidden = w.forbidden.filter(f => f !== cmd.food);
       if (!cmd.allowed) w.forbidden.push(cmd.food);
-      return null;
-    }
-    case 'callFestival': {
-      const f = (w.festival ??= { called: false, readyAt: 0, held: 0 });
-      if (f.called) return 'The festival is already called for dusk.';
-      if (w.hour < f.readyAt) return `Everyone is still recovering from the last one. Try again in ${Math.ceil(f.readyAt - w.hour)} hours.`;
-      if (mealTotal(w) < 1) return 'A festival needs meals to share. There are none in storage.';
-      f.called = true;
-      addLog(w, hourOfDay(w) < 18 ? 'A festival is called for tonight at the hearth. Someone finds a fiddle.' : 'A festival is called for tomorrow at dusk. Someone finds a fiddle.', 'good');
       return null;
     }
     case 'callFeast': {
@@ -1563,12 +1551,12 @@ function errandHourly(w: World) {
 /** too sick to work: anyone with the flu, or an injury that hasn't mended past the worst */
 /**
  * The night skip: everyone is in bed (bedridden settlers count) and nothing is going on that the player may want to
- * watch, so the clock can run faster until someone wakes (main.ts). An urgent job, a caravan in town, a festival or
+ * watch, so the clock can run faster until someone wakes (main.ts). An urgent job, a caravan in town, or
  * feast still to come, or a decision waiting all keep the normal speed.
  */
 export function everyoneAsleep(w: World): boolean {
   if (w.status !== 'playing' || w.decisions.length) return false;
-  if (w.errands.length || w.caravan || w.festival?.called || w.feast?.called) return false;
+  if (w.errands.length || w.caravan || w.feast?.called) return false;
   const people = alive(w);
   return people.length > 0 && people.every(c => c.activity === 'sleeping' || c.activity === 'sick');
 }
@@ -2985,19 +2973,13 @@ function seasonDawn(w: World) {
     const lines: Record<string, string> = {
       spring: 'Spring. The snow goes, the mud arrives, and the fish are running. Travellers will be on the road again.',
       summer: 'Summer. Long days, ripe berries, and everyone wants a cold drink.',
-      autumn: `Autumn. The harvest is in, food spoils faster, and winter is ${sc.days} days off. Lay in wood, and hold a harvest festival before the snow.`,
+      autumn: `Autumn. The harvest is in, food spoils faster, and winter is ${sc.days} days off. Lay in wood before the snow.`,
       winter: s.winter >= 2 ? 'Winter, and a harder one than last. The fields and orchards sleep, foraging is thin, every home burns wood, and the cold gets into people.' : 'Winter. The fields and orchards sleep, foraging is thin, every home burns wood, and the cold gets into people.',
     };
     addLog(w, lines[s.season], s.season === 'winter' ? 'bad' : 'neutral');
     collectRent(w);
     offerCornerstone(w, 'season');
     if (s.season === 'winter') {
-      // the harvest home: a festival held in the autumn just gone
-      const held = (w.festival?.at ?? -1e9) >= w.hour - sc.days * 24;
-      const hh = sc.harvestHome;
-      // a camp with no kitchen can't hold one, so only a settlement or better minds going without (like the other seasonal needs)
-      if (held) everyone(w, 'harvestHome', 'We had a proper harvest home', hh.held, hh.hours);
-      else if (standingOf(w) >= 1) everyone(w, 'harvestHome', 'No harvest festival before winter', hh.missed, hh.hours);
     }
   }
   if (s.season === 'winter') {
@@ -3028,7 +3010,7 @@ function hourly(w: World) {
   const d = day(w) - 1 + (hourOfDay(w) - 6) / 24;
   const sc = START;
   // strain builds up with the colony's size and the run's length, faster when people's needs go unmet and slower when
-  // they're met; relief (charters, festivals) brings it back down
+  // they're met; relief (charters) brings it back down
   w.comfort = colonyComfort(w);
   sampleComfortMilestones(w);
   w.strain += strainPerDay(w) / 24;
@@ -3114,7 +3096,6 @@ function hourly(w: World) {
   socialHour(w);
   if (h === 6) dailyRelationships(w);
   if (h === 18 && w.feast?.called) runFeast(w);
-  if (h === 18 && w.festival?.called) runFestival(w);
   // the Hearth songs boon: an open, staffed tavern eases strain each evening
   if (h === 21 && hasPerk(w, 'hearthSongs') && built(w).some(b => b.def === 'tavern' && workersAt(w, b.uid).length > 0)) w.strain = Math.max(0, w.strain - 1);
   checkCharter(w);
@@ -3321,47 +3302,6 @@ function metricValue(w: World, m: CharterMetric, slot: number): { value: number;
   }
 }
 
-/**
- * A dry run of the festival: everyone not bedridden comes (sulkers too: it's a party), each takes a meal and a drink,
- * preferring ones they love and avoiding ones they dislike while anything else is left. Relief is a share of strain.
- */
-export function festivalPreview(w: World) {
-  const guests = alive(w).filter(c => !bedridden(c));
-  const stock = { ...w.res };
-  let fed = 0, drank = 0, loved = 0;
-  const pickFor = (c: Colonist, goods: ResourceId[]) => [...goods].filter(r => stock[r] >= 1 && !w.forbidden.includes(r)).sort((a, b) => taste(c, b) - taste(c, a) || stock[b] - stock[a])[0];
-  for (const c of guests) {
-    const meal = pickFor(c, MEALS); if (!meal) continue;
-    stock[meal] -= 1; fed++;
-    const drink = pickFor(c, CATEGORIES.drink.members); if (drink) { stock[drink] -= 1; drank++; }
-    if (taste(c, meal) > 0 || (drink && taste(c, drink) > 0)) loved++;
-  }
-  const n = Math.max(1, guests.length), r = START.relief.festival;
-  const share = (r.base * (fed / n) + (drank >= n / 2 ? r.drinks : 0) + (loved >= n / 2 ? r.loved : 0) + (hasPerk(w, 'postRider') && fed ? 0.2 : 0)) * (hasPerk(w, 'feastDays') ? 1.5 : 1);
-  return { guests: guests.length, fed, drank, loved, meals: fed, drinks: drank, share, relief: w.strain * share, wait: Math.max(0, Math.ceil((w.festival?.readyAt ?? 0) - w.hour)) };
-}
-function runFestival(w: World) {
-  const f = w.festival!; f.called = false;
-  const p = festivalPreview(w);
-  const guests = alive(w).filter(c => !bedridden(c));
-  for (const c of guests) {
-    const pickFor = (goods: ResourceId[]) => [...goods].filter(r => w.res[r] >= 1 && !w.forbidden.includes(r)).sort((a, b) => taste(c, b) - taste(c, a) || w.res[b] - w.res[a])[0];
-    const meal = pickFor(MEALS);
-    if (!meal) { addMemory(w, c, 'festival', 'Nothing left for me at the festival', -3, 24); continue; }
-    w.res[meal] -= 1; flow(w, `${meal}:-festival`, 1);
-    const drink = pickFor(CATEGORIES.drink.members);
-    if (drink) { w.res[drink] -= 1; flow(w, `${drink}:-festival`, 1); c.lastDrink = w.hour; }
-    (c.ate ??= []).push({ r: meal, h: w.hour }); if (c.ate.length > 10) c.ate.shift();
-    const fav = taste(c, meal) > 0 || (!!drink && taste(c, drink) > 0);
-    addMemory(w, c, 'festival', fav ? 'A festival with my favourites' : 'A festival at the hearth', fav ? 8 : 5, 36);
-    c.fun = Math.min(100, c.fun + 40);
-  }
-  reconcileStock(w);
-  w.strain = Math.max(0, w.strain - p.relief);
-  f.readyAt = w.hour + START.relief.festival.waitDays * 24; f.held++; f.at = w.hour;
-  f.last = `${p.fed} of ${p.guests} ate, ${p.drank} had a drink, ${p.loved} got a favourite; strain eased by ${Math.round(p.relief)}`;
-  addLog(w, `The festival: fiddles, stew and dancing badly. ${f.last}.`, 'good');
-}
 
 /** the founders' feast serves magnificent meals, with a refined drink or better (several kinds, so tastes can be met) */
 export const FEAST_MEALS = atLeast(MEALS, 'magnificent'), FEAST_DRINKS = atLeast(CATEGORIES.drink.members, 'quality');

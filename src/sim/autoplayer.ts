@@ -3,7 +3,7 @@
 import { WANT_BY_ID, WantId, BUILDING_BY_ID, BUILDINGS, CATEGORIES, CharterMetric, RESEARCH_BY_ID, EVENTS, ResourceId, MEALS, RAW_FOODS, RESOURCES, Recipe, InputKey, membersOf, recipeRate, LORE_BOOST, GUILD_BOOST, RENOWN, TIER, TIER_STAGE, SLOTS, FINALE_COLONISTS, JobKind, JOB_KINDS } from './content';
 import { assess, Concern, defsOf, KIND_DEFS } from './advisor';
 import { isFocused } from './world';
-import { World, feastUnservedDrinks, feastUnservedMeals, orderedRecipes, costOf, tallyOf, renownOf, FEAST_MEALS, FEAST_DRINKS, workshopInputPlan, apply, alive, beds, mealTotal, sites, findSpot, CENTER, avgMood, built, MAP_SIZE, pathAt, terrainAt, T_WATER, bdef, workersAt, blockedReason, opinion, Building, Colonist, hourOfDay, charterProgress, buildingByUid, storageFree, storages, FOODS, GOODS, bedridden, foodTotal, currentRecipe, drinkTotal, siteOk, enabledRecipes, recipesOf, rerollCost, stockOf, usableHere, charterDef, charterHelpers, feastCheck, desks, researchLeft, festivalPreview, edibleTotal, doorTile, centerOf, winterStores, storageCap, stored, lastDay, lastDayHours, remainingCost, seasonYield, recipeOn, spotOf, canPlace, coversPath, efficiencyAt, footprint, BUILD_MIN, BUILD_MAX, blockedGrid, storePrio, workHours, tradeOf, workPrio, wantMet, wantSupported } from './world';
+import { World, feastUnservedDrinks, feastUnservedMeals, orderedRecipes, costOf, tallyOf, renownOf, FEAST_MEALS, FEAST_DRINKS, workshopInputPlan, apply, alive, beds, mealTotal, sites, findSpot, CENTER, avgMood, built, MAP_SIZE, pathAt, terrainAt, T_WATER, bdef, workersAt, blockedReason, opinion, Building, Colonist, hourOfDay, charterProgress, buildingByUid, storageFree, storages, FOODS, GOODS, bedridden, foodTotal, currentRecipe, drinkTotal, siteOk, enabledRecipes, recipesOf, rerollCost, stockOf, usableHere, charterDef, charterHelpers, feastCheck, desks, researchLeft, edibleTotal, doorTile, centerOf, winterStores, storageCap, stored, lastDay, lastDayHours, remainingCost, seasonYield, recipeOn, spotOf, canPlace, coversPath, efficiencyAt, footprint, BUILD_MIN, BUILD_MAX, blockedGrid, storePrio, workHours, tradeOf, workPrio, wantMet, wantSupported } from './world';
 import { seasonOf } from './seasons';
 import { draftLinks } from './charterplan';
 
@@ -708,7 +708,7 @@ export function charterChain(w: World): string[] {
  * Experiment switches for the balance tools. `advisor` makes the bot play from what's on screen (the complaint
  * panel) instead of its own rules; it's off by default because, so far, it plays worse (see the project doc).
  */
-export const BOT = { dailyQuality: true, supperRules: true, urgentClinic: true, clinicWoodBuffer: 10, seasonalStaffing: true, feasibleVariety: true, summerBank: false, summerService: false, fineInputs: true, plannedRoughDemand: true, chainGatherers: false, roughPlanks: true, roughPlankBudget: 12, roughWoodStart: 35, roughWoodStop: 20, roughKeepWinterReserve: false, clothingReserve: false, clothingDeadline: false, clothingBatch: false, researchFeasible: false, populationTargets: false, randomize: [] as string[], trade: true, shopsByStore: false, layout: true, hutPull: 0.3, recipes: true, rateStaffing: false, unlockChain: true, ruleGap: true, hallMood: true, varietyRules: true, bankDrinks: true, bankHall: false, chainBeforeWinter: true, effortPick: true, moodFestival: true, festival: true, festivalAt: 8, comfortsFirst: false, recruitCap: 99, recruitExtra: 4, comforts: true, foodDepot: 'food' as false | 'food' | 'meals', laborersPer: 5, advisor: false, gate: true, ranked: true, comfort: 'strict' as 'strict' | 'econ' | 'none', rescue: false, rescueAt: 40, moodBlock: false, reroll: true, variety: false, routes: false, finaleRoutes: true, routeOnlyReserve: true, finaleFare: true, push: 'rule' as 'rule' | 'never' | 'always', pushDays: 3, billOrder: true, downstreamFirst: true, wants: true, chainReserve: true, chainFirst: true, rawCounts: true, skipUnused: true, fineCap: 40, routeGatherers: true, off: [] as string[], skip: [] as string[] };
+export const BOT = { dailyQuality: true, supperRules: true, urgentClinic: true, clinicWoodBuffer: 10, seasonalStaffing: true, feasibleVariety: true, summerBank: false, summerService: false, fineInputs: true, plannedRoughDemand: true, chainGatherers: false, roughPlanks: true, roughPlankBudget: 12, roughWoodStart: 35, roughWoodStop: 20, roughKeepWinterReserve: false, clothingReserve: false, clothingDeadline: false, clothingBatch: false, researchFeasible: false, populationTargets: false, randomize: [] as string[], trade: true, shopsByStore: false, layout: true, hutPull: 0.3, recipes: true, rateStaffing: false, unlockChain: true, ruleGap: true, hallMood: true, varietyRules: true, bankDrinks: true, bankHall: false, chainBeforeWinter: true, effortPick: true, comfortsFirst: false, recruitCap: 99, recruitExtra: 4, comforts: true, foodDepot: 'food' as false | 'food' | 'meals', laborersPer: 5, advisor: false, gate: true, ranked: true, comfort: 'strict' as 'strict' | 'econ' | 'none', rescue: false, rescueAt: 40, moodBlock: false, reroll: true, variety: false, routes: false, finaleRoutes: true, routeOnlyReserve: true, finaleFare: true, push: 'rule' as 'rule' | 'never' | 'always', pushDays: 3, billOrder: true, downstreamFirst: true, wants: true, chainReserve: true, chainFirst: true, rawCounts: true, skipUnused: true, fineCap: 40, routeGatherers: true, off: [] as string[], skip: [] as string[] };
 
 // ---------- Explaining the bot ----------
 /** one thing the bot decided and why: each option with its score broken into parts, or a staffing or build step */
@@ -952,7 +952,7 @@ function randomTrade(w: World, rand: () => number) {
 /** what a cornerstone is worth to this colony now: a standing value, and the run's own circumstances for the ones that depend on them */
 const PERK_BASE: Record<string, number> = {
   homesteaders: 18, ironWill: 18, postRider: 16, saintsDay: 16, warmHearth: 14, lumberGuild: 14, barnRaising: 13, overtime: 13,
-  feastDays: 12, hearthkeepers: 8, communalPot: 6, hearthSongs: 2, crownsFavour: 6, merchantsFavour: 8, rootCellars: 7,
+  hearthkeepers: 8, communalPot: 6, hearthSongs: 2, crownsFavour: 6, merchantsFavour: 8, rootCellars: 7,
   pilgrimsRoad: 5, openRoad: 3, rentCollector: 2, brewersGuild: 0, fishingRights: 0, masonsLodge: 0, bakersRow: 0,
 };
 function perkParts(w: World, id: string): Record<string, number> {
@@ -1202,26 +1202,6 @@ export function autoBuild(w: World, options: { construction?: boolean } = {}) {
     const near = centroid(w, ['dining', 'kitchen']);
     const spot = findSpot(w, 'stockpile', near.x, near.y, true);
     if (spot && !apply(w, { type: 'place', def: 'stockpile', x: spot.x, y: spot.y })) depots.set(w, w.buildings[w.buildings.length - 1].uid);
-  }
-  // a festival when strain is biting and the larder can spare it; it holds off while a charter is counting the meals
-  if (BOT.festival && !w.festival?.called && hourOfDay(w) < 17) {
-    const p = festivalPreview(w);
-    const countingMeals = partsOf(w).some(m => (m.kind === 'stock' && m.resources.some(r => MEALS.includes(r))) || (m.kind === 'variety' && m.category === 'meal') || m.kind === 'monument' || m.kind === 'longTable');
-    const spare = mealTotal(w) >= alive(w).length * (countingMeals ? 3 : 1.5);
-    // a charter whose only missing piece is the 24-hour mood: a festival lifts everyone for a day and a half
-    const moodPart = partsOf(w).find(m => m.kind === 'avgMood') as { amount: number } | undefined;
-    const log = w.moodLog ?? [];
-    const avg24 = log.length ? log.reduce((a, b) => a + b, 0) / log.length : avgMood(w);
-    const label = charterProgress(w)?.label ?? '';
-    const onlyMood = !!moodPart && avg24 < moodPart.amount && avg24 >= moodPart.amount - 8 && label.split(' · ').filter(x => !x.startsWith('✓')).length === 1;
-    // the harvest home: one festival every autumn, late enough that the stores are mostly in
-    const s = seasonOf(w);
-    const harvest = s.season === 'autumn' && s.dayOf >= 5 && (w.festival?.at ?? -1e9) < w.hour - s.dayOf * 24;
-    if (harvest && !p.wait && p.fed >= p.guests * 0.8) {
-      if (!apply(w, { type: 'callFestival' })) note(w, { kind: 'decision', title: 'Harvest festival called', lines: [`autumn day ${s.dayOf}, none held yet this autumn; ${Math.floor(mealTotal(w))} meals for ${alive(w).length}`] });
-    } else if (!p.wait && p.fed === p.guests && ((w.strain >= BOT.festivalAt && (spare || w.strain >= BOT.festivalAt * 2)) || (BOT.moodFestival && onlyMood && mealTotal(w) >= alive(w).length * 1.2))) {
-      if (!apply(w, { type: 'callFestival' })) note(w, { kind: 'decision', title: 'Festival called', lines: [`strain ${Math.round(w.strain)} ≥ ${BOT.festivalAt}; ${Math.floor(mealTotal(w))} meals for ${alive(w).length}${countingMeals ? ' (the charter counts meals, so it keeps 3 each)' : ''}; eases about ${Math.round(p.relief)}`] });
-    }
   }
   // the Long Table: call the feast once everyone would come, sit and get something they like
   if (partsOf(w).some(p => p.kind === 'longTable') && !w.feast?.called && w.hour >= (w.feast?.readyAt ?? 0) && hourOfDay(w) < 17 && feastCheck(w).ok) apply(w, { type: 'callFeast' });
@@ -1637,7 +1617,7 @@ export function autoFoodRules(w: World) {
     if (allowed === w.forbidden.includes(f)) apply(w, { type: 'foodRule', food: f, allowed });
   }
   // drinks: while a finale owes quality drinks (or a route's platter its mulled cup), the drinks on its routes stay
-  // out of the tavern, festivals and weddings. Nobody goes hungry for want of a drink, so nothing forces them out.
+  // out of the tavern and weddings. Nobody goes hungry for want of a drink, so nothing forces them out.
   const owed = BOT.finaleRoutes ? finaleOwed(w) : {};
   const reserve = new Set<ResourceId>(Object.keys(owed).length ? [...routeGoods, ...(owed.feastDrink ? FEAST_DRINKS : [])].filter(r => CATEGORIES.drink.members.includes(r)) : []);
   for (const d of CATEGORIES.drink.members) {

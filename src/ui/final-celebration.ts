@@ -13,7 +13,7 @@ export function finalCelebrationCard(w: World, ledger = '') {
   const details = [
     ['Charters completed', `${w.chartersDone.length} / 3`], ['Peak population', s.peakPop],
     ['Couples formed', s.couples], ['Breakups', s.breakups], ['Errands completed', s.errands],
-    ['Recoveries', s.cured], ['Departures', s.departures], ['Deaths', s.deaths], ['Festivals held', w.festival?.held ?? 0],
+    ['Recoveries', s.cured], ['Departures', s.departures], ['Deaths', s.deaths],
   ];
   const rows = (stats: (string | number)[][]) => stats.map(([label, value]) => `<div><dt>${esc(String(label))}</dt><dd>${esc(String(value))}</dd></div>`).join('');
   return `<div class="card-wrap end won charter-celebration final-celebration">

@@ -27,9 +27,6 @@ if (asleep) {
   w.errands = [{ id: 99, def: 'test', title: 'A test', text: '', hours: 2, done: 0, deadline: w.hour + 24, x: 16, y: 16, assignee: null }];
   check(!everyoneAsleep(w), 'an urgent job keeps the normal speed');
   w.errands = [];
-  w.festival = { called: true, readyAt: 0, held: 0 };
-  check(!everyoneAsleep(w), 'a festival still to come keeps the normal speed');
-  w.festival.called = false;
   w.decisions = [{ kind: 'research', options: [] }];
   check(!everyoneAsleep(w), 'a waiting decision keeps the normal speed');
   w.decisions = [];

@@ -10,6 +10,5 @@ export function finalPreviewWorld(route: 'hall' | 'longtable' = 'hall'): World {
   w.chartersDone = ['settled', 'bread', route]; w.charter = null; w.charterTier = 3;
   w.decisions = []; w.status = 'won';
   Object.assign(w.stats, { peakPop: 14, built: 46, mealsEaten: 1128, couples: 7, breakups: 2, departures: 1, deaths: 1, errands: 12, cured: 19 });
-  w.festival = { held: 4, called: false, readyAt: 0 };
   return w;
 }
