@@ -13,14 +13,14 @@ function run(w:World,hours:number){for(let h=0;h<hours;h++){while(w.decisions.le
  for(let h=0;h<30;h++){for(const c of alive(w))c.illness=null;run(w,1);}assert((w.flows['pie:+bakery']??0)>0,'complete recipe gets supplied and produces');assert(Object.values(oven.inbox).reduce((n,x)=>n+(x??0),0)<=INPUT_CAPACITY+1e-6,'input capacity is shared');
 }
 {
- const w=fixture(),a=put(w,'kitchen'),b=put(w,'kitchen');w.res.stew=10;w.res.fish=20;w.res.berries=20;reconcileStock(w);
- assert.equal(apply(w,{type:'productionLimit',building:a.uid,output:'stew',limit:10}),null);
- assert.notEqual(currentRecipe(w,a)?.output,'stew','warehouse target pauses only that workshop output');
- assert.equal(currentRecipe(w,b)?.output,'stew','a different workshop has its own target');
- w.res.stew=9;a.outbox.stew=50;assert.equal(currentRecipe(w,a)?.output,'stew','finished output does not count toward warehouse-only target');
- assert.equal(apply(w,{type:'productionLimit',building:a.uid,output:'stew',limit:null}),null);
- while(orderedRecipes(a)[0].i!==1)assert.equal(apply(w,{type:'recipePriority',building:a.uid,recipe:1,delta:-1}),null);assert.equal(orderedRecipes(a)[0].i,1);assert.equal(currentRecipe(w,a)?.output,'smokedFish','explicit priority overrides stars');
- assert(apply(w,{type:'productionLimit',building:a.uid,output:'stew',limit:-1}));assert(apply(w,{type:'productionLimit',building:a.uid,output:'wood',limit:1}));
+ const w=fixture(),a=put(w,'smokehouse'),b=put(w,'smokehouse');w.res.smokedFish=10;w.res.fish=20;w.res.mushrooms=20;reconcileStock(w);
+ assert.equal(apply(w,{type:'productionLimit',building:a.uid,output:'smokedFish',limit:10}),null);
+ assert.notEqual(currentRecipe(w,a)?.output,'smokedFish','warehouse target pauses only that workshop output');
+ assert.equal(currentRecipe(w,b)?.output,'smokedFish','a different workshop has its own target');
+ w.res.smokedFish=9;a.outbox.smokedFish=50;assert.equal(currentRecipe(w,a)?.output,'smokedFish','finished output does not count toward warehouse-only target');
+ assert.equal(apply(w,{type:'productionLimit',building:a.uid,output:'smokedFish',limit:null}),null);
+ while(orderedRecipes(a)[0].i!==1)assert.equal(apply(w,{type:'recipePriority',building:a.uid,recipe:1,delta:-1}),null);assert.equal(orderedRecipes(a)[0].i,1);assert.equal(currentRecipe(w,a)?.output,'driedMushrooms','explicit priority overrides stars');
+ assert(apply(w,{type:'productionLimit',building:a.uid,output:'smokedFish',limit:-1}));assert(apply(w,{type:'productionLimit',building:a.uid,output:'wood',limit:1}));
 }
 {
  const w=fixture(),oven=put(w,'bakery');oven.off=[0,1];oven.inbox.flour=12;const before=w.res.flour;run(w,12);
@@ -43,7 +43,7 @@ function run(w:World,hours:number){for(let h=0;h<hours;h++){while(w.decisions.le
 }
 {
  const data=new Map<string,string>();Object.assign(globalThis,{localStorage:{getItem:(k:string)=>data.get(k)??null,setItem:(k:string,v:string)=>data.set(k,v),removeItem:(k:string)=>data.delete(k)}});
- const w=fixture(),b=put(w,'kitchen');apply(w,{type:'recipePriority',building:b.uid,recipe:1,delta:-1});apply(w,{type:'productionLimit',building:b.uid,output:'stew',limit:25});assert(saveWorld(w));
+ const w=fixture(),b=put(w,'smokehouse');apply(w,{type:'recipePriority',building:b.uid,recipe:1,delta:-1});apply(w,{type:'productionLimit',building:b.uid,output:'smokedFish',limit:25});assert(saveWorld(w));
  const restored=loadSave()!.world.buildings.find(x=>x.uid===b.uid)!;assert.deepEqual(restored.recipeOrder,b.recipeOrder);assert.deepEqual(restored.productionLimits,b.productionLimits);
 }
 console.log('workshop buffers, priorities, targets, returns and save checks passed');

@@ -3,7 +3,7 @@
 // npx tsx tools/ladder-check.ts
 import assert from 'node:assert/strict';
 import { BUILDINGS, MEAL_MOOD, DRINK_MOOD, TIER, TIER_MOOD, TIER_STAGE, TIER_RANK, TRADERS, membersOf, InputKey, ResourceId, SiteId, SITES, tradeable, CATEGORIES, MEALS, DRINKS, BASE_RATE, STAR_MULT, BuildingDef, GoodTier, RESOURCES } from '../src/sim/content';
-import { createWorld, findSpot, apply, alive, runHours, reconcileStock, debugGrow, siteOk, World, Building } from '../src/sim/world';
+import { createWorld, DRINK_SITES, findSpot, apply, alive, runHours, reconcileStock, debugGrow, siteOk, World, Building } from '../src/sim/world';
 
 let n = 0; const ok = (cond: unknown, msg: string) => { assert(cond, msg); n++; };
 const FOOD = [...MEALS, ...DRINKS];
@@ -58,7 +58,7 @@ const leansOn = (id: string) => {
 };
 const leans = qualityMealKitchens.map(leansOn);
 ok(qualityMealKitchens.length >= 2 && new Set(leans).size === leans.length, `each quality kitchen leans on a different workshop (${qualityMealKitchens.map((k, i) => `${k}: ${leans[i]}`).join(', ')})`);
-for (const r of MEALS.filter(r => TIER[r] === 'quality')) {
+for (const r of QUALITY) {
   const rec = makersOf(r)[0].recipes!.find(x => x.output === r)!;
   const from = new Set((Object.keys(rec.inputs) as InputKey[]).flatMap(k => membersOf(k).flatMap(m => makersOf(m).filter(d => (d.recipes ?? []).some(x => x.output === m && x.stars === 3)).map(d => d.id))));
   ok(from.size >= 2, `${r} takes from two workshops (${[...from].join(', ')})`);
@@ -67,6 +67,8 @@ for (const r of MEALS.filter(r => TIER[r] === 'quality')) {
 // 4. Every map. For each pair of sites, the fewest drafts and the labour to reach each stage, and no stage that any one
 // drafted building gates. A route is a set of drafted buildings and the worker-hours a unit takes (walking left out).
 const SITE_IDS = SITES.map(s => s.id);
+/** buildings whose every recipe turns raw goods (or nothing) into plain goods or flour */
+const CONVERTERS = new Set(BUILDINGS.filter(d => (d.recipes ?? []).length && (d.recipes ?? []).every(r => (Object.keys(r.inputs) as InputKey[]).every(k => membersOf(k).every(m => !TIER[m] && m !== 'flour')))).map(d => d.id));
 type Route = { d: Set<string>; h: number };
 function prune(list: Route[]) {
   const best = new Map<string, Route>();
@@ -105,6 +107,8 @@ for (const kind of ['meal', 'drink'] as const) for (const t of ['plain', 'good',
 const table: Record<string, { min: number[]; hours: number[] }> = {};
 const gates: string[] = [];
 for (let i = 0; i < SITE_IDS.length; i++) for (let j = i + 1; j < SITE_IDS.length; j++) {
+  // maps always have a drink site (world.ts DRINK_SITES): a clay bank and oaks together never happen
+  if (![SITE_IDS[i], SITE_IDS[j]].some(x => DRINK_SITES.includes(x))) continue;
   const w = createWorld(3); w.sites = [SITE_IDS[i], SITE_IDS[j]] as SiteId[];
   const routes = routesOn(w);
   for (const [label, goods] of STAGES) {
@@ -112,12 +116,13 @@ for (let i = 0; i < SITE_IDS.length; i++) for (let j = i + 1; j < SITE_IDS.lengt
     ok(rs.length > 0, `${label} can be made on a ${w.sites.join('+')} map`);
     const row = (table[label] ??= { min: [], hours: [] });
     row.min.push(Math.min(...rs.map(r => r.d.size))); row.hours.push(Math.min(...rs.map(r => r.h)));
-    // a building every route needs would gate the stage on this map
-    const always = [...new Set(rs.flatMap(r => [...r.d]))].filter(d => rs.every(r => r.d.has(d)));
+    // a workshop every route needs would gate the stage on this map. A converter (the mill, the smokehouse: raw goods
+    // into plain ones) may: those are the must-drafts of the flat ladder. Workshops that process up may not.
+    const always = [...new Set(rs.flatMap(r => [...r.d]))].filter(d => rs.every(r => r.d.has(d)) && !CONVERTERS.has(d));
     if (always.length) gates.push(`${label} on ${w.sites.join('+')} needs ${always.join(', ')}`);
   }
 }
-ok(!gates.length, `no stage hangs on one building on any map${gates.length ? ': ' + gates.join('; ') : ''}`);
+ok(!gates.length, `no stage hangs on one processing workshop on any map${gates.length ? ': ' + gates.join('; ') : ''}`);
 for (const [label, row] of Object.entries(table)) {
   ok(Math.min(...row.min) === Math.max(...row.min), `${label}: the same fewest drafts on every map (${[...new Set(row.min)].join(', ')})`);
   ok(Math.max(...row.hours) / Math.min(...row.hours) < 1.1, `${label}: labour within 10% across maps (${Math.min(...row.hours).toFixed(2)}–${Math.max(...row.hours).toFixed(2)} h)`);
@@ -147,11 +152,12 @@ const used = (w: World, r: ResourceId, at: string) => (w.flows[`${r}:-${at}`] ??
 { const w = shop(5, 'supperhouse', 1, { porridge: 20, driedMushrooms: 20 }); ok(made(w, 'harvest', 'supperhouse'), 'a harvest supper from porridge and dried mushrooms'); }
 { const w = shop(5, 'pieoven', 1, { pie: 20, hotpot: 20 }); ok(made(w, 'banquet', 'pieoven'), 'a banquet pie from fruit pie and hotpot'); }
 { const w = shop(5, 'brewery', 0, { grain: 30 }); ok(made(w, 'ale', 'brewery') && used(w, 'grain', 'brewery'), 'ale straight from grain'); }
-{ const w = shop(5, 'stillhouse', 1, { cider: 20, herbs: 20 }); ok(made(w, 'hippocras', 'stillhouse') && used(w, 'cider', 'stillhouse'), 'hippocras from cider and herbs at the still house'); }
+{ const w = shop(5, 'stillhouse', 0, { cider: 20, herbs: 20 }); ok(made(w, 'hippocras', 'stillhouse') && used(w, 'cider', 'stillhouse'), 'hippocras from cider and herbs at the still house'); }
 
 // 7. Traders never carry quality goods.
 ok(TRADERS.every(t => t.sells.every(tradeable)), 'no trader lists a quality good');
-ok(tradeable('flour') && tradeable('acorns') && tradeable('ale') && tradeable('bread') && !tradeable('fishpie') && !tradeable('spirits'), 'raw, plain and good goods can be bought; quality goods cannot');
+ok(tradeable('flour') && tradeable('acorns') && tradeable('ale') && tradeable('bread') && !tradeable('fishpie') && !tradeable('hippocras'), 'raw, plain and good goods can be bought; quality goods cannot');
 ok(RESOURCES.every(r => BASE_RATE[r.id] > 0), 'every good has a rate');
 
 console.log(`ladder: ${n} checks passed`);
+

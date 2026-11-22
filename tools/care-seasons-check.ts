@@ -4,7 +4,7 @@ import {createWorld,apply,findSpot,workersAt,seasonYield} from '../src/sim/world
 import {BOT,autoBuild,staffPlan,autoStaff} from '../src/sim/autoplayer';
 const saved={...BOT};
 try{
- const w=createWorld(24757);w.charter='piesky';w.owned.push('pieoven','sawmill','clinic');w.res.wood=50;w.res.berries=60;
+ const w=createWorld(24757);w.charter='bread';w.owned.push('bakery','mill','sawmill','clinic');w.res.wood=50;w.res.berries=60;
  w.colonists[0].illness={id:'flu',name:'Frontier flu',severity:60,worsen:1,contagious:true};
  Object.assign(BOT,{fineInputs:false,plannedRoughDemand:false,urgentClinic:false});
  const old=structuredClone(w),care=structuredClone(w);autoBuild(old);BOT.urgentClinic=true;autoBuild(care);

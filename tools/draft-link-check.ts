@@ -10,13 +10,13 @@ let failed = 0;
 const check = (ok: boolean, what: string) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}`); if (!ok) failed++; };
 
 const GRINDERS = ['bakery'];
-/** a map with no soil (so no grain field), a town that has picked Daily bread and owns no bakery or mill */
+/** a map with no soil (so no grain field), a town that has picked Daily bread and owns a mill but no bakery */
 function breadTown(): World {
   for (let s = 1; s < 400; s++) {
     const w = createWorld(s * 53);
     if (w.sites.includes('soil')) continue;
     while (w.decisions.length) apply(w, { type: 'resolve', option: 0 });
-    w.owned = w.owned.filter(id => !GRINDERS.includes(id) && id !== 'mill' && id !== 'field');
+    w.owned = w.owned.filter(id => !GRINDERS.includes(id) && id !== 'field'); if (!w.owned.includes('mill')) w.owned.push('mill');
     w.charter = 'bread';
     return w;
   }

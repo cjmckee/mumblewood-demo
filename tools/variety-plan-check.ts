@@ -4,10 +4,10 @@ import {createWorld,apply,findSpot,recipesOf,alive} from '../src/sim/world';
 import {BOT,varietyTargets,autoFoodRules} from '../src/sim/autoplayer';
 const saved={...BOT};
 try{
- const w=createWorld(24757);w.charter='menu';w.owned.push('kitchen','bakery','cookhouse','mill');w.res.wood=100;w.res.berries=100;w.res.stew=0;
- for(const id of ['kitchen','bakery','cookhouse']){const spot=findSpot(w,id);assert(spot);assert.equal(apply(w,{type:'place',def:id,...spot}),null);w.buildings.at(-1)!.built=true;}
- // the kitchen makes only smoked fish and the cookhouse only hotpot; with no dock there's no fish to smoke
- for(const b of w.buildings)if(b.def==='kitchen')b.off=recipesOf(b).flatMap((r,i)=>r.output==='smokedFish'?[]:[i]);
+ const w=createWorld(24757);w.charter='menu';w.owned.push('kitchen','smokehouse','bakery','cookhouse','mill');w.res.wood=100;w.res.berries=100;w.res.stew=0;
+ for(const id of ['smokehouse','bakery','cookhouse']){const spot=findSpot(w,id);assert(spot);assert.equal(apply(w,{type:'place',def:id,...spot}),null);w.buildings.at(-1)!.built=true;}
+ // the smokehouse makes only smoked fish and the cookhouse only hotpot; with no dock there's no fish to smoke
+ for(const b of w.buildings)if(b.def==='smokehouse')b.off=recipesOf(b).flatMap((r,i)=>r.output==='smokedFish'?[]:[i]);
  for(const b of w.buildings)if(b.def==='cookhouse')b.off=recipesOf(b).flatMap((r,i)=>r.output==='hotpot'?[]:[i]);
  for(const b of w.buildings)if(b.def==='bakery')b.off=recipesOf(b).flatMap((r,i)=>r.output==='pie'?[]:[i]);
  BOT.feasibleVariety=false;assert(varietyTargets(w,4).includes('hotpot'),'legacy plan counts an unfeedable hotpot recipe');
