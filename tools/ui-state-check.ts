@@ -6,7 +6,7 @@ import { buildingDestination, fixDestination } from '../src/ui/navigation';
 import { buildingStatus, saleQuantity } from '../src/ui/status';
 
 const w = createWorld(12345);
-assert(FOODS.includes('apples') && FOODS.includes('bread') && FOODS.includes('skewers'));
+assert(FOODS.includes('apples') && FOODS.includes('bread') && FOODS.includes('hotpot'));
 const woodcutter = w.buildings.find(b => b.def === 'woodcutter')!;
 assert.equal(fixDestination(w, { staff: 'woodcutter', n: 1 }).kind, 'building');
 assert.deepEqual(buildingDestination(w,'clinic'), { kind:'catalog', def:'desk', label:'Build research desk' });

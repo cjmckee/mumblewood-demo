@@ -1,6 +1,6 @@
 // What a charter would take from where the colony stands: each condition, how close it is, and for goods the shortest
 // chain of buildings still missing (build one you own, study it, or draft it). Read-only; used by the charter offer.
-import { BUILDINGS, BUILDING_BY_ID, CATEGORIES, CharterMetric, MEALS, RESEARCH, RESOURCES, ResourceId, membersOf, InputKey, RENOWN, TIER, isGroup, inputName } from './content';
+import { BUILDINGS, BUILDING_BY_ID, CATEGORIES, CharterMetric, MEALS, RESEARCH, RESOURCES, ResourceId, membersOf, InputKey, RENOWN, TIER, isGroup, inputName, renownFor } from './content';
 import { World, alive, avgMood, beds, built, charterDef, hasPerk, siteOk, stockName, tallyOf, renownOf, FEAST_MEALS, FEAST_DRINKS } from './world';
 import { START } from './scenario';
 
@@ -97,7 +97,7 @@ function preview(w: World, m: CharterMetric): ConditionPreview[] {
       return [{ text: `${m.amount} ${goodsName(m.resources)} ${m.how}`, have: w.charter ? `${have} so far` : '', met: false, route: asRoute(routeAny(w, m.resources)) }];
     }
     case 'renown': {
-      const goods = (m.category === 'meal' ? MEALS : CATEGORIES.drink.members).filter(r => RENOWN[TIER[r] ?? 'processed'] > 0);
+      const goods = (m.category === 'meal' ? MEALS : CATEGORIES.drink.members).filter(r => renownFor(r) > 0);
       const routes = goods.map(good => ({ good, r: routeFor(w, good) })).filter(x => x.r).sort((a, b) => a.r!.cost - b.r!.cost);
       const ready = routes.filter(x => !x.r!.steps.length).length;
       return [{ text: `${m.amount} renown from ${m.kinds} kinds of ${m.category}`, have: `${ready} made here`, met: false,
@@ -123,7 +123,7 @@ function preview(w: World, m: CharterMetric): ConditionPreview[] {
     }
     case 'longTable': return [
       { text: plural(m.pop, 'colonist') + ' at one feast', have: `${pop} now`, met: pop >= m.pop },
-      { text: 'a magnificent meal each', have: '', met: false, route: asRoute(routeAny(w, FEAST_MEALS)) },
+      { text: 'a quality meal each', have: '', met: false, route: asRoute(routeAny(w, FEAST_MEALS)) },
       { text: 'a refined drink each', have: '', met: false, route: asRoute(routeAny(w, FEAST_DRINKS)) },
     ];
     case 'all': return m.parts.flatMap(p => preview(w, p));
@@ -153,7 +153,7 @@ export function metricRoutes(w: World, m: CharterMetric): { good?: InputKey; rou
       const { points, kinds } = renownOf(w, m.category);
       if (points >= m.amount && kinds.length >= m.kinds) return [];
       // the kinds not yet counting, cheapest first, as many as are still needed (at least one, to raise the renown)
-      const goods = (m.category === 'meal' ? MEALS : CATEGORIES.drink.members).filter(r => RENOWN[TIER[r] ?? 'processed'] > 0 && !kinds.includes(r));
+      const goods = (m.category === 'meal' ? MEALS : CATEGORIES.drink.members).filter(r => renownFor(r) > 0 && !kinds.includes(r));
       return goods.map(good => ({ good, r: routeFor(w, good) })).filter(x => x.r).sort((a, b) => a.r!.cost - b.r!.cost)
         .slice(0, Math.max(1, m.kinds - kinds.length)).map(x => ({ good: x.good, route: asRoute(x.r) }));
     }

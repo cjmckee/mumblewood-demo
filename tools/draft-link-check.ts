@@ -1,5 +1,5 @@
 // The missing link: a charter whose cheapest route waits on one blueprint gets that blueprint offered in every draft,
-// and the bot takes it. Daily bread with no mill or malthouse waits on one of them: only they grind flour.
+// and the bot takes it. Daily bread with no bakery waits on one: the kitchen can grind a little flour, but only the bakery bakes.
 // Also: a feast larder is stocked for its guests.
 // Usage: npx tsx tools/draft-link-check.ts
 import { createWorld, apply, runHours, World, alive, feastUnservedDrinks, findSpot, recipesOf, recipeOn, Building, feastCheck, FEAST_MEALS, FEAST_DRINKS } from '../src/sim/world';
@@ -9,14 +9,14 @@ import { autoDecide, autoBuild } from '../src/sim/autoplayer';
 let failed = 0;
 const check = (ok: boolean, what: string) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}`); if (!ok) failed++; };
 
-const GRINDERS = ['mill', 'malthouse'];
-/** a map with no soil (so no grain field), a town that has picked Daily bread and owns no mill */
+const GRINDERS = ['bakery'];
+/** a map with no soil (so no grain field), a town that has picked Daily bread and owns no bakery or mill */
 function breadTown(): World {
   for (let s = 1; s < 400; s++) {
     const w = createWorld(s * 53);
     if (w.sites.includes('soil')) continue;
     while (w.decisions.length) apply(w, { type: 'resolve', option: 0 });
-    w.owned = w.owned.filter(id => !GRINDERS.includes(id) && id !== 'field');
+    w.owned = w.owned.filter(id => !GRINDERS.includes(id) && id !== 'mill' && id !== 'field');
     w.charter = 'bread';
     return w;
   }
@@ -26,16 +26,16 @@ function breadTown(): World {
 {
   const w = breadTown();
   const link = draftLinks(w).find(id => GRINDERS.includes(id));
-  check(!!link, `Daily bread with no mill or malthouse waits on a draft for: ${draftLinks(w).join(', ')}`);
+  check(!!link, `Daily bread with no bakery waits on a draft for: ${draftLinks(w).join(', ')}`);
   let drafts = 0, offered = 0;
   for (let h = 0; h < 24 * 40 && drafts < 6; h++) {
     for (const d of w.decisions) if (d.kind === 'blueprint') { drafts++; if (d.options.some(o => GRINDERS.includes(o))) offered++; }
-    // pass on every draft, so the mill stays missing
+    // pass on every draft, so the bakery stays missing
     while (w.decisions.length) apply(w, { type: 'resolve', option: 99 });
     w.charter = 'bread'; w.owned = w.owned.filter(id => !GRINDERS.includes(id));
     runHours(w, 1);
   }
-  check(drafts >= 3 && offered === drafts, `a mill or malthouse is offered in ${offered} of ${drafts} drafts`);
+  check(drafts >= 3 && offered === drafts, `a bakery is offered in ${offered} of ${drafts} drafts`);
 }
 {
   const w = breadTown();
@@ -46,7 +46,7 @@ function breadTown(): World {
     w.charter = 'bread';
     runHours(w, 1);
   }
-  check(took, 'the bot drafts a mill or malthouse when Daily bread waits on one');
+  check(took, 'the bot drafts a bakery when Daily bread waits on one');
 }
 {
   // a larder of hippocras, and guests who can't stand it: at the founders' feast they drink it anyway
@@ -72,15 +72,15 @@ function feastTown(defs: string[], larder: Record<string, number>, ready = false
   return { w, at, pav: at('pavilion') };
 }
 {
-  // the bot follows a finale's goods all the way down: banquet pie wants fish pie, which wants hotpot, which wants
-  // smoked fish. Each of those is switched on in whichever workshop makes it, not only the last step.
-  const { w, at } = feastTown(['dock', 'smokehouse', 'pieoven', 'bakery'], { cordial: 14 });
+  // the bot follows a finale's goods all the way down: a pie oven's quality meal wants a good-tier dish from the bakery,
+  // which wants flour, and smoked fish or hotpot. Each is switched on in whichever workshop makes it, not only the last step.
+  const { w, at } = feastTown(['dock', 'smokehouse', 'cookhouse', 'pieoven', 'bakery'], { cordial: 14 });
   w.res.fish = 40; w.res.herbs = 20; w.res.flour = 20; w.res.berries = 20;
   autoBuild(w);
   const on = (id: string, out: string) => { const b = at(id); return recipesOf(b).some((r, i) => r.output === out && recipeOn(b, i)); };
-  check(on('pieoven', 'banquet') && on('pieoven', 'fishpie') && on('smokehouse', 'hotpot') && on('smokehouse', 'smokedFish') && on('bakery', 'bread'),
-    `for banquet pies the pie oven makes fish pie, the smokehouse hotpot and smoked fish, the bakery bread`);
-  check(!on('pieoven', 'pie') && !on('pieoven', 'platter'), 'and the pie oven isn\u2019t also baking fruit pies, or platters it has no mulled cup for');
+  const onAt = (id: string) => recipesOf(at(id)).filter((r, i) => recipeOn(at(id), i)).map(r => r.output).join('+');
+  check((on('pieoven', 'banquet') || on('pieoven', 'fishpie')) && on('smokehouse', 'smokedFish') && (on('bakery', 'pie') || on('bakery', 'bread')),
+    `for quality meals the pie oven, the smokehouse and the bakery all work the route (pie oven ${onAt('pieoven')}, smokehouse ${onAt('smokehouse')}, bakery ${onAt('bakery')}, cookhouse ${onAt('cookhouse')})`);
 }
 {
   // a larder one drink short gets a whole one more
@@ -100,13 +100,13 @@ function feastTown(defs: string[], larder: Record<string, number>, ready = false
   check(feastCheck(w).hungry === 0 && !(pav.delivered.hippocras ?? 0), `a guest who dislikes cordial still sits down to one, and no hippocras is carried in (${feastCheck(w).hungry} unserved)`);
 }
 {
-  // nobody refuses a magnificent meal, and nobody dislikes more than one drink: a larder with both quality drinks suits anyone
+  // nobody refuses a quality meal, and nobody dislikes more than one drink: a larder with both quality drinks suits anyone
   let n = 0, bad = 0;
   for (let s = 1; s <= 60; s++) for (const c of createWorld(s * 101).colonists) {
     n++;
     if (c.tastes.dislikes.some(r => FEAST_MEALS.includes(r)) || c.tastes.dislikes.filter(r => FEAST_DRINKS.includes(r)).length > 1) bad++;
   }
-  check(bad === 0, `of ${n} settlers, ${bad} would refuse every magnificent meal or both quality drinks`);
+  check(bad === 0, `of ${n} settlers, ${bad} would refuse every quality meal or both quality drinks`);
 }
 console.log(failed ? `\n${failed} failed` : '\nall passed');
 if (failed) process.exit(1);

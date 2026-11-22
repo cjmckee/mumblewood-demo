@@ -29,11 +29,11 @@ const made = (w: World, key: string) => w.flows[key] ?? 0;
 /** run the clock, waving through any decision that comes up (the world pauses while one is waiting) */
 function run(w: World, hours: number) { for (let h = 0; h < hours; h++) { while (w.decisions.length) apply(w, { type: 'resolve', option: 99 }); runHours(w, 1); } }
 
-// each drink chain from its site: a gatherer, a processor where the chain has one, and the drink maker
+// each drink chain from its site: a gatherer and the drink maker, one step
 const routes: { site: string; chain: string[]; maker: string; drink: string; input: string }[] = [
-  { site: 'soil', chain: ['field', 'mill'], maker: 'brewery', drink: 'ale', input: 'mash' },
-  { site: 'grove', chain: ['orchard'], maker: 'ciderpress', drink: 'cider', input: 'must' },
-  { site: 'meadow', chain: ['apiary', 'ciderpress'], maker: 'brewery', drink: 'mead', input: 'honey' },
+  { site: 'soil', chain: ['field'], maker: 'brewery', drink: 'ale', input: 'grain' },
+  { site: 'grove', chain: ['orchard'], maker: 'ciderpress', drink: 'cider', input: 'apples' },
+  { site: 'meadow', chain: ['apiary'], maker: 'brewery', drink: 'mead', input: 'honey' },
 ];
 for (const r of routes) {
   const w = worldWith(r.site);
@@ -42,9 +42,8 @@ for (const r of routes) {
   check(g.eff > 0.3, `${g.def} on ${r.site}: works at ${Math.round(g.eff * 100)}% (${efficiencyAt(w, g.def, g.x, g.y).label})`);
   // start everyone as a laborer so the route gets its workers (the opening auto-assign fills the woodcutter and forager)
   for (const c of alive(w)) apply(w, { type: 'assign', colonist: c.id, building: null });
-  // a processor in the chain makes only what the maker needs (the mill mashes for ale, the press presses must for mead)
-  const feed: Record<string, string> = { mill: 'mash', ciderpress: 'must' };
-  for (const pb of parts.slice(1)) pb.off = (BUILDING_BY_ID[pb.def].recipes ?? []).flatMap((x, i) => x.output === feed[pb.def] ? [] : [i]);
+  // the maker makes only this drink
+  m.off = (BUILDING_BY_ID[m.def].recipes ?? []).flatMap((x, i) => x.output === r.drink ? [] : [i]);
   for (const b of [...parts, m]) staff(w, b, 2);
   check(workersAt(w, m.uid).length === 2, `${r.chain.join(' + ')} → ${r.maker}: everyone staffed`);
   run(w, 96);
@@ -53,17 +52,16 @@ for (const r of routes) {
   void CATEGORIES; void currentRecipe;
 }
 
-// no site at all: berries from the forager become must at the press, and must becomes cider
+// no site at all: berries from the forager become cider at the press
 {
   const w = worldWith('clay');
   const p = put(w, 'ciderpress');
-  p.off = (BUILDING_BY_ID.ciderpress.recipes ?? []).flatMap((x, i) => ['must', 'cider'].includes(x.output) ? [] : [i]);
   for (const c of alive(w)) apply(w, { type: 'assign', colonist: c.id, building: null });
   w.res.berries += 60; reconcileStock(w);
   staff(w, p, 2);
   run(w, 72);
-  const must = made(w, 'must:+ciderpress'), cider = made(w, 'cider:+ciderpress');
-  check(must > 3 && cider > 2 && Math.abs(made(w, 'berries:-ciderpress') / must - 1.5) < 0.1, `berries → must → cider at the press, 3 berries for 2 must (${must.toFixed(1)} must, ${cider.toFixed(1)} cider)`);
+  const cider = made(w, 'cider:+ciderpress');
+  check(cider > 4 && Math.abs(made(w, 'berries:-ciderpress') / cider - 1) < 0.15, `berries → cider at the press, a berry a cup (${cider.toFixed(1)} cider from ${made(w, 'berries:-ciderpress').toFixed(1)} berries)`);
 }
 
 // flower beds count as meadow for an apiary: try it on a map with no meadow at all
@@ -112,7 +110,7 @@ for (const r of routes) {
   w.res.wood += 60;
   run(w, 72);
   const bricks = made(w, 'bricks:+kiln'), clay = made(w, 'clay:-kiln');
-  check(bricks > 5 && Math.abs(clay / bricks - 2) < 0.1, `kiln fired ${bricks.toFixed(0)} bricks from ${clay.toFixed(0)} clay (4 for 2, a batch may be under way)`);
+  check(bricks > 5 && clay >= bricks * 2 && clay <= bricks * 2 + 4, `kiln fired ${bricks.toFixed(0)} bricks from ${clay.toFixed(0)} clay (4 for 2, a batch may be under way)`);
   // a tavern whose 12 fine materials are all bricks
   if (!w.owned.includes('tavern')) w.owned.push('tavern');
   w.res.planks = 0; w.res.wicker = 0; w.res.bricks = Math.max(w.res.bricks, 14); w.res.wood += 40;
@@ -162,16 +160,16 @@ for (const r of routes) {
   check(flour > 5 && bread > 3, `field → mill → bakery: ${flour.toFixed(0)} flour, ${bread.toFixed(0)} bread in 4 days`);
 }
 
-// skewers: herbs from a herb garden and dried mushrooms at the smokehouse, no fish anywhere
+// hotpot: herbs from a herb garden and smoked fish at the cookhouse
 {
   const w = worldWith('grove');
-  const g = put(w, 'herbgarden'), sm = put(w, 'smokehouse');
+  const g = put(w, 'herbgarden'), ck = put(w, 'cookhouse');
   for (const c of alive(w)) apply(w, { type: 'assign', colonist: c.id, building: null });
-  sm.off = (BUILDING_BY_ID.smokehouse.recipes ?? []).flatMap((x, i) => x.output === 'skewers' ? [] : [i]);
-  w.res.driedMushrooms += 30; w.res.fish = 0; w.res.smokedFish = 0; reconcileStock(w);
-  staff(w, g, 1); staff(w, sm, 2);
+  ck.off = (BUILDING_BY_ID.cookhouse.recipes ?? []).flatMap((x, i) => x.output === 'hotpot' ? [] : [i]);
+  w.res.smokedFish += 30; w.res.driedMushrooms = 0; reconcileStock(w);
+  staff(w, g, 1); staff(w, ck, 2);
   run(w, 72);
-  check(made(w, 'skewers:+smokehouse') > 3 && made(w, 'herbs:-smokehouse') > 1 && made(w, 'driedMushrooms:-smokehouse') > 1, `herb garden + dried mushrooms → smokehouse: ${made(w, 'skewers:+smokehouse').toFixed(0)} skewers`);
+  check(made(w, 'hotpot:+cookhouse') > 3 && made(w, 'herbs:-cookhouse') > 1 && made(w, 'smokedFish:-cookhouse') > 1, `herb garden + smoked fish → cookhouse: ${made(w, 'hotpot:+cookhouse').toFixed(0)} hotpot`);
 }
 
 // remedies: poultices from the apothecary, and a doctor with poultices heals faster than one without
@@ -212,7 +210,7 @@ for (const r of routes) {
   check(!!lover || !!hater, 'found colonists with a taste for or against bread');
 }
 
-// the variety charter: 60 renown at table from 3 kinds of meal (refined 1, quality 2, magnificent 4; stew earns none)
+// the variety charter: 60 renown at table from 3 kinds of meal (good 2, quality 4; plain meals earn none)
 {
   const w = worldWith('grove');
   // A varied table also asks for 10 colonists and a 24-hour average mood of 55
@@ -224,7 +222,7 @@ for (const r of routes) {
   w.tally = { eaten: { stew: 40, bread: 20, pie: 20 }, drunk: {}, made: {}, used: {} };
   run(w, 1);
   const pending = w.charter === 'menu';
-  w.tally.eaten.skewers = 6; cheer();
+  w.tally.eaten.hotpot = 6; cheer();
   run(w, 1);
   check(pending && w.chartersDone.includes('menu'), 'A varied table waits for a third kind with renown, then completes');
 }

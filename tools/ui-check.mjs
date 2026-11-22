@@ -36,7 +36,7 @@ for (const [device,width,height] of [['desktop',1440,900],['phone',390,844],['sm
 
   check(await state(()=>{
     const g=window.__game;g.ui.open=true;g.ui.tab='colonists';g.ui.render(true);
-    return ['apples','bread','skewers'].every(id=>document.querySelector(`[data-act=food][data-arg=${id}]`));
+    return ['apples','bread','hotpot'].every(id=>document.querySelector(`[data-act=food][data-arg=${id}]`));
   }),`${device}: all food controls exist`);
   await p.evaluate(()=>{ const g=window.__game;g.world.forbidden.push('bread');g.ui.render(true);document.querySelector('[data-key=food-rules]').open=true; });
   await p.locator('[data-act=food][data-arg=bread]').click();
