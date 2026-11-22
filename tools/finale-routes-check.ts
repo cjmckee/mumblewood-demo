@@ -49,7 +49,7 @@ const path = (r?: { steps: { def: string; output: string }[] }) => r ? r.steps.m
 {
   // the route sticks: a little stock moving about doesn't flip it to the other category member
   const w = town(['dock', 'smokehouse', 'pieoven', 'bakery', 'mill', 'brewery', 'stillhouse', 'apothecary', 'ciderpress']);
-  w.res.flour = 30; w.res.herbs = 30;
+  w.res.flour = 30; w.res.herbs = 30; w.res.grain = 30; w.res.apples = 30;
   const first = finaleRoutes(w).map(r => r.good).join(',');
   w.hour += 1; w.res.ale = 3;
   const again = finaleRoutes(w).map(r => r.good).join(',');
@@ -71,10 +71,10 @@ const path = (r?: { steps: { def: string; output: string }[] }) => r ? r.steps.m
   w.owned = w.owned.filter(id => id !== 'apothecary' && id !== 'ciderpress');
   autoFoodRules(w);
   const r = finaleRoutes(w).find(x => x.key === 'feastDrink');
-  check(['hippocras', 'spirits'].includes(r?.good ?? '') && [r!.good, 'ale'].every(d => w.forbidden.includes(d as never)), `on the ${r?.good} route, it and the ale are kept from the tavern (reserved: ${w.forbidden.join(', ')})`);
+  check(['hippocras', 'cordial'].includes(r?.good ?? '') && [r!.good, 'ale'].every(d => w.forbidden.includes(d as never)), `on the ${r?.good} route, it and the ale are kept from the tavern (reserved: ${w.forbidden.join(', ')})`);
   w.charter = 'bread';
   autoFoodRules(w);
-  check(!['hippocras', 'spirits', 'ale'].some(d => w.forbidden.includes(d as never)), 'with no finale owed, they’re poured again');
+  check(!['hippocras', 'cordial', 'ale'].some(d => w.forbidden.includes(d as never)), 'with no finale owed, they’re poured again');
 }
 {
   // a stocked larder of cordial and a guest who can't stand it: they drink it anyway, so nothing more is owed

@@ -148,13 +148,6 @@ const ART: Record<ResourceId, () => string> = {
       + el(12, 12, 8.5, 2.6, p) + el(11, 11.6, 5.4, 1.4, sh(p, 1.06)) + ln('M7.6 11.6c2 1.2 4.6-.8 6.6.2s2.4-.4 3.2-.6', '#e8a21c', 1) + ci(14.6, 12.4, 0.8, '#c04a6a')
       + re(4.6, 13.2, 14.8, 1, sh(bowl, 1.2), 0.5, ' opacity=".7"') + steam(9.6, 8.6);
   },
-  spirits: () => {
-    // a small clear bottle with a cork
-    const g = '#d8e4e0', d = '#d8c8a0';
-    return shadow(6) + re(10.4, 3.4, 3.2, 2.6, '#a0703e', 0.6) + re(10.8, 5.6, 2.4, 3, g, 0.4) + pa('M8.2 10.4c0-1.4 1.6-2 3.8-2s3.8.6 3.8 2v8.4c0 1-.8 1.6-1.8 1.6h-4c-1 0-1.8-.6-1.8-1.6z', g)
-      + pa('M8.4 13.4h7.2v5.4c0 1-.8 1.6-1.8 1.6h-3.6c-1 0-1.8-.6-1.8-1.6z', d) + pa('M12 13.4h3.6v5.4c0 1-.8 1.6-1.8 1.6H12z', sh(d, 0.85))
-      + re(9.2, 10.2, 1, 7.6, '#fff', 0.5, ' opacity=".55"');
-  },
   cordial: () => {
     // a round bottle of red cordial with a ribbon at the neck
     const glass = '#e0d8d8', c = '#c0406a';

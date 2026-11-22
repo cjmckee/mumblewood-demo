@@ -538,8 +538,10 @@ function genTerrain(w: World) {
   for (let i = 0; i < 3; i++) { const g = i === 0 ? around(7, 8.5) : around(7, 11); blob(g.x, g.y, 2.6 + nextRand(w), T_TREE, 0.75); }
   for (let i = 0; i < 3; i++) { const g = i === 0 ? around(5.5, 6.5) : around(5.5, 10); blob(g.x, g.y, i === 0 ? 2.1 : 1.7, T_BUSH, i === 0 ? 1 : 0.8); }
   // two of the five resource sites, each on open grass: a site makes one slot's ingredient quicker to gather, and every
-  // slot has a way to fill it on any map
+  // slot has a way to fill it on any map, drinks included (below)
   const order = SITES.map(s => ({ s, k: nextRand(w) })).sort((a, b) => a.k - b.k).map(x => x.s.id).slice(0, 2);
+  // every map has a drink: ale needs soil, cider a grove, mead a meadow, so a clay bank and oaks get one of those instead
+  if (!order.some(id => DRINK_SITES.includes(id))) order[1] = DRINK_SITES[Math.floor(nextRand(w) * DRINK_SITES.length)];
   const onGrass = (cx: number, cy: number, r: number, v: number, density: number) => {
     for (let x = Math.floor(cx - r - 1); x <= cx + r + 1; x++) for (let y = Math.floor(cy - r - 1); y <= cy + r + 1; y++) {
       const d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy) / r;
@@ -890,7 +892,7 @@ export function createWorld(seed: number, options: { colonists?: number; startDa
   const w: World = {
     recipeBatching: true, startDate, seed, rngState: seed >>> 0, hour: 6,
     colonists: [], buildings: [], terrain: [], paths: [],
-    res: { flax: 0, cloth: 0, hides: 0, leather: 0, coats: 0, wood: 0, berries: 0, fish: 0, mushrooms: 0, stew: 0, pie: 0, smokedFish: 0, planks: 0, ale: 0, apples: 0, grain: 0, honey: 0, cider: 0, mead: 0, clay: 0, reeds: 0, bricks: 0, wicker: 0, herbs: 0, flour: 0, bread: 0, poultice: 0, tonic: 0, acorns: 0, driedMushrooms: 0, porridge: 0, hotpot: 0, spirits: 0, cordial: 0, hippocras: 0, supper: 0, fishpie: 0, banquet: 0, harvest: 0, ...sc.res },
+    res: { flax: 0, cloth: 0, hides: 0, leather: 0, coats: 0, wood: 0, berries: 0, fish: 0, mushrooms: 0, stew: 0, pie: 0, smokedFish: 0, planks: 0, ale: 0, apples: 0, grain: 0, honey: 0, cider: 0, mead: 0, clay: 0, reeds: 0, bricks: 0, wicker: 0, herbs: 0, flour: 0, bread: 0, poultice: 0, tonic: 0, acorns: 0, driedMushrooms: 0, porridge: 0, hotpot: 0, cordial: 0, hippocras: 0, supper: 0, fishpie: 0, banquet: 0, harvest: 0, ...sc.res },
     owned: [...sc.unlocked], perks: [], gold: sc.trade.gold, caravan: null,
     charterTier: 1, charter: null, charterHours: 0, chartersDone: [],
     decisions: [], log: [], opinions: {}, status: 'playing', strain: 0, nextEventHour: 24 * 1.6, sites: [], rerolls: 0,
@@ -1034,6 +1036,8 @@ function researchHourly(w: World, b: Building, c: Colonist, dt: number) {
 }
 
 /** the site a gatherer needs on the map, if any */
+/** the sites a plain drink comes from: soil (ale), a grove (cider), a meadow (mead) */
+export const DRINK_SITES: SiteId[] = ['soil', 'grove', 'meadow'];
 const SITE_FOR: Partial<Record<NonNullable<BuildingDef['needs']>, SiteId>> = { apples: 'grove', flowers: 'meadow', soil: 'soil', clay: 'clay', oaks: 'oaks' };
 /** this map has what the building gathers from (every map has trees, bushes and water) */
 export function siteOk(w: World, d: BuildingDef) { const s = d.needs && SITE_FOR[d.needs]; return !s || w.sites.includes(s); }
@@ -1830,8 +1834,8 @@ export function blockedReason(w: World, b: Building): string | null {
   if (b.batch) return null;
   const rec = currentRecipe(w, b);
   if (!rec) return enabledRecipes(b).length ? 'Warehouse stock targets are met.' : 'Every recipe here is switched off.';
-  // ingredients it can be brought count, fractions included: 0.75 spirits in the inbox and 0.05 in storage make a
-  // cordial, and calling that "blocked" left the workshop with no worker to make the spirits it was waiting on
+  // ingredients it can be brought count, fractions included: 0.75 ale in the inbox and 0.05 in storage make a
+  // cordial, and calling that "blocked" left the workshop with no worker to make the ale it was waiting on
   if (recipeReady(w, b, rec)) return null;
   for (const key of Object.keys(rec.inputs) as InputKey[]) {
     if (isGroup(key) && !optionsOf(b, key).length) return `Every kind of ${inputName(key)} is switched off here.`;

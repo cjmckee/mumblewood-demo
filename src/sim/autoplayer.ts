@@ -321,7 +321,7 @@ const moodCharter = (w: World) => partsOf(w).some(p => ['avgMood', 'monument', '
 /** what each charter leans on, for staffing */
 const FOCUS: Record<string, string[]> = {
   settled: ['kitchen', 'rawFood'], woodsmoke: ['smokehouse', 'rawFood'], firstplanks: ['sawmill', 'kiln', 'claypit', 'woodcutter'], rested: ['kitchen', 'rawFood', 'woodcutter'],
-  bread: ['mill', 'bakery', 'field'], piesky: ['mill', 'bakery', 'rawFood'], twokitchens: ['kitchen', 'smokehouse', 'cookhouse', 'bakery', 'rawFood'],
+  bread: ['mill', 'bakery', 'field'], hotpot: ['smokehouse', 'cookhouse', 'rawFood', 'herbgarden'],
   roof: ['sawmill', 'kiln', 'drinks', 'tavern', 'field', 'apiary'],
   // drinks drunk: they're drunk at the tavern, so it stays open while the makers keep it stocked
   taproom: ['drinks', 'tavern', 'field', 'orchard', 'apiary'], hearty: ['apothecary', 'herbgarden', 'apiary', 'clinic'],
@@ -1232,7 +1232,7 @@ export function staffWants(w: World): Record<string, number> {
   const drinksWanted = bank > 0 ? 4 : charterDrinks ? 2 : drinkTotal(w) < 15 && built(w).some(b => b.def === 'tavern') ? 1 : 0;
   return {
     woodcutter: need ? need.woodcutter : 1 + Math.floor(pop / 5) + (moodCharter(w) || ch === 'firstplanks' ? 1 : 0) + (w.res.wood < 25 ? 1 : 0) + (w.res.wood < ws.wood ? 1 + Math.floor(pop / 6) : 0),
-    rawFood: need ? need.rawFood : rawFoodWorkers(w, pop) + (raw < pop * 4 ? 1 : 0) + (['settled', 'piesky', 'longtable'].includes(ch) ? 1 : 0) + (foodTotal(w) < ws.food ? 1 + Math.floor(pop / 6) : 0),
+    rawFood: need ? need.rawFood : rawFoodWorkers(w, pop) + (raw < pop * 4 ? 1 : 0) + (['settled', 'hotpot', 'longtable'].includes(ch) ? 1 : 0) + (foodTotal(w) < ws.food ? 1 + Math.floor(pop / 6) : 0),
     kitchen: (BOT.dailyQuality ? Math.max(1, Math.ceil(pop / 8)) + (mealTotal(w) < pop ? 1 : 0) : Math.max(1, Math.ceil(pop / 9))) + (['settled', 'longtable'].includes(ch) || (hall?.stage ?? 0) === 1 ? 1 : 0),
     desk: w.research?.current && desks(w).length ? 1 : 0,
     sawmill: (stockOf(w, 'fine') < planksWanted(w) ? 2 : stockOf(w, 'fine') < 25 ? 1 : 0) + (['firstplanks', 'roof', 'hall'].includes(ch) ? 1 : 0),
@@ -1242,18 +1242,18 @@ export function staffWants(w: World): Record<string, number> {
     kiln: stockOf(w, 'fine') < planksWanted(w) && plannedUses(w, 'clay') ? 2 : 0,
     claypit: stockOf(w, 'fine') < planksWanted(w) && plannedUses(w, 'clay') ? 2 : 0,
     // a varied table: bread from flour, remedies for the clinic
-    bakery: built(w).some(b => b.def === 'bakery') && (mealTotal(w) < pop * 3 || ['menu', 'bread', 'twokitchens'].includes(ch) || second === 'bakery') ? 1 + (['menu', 'bread'].includes(ch) ? 1 : 0) : 0,
-    mill: plannedUses(w, 'flour') ? 1 + (['bread', 'piesky'].includes(ch) ? 1 : 0) : 0,
+    bakery: built(w).some(b => b.def === 'bakery') && (mealTotal(w) < pop * 3 || ['menu', 'bread'].includes(ch) || second === 'bakery') ? 1 + (['menu', 'bread'].includes(ch) ? 1 : 0) : 0,
+    mill: plannedUses(w, 'flour') ? 1 + (['bread'].includes(ch) ? 1 : 0) : 0,
     // the cookhouse simmers hotpot and porridge; the supper house and pie oven make quality meals from them
-    cookhouse: built(w).some(b => b.def === 'cookhouse') && (plannedUses(w, 'hotpot') || plannedUses(w, 'porridge') || mealTotal(w) < pop * 2 || second === 'cookhouse') ? 1 + (['goodtable'].includes(ch) ? 1 : 0) : 0,
-    supperhouse: built(w).some(b => b.def === 'supperhouse') && (['twokitchens', 'menu', 'longtable'].includes(ch) || second === 'supperhouse') ? 1 : 0,
+    cookhouse: built(w).some(b => b.def === 'cookhouse') && (plannedUses(w, 'hotpot') || plannedUses(w, 'porridge') || mealTotal(w) < pop * 2 || second === 'cookhouse') ? 1 + (['goodtable', 'hotpot'].includes(ch) ? 1 : 0) : 0,
+    supperhouse: built(w).some(b => b.def === 'supperhouse') && (['menu', 'longtable'].includes(ch) || second === 'supperhouse') ? 1 : 0,
     oakhut: plannedUses(w, 'acorns') ? 1 : 0,
     apothecary: built(w).some(b => b.def === 'apothecary') && (alive(w).some(c => c.illness) || stockOf(w, 'remedy') < 6 || ['tasting', 'hearty'].includes(ch)) ? 1 : 0,
     herbgarden: built(w).some(b => b.def === 'apothecary') || ch === 'menu' ? 1 : 0,
     // gatherers for a drink maker's best recipe work as long as the drink makers do
     field: plannedUses(w, 'grain') ? 2 : 0,
     apiary: (drinksWanted || ch === 'hearty') && plannedUses(w, 'honey') ? 1 : 0,
-    smokehouse: w.res.fish > 20 || w.res.mushrooms > 20 || ['menu', 'twokitchens', 'woodsmoke', 'hall', 'longtable'].includes(ch) || second === 'smokehouse' ? 1 + (ch === 'woodsmoke' ? 1 : 0) : 0,
+    smokehouse: w.res.fish > 20 || w.res.mushrooms > 20 || ['menu', 'hotpot', 'woodsmoke', 'hall', 'longtable'].includes(ch) || second === 'smokehouse' ? 1 + (ch === 'woodsmoke' ? 1 : 0) : 0,
     tavern: built(w).some(b => b.def === 'tavern') && (bank <= 0 || (BOT.summerService && seasonOf(w).season === 'summer')) ? 1 : 0,
     ...Object.fromEntries(clothingChain(w).map(id => [id, clothingJob(w) === id ? 1 : 0])),
     clinic: alive(w).some(c => bedridden(c)) ? 1 : 0,

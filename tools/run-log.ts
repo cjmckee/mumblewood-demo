@@ -5,7 +5,7 @@ import { createWorld, tick, day, alive, avgMood, TICKS_PER_HOUR, built, workersA
 import { autoDecide, autoBuild, finaleRoutes, charterChain, staffPlan } from '../src/sim/autoplayer';
 const seed = Number(process.argv[2]), every = Number(process.argv[3] ?? 2);
 const w = createWorld(seed); let r = seed; const rand = () => ((r = (r * 1103515245 + 12345) >>> 0) / 4294967296);
-const KEY = ['wood','planks','bricks','wicker','berries','fish','mushrooms','grain','acorns','apples','honey','herbs','flour','stew','smokedFish','driedMushrooms','bread','pie','hotpot','porridge','fishpie','banquet','supper','harvest','ale','cider','mead','spirits','cordial','hippocras'];
+const KEY = ['wood','planks','bricks','wicker','berries','fish','mushrooms','grain','acorns','apples','honey','herbs','flour','stew','smokedFish','driedMushrooms','bread','pie','hotpot','porridge','fishpie','banquet','supper','harvest','ale','cider','mead','cordial','hippocras'];
 let lastDay = 0;
 while (w.status === 'playing' && day(w) <= 90) {
   autoDecide(w, 'greedy', rand);

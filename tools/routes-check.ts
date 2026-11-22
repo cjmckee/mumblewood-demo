@@ -52,17 +52,6 @@ for (const r of routes) {
   void CATEGORIES; void currentRecipe;
 }
 
-// no site at all: berries from the forager become cider at the press
-{
-  const w = worldWith('clay');
-  const p = put(w, 'ciderpress');
-  for (const c of alive(w)) apply(w, { type: 'assign', colonist: c.id, building: null });
-  w.res.berries += 60; reconcileStock(w);
-  staff(w, p, 2);
-  run(w, 72);
-  const cider = made(w, 'cider:+ciderpress');
-  check(cider > 4 && Math.abs(made(w, 'berries:-ciderpress') / cider - 1) < 0.15, `berries → cider at the press, a berry a cup (${cider.toFixed(1)} cider from ${made(w, 'berries:-ciderpress').toFixed(1)} berries)`);
-}
 
 // flower beds count as meadow for an apiary: try it on a map with no meadow at all
 {

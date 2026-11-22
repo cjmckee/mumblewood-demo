@@ -2,7 +2,7 @@
 // npx tsx tools/tally-check.ts
 import assert from 'node:assert/strict';
 import { CHARTERS, BUILDINGS, MEALS, CATEGORIES, TIER, ResourceId, SiteId, InputKey, membersOf, CharterMetric } from '../src/sim/content';
-import { createWorld, apply, alive, runHours, debugGrow, reconcileStock, flow, tallyOf, renownOf, charterProgress, findSpot, siteOk, FEAST_MEALS, FEAST_DRINKS, World, recipesOf, recipeOn } from '../src/sim/world';
+import { createWorld, DRINK_SITES, apply, alive, runHours, debugGrow, reconcileStock, flow, tallyOf, renownOf, charterProgress, findSpot, siteOk, FEAST_MEALS, FEAST_DRINKS, World, recipesOf, recipeOn } from '../src/sim/world';
 import { autoBuild, autoFoodRules, ROUTE_AVOID } from '../src/sim/autoplayer';
 
 let n = 0; const ok = (cond: unknown, msg: string) => { assert(cond, msg); n++; };
@@ -59,6 +59,7 @@ function makeable(w: World, r: ResourceId, depth = 5): boolean {
 ok(FEAST_MEALS.length >= 2 && FEAST_MEALS.every(r => TIER[r] === 'quality'), `the feast serves quality meals (${FEAST_MEALS})`);
 ok(FEAST_DRINKS.length >= 2 && FEAST_DRINKS.every(r => TIER[r] === 'quality'), `the feast has quality drinks to choose from, so tastes can be met (${FEAST_DRINKS})`);
 for (let i = 0; i < SITE_IDS.length; i++) for (let j = i + 1; j < SITE_IDS.length; j++) {
+  if (![SITE_IDS[i], SITE_IDS[j]].some(x => DRINK_SITES.includes(x))) continue; // every map has a drink site
   const w = createWorld(3); w.sites = [SITE_IDS[i], SITE_IDS[j]];
   ok(FEAST_MEALS.every(r => makeable(w, r, 7)) && FEAST_DRINKS.every(r => makeable(w, r, 7)), `every quality meal and quality drink can be made on a ${w.sites.join('+')} map`);
 }
