@@ -100,7 +100,7 @@ function pavilion(w: World, larder: Partial<Record<string, number>>, full = true
   ok(apply(w, { type: 'callFeast' }) !== null, 'the feast can\u2019t be called before the pavilion is stocked');
   ok(/Place the feast pavilion/.test(charterProgress(w)?.label ?? ''), 'the card says to place it');
   const half = pavilion(w, { banquet: 9, cordial: FINALE_COLONISTS }, false);
-  ok(new RegExp(`larder 9 / ${FINALE_COLONISTS} magnificent meals, ${FINALE_COLONISTS} / ${FINALE_COLONISTS} quality drinks`).test(charterProgress(w)?.label ?? ''), `the card shows the larder (${charterProgress(w)?.label})`);
+  ok(new RegExp(`larder 9 / ${FINALE_COLONISTS} quality meals, ${FINALE_COLONISTS} / ${FINALE_COLONISTS} quality drinks`).test(charterProgress(w)?.label ?? ''), `the card shows the larder (${charterProgress(w)?.label})`);
   // released, with goods back in storage
   const before = w.res.banquet;
   ok(apply(w, { type: 'releaseStash', building: half.uid }) === null && w.res.banquet === before + 9 && !Object.keys(half.delivered).length, 'releasing the larder puts it back in storage');
@@ -119,7 +119,7 @@ function pavilion(w: World, larder: Partial<Record<string, number>>, full = true
   const donor = createWorld(83);
   let n = 0;
   while (alive(w2).length < 14) { const c = { ...structuredClone(donor.colonists[n % donor.colonists.length]), id: 1000 + n, partner: null, job: null, bed: null }; w2.colonists.push(c); n++; }
-  pavilion(w2, { banquet: 7, platter: 7, cordial: 8, hippocras: 7 });
+  pavilion(w2, { banquet: 7, supper: 7, cordial: 8, hippocras: 7 });
   for (const c of alive(w2)) { c.sulking = false; c.mood = 60; c.illness = null; }
   const f = feastCheck(w2);
   ok(f.ok, `with 14 settlers and a full larder, the check says ready (${f.served} served, ${f.seats} seats)`);

@@ -1,45 +1,68 @@
-// The stage ladder: every meal and drink sits at the stage its processing depth gives it, buildings stay small, morale
+// The flat ladder: every meal sits at the stage its processing depth gives it, each building has one role, morale
 // buildings make nothing, and on every map each stage can be reached more than one way without any one building.
 // npx tsx tools/ladder-check.ts
 import assert from 'node:assert/strict';
-import { BUILDINGS, MEAL_MOOD, DRINK_MOOD, TIER, TIER_MOOD, TIER_STAGE, TRADERS, membersOf, InputKey, ResourceId, SiteId, SITES, tradeable, CATEGORIES, MEALS, DRINKS, BASE_RATE, STAR_MULT, BuildingDef, GoodTier, RESOURCES } from '../src/sim/content';
+import { BUILDINGS, MEAL_MOOD, DRINK_MOOD, TIER, TIER_MOOD, TIER_STAGE, TIER_RANK, TRADERS, membersOf, InputKey, ResourceId, SiteId, SITES, tradeable, CATEGORIES, MEALS, DRINKS, BASE_RATE, STAR_MULT, BuildingDef, GoodTier, RESOURCES } from '../src/sim/content';
 import { createWorld, findSpot, apply, alive, runHours, reconcileStock, debugGrow, siteOk, World, Building } from '../src/sim/world';
 
 let n = 0; const ok = (cond: unknown, msg: string) => { assert(cond, msg); n++; };
 const FOOD = [...MEALS, ...DRINKS];
 
-// 1. Tiers: every meal and drink has one, and mood follows it.
+// 1. Tiers: every meal and drink has one, and mood follows it. Meals come plain, good and quality; drinks plain and quality.
 ok(FOOD.every(r => TIER[r]), 'every meal and drink has a tier');
 ok(MEALS.every(r => MEAL_MOOD[r] === TIER_MOOD[TIER[r]!]) && DRINKS.every(r => DRINK_MOOD[r] === TIER_MOOD[TIER[r]!]), 'meal and drink mood come from the tier');
-ok((['stew', 'smokedFish', 'driedMushrooms'] as ResourceId[]).every(r => TIER[r] === 'processed' && MEAL_MOOD[r] === 1), 'processed meals are edible and give +1');
+ok((['stew', 'smokedFish', 'driedMushrooms'] as ResourceId[]).every(r => TIER[r] === 'plain'), 'stew, smoked fish and dried mushrooms are plain');
+ok(DRINKS.every(r => TIER[r] !== 'good'), 'drinks are plain or quality');
 ok(MEALS.indexOf('banquet') < MEALS.indexOf('pie') && MEALS.indexOf('pie') < MEALS.indexOf('stew'), 'with no favourite, finer meals are eaten first');
+for (const t of ['plain', 'good', 'quality'] as GoodTier[]) ok(MEALS.filter(r => TIER[r] === t).length >= 2, `at least two meals are ${t}`);
+for (const t of ['plain', 'quality'] as GoodTier[]) ok(DRINKS.filter(r => TIER[r] === t).length >= 2, `at least two drinks are ${t}`);
 
-// 2. The stage rule. One input processed once is a stage up; two or more combined are the larger of (deepest input + 1)
-// and (the inputs' stages added up). Each good's stage is its shallowest recipe, and every recipe agrees with it.
+// 2. The stage rule: a recipe sits one stage above its deepest input (flour counts as stage 1), and a meal's stage is its
+// tier. A recipe that takes a good of some tier makes a good of a higher one: one level up, never sideways.
 const RAW = new Set(BUILDINGS.flatMap(d => (d.recipes ?? []).filter(r => !Object.keys(r.inputs).length).map(r => r.output)));
 const stage: Partial<Record<ResourceId, number>> = Object.fromEntries([...RAW].map(r => [r, 0]));
-const recipeStage = (inputs: Partial<Record<InputKey, number>>) => {
-  const s = (Object.keys(inputs) as InputKey[]).map(k => Math.min(...membersOf(k).map(m => stage[m] ?? Infinity)));
-  return s.length === 1 ? s[0] + 1 : Math.max(Math.max(...s) + 1, s.reduce((a, b) => a + b, 0));
-};
+const recipeStage = (inputs: Partial<Record<InputKey, number>>) => Math.max(...(Object.keys(inputs) as InputKey[]).map(k => Math.min(...membersOf(k).map(m => stage[m] ?? Infinity)))) + 1;
 for (let pass = 0; pass < 12; pass++) for (const d of BUILDINGS) for (const rec of d.recipes ?? []) {
   if (!Object.keys(rec.inputs).length) continue;
   const v = recipeStage(rec.inputs); if (v < (stage[rec.output] ?? Infinity)) stage[rec.output] = v;
 }
-for (const r of FOOD) ok(stage[r] === TIER_STAGE[TIER[r]!], `${r} is stage ${stage[r]}, as its tier (${TIER[r]}) says`);
-const mismatched = BUILDINGS.flatMap(d => (d.recipes ?? []).filter(rec => Object.keys(rec.inputs).length && FOOD.includes(rec.output) && recipeStage(rec.inputs) !== stage[rec.output]).map(rec => `${d.id}:${rec.output}=${recipeStage(rec.inputs)}`));
-ok(!mismatched.length, `every recipe lands on its good's stage${mismatched.length ? ': ' + mismatched.join(', ') : ''}`);
-for (const t of ['simple', 'refined', 'quality'] as GoodTier[]) {
-  ok(MEALS.filter(r => TIER[r] === t).length >= 2 && DRINKS.filter(r => TIER[r] === t).length >= 2, `at least two meals and two drinks are ${t}`);
-}
-ok(MEALS.filter(r => TIER[r] === 'magnificent').length >= 2, 'at least two magnificent meals');
+for (const r of MEALS) ok(stage[r] === TIER_STAGE[TIER[r]!], `${r} is stage ${stage[r]}, as its tier (${TIER[r]}) says`);
+const rank = (r: ResourceId) => (TIER[r] ? TIER_RANK[TIER[r]!] : r === 'flour' ? 0 : -1);
+const sideways = BUILDINGS.flatMap(d => (d.recipes ?? []).filter(rec => FOOD.includes(rec.output) && (Object.keys(rec.inputs) as InputKey[]).some(k => membersOf(k).some(m => rank(m) >= rank(rec.output)))).map(rec => `${d.id}:${rec.output}`));
+ok(!sideways.length, `every recipe makes something finer than what it takes${sideways.length ? ': ' + sideways.join(', ') : ''}`);
 
-// 3. Buildings stay small, and morale buildings make nothing.
-const heavy = BUILDINGS.filter(d => (d.recipes ?? []).length > 4).map(d => d.id);
-ok(!heavy.length, `no building has more than four recipes${heavy.length ? ': ' + heavy.join(', ') : ''}`);
+// 3. Buildings have one role each: gather, convert raw goods, process one level up, or serve. None makes two steps of
+// one chain (nothing it makes goes into another of its own recipes), none has more than three recipes, and morale
+// buildings make nothing.
+const heavy = BUILDINGS.filter(d => (d.recipes ?? []).length > 3).map(d => d.id);
+ok(!heavy.length, `no building has more than three recipes${heavy.length ? ': ' + heavy.join(', ') : ''}`);
+// (the food and drink buildings: the woodcutter's rough planks are the one materials fallback)
+const FOODHOUSES = BUILDINGS.filter(d => (d.recipes ?? []).some(r => FOOD.includes(r.output) || r.output === 'flour'));
+const twoStep = FOODHOUSES.filter(d => { const outs = new Set((d.recipes ?? []).map(r => r.output)); return (d.recipes ?? []).some(r => (Object.keys(r.inputs) as InputKey[]).some(k => membersOf(k).some(m => outs.has(m)))); }).map(d => d.id);
+ok(!twoStep.length, `no building makes two steps of one chain${twoStep.length ? ': ' + twoStep.join(', ') : ''}`);
+const mixed = FOODHOUSES.filter(d => { const rs = d.recipes ?? []; return rs.some(r => !Object.keys(r.inputs).length) && rs.some(r => Object.keys(r.inputs).length); }).map(d => d.id);
+ok(!mixed.length, `gatherers only gather${mixed.length ? ': ' + mixed.join(', ') : ''}`);
 ok(['tavern', 'bathhouse', 'stage', 'cottage'].every(id => !BUILDINGS.find(d => d.id === id)!.recipes), 'the tavern, bathhouse, stage and cottage make nothing');
-// processing needs a draft: nothing the town starts with or studies grinds flour or mashes
-ok(BUILDINGS.filter(d => (d.recipes ?? []).some(r => r.output === 'flour' || r.output === 'mash')).every(d => d.draftable), 'only drafted buildings grind flour or mash');
+ok(BUILDINGS.filter(d => (d.recipes ?? []).some(r => r.output === 'flour' && r.stars > 1)).every(d => d.draftable), 'only a drafted building grinds flour at full speed');
+// the quality rules (claude/mumblewood-flat-ladder.md): one building per quality recipe; each quality kitchen leans
+// mostly on a different good-tier workshop; every quality meal takes from two workshops
+const QUALITY = FOOD.filter(r => TIER[r] === 'quality');
+const makersOf = (r: ResourceId) => BUILDINGS.filter(d => (d.recipes ?? []).some(x => x.output === r && Object.keys(x.inputs).length));
+for (const r of QUALITY) ok(makersOf(r).length === 1, `${r} is made in one building (${makersOf(r).map(d => d.id).join(', ')})`);
+const goodMaker = (m: ResourceId) => makersOf(m).filter(d => (d.recipes ?? []).some(x => x.output === m && x.stars === 3)).map(d => d.id);
+const qualityMealKitchens = [...new Set(MEALS.filter(r => TIER[r] === 'quality').map(r => makersOf(r)[0].id))];
+const leansOn = (id: string) => {
+  const n: Record<string, number> = {};
+  for (const rec of BUILDINGS.find(d => d.id === id)!.recipes ?? []) for (const k of Object.keys(rec.inputs) as InputKey[]) for (const m of membersOf(k)) if (TIER[m] === 'good') for (const g of goodMaker(m)) n[g] = (n[g] ?? 0) + 1;
+  return Object.entries(n).sort((a, b) => b[1] - a[1])[0]?.[0];
+};
+const leans = qualityMealKitchens.map(leansOn);
+ok(qualityMealKitchens.length >= 2 && new Set(leans).size === leans.length, `each quality kitchen leans on a different workshop (${qualityMealKitchens.map((k, i) => `${k}: ${leans[i]}`).join(', ')})`);
+for (const r of MEALS.filter(r => TIER[r] === 'quality')) {
+  const rec = makersOf(r)[0].recipes!.find(x => x.output === r)!;
+  const from = new Set((Object.keys(rec.inputs) as InputKey[]).flatMap(k => membersOf(k).flatMap(m => makersOf(m).filter(d => (d.recipes ?? []).some(x => x.output === m && x.stars === 3)).map(d => d.id))));
+  ok(from.size >= 2, `${r} takes from two workshops (${[...from].join(', ')})`);
+}
 
 // 4. Every map. For each pair of sites, the fewest drafts and the labour to reach each stage, and no stage that any one
 // drafted building gates. A route is a set of drafted buildings and the worker-hours a unit takes (walking left out).
@@ -75,7 +98,7 @@ function routesOn(w: World, without?: string) {
   return routes;
 }
 const STAGES: [string, ResourceId[]][] = [];
-for (const kind of ['meal', 'drink'] as const) for (const t of ['simple', 'refined', 'quality', 'magnificent'] as GoodTier[]) {
+for (const kind of ['meal', 'drink'] as const) for (const t of ['plain', 'good', 'quality'] as GoodTier[]) {
   const goods = (kind === 'meal' ? MEALS : DRINKS).filter(r => TIER[r] === t);
   if (goods.length) STAGES.push([`${t} ${kind}`, goods]);
 }
@@ -100,7 +123,7 @@ for (const [label, row] of Object.entries(table)) {
   ok(Math.max(...row.hours) / Math.min(...row.hours) < 1.1, `${label}: labour within 10% across maps (${Math.min(...row.hours).toFixed(2)}–${Math.max(...row.hours).toFixed(2)} h)`);
 }
 console.log('fewest drafts per stage:', Object.fromEntries(Object.entries(table).map(([k, v]) => [k, v.min[0]])));
-const meals = ['simple meal', 'refined meal', 'quality meal', 'magnificent meal'].map(k => table[k].min[0]);
+const meals = ['plain meal', 'good meal', 'quality meal'].map(k => table[k].min[0]);
 ok(meals.every((m, i) => i === 0 || m >= meals[i - 1]), `meals never get easier to reach as they get finer (${meals.join(', ')})`);
 
 // 5. Each route really runs.
@@ -117,16 +140,18 @@ function shop(seed: number, def: string, recipeOn: number, stock: Partial<Record
 const made = (w: World, r: ResourceId, at: string) => (w.flows[`${r}:+${at}`] ?? 0) > 1;
 const used = (w: World, r: ResourceId, at: string) => (w.flows[`${r}:-${at}`] ?? 0) > 0;
 { const w = shop(5, 'forager', 2, {}); ok(made(w, 'acorns', 'forager'), 'any forager hut can gather acorns'); }
-{ const w = shop(5, 'mill', 0, { acorns: 30, grain: 0, mushrooms: 0 }); ok(made(w, 'flour', 'mill') && used(w, 'acorns', 'mill'), 'the mill grinds acorns into flour'); }
-{ const w = shop(5, 'malthouse', 2, { mushrooms: 30 }); ok(made(w, 'driedMushrooms', 'malthouse'), 'the malthouse dries mushrooms'); }
-{ const w = shop(5, 'pieoven', 0, { bread: 20 }); ok(made(w, 'pie', 'pieoven') && used(w, 'bread', 'pieoven') && used(w, 'berries', 'pieoven'), 'a fruit pie from bread and berries'); }
-{ const w = shop(5, 'smokehouse', 2, { driedMushrooms: 20, bread: 20, fish: 0, smokedFish: 0 }); ok(made(w, 'hotpot', 'smokehouse') && used(w, 'driedMushrooms', 'smokehouse'), 'hotpot from dried mushrooms and bread, with no fish'); }
-{ const w = shop(5, 'stillhouse', 1, { cider: 20, herbs: 20 }); ok(made(w, 'mulled', 'stillhouse') && used(w, 'cider', 'stillhouse'), 'a mulled cup from cider and herbs at the still house'); }
-{ const w = shop(5, 'smokehouse', 3, { skewers: 20, mulled: 20 }); ok(made(w, 'platter', 'smokehouse'), 'a braised platter from skewers and a mulled cup'); }
+{ const w = shop(5, 'mill', 0, { acorns: 30, grain: 0 }); ok(made(w, 'flour', 'mill') && used(w, 'acorns', 'mill'), 'the mill grinds acorns into flour'); }
+{ const w = shop(5, 'smokehouse', 1, { mushrooms: 30 }); ok(made(w, 'driedMushrooms', 'smokehouse'), 'the smokehouse dries mushrooms'); }
+{ const w = shop(5, 'bakery', 1, { flour: 20 }); ok(made(w, 'pie', 'bakery') && used(w, 'flour', 'bakery') && used(w, 'berries', 'bakery'), 'a fruit pie from flour and berries'); }
+{ const w = shop(5, 'cookhouse', 0, { smokedFish: 20, driedMushrooms: 20, herbs: 0 }); ok(made(w, 'hotpot', 'cookhouse') && used(w, 'driedMushrooms', 'cookhouse'), 'hotpot from smoked fish and dried mushrooms, with no herbs'); }
+{ const w = shop(5, 'supperhouse', 1, { porridge: 20, driedMushrooms: 20 }); ok(made(w, 'harvest', 'supperhouse'), 'a harvest supper from porridge and dried mushrooms'); }
+{ const w = shop(5, 'pieoven', 1, { pie: 20, hotpot: 20 }); ok(made(w, 'banquet', 'pieoven'), 'a banquet pie from fruit pie and hotpot'); }
+{ const w = shop(5, 'brewery', 0, { grain: 30 }); ok(made(w, 'ale', 'brewery') && used(w, 'grain', 'brewery'), 'ale straight from grain'); }
+{ const w = shop(5, 'stillhouse', 1, { cider: 20, herbs: 20 }); ok(made(w, 'hippocras', 'stillhouse') && used(w, 'cider', 'stillhouse'), 'hippocras from cider and herbs at the still house'); }
 
-// 7. Traders never carry refined goods or better.
-ok(TRADERS.every(t => t.sells.every(tradeable)), 'no trader lists a refined good or better');
-ok(tradeable('flour') && tradeable('acorns') && tradeable('ale') && !tradeable('pie') && !tradeable('mulled'), 'raw goods, intermediates and simple drinks can be bought; refined goods cannot');
+// 7. Traders never carry quality goods.
+ok(TRADERS.every(t => t.sells.every(tradeable)), 'no trader lists a quality good');
+ok(tradeable('flour') && tradeable('acorns') && tradeable('ale') && tradeable('bread') && !tradeable('fishpie') && !tradeable('spirits'), 'raw, plain and good goods can be bought; quality goods cannot');
 ok(RESOURCES.every(r => BASE_RATE[r.id] > 0), 'every good has a rate');
 
 console.log(`ladder: ${n} checks passed`);

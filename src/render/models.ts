@@ -365,8 +365,17 @@ export const MODELS: Record<string, (c: ModelCtx) => Model> = {
       ...appleCrate(0.36, 0.84), ...appleCrate(0.68, 0.86),
     ];
   },
-  /** a kiln house with a tall pyramid vent, grist sacks by the door and mushrooms drying on a rack */
-  malthouse: c => {
+  /** a supper house: a cottage kitchen with a long trestle table and benches out front */
+  supperhouse: c => [
+    ...house(c, { u0: 0.08, v0: 0.06, u1: 0.92, v1: 0.52, kind: 'gableV', rise: 12, doorAt: 0.5 }),
+    box(0.16, 0.66, 0.84, 0.8, 7, 8.5, 0x8a6038, 0x9a7048),
+    box(0.2, 0.69, 0.24, 0.77, 0, 7, TIMBER), box(0.76, 0.69, 0.8, 0.77, 0, 7, TIMBER),
+    box(0.18, 0.58, 0.82, 0.62, 0, 4.5, shade(0x8a6038, 0.85)), box(0.18, 0.84, 0.82, 0.88, 0, 4.5, shade(0x8a6038, 0.85)),
+    { ...column(0.38, 0.73, 0.05, 8.5, 10, 0xe8d8b0, 0xa0703e, 8), layer: 1 },
+    { ...column(0.62, 0.73, 0.05, 8.5, 10, 0xc89048, 0xc89048, 8), layer: 1 },
+  ],
+  /** a cookhouse with a tall pyramid vent over its hearth, flour sacks by the door and mushrooms on a rack */
+  cookhouse: c => {
     const roof = c.def.roof;
     return [
       ...house(c, { u0: 0.08, v0: 0.1, u1: 1.6, v1: 0.74, kind: 'gableU', rise: 14, doorAt: 0.35 }),
