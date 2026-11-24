@@ -141,13 +141,6 @@ const ART: Record<ResourceId, () => string> = {
     const slice = (x: number, y: number) => pa(`M${x - 2.6} ${y}c0-2.2 1.2-3.2 2.6-3.2s2.6 1 2.6 3.2z`, cap) + re(x - 0.9, y - 0.2, 1.8, 2.6, stem, 0.6) + pa(`M${x} ${y - 3.2}c1.4 0 2.6 1 2.6 3.2H${x}z`, sh(cap, 0.8));
     return shadow(9) + ln('M2.6 6.4c4 3 14.8 3 18.8 0', '#c8b48a', 0.8) + slice(6.4, 10.6) + slice(12, 11.6) + slice(17.6, 10.6) + ln('M2.6 6.4v12', '#7a5a3a', 0.9) + ln('M21.4 6.4v12', '#7a5a3a', 0.9);
   },
-  porridge: () => {
-    // a bowl of oat porridge with a drizzle of honey
-    const bowl = '#c8b89a', p = '#e8d8b0';
-    return shadow(9) + pa('M3.5 12h17c0 4.6-3.6 8.2-8.5 8.2S3.5 16.6 3.5 12z', bowl) + pa('M12 12h8.5c0 4.6-3.6 8.2-8.5 8.2z', sh(bowl, 0.8))
-      + el(12, 12, 8.5, 2.6, p) + el(11, 11.6, 5.4, 1.4, sh(p, 1.06)) + ln('M7.6 11.6c2 1.2 4.6-.8 6.6.2s2.4-.4 3.2-.6', '#e8a21c', 1) + ci(14.6, 12.4, 0.8, '#c04a6a')
-      + re(4.6, 13.2, 14.8, 1, sh(bowl, 1.2), 0.5, ' opacity=".7"') + steam(9.6, 8.6);
-  },
   cordial: () => {
     // a round bottle of red cordial with a ribbon at the neck
     const glass = '#e0d8d8', c = '#c0406a';
@@ -168,7 +161,7 @@ const ART: Record<ResourceId, () => string> = {
     return shadow(9) + el(12, 15.6, 9, 3.6, dish) + re(3.2, 12.4, 17.6, 3.4, sh(dish, 0.85)) + el(12, 12.4, 8.8, 3.4, c) + el(12, 12, 6.4, 2, sh(c, 1.12))
       + pa('M15.8 9.6l4.4-3.2-.4 2.8 2 .4-3.8 2.4z', '#9c8c7a') + pa('M15.8 9.6l2.2 1.4-1.6.8z', sh('#9c8c7a', 0.8)) + ln('M8 11.6l2 1.2M11 10.6l1.8 1.4', sh(c, 0.75), 0.8) + steam(7.8, 9);
   },
-  banquet: () => {
+  honeycake: () => {
     // a tall raised pie with a crimped crown of pastry and a sprig on top
     const c = '#e8b84a', dish = '#b8a070';
     return shadow(9) + el(12, 18.4, 9, 2.6, dish) + re(5, 9.4, 14, 8.6, sh(c, 0.85)) + re(12, 9.4, 7, 8.6, sh(c, 0.7)) + el(12, 9.4, 7, 2.2, c)
@@ -176,9 +169,9 @@ const ART: Record<ResourceId, () => string> = {
       + ci(12, 9.2, 1.1, '#a8324a') + leaf(13.6, 7.4, -30, '#5e8f42');
   },
   harvest: () => {
-    // a wooden bowl of porridge crowned with dried mushroom slices, a sprig of herbs at the side
-    const bowl = '#a0703e', p = '#e8d8b0', cap = '#8a6a5a';
-    const slice = (x: number, y: number) => pa(`M${x - 1.8} ${y}c0-1.6.8-2.4 1.8-2.4s1.8.8 1.8 2.4z`, cap) + re(x - 0.6, y - 0.1, 1.2, 1.4, '#e0d2b4', 0.4);
+    // a wooden bowl of hotpot with fruit on top, a sprig of herbs at the side
+    const bowl = '#a0703e', p = '#a86a3a', cap = '#b03a4a';
+    const slice = (x: number, y: number) => el(x, y - 0.8, 1.6, 1.5, cap) + el(x - 0.5, y - 1.3, 0.5, 0.4, '#e88a8a');
     return shadow(10) + pa('M3.5 12h17c0 4.6-3.6 8.2-8.5 8.2S3.5 16.6 3.5 12z', bowl) + pa('M12 12h8.5c0 4.6-3.6 8.2-8.5 8.2z', sh(bowl, 0.8))
       + el(12, 12, 8.5, 2.6, p) + el(11, 11.6, 5.4, 1.4, sh(p, 1.06)) + slice(8.6, 12) + slice(12.2, 11.4) + slice(15.6, 12.2)
       + leaf(18.6, 9.6, -30, '#5a9a4a') + leaf(17, 9, 30, '#6aa84a') + steam(9.6, 8.2);
@@ -260,7 +253,7 @@ const ART: Record<ResourceId, () => string> = {
 
 /** "any meal", "any drink" and the like use a representative good */
 const CATEGORY_ICON: Record<Category | SlotId, ResourceId> = { rawFood: 'berries', meal: 'stew', drink: 'ale', fine: 'planks', remedy: 'tonic',
-  grist: 'grain', fruit: 'berries', sweet: 'honey', spice: 'herbs', cured: 'smokedFish', brew: 'ale', relish: 'driedMushrooms', feastMeal: 'banquet', feastDrink: 'hippocras' };
+  grist: 'grain', fruit: 'berries', sweet: 'honey', spice: 'herbs', cured: 'smokedFish', brew: 'ale', relish: 'driedMushrooms', feastMeal: 'honeycake', feastDrink: 'hippocras' };
 
 /** each building's signature object, in the same style: what you'd spot first on its lot */
 const BUILDING_ART: Record<string, () => string> = {

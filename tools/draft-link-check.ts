@@ -79,12 +79,12 @@ function feastTown(defs: string[], larder: Record<string, number>, ready = false
   autoBuild(w);
   const on = (id: string, out: string) => { const b = at(id); return recipesOf(b).some((r, i) => r.output === out && recipeOn(b, i)); };
   const onAt = (id: string) => recipesOf(at(id)).filter((r, i) => recipeOn(at(id), i)).map(r => r.output).join('+');
-  check((on('pieoven', 'banquet') || on('pieoven', 'fishpie')) && on('smokehouse', 'smokedFish') && (on('bakery', 'pie') || on('bakery', 'bread')),
+  check((on('pieoven', 'honeycake') || on('pieoven', 'fishpie')) && on('smokehouse', 'smokedFish') && (on('bakery', 'pie') || on('bakery', 'bread')),
     `for quality meals the pie oven, the smokehouse and the bakery all work the route (pie oven ${onAt('pieoven')}, smokehouse ${onAt('smokehouse')}, bakery ${onAt('bakery')}, cookhouse ${onAt('cookhouse')})`);
 }
 {
   // a larder one drink short gets a whole one more
-  const { w, pav } = feastTown([], { banquet: 12, cordial: 11 });
+  const { w, pav } = feastTown([], { honeycake: 12, cordial: 11 });
   for (const c of alive(w)) { c.tastes = { loves: [], dislikes: [] }; c.sulking = false; }
   w.res.cordial = 20;
   for (let h = 0; h < 24 && (pav.delivered.cordial ?? 0) < 12; h++) runHours(w, 1);
@@ -92,7 +92,7 @@ function feastTown(defs: string[], larder: Record<string, number>, ready = false
 }
 {
   // a stocked larder of nothing but cordial, and a guest who can't stand it: the feast is ready all the same
-  const { w, pav } = feastTown([], { banquet: 14, cordial: 14 }, true);
+  const { w, pav } = feastTown([], { honeycake: 14, cordial: 14 }, true);
   for (const c of alive(w)) { c.tastes = { loves: [], dislikes: [] }; c.sulking = false; }
   alive(w)[0].tastes.dislikes = ['cordial'];
   w.res.hippocras = 3;

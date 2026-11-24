@@ -13,7 +13,7 @@ ok(FOOD.every(r => TIER[r]), 'every meal and drink has a tier');
 ok(MEALS.every(r => MEAL_MOOD[r] === TIER_MOOD[TIER[r]!]) && DRINKS.every(r => DRINK_MOOD[r] === TIER_MOOD[TIER[r]!]), 'meal and drink mood come from the tier');
 ok((['stew', 'smokedFish', 'driedMushrooms'] as ResourceId[]).every(r => TIER[r] === 'plain'), 'stew, smoked fish and dried mushrooms are plain');
 ok(DRINKS.every(r => TIER[r] !== 'good'), 'drinks are plain or quality');
-ok(MEALS.indexOf('banquet') < MEALS.indexOf('pie') && MEALS.indexOf('pie') < MEALS.indexOf('stew'), 'with no favourite, finer meals are eaten first');
+ok(MEALS.indexOf('honeycake') < MEALS.indexOf('pie') && MEALS.indexOf('pie') < MEALS.indexOf('stew'), 'with no favourite, finer meals are eaten first');
 for (const t of ['plain', 'good', 'quality'] as GoodTier[]) ok(MEALS.filter(r => TIER[r] === t).length >= 2, `at least two meals are ${t}`);
 for (const t of ['plain', 'quality'] as GoodTier[]) ok(DRINKS.filter(r => TIER[r] === t).length >= 2, `at least two drinks are ${t}`);
 
@@ -34,8 +34,10 @@ ok(!sideways.length, `every recipe makes something finer than what it takes${sid
 // 3. Buildings have one role each: gather, convert raw goods, process one level up, or serve. None makes two steps of
 // one chain (nothing it makes goes into another of its own recipes), none has more than three recipes, and morale
 // buildings make nothing.
-const heavy = BUILDINGS.filter(d => (d.recipes ?? []).length > 3).map(d => d.id);
-ok(!heavy.length, `no building has more than three recipes${heavy.length ? ': ' + heavy.join(', ') : ''}`);
+// (a gatherer may have four: the forager picks a little of everything, slowly)
+const isGatherer = (d: BuildingDef) => (d.recipes ?? []).every(r => !Object.keys(r.inputs).length);
+const heavy = BUILDINGS.filter(d => (d.recipes ?? []).length > (isGatherer(d) ? 4 : 3)).map(d => d.id);
+ok(!heavy.length, `no workshop has more than three recipes, no gatherer more than four${heavy.length ? ': ' + heavy.join(', ') : ''}`);
 // (the food and drink buildings: the woodcutter's rough planks are the one materials fallback)
 const FOODHOUSES = BUILDINGS.filter(d => (d.recipes ?? []).some(r => FOOD.includes(r.output) || r.output === 'flour'));
 const twoStep = FOODHOUSES.filter(d => { const outs = new Set((d.recipes ?? []).map(r => r.output)); return (d.recipes ?? []).some(r => (Object.keys(r.inputs) as InputKey[]).some(k => membersOf(k).some(m => outs.has(m)))); }).map(d => d.id);
@@ -60,8 +62,11 @@ const leans = qualityMealKitchens.map(leansOn);
 ok(qualityMealKitchens.length >= 2 && new Set(leans).size === leans.length, `each quality kitchen leans on a different workshop (${qualityMealKitchens.map((k, i) => `${k}: ${leans[i]}`).join(', ')})`);
 for (const r of QUALITY) {
   const rec = makersOf(r)[0].recipes!.find(x => x.output === r)!;
-  const from = new Set((Object.keys(rec.inputs) as InputKey[]).flatMap(k => membersOf(k).flatMap(m => makersOf(m).filter(d => (d.recipes ?? []).some(x => x.output === m && x.stars === 3)).map(d => d.id))));
-  ok(from.size >= 2, `${r} takes from two workshops (${[...from].join(', ')})`);
+  // two inputs, and no one building can make them all (a gatherer's accent counts as a building of its own)
+  const keys = Object.keys(rec.inputs) as InputKey[];
+  const makers = keys.map(k => new Set(membersOf(k).flatMap(m => BUILDINGS.filter(d => (d.recipes ?? []).some(x => x.output === m)).map(d => d.id))));
+  const both = [...makers[0]].filter(id => makers.every(ms => ms.has(id)));
+  ok(keys.length >= 2 && !both.length, `${r} takes from two buildings (${keys.map((k, i) => `${k}: ${[...makers[i]].join('/')}`).join('; ')})`);
 }
 
 // 4. Every map. For each pair of sites, the fewest drafts and the labour to reach each stage, and no stage that any one
@@ -90,7 +95,8 @@ function routesOn(w: World, without?: string) {
         for (const [k, amt] of Object.entries(rec.inputs) as [InputKey, number][]) {
           const opts = membersOf(k).flatMap(m => routes(m, depth - 1));
           if (!opts.length) { combos = []; break; }
-          combos = prune(combos.flatMap(c => opts.map(x => ({ d: new Set([...c.d, ...x.d]), h: c.h + amt * x.h }))));
+          // per unit made: a batch of `make` takes `amt` of this input
+          combos = prune(combos.flatMap(c => opts.map(x => ({ d: new Set([...c.d, ...x.d]), h: c.h + (amt / rec.make) * x.h }))));
         }
         out.push(...combos);
       }
@@ -105,7 +111,7 @@ for (const kind of ['meal', 'drink'] as const) for (const t of ['plain', 'good',
   if (goods.length) STAGES.push([`${t} ${kind}`, goods]);
 }
 const table: Record<string, { min: number[]; hours: number[] }> = {};
-const gates: string[] = [];
+const gates: string[] = [], cores: string[] = [];
 for (let i = 0; i < SITE_IDS.length; i++) for (let j = i + 1; j < SITE_IDS.length; j++) {
   // maps always have a drink site (world.ts DRINK_SITES): a clay bank and oaks together never happen
   if (![SITE_IDS[i], SITE_IDS[j]].some(x => DRINK_SITES.includes(x))) continue;
@@ -120,8 +126,15 @@ for (let i = 0; i < SITE_IDS.length; i++) for (let j = i + 1; j < SITE_IDS.lengt
     // into plain ones) may: those are the must-drafts of the flat ladder. Workshops that process up may not.
     const always = [...new Set(rs.flatMap(r => [...r.d]))].filter(d => rs.every(r => r.d.has(d)) && !CONVERTERS.has(d));
     if (always.length) gates.push(`${label} on ${w.sites.join('+')} needs ${always.join(', ')}`);
+    // root families (claude/mumblewood-root-families.md): no workshop at all, converters included, is in every
+    // quality-meal route, so runs don't collapse back to one core
+    if (label === 'quality meal') {
+      const core = [...new Set(rs.flatMap(r => [...r.d]))].filter(d => rs.every(r => r.d.has(d)));
+      if (core.length) cores.push(`${w.sites.join('+')} needs ${core.join(', ')}`);
+    }
   }
 }
+ok(!cores.length, `no workshop is in every quality-meal route on any map${cores.length ? ': ' + cores.join('; ') : ''}`);
 ok(!gates.length, `no stage hangs on one processing workshop on any map${gates.length ? ': ' + gates.join('; ') : ''}`);
 for (const [label, row] of Object.entries(table)) {
   ok(Math.min(...row.min) === Math.max(...row.min), `${label}: the same fewest drafts on every map (${[...new Set(row.min)].join(', ')})`);
@@ -148,9 +161,10 @@ const used = (w: World, r: ResourceId, at: string) => (w.flows[`${r}:-${at}`] ??
 { const w = shop(5, 'mill', 0, { acorns: 30, grain: 0 }); ok(made(w, 'flour', 'mill') && used(w, 'acorns', 'mill'), 'the mill grinds acorns into flour'); }
 { const w = shop(5, 'smokehouse', 1, { mushrooms: 30 }); ok(made(w, 'driedMushrooms', 'smokehouse'), 'the smokehouse dries mushrooms'); }
 { const w = shop(5, 'bakery', 1, { flour: 20 }); ok(made(w, 'pie', 'bakery') && used(w, 'flour', 'bakery') && used(w, 'berries', 'bakery'), 'a fruit pie from flour and berries'); }
-{ const w = shop(5, 'cookhouse', 0, { smokedFish: 20, driedMushrooms: 20, herbs: 0 }); ok(made(w, 'hotpot', 'cookhouse') && used(w, 'driedMushrooms', 'cookhouse'), 'hotpot from smoked fish and dried mushrooms, with no herbs'); }
-{ const w = shop(5, 'supperhouse', 1, { porridge: 20, driedMushrooms: 20 }); ok(made(w, 'harvest', 'supperhouse'), 'a harvest supper from porridge and dried mushrooms'); }
-{ const w = shop(5, 'pieoven', 1, { pie: 20, hotpot: 20 }); ok(made(w, 'banquet', 'pieoven'), 'a banquet pie from fruit pie and hotpot'); }
+{ const w = shop(5, 'cookhouse', 0, { smokedFish: 0, driedMushrooms: 20, herbs: 20 }); ok(made(w, 'hotpot', 'cookhouse') && used(w, 'driedMushrooms', 'cookhouse') && used(w, 'herbs', 'cookhouse'), 'hotpot from dried mushrooms and herbs, with no fish'); }
+{ const w = shop(5, 'supperhouse', 0, { hotpot: 20, apples: 0 }); ok(made(w, 'harvest', 'supperhouse') && used(w, 'berries', 'supperhouse'), 'a harvest supper from hotpot and berries'); }
+{ const w = shop(5, 'pieoven', 0, { pie: 20, honey: 20 }); ok(made(w, 'honeycake', 'pieoven'), 'a honey cake from fruit pie and something sweet'); }
+{ const w = shop(5, 'forager', 3, {}); ok(made(w, 'mushrooms', 'forager'), 'the forager finds a few mushrooms'); }
 { const w = shop(5, 'brewery', 0, { grain: 30 }); ok(made(w, 'ale', 'brewery') && used(w, 'grain', 'brewery'), 'ale straight from grain'); }
 { const w = shop(5, 'stillhouse', 0, { cider: 20, herbs: 20 }); ok(made(w, 'hippocras', 'stillhouse') && used(w, 'cider', 'stillhouse'), 'hippocras from cider and herbs at the still house'); }
 
