@@ -161,9 +161,38 @@ function fineTargets(w: World) {
     if (cur !== target) apply(w, { type: 'productionLimit', building: b.uid, output: r.output, limit: target });
   }
 }
+/**
+ * Bills for a gatherer with several finds (the forager: berries, and a few herbs, acorns and mushrooms) and for the
+ * stew pot. Without them the forager only ever picks berries (the best recipe is always ready) and a small colony's
+ * mill and smokehouse wait on acorns and mushrooms nobody gathers, while the kitchen stacks hundreds of stews.
+ * Each find a built workshop uses is capped at a few days' worth, so the forager moves on to the next; finds nothing
+ * uses are switched off.
+ */
+function gathererBills(w: World) {
+  const pop = alive(w).length;
+  const uses = (r: ResourceId) => built(w).some(b => !b.paused && recipesOf(b).some((x, i) => recipeOn(b, i) && (Object.keys(x.inputs) as InputKey[]).some(k => membersOf(k).includes(r))));
+  for (const b of built(w)) {
+    const recs = recipesOf(b);
+    if (b.def === 'kitchen') {
+      const i = recs.findIndex(r => r.output === 'stew'); const cap = Math.max(12, pop * 4);
+      if (i >= 0 && b.productionLimits?.stew !== cap) apply(w, { type: 'productionLimit', building: b.uid, output: 'stew', limit: cap });
+      continue;
+    }
+    if (recs.length < 2 || recs.some(r => Object.keys(r.inputs).length)) continue;
+    const slow = recs.filter(r => r.stars < 3).map(r => r.output);
+    const needed = slow.filter(uses);
+    recs.forEach((r, i) => {
+      const on = r.stars === 3 || needed.includes(r.output);
+      if (on !== recipeOn(b, i)) apply(w, { type: 'toggleRecipe', building: b.uid, recipe: i, on });
+      const limit = !needed.length ? null : r.stars === 3 ? Math.max(15, pop * 4) : 12;
+      if ((b.productionLimits?.[r.output] ?? null) !== limit) apply(w, { type: 'productionLimit', building: b.uid, output: r.output, limit });
+    });
+  }
+}
 function manageRecipes(w: World) {
   const pop = alive(w).length;
   if (BOT.fineCap > 0) fineTargets(w);
+  if (BOT.smallColony) gathererBills(w);
   const rough = roughPlankMaker(w);
   const wanted = new Set<ResourceId>();
   // a finale's categories are worked along one chosen route each: its steps' goods, in its own workshops
@@ -614,6 +643,63 @@ export function cheapestRoute(w: World, goods: ResourceId[], qty: number): { goo
  * Blueprints that would open a route for a finale category the colony has no way to make yet: one that does it alone,
  * or else either half of the cheapest pair. These rank with the charter's missing links in a draft.
  */
+/**
+ * The win plan (claude/mumblewood-root-families.md): the fewest blueprints still to draft to finish a tier-2 charter
+ * (the one picked, or `charter` when weighing a pick) and then the finale's quality meal and quality drink, on this map.
+ * Each good's routes are the sets of drafted buildings that make it; the plan is the cheapest union of a tier-2 route,
+ * a meal route and a drink route, counting what's owned as free. The bot drafts toward it from the start, so the
+ * charter's buildings are the ones the finale reuses.
+ */
+export function winPlan(w: World, charter = w.charter): { need: string[]; meal?: ResourceId; drink?: ResourceId } {
+  const key = `${w.version}:${w.owned.length}:${charter}:${w.charterTier}`;
+  const cached = PLAN_CACHE.get(w);
+  if (cached?.key === key) return cached.plan;
+  const memo = new Map<string, Set<string>[]>();
+  const usable = BUILDINGS.filter(d => siteOk(w, d) && !ROUTE_AVOID.includes(d.id));
+  const routes = (good: ResourceId, depth = 6): Set<string>[] => {
+    const k = good + depth; if (memo.has(k)) return memo.get(k)!;
+    memo.set(k, []);
+    let out: Set<string>[] = [];
+    if (depth >= 0) for (const d of usable) for (const rec of d.recipes ?? []) {
+      if (rec.output !== good) continue;
+      let combos: Set<string>[] = [new Set(d.draftable && !w.owned.includes(d.id) ? [d.id] : [])];
+      for (const k2 of Object.keys(rec.inputs) as InputKey[]) {
+        const opts = membersOf(k2).flatMap(m => routes(m, depth - 1));
+        if (!opts.length) { combos = []; break; }
+        combos = combos.flatMap(c => opts.map(o => new Set([...c, ...o])));
+        combos = pruneSets(combos);
+      }
+      out.push(...combos);
+    }
+    out = pruneSets(out); memo.set(k, out); return out;
+  };
+  const goodsOf = (id: string | null | undefined): ResourceId[] => {
+    const def = id ? charterDef(id) : undefined; if (!def || def.tier !== 2) return [];
+    const parts = def.metric.kind === 'all' ? def.metric.parts : [def.metric];
+    return parts.flatMap(p => (p.kind === 'tally' ? p.resources : []));
+  };
+  const t2goods = w.charterTier <= 2 ? goodsOf(charter) : [];
+  const t2 = t2goods.length ? t2goods.flatMap(g => routes(g)) : [new Set<string>()];
+  let best: { need: string[]; meal?: ResourceId; drink?: ResourceId } = { need: [] };
+  let bestN = Infinity;
+  for (const meal of FEAST_MEALS) for (const mr of routes(meal)) for (const drink of FEAST_DRINKS) for (const dr of routes(drink)) for (const tr of t2) {
+    const u = new Set([...mr, ...dr, ...tr]);
+    if (u.size < bestN) { bestN = u.size; best = { need: [...u], meal, drink }; }
+  }
+  PLAN_CACHE.set(w, { key, plan: best });
+  return best;
+}
+const PLAN_CACHE = new WeakMap<World, { key: string; plan: { need: string[]; meal?: ResourceId; drink?: ResourceId } }>();
+/** keep only the smallest sets: drop any set that contains another */
+function pruneSets(xs: Set<string>[]): Set<string>[] {
+  const uniq = new Map<string, Set<string>>();
+  for (const x of xs) uniq.set([...x].sort().join('+'), x);
+  const all = [...uniq.values()].sort((a, b) => a.size - b.size);
+  const out: Set<string>[] = [];
+  for (const x of all) if (!out.some(o => [...o].every(id => x.has(id)))) out.push(x);
+  return out.slice(0, 24);
+}
+
 export function finaleLinks(w: World): string[] {
   const owed = finaleOwed(w), out = new Set<string>();
   const candidates = BUILDINGS.filter(d => d.draftable && !w.owned.includes(d.id) && !ROUTE_AVOID.includes(d.id) && siteOk(w, d) && (d.recipes ?? []).length).map(d => d.id);
@@ -707,7 +793,7 @@ export function charterChain(w: World): string[] {
  * Experiment switches for the balance tools. `advisor` makes the bot play from what's on screen (the complaint
  * panel) instead of its own rules; it's off by default because, so far, it plays worse (see the project doc).
  */
-export const BOT = { dailyQuality: true, supperRules: true, urgentClinic: true, clinicWoodBuffer: 10, seasonalStaffing: true, feasibleVariety: true, summerBank: false, summerService: false, fineInputs: true, plannedRoughDemand: true, chainGatherers: false, roughPlanks: true, roughPlankBudget: 12, roughWoodStart: 35, roughWoodStop: 20, roughKeepWinterReserve: false, clothingReserve: false, clothingDeadline: false, clothingBatch: false, researchFeasible: false, populationTargets: false, randomize: [] as string[], trade: true, shopsByStore: false, layout: true, hutPull: 0.3, recipes: true, rateStaffing: false, unlockChain: true, ruleGap: true, hallMood: true, varietyRules: true, bankDrinks: true, bankHall: false, chainBeforeWinter: true, effortPick: true, comfortsFirst: false, recruitCap: 99, recruitExtra: 4, comforts: true, foodDepot: 'food' as false | 'food' | 'meals', laborersPer: 5, advisor: false, gate: true, ranked: true, comfort: 'strict' as 'strict' | 'econ' | 'none', rescue: false, rescueAt: 40, moodBlock: false, reroll: true, variety: false, routes: false, finaleRoutes: true, routeOnlyReserve: true, finaleFare: true, push: 'rule' as 'rule' | 'never' | 'always', pushDays: 3, billOrder: true, downstreamFirst: true, wants: true, chainReserve: true, chainFirst: true, rawCounts: true, skipUnused: true, fineCap: 40, routeGatherers: true, off: [] as string[], skip: [] as string[] };
+export const BOT = { winPlan: true, smallColony: true, dailyQuality: true, supperRules: true, urgentClinic: true, clinicWoodBuffer: 10, seasonalStaffing: true, feasibleVariety: true, summerBank: false, summerService: false, fineInputs: true, plannedRoughDemand: true, chainGatherers: false, roughPlanks: true, roughPlankBudget: 12, roughWoodStart: 35, roughWoodStop: 20, roughKeepWinterReserve: false, clothingReserve: false, clothingDeadline: false, clothingBatch: false, researchFeasible: false, populationTargets: false, randomize: [] as string[], trade: true, shopsByStore: false, layout: true, hutPull: 0.3, recipes: true, rateStaffing: false, unlockChain: true, ruleGap: true, hallMood: true, varietyRules: true, bankDrinks: true, bankHall: false, chainBeforeWinter: true, effortPick: true, comfortsFirst: false, recruitCap: 99, recruitExtra: 4, comforts: true, foodDepot: 'food' as false | 'food' | 'meals', laborersPer: 5, advisor: false, gate: true, ranked: true, comfort: 'strict' as 'strict' | 'econ' | 'none', rescue: false, rescueAt: 40, moodBlock: false, reroll: true, variety: false, routes: false, finaleRoutes: true, routeOnlyReserve: true, finaleFare: true, push: 'rule' as 'rule' | 'never' | 'always', pushDays: 3, billOrder: true, downstreamFirst: true, wants: true, chainReserve: true, chainFirst: true, rawCounts: true, skipUnused: true, fineCap: 40, routeGatherers: true, off: [] as string[], skip: [] as string[] };
 
 // ---------- Explaining the bot ----------
 /** one thing the bot decided and why: each option with its score broken into parts, or a staffing or build step */
@@ -786,12 +872,18 @@ export function autoDecide(w: World, style: 'greedy' | 'random' = 'greedy', rand
     } else if (d.kind === 'charter') {
       // prefer charters we're already close to; long mood holds are a gamble
       // the charter with the least left to do: each condition's gap, and the buildings and drafts its goods still need
-      const scoreParts = (id: string): Record<string, number> => (BOT.effortPick ? charterEffort(w, id) : { 'progress already (×−3)': -progressIf(w, id) * 3 });
+      const scoreParts = (id: string): Record<string, number> => {
+        const parts = BOT.effortPick ? charterEffort(w, id) : { 'progress already (×−3)': -progressIf(w, id) * 3 };
+        // a tier-2 charter whose buildings the finale reuses: the drafts the whole win still needs after picking it
+        if (BOT.winPlan && d.tier === 2) parts['drafts left to win'] = winPlan(w, id).need.length;
+        return parts;
+      };
       const score = (id: string) => sumParts(scoreParts(id));
       option = d.options.map(score).reduce((b, s, i, arr) => (s < arr[b] ? i : b), 0);
       if (TRACE.on) note(w, { kind: 'decision', title: `Charter pick (tier ${d.tier})`, better: 'lower', chosen: d.options[option], options: d.options.map(id => ({ id, parts: scoreParts(id), score: score(id) })) });
     } else if (d.kind === 'blueprint') {
       const helpers = charterHelpers(w.charter);
+      const planNeed = BOT.winPlan ? winPlan(w).need : [];
       // the one blueprint the charter's cheapest route is still missing (a mill for the dough) beats any helper
       const links = [...draftLinks(w), ...(BOT.finaleRoutes ? finaleLinks(w) : [])];
       const feedable = (id: string) => id !== 'smokehouse' || w.owned.includes('dock') || w.owned.includes('cellar');
@@ -812,6 +904,7 @@ export function autoDecide(w: World, style: 'greedy' | 'random' = 'greedy', rand
       const rankParts = (id: string): Record<string, number> => ({
         'efficient fine-material upgrade': BOT.roughPlanks && !built(w).some(b => FINE_MAKERS.includes(b.def) && !blockedReason(w,b)) && FINE_MAKERS.includes(id) && usableHere(w,id) ? -120 : 0,
         'the charter\u2019s route waits on it': links.includes(id) ? -110 : 0,
+        'on the win plan': BOT.winPlan && planNeed.includes(id) ? -105 : 0,
         'helps the charter': helpers.includes(id) && feedable(id) ? -100 + helpers.indexOf(id) : 0,
         'a note asks for it': asked.includes(id) ? -50 + asked.indexOf(id) : 0,
         'settlers want it': wantsAsk.includes(id) ? -40 + wantsAsk.indexOf(id) : 0,
@@ -819,10 +912,10 @@ export function autoDecide(w: World, style: 'greedy' | 'random' = 'greedy', rand
         ...usableParts(id),
         ...(BOT.routes ? { 'new kinds it unlocks (×3)': -newKinds(w, id) * 3 } : {}),
       });
-      const rank = (id: string) => (links.includes(id) ? -110 : 0) + (helpers.includes(id) && feedable(id) ? -100 + helpers.indexOf(id) : 0) + (asked.includes(id) ? -50 + asked.indexOf(id) : 0) + (wantsAsk.includes(id) ? -40 + wantsAsk.indexOf(id) : 0) + BLUEPRINT_PRIORITY.indexOf(id) + usable(id);
+      const rank = (id: string) => (BOT.winPlan && planNeed.includes(id) ? -105 : 0) + (links.includes(id) ? -110 : 0) + (helpers.includes(id) && feedable(id) ? -100 + helpers.indexOf(id) : 0) + (asked.includes(id) ? -50 + asked.indexOf(id) : 0) + (wantsAsk.includes(id) ? -40 + wantsAsk.indexOf(id) : 0) + BLUEPRINT_PRIORITY.indexOf(id) + usable(id);
       // nothing on offer the colony is missing and wants: pay for a reroll while gold stays comfortable
       const core = ['sawmill', 'tavern', 'cottage', 'pieoven', 'stage', 'bathhouse', 'dock', ...(DRINK_MAKERS.some(x => w.owned.includes(x)) ? [] : DRINK_MAKERS)];
-      const wanted = (id: string) => links.includes(id) || (helpers.includes(id) && feedable(id)) || asked.includes(id) || wantsAsk.includes(id) || (core.includes(id) && usable(id) < 6);
+      const wanted = (id: string) => planNeed.includes(id) || links.includes(id) || (helpers.includes(id) && feedable(id)) || asked.includes(id) || wantsAsk.includes(id) || (core.includes(id) && usable(id) < 6);
       if (BOT.reroll && !d.options.some(wanted) && w.gold >= rerollCost(w) + 20) {
         const offered = d.options.join(', ');
         if (!apply(w, { type: 'reroll' })) { note(w, { kind: 'decision', title: 'Blueprint reroll', lines: [`nothing wanted in ${offered}; ${Math.floor(w.gold)} gold covers the ${rerollCost(w) - 10} reroll`] }); continue; }
