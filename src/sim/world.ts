@@ -892,7 +892,7 @@ export function createWorld(seed: number, options: { colonists?: number; startDa
   const w: World = {
     recipeBatching: true, startDate, seed, rngState: seed >>> 0, hour: 6,
     colonists: [], buildings: [], terrain: [], paths: [],
-    res: { flax: 0, cloth: 0, hides: 0, leather: 0, coats: 0, wood: 0, berries: 0, fish: 0, mushrooms: 0, stew: 0, pie: 0, smokedFish: 0, planks: 0, ale: 0, apples: 0, grain: 0, honey: 0, cider: 0, mead: 0, clay: 0, reeds: 0, bricks: 0, wicker: 0, herbs: 0, flour: 0, bread: 0, poultice: 0, tonic: 0, acorns: 0, driedMushrooms: 0, porridge: 0, hotpot: 0, cordial: 0, hippocras: 0, supper: 0, fishpie: 0, banquet: 0, harvest: 0, ...sc.res },
+    res: { flax: 0, cloth: 0, hides: 0, leather: 0, coats: 0, wood: 0, berries: 0, fish: 0, mushrooms: 0, stew: 0, pie: 0, smokedFish: 0, planks: 0, ale: 0, apples: 0, grain: 0, honey: 0, cider: 0, mead: 0, clay: 0, reeds: 0, bricks: 0, wicker: 0, herbs: 0, flour: 0, bread: 0, poultice: 0, tonic: 0, acorns: 0, driedMushrooms: 0, hotpot: 0, cordial: 0, hippocras: 0, supper: 0, fishpie: 0, honeycake: 0, harvest: 0, ...sc.res },
     owned: [...sc.unlocked], perks: [], gold: sc.trade.gold, caravan: null,
     charterTier: 1, charter: null, charterHours: 0, chartersDone: [],
     decisions: [], log: [], opinions: {}, status: 'playing', strain: 0, nextEventHour: 24 * 1.6, sites: [], rerolls: 0,
@@ -2045,7 +2045,7 @@ function chooseTask(w: World, c: Colonist): Task | null {
     }
   }
   // hauling finished goods to storage
-  // goods a building site is still waiting on (two banquet pies for the Hall) go as soon as there's one to carry, not
+  // goods a building site is still waiting on (two honey cakes for the Hall) go as soon as there's one to carry, not
   // when a batch of four has piled up: the oven may have stopped at two
   const siteWants = new Set<ResourceId>();
   for (const b of sites(w)) for (const [k, n] of Object.entries(remainingCost(b)) as [InputKey, number][]) if (n > stockOf(w, k)) for (const m of membersOf(k)) siteWants.add(m);
@@ -2601,7 +2601,7 @@ function finishMeal(w: World, c: Colonist) {
   if (meal) {
     c.hunger = 100; w.stats.mealsEaten++;
     const v = (MEAL_MOOD[meal] ?? 5) + bonus;
-    const label = ({ banquet: 'Ate a banquet pie', supper: 'Ate a ploughman\u2019s supper', fishpie: 'Ate fish pie', pie: 'Ate fruit pie', hotpot: 'Ate a hearty hotpot', smokedFish: 'Ate smoked fish', driedMushrooms: 'Chewed dried mushrooms', stew: 'Ate a hot stew', bread: 'Ate fresh bread', porridge: 'Ate warm porridge', harvest: 'Ate a harvest supper' } as Partial<Record<ResourceId, string>>)[meal] ?? `Ate ${goodName(meal)}`;
+    const label = ({ honeycake: 'Ate a honey cake', supper: 'Ate a ploughman\u2019s supper', fishpie: 'Ate fish pie', pie: 'Ate fruit pie', hotpot: 'Ate a hearty hotpot', smokedFish: 'Ate smoked fish', driedMushrooms: 'Chewed dried mushrooms', stew: 'Ate a hot stew', bread: 'Ate fresh bread', harvest: 'Ate a harvest supper' } as Partial<Record<ResourceId, string>>)[meal] ?? `Ate ${goodName(meal)}`;
     addMemory(w, c, 'meal', label, v, 14);
     tasteMemory(w, c, meal);
   } else {
@@ -2705,7 +2705,7 @@ function dailyRelationships(w: World) {
   }
 }
 
-const SWEET: ResourceId[] = ['pie', 'porridge', 'banquet'];
+const SWEET: ResourceId[] = ['pie', 'honeycake'];
 /** is this want of theirs met right now? */
 export function wantMet(w: World, c: Colonist, id: WantId): boolean {
   switch (id) {
@@ -3262,7 +3262,7 @@ function triggerEvent(w: World) {
 }
 
 /** what a stock condition counts, in words: a category's name when it's the whole category, otherwise the goods */
-const STOCK_PLURAL: Partial<Record<ResourceId, string>> = { pie: 'fruit pies', fishpie: 'fish pies', banquet: 'banquet pies', supper: 'ploughman\u2019s suppers', harvest: 'harvest suppers', tonic: 'tonics', poultice: 'poultices', cordial: 'cordials' };
+const STOCK_PLURAL: Partial<Record<ResourceId, string>> = { pie: 'fruit pies', fishpie: 'fish pies', honeycake: 'honey cakes', supper: 'ploughman\u2019s suppers', harvest: 'harvest suppers', tonic: 'tonics', poultice: 'poultices', cordial: 'cordials' };
 export function stockName(goods: ResourceId[]) {
   // a tier and everything above it reads as "good+ meals"; the top tier as "quality drinks"
   for (const [cat, list] of [['meals', MEALS], ['drinks', CATEGORIES.drink.members]] as const) for (const t of ['good', 'quality'] as GoodTier[]) {

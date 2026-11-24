@@ -30,19 +30,19 @@ const path = (r?: { steps: { def: string; output: string }[] }) => r ? r.steps.m
   const owed = finaleOwed(w);
   const N = FINALE_COLONISTS;
   check(owed.feastMeal === N && owed.feastDrink === N, `before the pavilion goes up, the Long Table owes ${N} quality meals and ${N} quality drinks (${JSON.stringify(owed)})`);
-  w.res.banquet = 5;
-  check(finaleOwed(w).feastMeal === N - 5, 'banquet pies in storage count against what it owes');
+  w.res.honeycake = 5;
+  check(finaleOwed(w).feastMeal === N - 5, 'honey cakes in storage count against what it owes');
 }
 {
   const w = town(['dock', 'smokehouse', 'cookhouse', 'pieoven', 'bakery', 'mill']);
   w.res.flour = 30; w.res.herbs = 30;
-  const r = cheapestRoute(w, ['banquet'], 14);
-  check(!!r && r.good === 'banquet' && r.steps.at(-1)!.output === 'banquet' && r.steps.some(x => x.output === 'pie') && r.steps.some(x => x.output === 'hotpot'),
-    `banquet pies go fruit pie + hotpot ← smoked fish (${path(r)})`);
+  const r = cheapestRoute(w, ['honeycake'], 14);
+  check(!!r && r.good === 'honeycake' && r.steps.at(-1)!.output === 'honeycake' && r.steps.some(x => x.output === 'pie') && !r.steps.some(x => x.output === 'hotpot'),
+    `honey cakes go fruit pie + something sweet, no smoke spine (${path(r)})`);
   ROUTE_AVOID.push('pieoven');
-  const none = cheapestRoute(w, ['banquet', 'fishpie'], 14);
+  const none = cheapestRoute(w, ['honeycake', 'fishpie'], 14);
   ROUTE_AVOID.length = 0;
-  check(!none, `without the pie oven there's no banquet or fish pie (${path(none)})`);
+  check(!none, `without the pie oven there's no honey cake or fish pie (${path(none)})`);
   const any = cheapestRoute(w, FEAST_MEALS, 14);
   check(!!any && FEAST_MEALS.includes(any.good), `some quality meal can be routed here (${path(any)})`);
 }
@@ -80,7 +80,7 @@ const path = (r?: { steps: { def: string; output: string }[] }) => r ? r.steps.m
   // a stocked larder of cordial and a guest who can't stand it: they drink it anyway, so nothing more is owed
   const w = town([]);
   w.owned.push('pavilion'); const s = findSpot(w, 'pavilion', 16, 16, true)!; apply(w, { type: 'place', def: 'pavilion', x: s.x, y: s.y });
-  const pav = w.buildings.at(-1)!; pav.built = true; pav.stage = 1; pav.delivered = { banquet: 14, cordial: 14 } as typeof pav.delivered;
+  const pav = w.buildings.at(-1)!; pav.built = true; pav.stage = 1; pav.delivered = { honeycake: 14, cordial: 14 } as typeof pav.delivered;
   for (const c of alive(w)) { c.tastes = { loves: [], dislikes: [] }; c.sulking = false; }
   alive(w)[0].tastes.dislikes = ['cordial'];
   w.res.cordial = 0; w.res.hippocras = 0;
@@ -100,7 +100,7 @@ const path = (r?: { steps: { def: string; output: string }[] }) => r ? r.steps.m
   const many = costOf(pav);
   check(few.feastMeal === FINALE_COLONISTS && few.feastDrink === FINALE_COLONISTS && many.feastMeal === 15 && many.feastDrink === 15,
     `the larder holds one each for every colonist, ${FINALE_COLONISTS} at least (${alive(createWorld(81)).length} colonists: ${few.feastMeal}; 15 colonists: ${many.feastMeal})`);
-  pav.built = true; pav.delivered = { banquet: 15, cordial: 8, hippocras: 7 } as typeof pav.delivered;
+  pav.built = true; pav.delivered = { honeycake: 15, cordial: 8, hippocras: 7 } as typeof pav.delivered;
   for (const c of alive(w)) { c.tastes = { loves: [], dislikes: [] }; c.sulking = false; c.illness = null; }
   const ready = feastCheck(w).ok;
   alive(w)[0].sulking = true;
