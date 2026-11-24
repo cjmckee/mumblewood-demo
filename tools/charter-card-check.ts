@@ -11,20 +11,20 @@ const steps = (r?: Route) => (r?.steps ?? []).map(s => `${s.how}:${s.def}`);
 
 const w: World = createWorld(777);
 const settled = charterPreview(w, 'settled');
-const meals = settled.conditions.find(c => c.text === '30 meals eaten');
+const meals = settled.conditions.find(c => c.text === '20 meals eaten');
 check(!!meals && steps(meals.route).includes('study:kitchen'), `fresh colony: meals need the stew kitchen studied (${steps(meals?.route)})`);
-const smoke = charterPreview(w, 'woodsmoke').conditions.find(c => c.text === '20 smoked fish eaten');
+const smoke = charterPreview(w, 'woodsmoke').conditions.find(c => c.text === '15 smoked fish eaten');
 check(steps(smoke?.route).includes('draft:dock'), `smoked fish needs a fishing dock drafted (${steps(smoke?.route)})`);
 const planks = charterPreview(w, 'firstplanks').conditions.find(c => c.text.includes('fine materials'));
 check(planks?.route?.state === 'ready' && planks.route.by === 'woodcutter', 'fine materials: the woodcutter already rough-saws planks');
 check(settled.rewards.includes('30 gold') && settled.rewards.some(r => r.startsWith('strain −')) && settled.rewards.includes('a cornerstone'), `tier 1 pays gold, strain relief and a cornerstone (${settled.rewards})`);
 check(charterPreview(w, 'hall').rewards.join() === 'wins the run', 'a finale wins the run');
-const pop = settled.conditions.find(c => c.text === '6 colonists');
+const pop = settled.conditions.find(c => c.text === '4 colonists');
 check(!!pop && !pop.met && pop.have === '3 now', 'population shows how many there are now');
 
 // once the basics are studied, the kitchen only has to be placed
 debugGrow(w, 6);
-const known = charterPreview(w, 'settled').conditions.find(c => c.text === '30 meals eaten');
+const known = charterPreview(w, 'settled').conditions.find(c => c.text === '20 meals eaten');
 check(steps(known?.route).includes('build:kitchen'), `after research the kitchen is "build" (${steps(known?.route)})`);
 
 // a map without a meadow can never make tonics

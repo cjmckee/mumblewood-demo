@@ -5,6 +5,7 @@
 import { createWorld, apply, runHours, World, alive, feastUnservedDrinks, findSpot, recipesOf, recipeOn, Building, feastCheck, FEAST_MEALS, FEAST_DRINKS } from '../src/sim/world';
 import { draftLinks } from '../src/sim/charterplan';
 import { autoDecide, autoBuild } from '../src/sim/autoplayer';
+import { FINALE_COLONISTS } from '../src/sim/content';
 
 let failed = 0;
 const check = (ok: boolean, what: string) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}`); if (!ok) failed++; };
@@ -84,11 +85,11 @@ function feastTown(defs: string[], larder: Record<string, number>, ready = false
 }
 {
   // a larder one drink short gets a whole one more
-  const { w, pav } = feastTown([], { honeycake: 12, cordial: 11 });
+  const { w, pav } = feastTown([], { honeycake: FINALE_COLONISTS, cordial: FINALE_COLONISTS - 1 });
   for (const c of alive(w)) { c.tastes = { loves: [], dislikes: [] }; c.sulking = false; }
   w.res.cordial = 20;
-  for (let h = 0; h < 24 && (pav.delivered.cordial ?? 0) < 12; h++) runHours(w, 1);
-  check((pav.delivered.cordial ?? 0) === 12, `a larder one drink short gets one whole cordial (${pav.delivered.cordial} in it)`);
+  for (let h = 0; h < 24 && (pav.delivered.cordial ?? 0) < FINALE_COLONISTS; h++) runHours(w, 1);
+  check((pav.delivered.cordial ?? 0) === FINALE_COLONISTS, `a larder one drink short gets one whole cordial (${pav.delivered.cordial} in it)`);
 }
 {
   // a stocked larder of nothing but cordial, and a guest who can't stand it: the feast is ready all the same

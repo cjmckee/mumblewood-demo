@@ -1,5 +1,5 @@
 // Pacing probe: when each charter is picked and finished, how research goes, and how population and
-// strain grow. Targets: charter 1 by day 10-16, charter 2 by day 28-36, a win by day 50-60.
+// strain grow. Targets (claude/mumblewood-root-families.md): charter 1 by day 8-10, charter 2 by day 20-25, a win by day 35-45, about 8 colonists.
 // Usage: npx tsx tools/pacing.ts [runs=60] [maxDays=90]   (VERBOSE=1 prints every run)
 import { createWorld, tick, day, alive, avgMood, TICKS_PER_HOUR, World, charterDef, wantMet } from '../src/sim/world';
 import { autoDecide, autoBuild, BOT, ROUTE_AVOID, pushing } from '../src/sim/autoplayer';

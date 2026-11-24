@@ -76,6 +76,7 @@ const pilgrims = w.perks.includes('pilgrimsRoad');
 check(winterCaravan === pilgrims, pilgrims ? 'with the pilgrims’ road, a caravan in winter too' : 'no caravan in winter');
 // skilled settlers: a recruit offer with a fee; refused without the gold, paid when taken
 let offer: { kind: 'recruit'; options: { fee?: number; id: number }[] } | undefined;
+(START as { popTargets: number[] }).popTargets = [20, 20, 20]; // recruits stop at the stage size; keep them coming for this check
 w.perks = w.perks.filter(x => x !== 'closedGates'); // a cornerstone picked along the way could shut the gates
 for (let h = 0; h < 24 * 30 && !offer && w.status === 'playing'; h++) {
   const d = w.decisions[0];
