@@ -68,6 +68,7 @@ for (let b = 0; b < branches; b++) {
     say(`eaten/drunk: ${Object.entries(eaten).map(([k, v]) => `${k}${tierTag(k as ResourceId) ? '(' + tierTag(k as ResourceId) + ')' : ''} ${fmt(v)}`).join(', ') || '—'}`);
     const stock = (Object.keys(w.res) as ResourceId[]).filter(k => w.res[k] >= 1).map(k => `${k} ${fmt(w.res[k])}`);
     say(`stock: ${stock.join(', ')}`);
+    if (w.forbidden.length) say(`held back: ${w.forbidden.join(', ')}`);
     const sites = w.buildings.filter(x => !x.built).map(x => name(x.def));
     say(`built: ${[...new Set(built(w).map(x => x.def))].map(name).join(', ')}${sites.length ? ` · sites: ${sites.join(', ')}` : ''}`);
     const blocked = built(w).map(x => [x, blockedReason(w, x)] as const).filter(([, why]) => why);
