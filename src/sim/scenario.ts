@@ -25,6 +25,20 @@ export interface Start {
   wants: { per: number; met: number; unmet: number[]; on: boolean };
   /** days between blueprint drafts, once they start */
   draftEvery: number;
+  /**
+   * when blueprint drafts come (claude/mumblewood-draft-cadence.md): 'days' every draftEvery days; 'charter' at each
+   * charter pick and at each third of its progress; 'settlers' at each charter pick and each settler who joins;
+   * 'standing' at each charter pick and every standingEach renown enjoyed (the Against the Storm way). Outside 'days', a
+   * draft also comes after fallback days without one, so a colony never waits forever.
+   */
+  drafts: { mode: 'days' | 'charter' | 'settlers' | 'standing'; fallback: number; standingEach: number };
+  /** cornerstones never offered (Open road brings settlers: settlers come with the charters, not as a boon) */
+  cornerstoneOff: string[];
+  /** when cornerstones are offered: each season's start and each charter ('both'), or only one of them */
+  cornerstoneWhen: 'both' | 'charter' | 'season';
+  /** when settlers ask to join, below the stage's colony size: on the season's cadence ('season'), every day once a
+   * charter opens room ('charter'), or on the season's cadence only while the colony's mood is 50 or more ('mood') */
+  recruitMode: 'season' | 'charter' | 'mood';
   /** the colony collapses at this many lost, or with this many or fewer left */
   collapse: { lost: number; minAlive: number };
   /**
@@ -150,6 +164,10 @@ export const START: Start = {
   popTargets: [4, 6, 8],
   wants: { per: 2, met: 6, unmet: [1, 3, 6], on: true },
   draftEvery: 4,
+  drafts: { mode: 'days', fallback: 6, standingEach: 24 },
+  cornerstoneOff: ['openRoad'],
+  cornerstoneWhen: 'both',
+  recruitMode: 'season',
   collapse: { lost: 6, minAlive: 0 },
   strain: { rate: 0.07, rampDays: 40 },
   breaks: { strain: 0.5, leftStrain: 2 },

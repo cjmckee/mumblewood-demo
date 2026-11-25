@@ -253,6 +253,12 @@ export interface World {
   charterOffered?: boolean;
   /** the day blueprint drafts started: they wait for the first charter */
   draftsFrom?: number | null;
+  /** the day the last blueprint draft came, the charter's thirds already rewarded, and renown enjoyed all run */
+  lastDraftDay?: number;
+  draftMarks?: number;
+  standing?: number;
+  standingDrafts?: number;
+  draftsOffered?: number;
   /** hours each hold-type condition of an all-at-once charter has held */
   charterHolds?: number[];
   /** the founders' feast for the Long Table: called for tonight, when it can next be called, and whether it worked */
@@ -396,7 +402,17 @@ export function useUp(w: World, r: ResourceId, n: number, why: string): number {
   return used;
 }
 /** mood from the first drink of the evening, by kind */
-export function flow(w: World, key: string, n: number) { if (w.flows) w.flows[key] = (w.flows[key] ?? 0) + n; if (w.tally) tallyFlow(w.tally, key, n); }
+export function flow(w: World, key: string, n: number) {
+  if (w.flows) w.flows[key] = (w.flows[key] ?? 0) + n;
+  if (w.tally) tallyFlow(w.tally, key, n);
+  const i = key.indexOf(':');
+  if (ENJOYED_AT.has(key.slice(i + 1)) && n > 0) {
+    const r = key.slice(0, i) as ResourceId;
+    if (MEALS.includes(r) || CATEGORIES.drink.members.includes(r)) w.standing = (w.standing ?? 0) + renownFor(r) * n;
+  }
+}
+/** a blueprint draft, and when it came (START.drafts) */
+export function offerDraft(w: World) { w.lastDraftDay = day(w); w.draftsOffered = (w.draftsOffered ?? 0) + 1; w.decisions.push(blueprintDecision(w)); }
 /** where settlers enjoy food and drink: their own meals, the tavern, the founders' feast, weddings */
 const ENJOYED_AT = new Set(['-eaten', '-drunk', '-feast', '-wedding']);
 /** count a flow toward the charter's tallies: meals eaten, drinks drunk, remedies the doctor used, goods a workshop made */
@@ -1380,7 +1396,10 @@ function resolveDecision(w: World, option: number): string | null {
       // a monument charter hands over its blueprint
       for (const m of def.metric.kind === 'all' ? def.metric.parts : [def.metric]) if ((m.kind === 'monument' || m.kind === 'longTable') && !w.owned.includes(m.kind === 'monument' ? m.def : 'pavilion')) { const id = m.kind === 'monument' ? m.def : 'pavilion'; w.owned.push(id); addLog(w, `The Crown sends plans for ${m.kind === 'monument' ? BUILDING_BY_ID[id].name : 'a feast pavilion'}. Find it a good spot.`, 'good'); }
       // drafts that wait for the first charter start now, with an offer that knows what the charter needs
-      if (w.draftsFrom == null) { w.draftsFrom = day(w); w.decisions.push(blueprintDecision(w)); }
+      w.draftMarks = 0;
+      if (w.draftsFrom == null) { w.draftsFrom = day(w); offerDraft(w); }
+      // outside the day timer, every charter brings a draft to start its route
+      else if (START.drafts.mode !== 'days') offerDraft(w);
       break;
     }
     case 'research': {
@@ -1402,6 +1421,7 @@ function resolveDecision(w: World, option: number): string | null {
         if (c.fee) { spend(w, c.fee, 'settler'); addLog(w, `${first(c)} counts the ${c.fee} gold twice and unpacks a very good set of tools.`, 'good'); delete c.fee; }
         c.joinedDay = day(w);
         c.settling = true;
+        if (START.drafts.mode === 'settlers' && w.draftsFrom != null) offerDraft(w);
         w.colonists.push(c);
         assignBeds(w);
         addLog(w, `${c.name} arrives with a suspicious amount of luggage.`, 'good');
@@ -3205,7 +3225,8 @@ function dawn(w: World) {
   const d = day(w);
   seasonDawn(w);
   // blueprint drafts every few days once the first charter is picked
-  if (w.draftsFrom != null && d > w.draftsFrom && (d - w.draftsFrom) % START.draftEvery === 0) w.decisions.push(blueprintDecision(w));
+  if (START.drafts.mode === 'days') { if (w.draftsFrom != null && d > w.draftsFrom && (d - w.draftsFrom) % START.draftEvery === 0) offerDraft(w); }
+  else if (w.draftsFrom != null && w.status === 'playing' && d - (w.lastDraftDay ?? w.draftsFrom) >= START.drafts.fallback) offerDraft(w);
   const every = recruitInterval(w);
   const due = START.seasons.recruitTaper && w.lastRecruitDay != null ? d - w.lastRecruitDay >= every : d % every === 0;
   if (every > 0 && due) {
@@ -3228,6 +3249,8 @@ export function recruitInterval(w: World): number {
   // the stage's colony is here: no more offers until the next charter tier
   if (alive(w).length >= popTarget(w)) return 0;
   if (hasPerk(w, 'openRoad')) return 1;
+  if (START.recruitMode === 'charter') return 1;
+  if (START.recruitMode === 'mood' && avgMood(w) < 50) return 0;
   const base = START.seasons.recruitEvery[seasonOf(w).season], taper = START.seasons.recruitTaper;
   if (!taper) return base;
   const pop = alive(w).length;
@@ -3475,6 +3498,13 @@ function checkCharter(w: World) {
     if (p.kind === 'healthy') holds[i] = alive(w).some(x => x.illness) ? 0 : (holds[i] ?? 0) + 1;
   });
   const v = charterValue(w, c);
+  if (START.drafts.mode === 'standing' && w.draftsFrom != null && (w.standing ?? 0) >= START.drafts.standingEach * ((w.standingDrafts ?? 0) + 1)) {
+    w.standingDrafts = (w.standingDrafts ?? 0) + 1; offerDraft(w);
+  }
+  if (START.drafts.mode === 'charter' && v.target > 0) {
+    const third = Math.min(2, Math.floor(3 * v.value / v.target));
+    if (third > (w.draftMarks ?? 0)) { w.draftMarks = third; offerDraft(w); }
+  }
   if (v.value < v.target) return;
   w.chartersDone.push(c.id); w.charter = null;
   addLog(w, `Charter complete: ${c.name}! The Crown sends a stiffly worded note of approval.`, 'good');
@@ -3514,8 +3544,9 @@ function collectRent(w: World) {
   if (gold) { earn(w, gold, 'rent'); addLog(w, `Rent day: ${payers} settlers pay ${gold} gold between them, with only light grumbling.`); }
 }
 /** a choice of three cornerstones: at the start of each season and with each charter */
-function offerCornerstone(w: World, why: 'season' | 'charter') {
-  const pool = PERKS.filter(p => !w.perks.includes(p.id)).map(p => p.id);
+export function offerCornerstone(w: World, why: 'season' | 'charter') {
+  if (START.cornerstoneWhen !== 'both' && START.cornerstoneWhen !== why) return;
+  const pool = PERKS.filter(p => !w.perks.includes(p.id) && !START.cornerstoneOff.includes(p.id)).map(p => p.id);
   if (pool.length) w.decisions.push({ kind: 'perk', options: shuffle(w, pool).slice(0, 3), why });
 }
 /** the parts of the current charter */

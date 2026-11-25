@@ -19,6 +19,12 @@ if (process.env.LONGTABLE_POP) { const m = CHARTERS.find(c => c.id === 'longtabl
 if (process.env.AVOID) ROUTE_AVOID.push(...process.env.AVOID.split(','));
 if (process.env.STRAIN_K) START.strain.rate = Number(process.env.STRAIN_K);
 if (process.env.DRAFT_EVERY) START.draftEvery = Number(process.env.DRAFT_EVERY);
+// DRAFT_MODE=days|charter|settlers|standing, DRAFT_FALLBACK=6, STANDING_EACH=24 (claude/mumblewood-draft-cadence.md)
+if (process.env.DRAFT_MODE) START.drafts.mode = process.env.DRAFT_MODE as typeof START.drafts.mode;
+if (process.env.DRAFT_FALLBACK) START.drafts.fallback = Number(process.env.DRAFT_FALLBACK);
+if (process.env.CORNERSTONES) START.cornerstoneWhen = process.env.CORNERSTONES as typeof START.cornerstoneWhen;
+if (process.env.RECRUIT_MODE) START.recruitMode = process.env.RECRUIT_MODE as typeof START.recruitMode;
+if (process.env.STANDING_EACH) START.drafts.standingEach = Number(process.env.STANDING_EACH);
 if (process.env.RECRUIT_CAP) BOT.recruitCap = Number(process.env.RECRUIT_CAP);
 if (process.env.LABORERS_PER) BOT.laborersPer = Number(process.env.LABORERS_PER);
 if (process.env.RECRUIT_EXTRA) BOT.recruitExtra = Number(process.env.RECRUIT_EXTRA);
@@ -69,10 +75,11 @@ for (let i = 0; i < runs; i++) {
   const rand = () => ((r = (r * 1103515245 + 12345) >>> 0) / 4294967296);
   const run: Run = { seed, status: 'timeout', day: 0, peak: 0, lost: 0, deaths: 0, offered: null, picks: [], dones: [], research: [], owned: 0, builtShare: 0, story: {}, gold: {}, caravanGoods: 0, caravanBps: 0, pop: {}, strain: {}, mood: {}, wantsMet: {}, low: {}, comfort: {}, gaps: {}, fin: [] };
   let lastCharter: string | null = null, doneN = 0, resN = 0;
+  const draftsAt: number[] = []; (run as any).draftsAt = draftsAt; (run as any).world = w;
   const watch = () => {
     if (w.charter && w.charter !== lastCharter) run.picks.push({ id: w.charter, day: day(w) });
     lastCharter = w.charter;
-    if (w.chartersDone.length > doneN) { for (const id of w.chartersDone.slice(doneN)) run.dones.push({ id, day: day(w) }); doneN = w.chartersDone.length; }
+    if (w.chartersDone.length > doneN) { for (const id of w.chartersDone.slice(doneN)) { run.dones.push({ id, day: day(w) }); draftsAt.push(w.draftsOffered ?? 0); } doneN = w.chartersDone.length; }
     const rd = w.research?.done ?? [];
     if (rd.length > resN) { for (const id of rd.slice(resN)) run.research.push({ id, day: day(w) }); resN = rd.length; }
     if (run.offered == null && w.decisions.some(d => d.kind === 'charter')) run.offered = day(w);
@@ -107,6 +114,8 @@ const pct = (n: number) => `${Math.round((n / runs) * 100)}%`;
 const f1 = (n: number) => (Number.isNaN(n) ? '–' : n.toFixed(1));
 console.log(`runs=${runs} maxDays=${maxDays}`);
 for (const s of ['won', 'lost', 'timeout']) { const g = out.filter(x => x.status === s); console.log(`${s.padEnd(8)} ${pct(g.length).padStart(4)}  median day ${f1(med(g.map(x => x.day)))}  peak pop ${f1(avg(g.map(x => x.peak)))}`); }
+{ const at = (k: number) => f1(med(out.map(x => (x as any).draftsAt[k]).filter((x: number | undefined) => x != null)));
+  console.log(`drafts offered: median by charter 1 ${at(0)}, by charter 2 ${at(1)}, by the win ${at(2)}, in all ${f1(med(out.map(x => (x as any).world.draftsOffered ?? 0)))}`); }
 console.log(`first charter offered: median day ${f1(med(out.map(x => x.offered ?? NaN).filter(x => !Number.isNaN(x))))}`);
 for (let t = 0; t < 3; t++) {
   const done = out.map(x => x.dones[t]?.day).filter((x): x is number => x != null);
