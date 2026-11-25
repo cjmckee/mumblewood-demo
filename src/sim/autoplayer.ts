@@ -727,6 +727,9 @@ export function winPlan(w: World, charter = w.charter): { need: string[]; meal?:
  */
 export function winterDrinks(w: World): { goods: ResourceId[]; need: number; have: number; makers: string[]; crops: string[] } | null {
   if (!BOT.smallColony || (w.charterTier ?? 1) < 2) return null;
+  // a charter that counts drinks drunk needs them poured now, not put by for the finale
+  const cm = charterDef(w.charter)?.metric, cparts = !cm ? [] : cm.kind === 'all' ? cm.parts : [cm];
+  if (cparts.some(p => (p.kind === 'tally' && p.how === 'drunk') || (p.kind === 'renown' && p.category === 'drink'))) return null;
   const s = seasonOf(w);
   if (s.season !== 'autumn' && s.season !== 'winter') return null;
   // the plain drinks the colony's built makers can brew, and the crops behind them
@@ -866,7 +869,7 @@ export function charterChain(w: World): string[] {
  * Experiment switches for the balance tools. `advisor` makes the bot play from what's on screen (the complaint
  * panel) instead of its own rules; it's off by default because, so far, it plays worse (see the project doc).
  */
-export const BOT = { winPlan: true, smallColony: true, dailyQuality: true, supperRules: true, urgentClinic: true, clinicWoodBuffer: 10, seasonalStaffing: true, feasibleVariety: true, summerBank: false, summerService: false, fineInputs: true, plannedRoughDemand: true, chainGatherers: false, roughPlanks: true, roughPlankBudget: 12, roughWoodStart: 35, roughWoodStop: 20, roughKeepWinterReserve: false, clothingReserve: false, clothingDeadline: false, clothingBatch: false, researchFeasible: false, populationTargets: false, randomize: [] as string[], trade: true, shopsByStore: false, layout: true, hutPull: 0.3, recipes: true, rateStaffing: false, unlockChain: true, ruleGap: true, hallMood: true, varietyRules: true, bankDrinks: true, bankHall: false, chainBeforeWinter: true, effortPick: true, comfortsFirst: false, recruitCap: 99, recruitExtra: 4, comforts: true, foodDepot: 'food' as false | 'food' | 'meals', laborersPer: 5, advisor: false, gate: true, ranked: true, comfort: 'strict' as 'strict' | 'econ' | 'none', rescue: false, rescueAt: 40, moodBlock: false, reroll: true, variety: false, routes: false, finaleRoutes: true, routeOnlyReserve: true, finaleFare: true, push: 'rule' as 'rule' | 'never' | 'always', pushDays: 3, billOrder: true, downstreamFirst: true, wants: true, chainReserve: true, chainFirst: true, rawCounts: true, skipUnused: true, fineCap: 40, routeGatherers: true, off: [] as string[], skip: [] as string[] };
+export const BOT = { winPlan: true, smallColony: true, dailyQuality: true, supperRules: true, urgentClinic: true, clinicWoodBuffer: 10, seasonalStaffing: true, feasibleVariety: true, summerBank: false, summerService: false, fineInputs: true, plannedRoughDemand: true, chainGatherers: true, roughPlanks: true, roughPlankBudget: 12, roughWoodStart: 35, roughWoodStop: 20, roughKeepWinterReserve: false, clothingReserve: false, clothingDeadline: false, clothingBatch: false, researchFeasible: false, populationTargets: false, randomize: [] as string[], trade: true, shopsByStore: false, layout: true, hutPull: 0.3, recipes: true, rateStaffing: false, unlockChain: true, ruleGap: true, hallMood: true, varietyRules: true, bankDrinks: true, bankHall: false, chainBeforeWinter: true, effortPick: true, comfortsFirst: false, recruitCap: 99, recruitExtra: 4, comforts: true, foodDepot: 'food' as false | 'food' | 'meals', laborersPer: 5, advisor: false, gate: true, ranked: true, comfort: 'strict' as 'strict' | 'econ' | 'none', rescue: false, rescueAt: 40, moodBlock: false, reroll: true, variety: false, routes: false, finaleRoutes: true, routeOnlyReserve: true, finaleFare: true, push: 'rule' as 'rule' | 'never' | 'always', pushDays: 3, billOrder: true, downstreamFirst: true, wants: true, chainReserve: true, chainFirst: true, rawCounts: true, skipUnused: true, fineCap: 40, routeGatherers: true, off: [] as string[], skip: [] as string[] };
 
 // ---------- Explaining the bot ----------
 /** one thing the bot decided and why: each option with its score broken into parts, or a staffing or build step */
@@ -962,7 +965,7 @@ export function autoDecide(w: World, style: 'greedy' | 'random' = 'greedy', rand
       // the one blueprint the charter's cheapest route is still missing (a mill for the dough) beats any helper
       const links = [...draftLinks(w), ...(BOT.finaleRoutes ? finaleLinks(w) : [])];
       // a second plank maker isn't a help to First planks once one is owned: one sawmill is enough for a small colony
-      const feedable = (id: string) => (id !== 'smokehouse' || w.owned.includes('dock') || w.owned.includes('cellar')) && !(BOT.smallColony && FINE_MAKERS.includes(id) && FINE_MAKERS.some(f => f !== id && w.owned.includes(f)));
+      const feedable = (id: string) => (id !== 'smokehouse' || ['dock', 'cellar', 'forager'].some(x => w.owned.includes(x))) && !(BOT.smallColony && FINE_MAKERS.includes(id) && FINE_MAKERS.some(f => f !== id && w.owned.includes(f)));
       // a blueprint that needs planks is dead weight until there's a sawmill; a tavern without a brewery serves nothing
       const usableParts = (id: string): Record<string, number> => ({
         'needs planks, nothing makes them': BUILDING_BY_ID[id].cost.fine && !FINE_MAKERS.some(f => w.owned.includes(f) && usableHere(w, f)) && !FINE_MAKERS.includes(id) ? 6 : 0,
@@ -973,11 +976,14 @@ export function autoDecide(w: World, style: 'greedy' | 'random' = 'greedy', rand
         'nothing owned can feed it': BUILDING_BY_ID[id].recipes && !usableHere(w, id) ? 5 : 0,
         'drink maker that can be fed': -drinkFed(id),
       });
+      const noPlanks = (id: string) => BOT.smallColony && FINE_MAKERS.includes(id) && usableHere(w, id) && !FINE_MAKERS.some(f => w.owned.includes(f) && usableHere(w, f));
       const drinkFed = (id: string) => (DRINK_MAKERS.includes(id) && (BUILDING_BY_ID[id].recipes ?? []).filter(r => r.stars >= 2).some(r => Object.keys(r.inputs).every(k => gatherersOf(w, k).length || BUILDINGS.some(d => d.draftable && siteOk(w, d) && (d.recipes ?? []).some(x => x.output === k)))) ? 2 : 0);
       const asked = fixesOf(w, 3).filter((f): f is { draft: string } => 'draft' in f).map(f => f.draft);
       const usable = (id: string) => sumParts(usableParts(id));
       const wantsAsk = wantedBuildings(w).filter(id => !w.owned.includes(id));
       const rankParts = (id: string): Record<string, number> => ({
+        // every workshop past the stew kitchen costs planks: with no plank maker, the plan's buildings can't go up at all
+        'nothing makes planks yet': noPlanks(id) ? -300 : 0,
         'efficient fine-material upgrade': BOT.roughPlanks && !built(w).some(b => FINE_MAKERS.includes(b.def) && !blockedReason(w,b)) && FINE_MAKERS.includes(id) && usableHere(w,id) ? -120 : 0,
         'the charter\u2019s route waits on it': links.includes(id) ? -110 : 0,
         'on the win plan': BOT.winPlan && planNeed.includes(id) ? -95 : 0,
@@ -990,7 +996,7 @@ export function autoDecide(w: World, style: 'greedy' | 'random' = 'greedy', rand
         ...usableParts(id),
         ...(BOT.routes ? { 'new kinds it unlocks (×3)': -newKinds(w, id) * 3 } : {}),
       });
-      const rank = (id: string) => (drinkFirst.includes(id) ? -12 : 0) + cottagePull(w, id) + (BOT.winPlan && planNeed.includes(id) ? -95 : 0) + (links.includes(id) ? -110 : 0) + (helpers.includes(id) && feedable(id) ? -100 + helpers.indexOf(id) : 0) + (asked.includes(id) ? -50 + asked.indexOf(id) : 0) + (wantsAsk.includes(id) ? -40 + wantsAsk.indexOf(id) : 0) + BLUEPRINT_PRIORITY.indexOf(id) + usable(id);
+      const rank = (id: string) => (noPlanks(id) ? -300 : 0) + (drinkFirst.includes(id) ? -12 : 0) + cottagePull(w, id) + (BOT.winPlan && planNeed.includes(id) ? -95 : 0) + (links.includes(id) ? -110 : 0) + (helpers.includes(id) && feedable(id) ? -100 + helpers.indexOf(id) : 0) + (asked.includes(id) ? -50 + asked.indexOf(id) : 0) + (wantsAsk.includes(id) ? -40 + wantsAsk.indexOf(id) : 0) + BLUEPRINT_PRIORITY.indexOf(id) + usable(id);
       // nothing on offer the colony is missing and wants: pay for a reroll while gold stays comfortable
       const core = ['sawmill', 'tavern', 'cottage', 'pieoven', 'stage', 'bathhouse', 'dock', ...(DRINK_MAKERS.some(x => w.owned.includes(x)) ? [] : DRINK_MAKERS)];
       const wanted = (id: string) => planNeed.includes(id) || links.includes(id) || (helpers.includes(id) && feedable(id)) || asked.includes(id) || wantsAsk.includes(id) || (core.includes(id) && usable(id) < 6);
@@ -1337,7 +1343,8 @@ export function autoBuild(w: World, options: { construction?: boolean } = {}) {
       if (!w.owned.includes(id)) { skip(id, 'not unlocked or drafted'); continue; }
       if (missing.length && !['hall', 'pavilion'].includes(id) && !deadlineChain.includes(id) && !missing.includes(id) && !firstNeeds.includes(id) && !(id === 'stockpile' && storageFree(w, 'wood') < 15)) { skip(id, `waiting: wood goes to the charter's chain first (${missing.join(', ')})`); continue; }
       const def = BUILDING_BY_ID[id];
-      if (id === 'smokehouse' && !w.buildings.some(b => b.def === 'dock' || b.def === 'cellar')) { skip(id, 'no dock or cellar to feed it'); continue; }
+      // the forager's mushrooms feed it too (claude/mumblewood-root-families.md)
+      if (id === 'smokehouse' && !w.buildings.some(b => ['dock', 'cellar', 'forager'].includes(b.def))) { skip(id, 'no dock, cellar or forager to feed it'); continue; }
       if (def.recipes && !usableHere(w, id)) { skip(id, 'nothing owned can feed it'); continue; }
       if (id === 'pieoven' && !w.buildings.some(b => FINE_MAKERS.includes(b.def)) && stockOf(w, 'fine') < 8) { skip(id, 'no planks or plank maker'); continue; }
       // while saving a resource, only spend it on beds and on producers that make more of it
@@ -1468,7 +1475,9 @@ export function staffPlan(w: World, explain = false): Map<number, number> {
   const pop = alive(w).filter(c => !bedridden(c)).length;
   const ch = w.charter ?? '';
   const want = staffWants(w);
-  const chain = charterChain(w).map(kindFor);
+  // gatherers before the workshops they feed: a cider press with no one in the orchard presses nothing (BOT.smallColony)
+  const gathers = (id: string) => (BUILDING_BY_ID[id]?.recipes ?? []).some(r => !Object.keys(r.inputs).length) ? 0 : 1;
+  const chain = (BOT.smallColony ? [...charterChain(w)].sort((a, b) => gathers(a) - gathers(b)) : charterChain(w)).map(kindFor);
   for (const k of chain) want[k] = Math.max(want[k] ?? 0, 2);
   // a skeleton crew keeps its jobs going and builds with whoever is left
   const extraHands = fixesOf(w).reduce((n, f) => n + ('laborers' in f ? f.laborers : 0), 0);
@@ -1774,6 +1783,16 @@ export function autoFoodRules(w: World) {
     for (const p of parts) if (p.kind === 'tally' && p.how === 'eaten') for (const b of built(w)) for (const r of enabledRecipes(b)) {
       if (!p.resources.includes(r.output)) continue;
       for (const k of Object.keys(r.inputs)) for (const x of membersOf(k as InputKey)) if (MEALS.includes(x) && !p.resources.includes(x) && !keep.includes(x)) keep.push(x);
+    }
+  }
+  // a charter counting good meals eaten (A good table, Daily bread, Something hot): with a couple of days of them in store,
+  // the stew and raw food wait, the way a player switches the stew off; the guard below releases them if stocks run low
+  if (BOT.smallColony) {
+    const m = charterDef(w.charter)?.metric, parts = !m ? [] : m.kind === 'all' ? m.parts : [m];
+    for (const p of parts) if (p.kind === 'tally' && p.how === 'eaten' && p.resources.every(r => TIER[r] && TIER[r] !== 'plain') && tallyOf(w, 'eaten', p.resources) < p.amount) {
+      const counted = p.resources.reduce((n, r) => n + w.res[r], 0);
+      const plainKept = MEALS.some(r => TIER[r] === 'plain' && w.forbidden.includes(r));
+      if (counted >= pop * (plainKept ? 1 : 2)) keep.push(...MEALS.filter(r => !p.resources.includes(r) && TIER[r] === 'plain'), ...RAW_FOODS);
     }
   }
   // Fed and rested: raw food stays in storage while there are meals enough, so every meal is a cooked one

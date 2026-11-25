@@ -145,17 +145,23 @@ export function charterPreview(w: World, id: string): CharterPreview {
 }
 
 /** routes for one condition while the charter is under way: the missing buildings for its goods (per kind for variety) */
+/** drinks are drunk at the tavern: a charter that counts drinks drunk needs one on its route */
+function atTavern(w: World, r: Found | null): Route {
+  const tav = buildingRoute(w, 'tavern');
+  if (!r || !tav) return asRoute(null);
+  return asRoute({ ...r, cost: r.cost + tav.cost, steps: [...r.steps, ...tav.steps.filter(s => !r.steps.some(x => x.def === s.def))] });
+}
 export function metricRoutes(w: World, m: CharterMetric): { good?: InputKey; route: Route }[] {
   switch (m.kind) {
     case 'stock': return [{ route: asRoute(routeAny(w, m.resources)) }];
-    case 'tally': return tallyOf(w, m.how, m.resources) >= m.amount ? [] : [{ route: asRoute(routeAny(w, m.resources)) }];
+    case 'tally': return tallyOf(w, m.how, m.resources) >= m.amount ? [] : [{ route: m.how === 'drunk' ? atTavern(w, routeAny(w, m.resources)) : asRoute(routeAny(w, m.resources)) }];
     case 'renown': {
       const { points, kinds } = renownOf(w, m.category);
       if (points >= m.amount && kinds.length >= m.kinds) return [];
       // the kinds not yet counting, cheapest first, as many as are still needed (at least one, to raise the renown)
       const goods = (m.category === 'meal' ? MEALS : CATEGORIES.drink.members).filter(r => renownFor(r) > 0 && !kinds.includes(r));
       return goods.map(good => ({ good, r: routeFor(w, good) })).filter(x => x.r).sort((a, b) => a.r!.cost - b.r!.cost)
-        .slice(0, Math.max(1, m.kinds - kinds.length)).map(x => ({ good: x.good, route: asRoute(x.r) }));
+        .slice(0, Math.max(1, m.kinds - kinds.length)).map(x => ({ good: x.good, route: m.category === 'drink' ? atTavern(w, x.r) : asRoute(x.r) }));
     }
     case 'variety': {
       const members = CATEGORIES[m.category].members;
