@@ -180,7 +180,7 @@ export const inputName = (k: InputKey) => (isCategory(k) ? CATEGORIES[k].name : 
 /** output units per worker-hour at work speed 1, for a ★★★ recipe */
 export const BASE_RATE: Record<ResourceId, number> = {
   flax: 1.2, hides: 0.8, cloth: 0.6, leather: 0.6, coats: 0.25,
-  wood: 1.6, berries: 1.3, fish: 1.5, mushrooms: 1.5, apples: 1.4, grain: 1.6, honey: 1.0, clay: 1.5, reeds: 1.4, herbs: 1.3, flour: 1.4, acorns: 1.6,
+  wood: 2.4, berries: 1.3, fish: 1.5, mushrooms: 1.5, apples: 1.4, grain: 1.6, honey: 1.0, clay: 1.5, reeds: 1.4, herbs: 1.3, flour: 1.4, acorns: 1.6,
   stew: 1.2, smokedFish: 1.2, driedMushrooms: 1.2, bread: 1.1, pie: 0.9, hotpot: 1.0, supper: 0.9, fishpie: 0.9, harvest: 0.9, honeycake: 0.8,
   ale: 0.9, cider: 1.0, mead: 0.9, cordial: 0.7, hippocras: 0.7, poultice: 0.8, tonic: 0.6, planks: 1.0, bricks: 0.9, wicker: 1.0,
 };
