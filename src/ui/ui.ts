@@ -1617,7 +1617,7 @@ function seasonEffects(w: World, season: Season, heading: string) {
   if (season === 'winter') {
     rows.push(`<li><span>${icon('wood')} Homes and the hearth burn wood</span><b class="neg">~${Math.round(winterFuelPerDay(w, seasonOf(w).season !== 'winter'))}/day</b></li>`);
     rows.push(`<li><span>Cold homes bring chills and a mood penalty</span><b class="neg">❄</b></li>`);
-    const [a, z] = START.seasons.work.winter; rows.push(`<li><span>Shorter working days</span><b>${a}:00–${z}:00</b></li>`);
+    rows.push(`<li><span>${icon('caravan')} The caravan stays away</span><b class="neg">✗</b></li>`);
   }
   const build = START.seasons.build[season]; if (build && build !== 1) rows.push(`<li><span>Building</span><b class="neg">${Math.round(build * 100)}%</b></li>`);
   return rows.length ? `<h3>${esc(heading)}: ${SEASON_NAMES[season].toLowerCase()}</h3><ul class="thoughts season-fx">${rows.join('')}</ul>` : `<h3>${esc(heading)}: ${SEASON_NAMES[season].toLowerCase()}</h3><p class="muted">Nothing out of the ordinary.</p>`;
