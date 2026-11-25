@@ -8,6 +8,7 @@ import {
   costOf, researchLeft, researchStillNeeds, desks, feastCheck, mealTotal, drinkTotal,
   strainPerDay, footprint, standingOf, yieldIn, BREAKING, GRUMBLE, breakPoint, breakKindFor, inspired, STANDINGS, NeedKey, winterFuelPerDay,
   sellPrice, renownOf, pavilionOf, larderOf, FEAST_MEALS, charterCounted, charterRequirements, basicsDone, researchOpen, edibleTotal, storePrio, colonyName, nameFrom, NAME_MAX, wantMet, wantPenalty, wantSupported, wantGap, tradeOf, TRADE_DEFS, workPrio, hasWork,
+  comfortsOf,
 } from '../sim/world';
 import { charterPreview, metricRoutes, Route } from '../sim/charterplan';
 import { START, SEASONS, Season } from '../sim/scenario';
@@ -912,7 +913,7 @@ export class UI {
       <div class="actions">${remedies}${job ? `<button type="button" class="ghost" data-act="building" data-arg="${job.uid}">${icon(job.def)} ${esc(BUILDING_BY_ID[job.def].name)} →</button>` : ''}${c.bed != null ? `<button type="button" class="ghost" data-act="building" data-arg="${c.bed}">⌂ Home →</button>` : '<button type="button" class="ghost" data-act="need" data-arg="shelter">⌂ Find a bed →</button>'}<button type="button" class="ghost" data-act="jobs">⚒ Work ↓</button></div>
       <p class="prefs">${icon('coats')} ${(c.coatHours ?? 0) > 0 ? `${c.coatStoredAt != null ? 'Coat stored' : 'Warm coat'} · ${Math.ceil(c.coatHours! / 24)} days of wear` : 'No coat · collects one in winter'} <button type="button" class="text-link" data-act="source" data-arg="coats">Coat supply →</button></p>
       ${(c.wants ?? []).length ? `<h3>Wants</h3><p class="traits wants">${wantChips(w, c)}</p>` : ''}
-      ${breakingBanner(w, c)}<h3>Mood</h3>${moodLedger(c)}<ul class="thoughts">${thoughts}</ul>
+      ${breakingBanner(w, c)}<h3>Mood</h3>${moodLedger(w, c)}<ul class="thoughts">${thoughts}</ul>
       <h3 id="person-jobs">Work <small class="muted">· now ${esc(nowDoing(w, c))}</small></h3>${prioRow(w, c)}<p class="muted hint">Tap to change: 1 first, 4 last, blank never. With nothing to do, they haul.</p>
       <details data-key="skills"><summary>Skills & preferences</summary><p class="prefs">♥ ${JOB_NAMES[c.likes]} · × ${JOB_NAMES[c.dislikes]}${tasteLine(c)} · hunger ${Math.round(c.hunger)} · fun ${Math.round(c.fun)}</p><div class="skills">${skillKinds(c).map(k => `<div class="skill${k === c.likes ? ' fav' : ''}"><span>${SKILL_NAMES[k]}</span><i><b style="width:${c.skills[k] * 10}%"></b></i><em>${Math.floor(c.skills[k])}</em></div>`).join('')}</div></details>
       <details data-key="traits"><summary>Traits · joined day ${c.joinedDay}</summary><div class="traits">${traits}</div></details>
@@ -1457,14 +1458,19 @@ function storeLabel(b: Building) {
   return `${b.allow.length} kinds`;
 }
 
-function moodLedger(c: Colonist) {
+function moodLedger(w: World, c: Colonist) {
   const wear = c.thoughts.filter(t => t.label.startsWith('The frontier')).reduce((n, t) => n + t.value, 0);
   const good = c.thoughts.filter(t => t.value > 0).reduce((n, t) => n + t.value, 0);
   const bad = c.thoughts.filter(t => t.value < 0 && !t.label.startsWith('The frontier')).reduce((n, t) => n + t.value, 0);
   const scale = Math.max(40, good, -bad, -wear);
   const row = (label: string, v: number, cls: string) => `<div class="lg-row ${cls}"><span>${label}</span><i><b style="width:${Math.min(100, Math.abs(v) / scale * 100)}%"></b></i><em>${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(Math.round(v))}</em></div>`;
   return `<div class="ledger">${row('Good things', good, 'lg-good')}${row('Gripes', bad, 'lg-bad')}${row('Frontier wear', wear, 'lg-wear')}
-    <p class="lg-sum">50 ${good >= 0 ? '+' : '−'} ${Math.abs(Math.round(good))} − ${Math.abs(Math.round(bad))} − ${Math.abs(Math.round(wear))} → heading to <b>${Math.round(c.moodTarget)}</b></p></div>`;
+    <p class="lg-sum">50 ${good >= 0 ? '+' : '−'} ${Math.abs(Math.round(good))} − ${Math.abs(Math.round(bad))} − ${Math.abs(Math.round(wear))} → heading to <b>${Math.round(c.moodTarget)}</b></p>${comfortLine(w, c)}</div>`;
+}
+/** the comforts that ease the frontier's wear: which this colonist has, and how much they take off */
+function comfortLine(w: World, c: Colonist) {
+  const ks = comfortsOf(w, c), n = ks.filter(k => k.met).length;
+  return `<p class="comforts" title="Each comfort eases the frontier's wear on this colonist by ${Math.round(START.comforts.ease * 100)}%.">Comforts ${n}/${ks.length} · wear eased ${Math.round(n * START.comforts.ease * 100)}%: ${ks.map(k => `<span class="${k.met ? 'ok' : 'miss'}">${k.met ? '✓' : '✗'} ${k.label}</span>`).join(' ')}</p>`;
 }
 
 /** the colony's biggest complaints and warnings, read off the same things the player can see */

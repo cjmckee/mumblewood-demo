@@ -80,6 +80,8 @@ export interface Colonist {
   wants?: WantId[];
   /** the days they had a drink at the tavern, lately (for the tippler want) */
   drankOn?: number[];
+  /** hour of the last good or quality meal (a comfort that eases strain for a day) */
+  goodMealAt?: number;
   task: Task | null; carrying: Carry | null;
   /** eating: fetch food from storage `from`, then eat at `at`; until = 0 while walking */
   meal: { at: number | null; until: number; from: number | null; got: ResourceId | null } | null;
@@ -2604,6 +2606,7 @@ function finishMeal(w: World, c: Colonist) {
     const label = ({ honeycake: 'Ate a honey cake', supper: 'Ate a ploughman\u2019s supper', fishpie: 'Ate fish pie', pie: 'Ate fruit pie', hotpot: 'Ate a hearty hotpot', smokedFish: 'Ate smoked fish', driedMushrooms: 'Chewed dried mushrooms', stew: 'Ate a hot stew', bread: 'Ate fresh bread', harvest: 'Ate a harvest supper' } as Partial<Record<ResourceId, string>>)[meal] ?? `Ate ${goodName(meal)}`;
     addMemory(w, c, 'meal', label, v, 14);
     tasteMemory(w, c, meal);
+    if (TIER[meal] === 'good' || TIER[meal] === 'quality') c.goodMealAt = w.hour;
   } else {
     const raw = got;
     c.hunger = 85;
@@ -2776,6 +2779,22 @@ export function wantGap(w: World, id: WantId): string {
 }
 /** what an unmet want costs at the town's standing: people come to expect more */
 export const wantPenalty = (w: World) => START.wants.unmet[Math.min(START.wants.unmet.length - 1, standingOf(w))];
+/**
+ * A colonist's comforts (Cody, 2026-11-25): a colony that meets its people's needs feels the frontier less. Each comfort
+ * met eases the strain they feel by START.comforts.ease (10%), five in all, so at most half. Food keeps people alive;
+ * comforts are the nice-to-haves: a cosy home, fun, a drink, a good meal, warmth in winter.
+ */
+export function comfortsOf(w: World, c: Colonist): { key: string; label: string; met: boolean }[] {
+  const bed = buildingByUid(w, c.bed);
+  const winter = seasonOf(w).season === 'winter';
+  return [
+    { key: 'home', label: 'a cosy cottage', met: !!bed && bdef(bed).bedQuality === 'cozy' },
+    { key: 'fun', label: 'fun this week', met: c.fun >= 50 },
+    { key: 'drink', label: 'a drink this week', met: (c.drankOn ?? []).some(d => d >= day(w) - 6) },
+    { key: 'meal', label: 'a good meal today', met: c.goodMealAt != null && w.hour - c.goodMealAt <= 24 },
+    { key: 'warm', label: winter ? 'a warm home' : 'fair weather', met: winter ? !!bed && !c.cold : true },
+  ];
+}
 function computeThoughts(w: World, c: Colonist): Thought[] {
   const t: Thought[] = [];
   const add = (label: string, value: number) => { if (value !== 0) t.push({ label, value: Math.round(value * 10) / 10 }); };
@@ -2822,7 +2841,8 @@ function computeThoughts(w: World, c: Colonist): Thought[] {
   if (c.beauty >= 5) add('Beautiful surroundings', 5);
   else if (c.beauty >= 2) add('Pleasant surroundings', 2);
   else if (c.beauty <= -1.2) add('Ugly surroundings', -3);
-  const strain = w.strain * (has(c, 'stoic') ? 0.5 : 1);
+  // comforts shield against the frontier (claude/mumblewood-mood-boost.md): each one met eases the strain felt by 10%
+  const strain = w.strain * (has(c, 'stoic') ? 0.5 : 1) * (1 - START.comforts.ease * comfortsOf(w, c).filter(k => k.met).length);
   if (strain >= 1) add('The frontier wears on me', -strain);
   if (START.wants.on) for (const id of c.wants ?? []) { const d = WANT_BY_ID[id]; if (wantMet(w, c, id)) add(d.met, START.wants.met); else add(d.unmet, -wantPenalty(w)); }
   for (const m of c.memories) add(m.label, m.value);

@@ -6,6 +6,8 @@ import { autoDecide, autoBuild, BOT, ROUTE_AVOID, pushing } from '../src/sim/aut
 import { CHARTERS } from '../src/sim/content';
 import { START } from '../src/sim/scenario';
 import { BUILDINGS } from '../src/sim/content';
+import { applyWinterWhatIf } from './winter-whatif';
+applyWinterWhatIf();
 // STYLE=random: the control, which makes every choice (charters, blueprints, research, cornerstones, recruits, events, trading) at random
 const STYLE = (process.env.STYLE ?? 'greedy') as 'greedy' | 'random';
 // experiment knobs: STRAIN_K, DRAFT_EVERY, RECRUIT_CAP (bot), LABORERS_PER (bot)
