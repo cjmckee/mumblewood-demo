@@ -3,7 +3,7 @@
 import { WANT_BY_ID, WantId, BUILDING_BY_ID, BUILDINGS, CATEGORIES, CharterMetric, RESEARCH_BY_ID, EVENTS, ResourceId, MEALS, RAW_FOODS, RESOURCES, Recipe, InputKey, membersOf, recipeRate, LORE_BOOST, GUILD_BOOST, RENOWN, TIER, TIER_STAGE, SLOTS, FINALE_COLONISTS, JobKind, JOB_KINDS, renownFor } from './content';
 import { assess, Concern, defsOf, KIND_DEFS } from './advisor';
 import { isFocused } from './world';
-import { World, feastUnservedDrinks, feastUnservedMeals, orderedRecipes, costOf, tallyOf, renownOf, FEAST_MEALS, FEAST_DRINKS, workshopInputPlan, apply, alive, beds, mealTotal, sites, findSpot, CENTER, avgMood, built, MAP_SIZE, pathAt, terrainAt, T_WATER, bdef, workersAt, blockedReason, opinion, Building, Colonist, hourOfDay, charterProgress, buildingByUid, storageFree, storages, FOODS, GOODS, bedridden, foodTotal, currentRecipe, drinkTotal, siteOk, enabledRecipes, recipesOf, rerollCost, stockOf, usableHere, charterDef, charterHelpers, feastCheck, desks, researchLeft, edibleTotal, doorTile, centerOf, winterStores, storageCap, stored, lastDay, lastDayHours, remainingCost, seasonYield, recipeOn, spotOf, canPlace, coversPath, efficiencyAt, footprint, BUILD_MIN, BUILD_MAX, blockedGrid, storePrio, workHours, tradeOf, workPrio, wantMet, wantSupported } from './world';
+import { World, feastUnservedDrinks, feastUnservedMeals, orderedRecipes, costOf, tallyOf, renownOf, FEAST_MEALS, FEAST_DRINKS, workshopInputPlan, apply, alive, beds, mealTotal, sites, findSpot, CENTER, avgMood, built, MAP_SIZE, pathAt, terrainAt, T_WATER, bdef, workersAt, blockedReason, opinion, Building, Colonist, hourOfDay, charterProgress, buildingByUid, yieldIn, storageFree, storages, FOODS, GOODS, bedridden, foodTotal, currentRecipe, drinkTotal, siteOk, enabledRecipes, recipesOf, rerollCost, stockOf, usableHere, charterDef, charterHelpers, feastCheck, desks, researchLeft, edibleTotal, doorTile, centerOf, winterStores, storageCap, stored, lastDay, lastDayHours, remainingCost, seasonYield, recipeOn, spotOf, canPlace, coversPath, efficiencyAt, footprint, BUILD_MIN, BUILD_MAX, blockedGrid, storePrio, workHours, tradeOf, workPrio, wantMet, wantSupported } from './world';
 import { seasonOf } from './seasons';
 import { draftLinks } from './charterplan';
 
@@ -181,7 +181,8 @@ function gathererBills(w: World) {
     // a single-crop gatherer (orchard, apiary, herb garden, cellar, dock) stops at about a week's worth: 70 apples
     // rotting in store is a hand that could have cut wood
     if (recs.length === 1 && !Object.keys(recs[0].inputs).length && !['wood', 'clay'].includes(recs[0].output)) {
-      const cap = Math.max(30, pop * 5);
+      const wdc = winterDrinks(w);
+      const cap = Math.max(30, pop * 5) + (wdc && wdc.have < wdc.need && wdc.crops.includes(b.def) ? wdc.need - wdc.have : 0);
       if ((b.productionLimits?.[recs[0].output] ?? null) !== cap) apply(w, { type: 'productionLimit', building: b.uid, output: recs[0].output, limit: cap });
       continue;
     }
@@ -717,6 +718,46 @@ export function winPlan(w: World, charter = w.charter): { need: string[]; meal?:
   PLAN_CACHE.set(w, { key, plan: best });
   return best;
 }
+/**
+ * Winter drink stores: a finale's quality drinks are made from ale, cider or mead, and those come from crops that
+ * yield nothing in winter (field, orchard, apiary). In autumn and through winter, the bot puts by the plain drinks the
+ * owed quality drinks will take, the way a player brews before the frost: they stay out of the tavern, and the brewer
+ * and the crop keep a hand until the store is full. Null when the plan's drinks don't hang on a crop, or it isn't the
+ * season for it.
+ */
+export function winterDrinks(w: World): { goods: ResourceId[]; need: number; have: number; makers: string[]; crops: string[] } | null {
+  if (!BOT.smallColony || (w.charterTier ?? 1) < 2) return null;
+  const s = seasonOf(w);
+  if (s.season !== 'autumn' && s.season !== 'winter') return null;
+  // the plain drinks the colony's built makers can brew, and the crops behind them
+  const goods: ResourceId[] = [], makers: string[] = [], crops: string[] = [];
+  // makers built, owned, or on the win plan: the apples can be put by before the press is even drafted
+  const planned = [...new Set([...built(w).map(b => b.def), ...w.owned, ...(BOT.winPlan ? winPlan(w).need : [])])];
+  for (const def of planned) for (const r of BUILDING_BY_ID[def]?.recipes ?? []) {
+    if (!SLOTS.brew.members.includes(r.output)) continue;
+    const b = { def };
+    const from = (Object.keys(r.inputs) as InputKey[]).flatMap(k => membersOf(k)).flatMap(m => BUILDINGS.filter(d => (d.recipes ?? []).some(x => x.output === m && !Object.keys(x.inputs).length)).map(d => d.id));
+    const crop = from.filter(id => yieldIn(id, 'winter') === 0);
+    if (!crop.length || !crop.every(id => from.filter(f => yieldIn(f, 'winter') > 0).length === 0)) continue;
+    if (!goods.includes(r.output)) goods.push(r.output);
+    if (!makers.includes(b.def)) makers.push(b.def);
+    for (const c of crop) if (!crops.includes(c) && w.owned.includes(c)) crops.push(c);
+  }
+  if (!goods.length) return null;
+  // what the finale's quality drinks still owe, in plain drinks (two make three), plus a few for the tavern
+  const delivered = w.buildings.filter(b => ['hall', 'pavilion'].includes(b.def)).reduce((n, b) => n + ((b.delivered as Record<string, number> | undefined)?.feastDrink ?? 0), 0);
+  const owedQ = Math.max(0, Math.max(alive(w).length, FINALE_COLONISTS) - delivered - stockOf(w, 'feastDrink'));
+  const need = Math.ceil(owedQ * 2 / 3) + 4;
+  const have = goods.reduce((n, g) => n + w.res[g], 0);
+  return { goods, need, have, makers, crops };
+}
+/** the win plan's drink-route blueprints, from late summer, when the plan's plain drinks come from crops */
+function autumnDrinkDrafts(w: World, planNeed: string[]): string[] {
+  const s = seasonOf(w);
+  if (!(s.season === 'autumn' || (s.season === 'summer' && s.toWinter <= 15))) return [];
+  const drinkish = ['brewery', 'ciderpress', 'stillhouse', 'apothecary', 'field', 'orchard', 'apiary', 'herbgarden'];
+  return planNeed.filter(id => drinkish.includes(id));
+}
 const PLAN_CACHE = new WeakMap<World, { key: string; plan: { need: string[]; meal?: ResourceId; drink?: ResourceId } }>();
 /** keep only the smallest sets: drop any set that contains another */
 function pruneSets(xs: Set<string>[]): Set<string>[] {
@@ -912,6 +953,8 @@ export function autoDecide(w: World, style: 'greedy' | 'random' = 'greedy', rand
     } else if (d.kind === 'blueprint') {
       const helpers = charterHelpers(w.charter);
       const planNeed = BOT.winPlan ? winPlan(w).need : [];
+      // in autumn the plan's drink route comes first when it runs on crops: the brewing has to be done before the frost
+      const drinkFirst = BOT.smallColony ? autumnDrinkDrafts(w, planNeed) : [];
       // the one blueprint the charter's cheapest route is still missing (a mill for the dough) beats any helper
       const links = [...draftLinks(w), ...(BOT.finaleRoutes ? finaleLinks(w) : [])];
       // a second plank maker isn't a help to First planks once one is owned: one sawmill is enough for a small colony
@@ -934,6 +977,7 @@ export function autoDecide(w: World, style: 'greedy' | 'random' = 'greedy', rand
         'efficient fine-material upgrade': BOT.roughPlanks && !built(w).some(b => FINE_MAKERS.includes(b.def) && !blockedReason(w,b)) && FINE_MAKERS.includes(id) && usableHere(w,id) ? -120 : 0,
         'the charter\u2019s route waits on it': links.includes(id) ? -110 : 0,
         'on the win plan': BOT.winPlan && planNeed.includes(id) ? -95 : 0,
+        'brew before the frost': drinkFirst.includes(id) ? -12 : 0,
         'helps the charter': helpers.includes(id) && feedable(id) ? -100 + helpers.indexOf(id) : 0,
         'a note asks for it': asked.includes(id) ? -50 + asked.indexOf(id) : 0,
         'settlers want it': wantsAsk.includes(id) ? -40 + wantsAsk.indexOf(id) : 0,
@@ -941,7 +985,7 @@ export function autoDecide(w: World, style: 'greedy' | 'random' = 'greedy', rand
         ...usableParts(id),
         ...(BOT.routes ? { 'new kinds it unlocks (×3)': -newKinds(w, id) * 3 } : {}),
       });
-      const rank = (id: string) => (BOT.winPlan && planNeed.includes(id) ? -95 : 0) + (links.includes(id) ? -110 : 0) + (helpers.includes(id) && feedable(id) ? -100 + helpers.indexOf(id) : 0) + (asked.includes(id) ? -50 + asked.indexOf(id) : 0) + (wantsAsk.includes(id) ? -40 + wantsAsk.indexOf(id) : 0) + BLUEPRINT_PRIORITY.indexOf(id) + usable(id);
+      const rank = (id: string) => (drinkFirst.includes(id) ? -12 : 0) + (BOT.winPlan && planNeed.includes(id) ? -95 : 0) + (links.includes(id) ? -110 : 0) + (helpers.includes(id) && feedable(id) ? -100 + helpers.indexOf(id) : 0) + (asked.includes(id) ? -50 + asked.indexOf(id) : 0) + (wantsAsk.includes(id) ? -40 + wantsAsk.indexOf(id) : 0) + BLUEPRINT_PRIORITY.indexOf(id) + usable(id);
       // nothing on offer the colony is missing and wants: pay for a reroll while gold stays comfortable
       const core = ['sawmill', 'tavern', 'cottage', 'pieoven', 'stage', 'bathhouse', 'dock', ...(DRINK_MAKERS.some(x => w.owned.includes(x)) ? [] : DRINK_MAKERS)];
       const wanted = (id: string) => planNeed.includes(id) || links.includes(id) || (helpers.includes(id) && feedable(id)) || asked.includes(id) || wantsAsk.includes(id) || (core.includes(id) && usable(id) < 6);
@@ -1168,7 +1212,8 @@ export function autoBuild(w: World, options: { construction?: boolean } = {}) {
   rememberEconomy(w);
   if (BOT.recipes) manageRecipes(w);
   const kind = charterKind(w);
-  const hallSite = w.buildings.find(b => b.def === 'hall' && !b.built && (b.stage ?? 0) === 0);
+  // the Hall's timber stage: planks are saved until it has its 30, then the rest of the colony may spend them
+  const hallSite = w.buildings.find(b => b.def === 'hall' && !b.built && (b.stage ?? 0) === 0 && ((remainingCost(b) as Record<string, number>).fine ?? 0) > 0);
   const saving: ResourceId[] = hallSite ? ['planks'] : w.charter === 'firstplanks' ? ['wood', 'planks'] : [];
   const pop = alive(w).length;
   const count = (id: string) => w.buildings.filter(b => b.def === id).length;
@@ -1495,6 +1540,9 @@ export function staffPlan(w: World, explain = false): Map<number, number> {
     if (w.res.wood < 30 || (!BOT.chainBeforeWinter && w.res.wood < ws.wood)) give('woodcutter', Math.max(2, Math.ceil(pop / 4)) + (w.res.wood < ws.wood ? 1 : 0));
   }
   give('clinic', 1);
+  // winter drink stores: the brewer and the crop behind it keep a hand until the autumn store is full
+  const wdr = winterDrinks(w);
+  if (wdr && wdr.have < wdr.need) { stage = 'drinks for winter'; for (const c of wdr.crops) give(kindFor(c), 1); for (const m of wdr.makers) give(kindFor(m), 1); stage = 'essentials'; }
   // the charter's chain gets its first hands before the winter stores take the rest
   if (BOT.chainBeforeWinter && !BOT.rateStaffing) {
     stage = 'charter chain';
@@ -1757,6 +1805,8 @@ export function autoFoodRules(w: World) {
   // out of the tavern and weddings. Nobody goes hungry for want of a drink, so nothing forces them out.
   const owed = BOT.finaleRoutes ? finaleOwed(w) : {};
   const reserve = new Set<ResourceId>(Object.keys(owed).length ? [...routeGoods, ...(owed.feastDrink ? FEAST_DRINKS : [])].filter(r => CATEGORIES.drink.members.includes(r)) : []);
+  const wd = winterDrinks(w);
+  if (wd && wd.have < wd.need) for (const g of wd.goods) reserve.add(g);
   for (const d of CATEGORIES.drink.members) {
     const allowed = !reserve.has(d);
     if (allowed === w.forbidden.includes(d)) apply(w, { type: 'foodRule', food: d, allowed });
