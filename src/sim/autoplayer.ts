@@ -178,13 +178,32 @@ function gathererBills(w: World) {
       if (i >= 0 && b.productionLimits?.stew !== cap) apply(w, { type: 'productionLimit', building: b.uid, output: 'stew', limit: cap });
       continue;
     }
+    // a single-crop gatherer (orchard, apiary, herb garden, cellar, dock) stops at about a week's worth: 70 apples
+    // rotting in store is a hand that could have cut wood
+    if (recs.length === 1 && !Object.keys(recs[0].inputs).length && !['wood', 'clay'].includes(recs[0].output)) {
+      const cap = Math.max(30, pop * 5);
+      if ((b.productionLimits?.[recs[0].output] ?? null) !== cap) apply(w, { type: 'productionLimit', building: b.uid, output: recs[0].output, limit: cap });
+      continue;
+    }
     if (recs.length < 2 || recs.some(r => Object.keys(r.inputs).length)) continue;
     const slow = recs.filter(r => r.stars < 3).map(r => r.output);
     const needed = slow.filter(uses);
+    // a find the charter's own chain waits on (acorns for the mill on a map with no field) goes first while it's short,
+    // the way a player bumps it up the forager's list
+    const chain = w.charter ? charterChain(w) : [];
+    // but never while people are short of food: berries first then, and the slow finds only a few at a time
+    const hungry = rawStock(w) + mealTotal(w) < pop * 3;
+    const forChain = hungry ? [] : needed.filter(r => w.res[r] < 12 && built(w).some(x => chain.includes(x.def) && recipesOf(x).some(y => (Object.keys(y.inputs) as InputKey[]).some(k => membersOf(k).includes(r)))));
+    const want = recs.map((r, i) => ({ i, k: forChain.includes(r.output) ? 0 : r.stars === 3 ? 1 : 2 })).sort((a, c) => a.k - c.k || a.i - c.i).map(x => x.i);
+    for (let guard = 0; guard < 8; guard++) {
+      const cur = orderedRecipes(b).map(x => x.i);
+      const pos = want.findIndex((x, j) => cur[j] !== x); if (pos < 0) break;
+      apply(w, { type: 'recipePriority', building: b.uid, recipe: want[pos], delta: -1 });
+    }
     recs.forEach((r, i) => {
       const on = r.stars === 3 || needed.includes(r.output);
       if (on !== recipeOn(b, i)) apply(w, { type: 'toggleRecipe', building: b.uid, recipe: i, on });
-      const limit = !needed.length ? null : r.stars === 3 ? Math.max(15, pop * 4) : 12;
+      const limit = !needed.length ? null : r.stars === 3 ? Math.max(15, pop * 4) : hungry ? 4 : 12;
       if ((b.productionLimits?.[r.output] ?? null) !== limit) apply(w, { type: 'productionLimit', building: b.uid, output: r.output, limit });
     });
   }
@@ -377,6 +396,8 @@ function researchParts(w: World, id: string): Record<string, number> {
   if (id === 'cellaring' && built(w).some(b => b.def === 'tavern')) p['a tavern pours'] = 4;
   if (id === 'quarantine') p['flu goes round'] = 2 + (alive(w).some(c => c.illness?.contagious) ? 3 : 0);
   if (id === 'physick' && alive(w).some(c => c.illness)) p['someone is ill'] = 10;
+  // a handful of settlers rarely needs a clinic yet: physick waits until someone falls ill or the colony grows
+  if (BOT.smallColony && id === 'physick' && !alive(w).some(c => c.illness) && alive(w).length < 6) p['usual order'] = 1;
   if (id === 'warehousing' && storages(w).every(b => (bdef(b).storage ?? 0) - Object.values(b.stock).reduce((n, x) => n + (x ?? 0), 0) < 40)) p['storage nearly full'] = 4;
   if (BOT.researchFeasible) {
     const missing = Object.entries(RESEARCH_BY_ID[id].cost).filter(([k, n]) => stockOf(w, k as InputKey) < (n ?? 0));
@@ -886,7 +907,8 @@ export function autoDecide(w: World, style: 'greedy' | 'random' = 'greedy', rand
       const planNeed = BOT.winPlan ? winPlan(w).need : [];
       // the one blueprint the charter's cheapest route is still missing (a mill for the dough) beats any helper
       const links = [...draftLinks(w), ...(BOT.finaleRoutes ? finaleLinks(w) : [])];
-      const feedable = (id: string) => id !== 'smokehouse' || w.owned.includes('dock') || w.owned.includes('cellar');
+      // a second plank maker isn't a help to First planks once one is owned: one sawmill is enough for a small colony
+      const feedable = (id: string) => (id !== 'smokehouse' || w.owned.includes('dock') || w.owned.includes('cellar')) && !(BOT.smallColony && FINE_MAKERS.includes(id) && FINE_MAKERS.some(f => f !== id && w.owned.includes(f)));
       // a blueprint that needs planks is dead weight until there's a sawmill; a tavern without a brewery serves nothing
       const usableParts = (id: string): Record<string, number> => ({
         'needs planks, nothing makes them': BUILDING_BY_ID[id].cost.fine && !FINE_MAKERS.some(f => w.owned.includes(f) && usableHere(w, f)) && !FINE_MAKERS.includes(id) ? 6 : 0,
@@ -904,7 +926,7 @@ export function autoDecide(w: World, style: 'greedy' | 'random' = 'greedy', rand
       const rankParts = (id: string): Record<string, number> => ({
         'efficient fine-material upgrade': BOT.roughPlanks && !built(w).some(b => FINE_MAKERS.includes(b.def) && !blockedReason(w,b)) && FINE_MAKERS.includes(id) && usableHere(w,id) ? -120 : 0,
         'the charter\u2019s route waits on it': links.includes(id) ? -110 : 0,
-        'on the win plan': BOT.winPlan && planNeed.includes(id) ? -105 : 0,
+        'on the win plan': BOT.winPlan && planNeed.includes(id) ? -95 : 0,
         'helps the charter': helpers.includes(id) && feedable(id) ? -100 + helpers.indexOf(id) : 0,
         'a note asks for it': asked.includes(id) ? -50 + asked.indexOf(id) : 0,
         'settlers want it': wantsAsk.includes(id) ? -40 + wantsAsk.indexOf(id) : 0,
@@ -912,7 +934,7 @@ export function autoDecide(w: World, style: 'greedy' | 'random' = 'greedy', rand
         ...usableParts(id),
         ...(BOT.routes ? { 'new kinds it unlocks (×3)': -newKinds(w, id) * 3 } : {}),
       });
-      const rank = (id: string) => (BOT.winPlan && planNeed.includes(id) ? -105 : 0) + (links.includes(id) ? -110 : 0) + (helpers.includes(id) && feedable(id) ? -100 + helpers.indexOf(id) : 0) + (asked.includes(id) ? -50 + asked.indexOf(id) : 0) + (wantsAsk.includes(id) ? -40 + wantsAsk.indexOf(id) : 0) + BLUEPRINT_PRIORITY.indexOf(id) + usable(id);
+      const rank = (id: string) => (BOT.winPlan && planNeed.includes(id) ? -95 : 0) + (links.includes(id) ? -110 : 0) + (helpers.includes(id) && feedable(id) ? -100 + helpers.indexOf(id) : 0) + (asked.includes(id) ? -50 + asked.indexOf(id) : 0) + (wantsAsk.includes(id) ? -40 + wantsAsk.indexOf(id) : 0) + BLUEPRINT_PRIORITY.indexOf(id) + usable(id);
       // nothing on offer the colony is missing and wants: pay for a reroll while gold stays comfortable
       const core = ['sawmill', 'tavern', 'cottage', 'pieoven', 'stage', 'bathhouse', 'dock', ...(DRINK_MAKERS.some(x => w.owned.includes(x)) ? [] : DRINK_MAKERS)];
       const wanted = (id: string) => planNeed.includes(id) || links.includes(id) || (helpers.includes(id) && feedable(id)) || asked.includes(id) || wantsAsk.includes(id) || (core.includes(id) && usable(id) < 6);
@@ -1174,7 +1196,7 @@ export function autoBuild(w: World, options: { construction?: boolean } = {}) {
     if (partsOf(w).some(p => p.kind === 'longTable') && count('dining') < Math.ceil((pop + 1) / 6)) want.push('dining');
     if (count('dining') < Math.ceil(pop / 6)) want.push('dining');
     if (count('kitchen') === 0) want.push('kitchen');
-    if (count('clinic') === 0 && (day(w) >= 4 || alive(w).some(c => c.illness))) want.push('clinic');
+    if (count('clinic') === 0 && ((day(w) >= 4 && !(BOT.smallColony && pop < 6)) || alive(w).some(c => c.illness))) want.push('clinic');
     for (const id of charterHelpers(w.charter)) if (w.owned.includes(id) && count(id) === 0) want.push(id);
     // what settlers' wants call for: one of each, and a cottage for every homebody still in a shack
     for (const id of wantedBuildings(w)) if (w.owned.includes(id) && count(id) === 0 && !want.includes(id) && id !== 'cottage') want.push(id);
@@ -1263,7 +1285,7 @@ export function autoBuild(w: World, options: { construction?: boolean } = {}) {
       if (id === 'pieoven' && !w.buildings.some(b => FINE_MAKERS.includes(b.def)) && stockOf(w, 'fine') < 8) { skip(id, 'no planks or plank maker'); continue; }
       // while saving a resource, only spend it on beds and on producers that make more of it
       // beds, food, the first kitchen, dining hall and clinic are never held back to save for a charter
-      const essential = deadlineChain.includes(id) || id === 'leanto' || id === 'hall' || id === 'pavilion' || id === 'woodcutter' || id === 'forager' || (['kitchen', 'dining', 'clinic'].includes(id) && count(id) === 0) || (saving.includes('planks') && ['sawmill', 'kiln', 'claypit'].includes(id));
+      const essential = deadlineChain.includes(id) || id === 'leanto' || id === 'hall' || id === 'pavilion' || id === 'woodcutter' || id === 'forager' || (['kitchen', 'dining', 'clinic'].includes(id) && count(id) === 0) || (saving.includes('planks') && ['sawmill', 'kiln', 'claypit'].includes(id)) || (saving.length && FINE_MAKERS.includes(id) && !w.buildings.some(b => FINE_MAKERS.includes(b.def)));
       const short = !def.stages && Object.entries(def.cost).some(([r, n]) => stockOf(w, r as InputKey) < (n ?? 0) + (r === 'wood' ? (id==='clinic' && BOT.urgentClinic && alive(w).some(bedridden) ? BOT.clinicWoodBuffer : 10) : 0) || (saving.some(x => membersOf(r as InputKey).includes(x)) && !essential));
       if (short) { skip(id, `can\u2019t afford ${Object.entries(def.cost).map(([r, n]) => `${n} ${r}`).join(', ')}${saving.length ? ` while saving ${saving.join(' and ')}` : ''} (have ${Math.floor(w.res.wood)} wood, ${Math.floor(stockOf(w, 'fine'))} planks or bricks)`); continue; }
       // decorations go by the hearth; storage next to what it serves; everything else near the centre
@@ -1394,7 +1416,8 @@ export function staffPlan(w: World, explain = false): Map<number, number> {
   // a skeleton crew keeps its jobs going and builds with whoever is left
   const extraHands = fixesOf(w).reduce((n, f) => n + ('laborers' in f ? f.laborers : 0), 0);
   const slack = BOT.advisor && concernsOf(w).some(c => c.id === 'slack') ? 1 : 0;
-  const keepFree = Math.max(1, (pop <= 5 ? 1 : Math.max(2, Math.ceil(pop / BOT.laborersPer)) + (sites(w).length > 1 ? 1 : 0)) + Math.min(1, extraHands) - slack);
+  // a colony of eight keeps one laborer (two while building): the work grid sends idle hands to hauling anyway
+  const keepFree = Math.max(1, (pop <= 5 ? 1 : BOT.smallColony && pop <= 8 ? 1 + (sites(w).length > 1 ? 1 : 0) : Math.max(2, Math.ceil(pop / BOT.laborersPer)) + (sites(w).length > 1 ? 1 : 0)) + Math.min(1, extraHands) - slack);
   // nearly out of food: everyone who can forages first
   const famine = foodTotal(w) < pop * 2;
   let budget = Math.max(0, pop - (famine ? 1 : keepFree));
@@ -1424,8 +1447,16 @@ export function staffPlan(w: World, explain = false): Map<number, number> {
   // a small colony studies before it chops, while the woodpile lasts. With a charter under way (BOT.chainFirst), its
   // chain's first hands come before the scholar: a sawmill for First planks matters more than the next book
   const chainFirst = BOT.chainFirst && chain.length > 0;
+  // a small colony whose charter waits on a building it can't yet afford in wood (the sawmill for First planks) chops
+  // before it studies: research costs wood too, and a scholar would eat the sawmill's woodpile
+  const waitingOnWood = BOT.smallColony && charterChain(w).some(id => w.owned.includes(id) && !built(w).some(b => b.def === id) && (BUILDING_BY_ID[id].cost.wood ?? 0) + 10 > w.res.wood);
+  if (waitingOnWood) { stage = 'wood for the charter\u2019s chain'; want.woodcutter = Math.max(want.woodcutter ?? 0, 2); give('woodcutter', 2); stage = 'essentials'; want.desk = 0; }
   if (!chainFirst && w.res.wood >= 30) give('desk', 1);
-  give('woodcutter', 1); if (!chainFirst) give('desk', 1); give('kitchen', 1);
+  // cooked meals before books: raw berries make people ill, and a kitchen standing idle while the scholar reads is the
+  // first thing a player would fix (BOT.smallColony)
+  // and the charter's own workshops before either: a built sawmill for First planks gets its sawyer before the cook
+  if (BOT.smallColony) { give('woodcutter', 1); if (chainFirst) { stage = 'charter chain first'; for (const k of chain) give(k, 1); stage = 'essentials'; } give('kitchen', 1); if (!chainFirst) give('desk', 1); }
+  else { give('woodcutter', 1); if (!chainFirst) give('desk', 1); give('kitchen', 1); }
   if (chainFirst) { stage = 'charter chain first'; for (const k of chain) give(k, 1); stage = 'essentials'; give('desk', 1); }
   if (BOT.summerService && seasonOf(w).season === 'summer' && !famine && drinkTotal(w) >= 0.3) {
     stage='summer tavern service';give('tavern',1);
@@ -1690,16 +1721,22 @@ export function autoFoodRules(w: World) {
   // the finales want quality meals: keep what they're made from (and the meals themselves) out of people's mouths,
   // so it reaches the ovens and the site, while there's other food enough (the starvation guard below still releases it)
   const site = w.buildings.find(b => (b.def === 'hall' || b.def === 'pavilion') && !b.built && 'feastMeal' in costOf(b));
-  const feast = (w.charter === 'longtable' || w.charter === 'hall') && !!site && (remainingCost(site).feastMeal ?? 0) > stockOf(w, 'feastMeal');
+  const feast0 = (w.charter === 'longtable' || w.charter === 'hall') && !!site && (remainingCost(site).feastMeal ?? 0) > stockOf(w, 'feastMeal');
+  // a Hall still at its timber stage owes its meals later: the cakes made early are saved for it, not eaten as supper
+  const hallAhead = BOT.smallColony && w.charter === 'hall' && !!w.buildings.find(b => b.def === 'hall' && !b.built && ((b.delivered as Record<string, number> | undefined)?.feastMeal ?? 0) < Math.max(alive(w).length, FINALE_COLONISTS)) && stockOf(w, 'feastMeal') < Math.max(alive(w).length, FINALE_COLONISTS) + 2;
+  const feast = feast0 || hallAhead;
   // or a stocked pavilion still short of a meal for someone: the meals for it are kept too
   const toppingUp = w.charter === 'longtable' && !!w.buildings.find(b => b.def === 'pavilion' && b.built) && !w.feast?.done && feastUnservedMeals(w).length > 0;
   const onRoutes = BOT.finaleRoutes && finaleRoutes(w).length > 0;
   // with a route, only its goods are kept (the reserve is path-specific); without one, the old blanket list
-  if (BOT.supperRules && (feast || toppingUp) && rawFor(2, 1.2)) keep.push(...(BOT.routeOnlyReserve && onRoutes ? SLOTS.feastMeal.members : ['bread', 'hotpot', 'pie', ...SLOTS.cured.members, ...SLOTS.feastMeal.members] as ResourceId[]));
+  // "other food enough" counts the stew too: in autumn the berries run down while the kitchen has a month of stew
+  const otherFood = raw + MEALS.filter(m => !SLOTS.feastMeal.members.includes(m)).reduce((n, m) => n + w.res[m], 0);
+  const plentyElse = BOT.smallColony ? otherFood > pop * (keeping ? 1.2 : 2) : rawFor(2, 1.2);
+  if (BOT.supperRules && (feast || toppingUp) && plentyElse) keep.push(...(BOT.routeOnlyReserve && onRoutes ? SLOTS.feastMeal.members : ['bread', 'hotpot', 'pie', ...SLOTS.cured.members, ...SLOTS.feastMeal.members] as ResourceId[]));
   // the meals on a finale route are its ingredients, not supper
   // (and what each step takes: the hotpot for a honey cake, even when the stores already hold enough)
   const routeGoods = BOT.finaleRoutes ? finaleRoutes(w).flatMap(r => [r.good, ...r.steps.flatMap(x => [x.output, ...stepInputsOf(x)])]) : [];
-  if ((feast || toppingUp) && rawFor(2, 1.2)) keep.push(...routeGoods.filter(r => MEALS.includes(r)));
+  if ((feast || toppingUp) && plentyElse) keep.push(...routeGoods.filter(r => MEALS.includes(r)));
   // never let anyone starve for a charter: while what's left to eat is under 1.5 each, release the kept food with the
   // most in store (so a big pile of stew goes back on the menu before the pies anyone is saving)
   const open = () => [...MEALS, ...RAW_FOODS].filter(f => !keep.includes(f)).reduce((n, f) => n + w.res[f], 0);
