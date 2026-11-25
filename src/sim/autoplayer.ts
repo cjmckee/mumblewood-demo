@@ -185,6 +185,13 @@ function gathererBills(w: World) {
       if ((b.productionLimits?.[recs[0].output] ?? null) !== cap) apply(w, { type: 'productionLimit', building: b.uid, output: recs[0].output, limit: cap });
       continue;
     }
+    // and the woodcutter stops at a winter's fuel and a few buildings' worth: with a faster axe, an unwatched
+    // woodcutter stacks a thousand logs while the bakery waits on flour
+    if (b.def === 'woodcutter') {
+      const cap = Math.max(150, pop * 20);
+      if ((b.productionLimits?.wood ?? null) !== cap) apply(w, { type: 'productionLimit', building: b.uid, output: 'wood', limit: cap });
+      continue;
+    }
     if (recs.length < 2 || recs.some(r => Object.keys(r.inputs).length)) continue;
     const slow = recs.filter(r => r.stars < 3).map(r => r.output);
     const needed = slow.filter(uses);
