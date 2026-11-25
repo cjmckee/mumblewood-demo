@@ -35,6 +35,8 @@ export interface Start {
   strain: { rate: number; rampDays: number };
   /** strain added by each break, and by each settler who leaves (strain is a point of mood off everyone) */
   breaks: { strain: number; leftStrain: number };
+  /** each comfort a colonist has (claude/mumblewood-mood-boost.md) eases the strain they feel by this share */
+  comforts: { ease: number };
   /** strain relief from finishing a charter, a share of the current strain so a deeper hole means a bigger climb back */
   relief: { charter: number };
   /** wood the hearth burns per night hour: a small fire for a small colony that grows with it, up to 1 */
@@ -151,6 +153,7 @@ export const START: Start = {
   collapse: { lost: 6, minAlive: 0 },
   strain: { rate: 0.07, rampDays: 40 },
   breaks: { strain: 0.5, leftStrain: 2 },
+  comforts: { ease: 0.1 },
   relief: { charter: 0.3 },
   hearth: { base: 0.125, perPerson: 0.03 },
   woodReserve: 10,

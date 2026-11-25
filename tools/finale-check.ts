@@ -1,6 +1,6 @@
 // Forced checks for the start and the finales, without the bot's judgement in the way.
 // Usage: npx tsx tools/finale-check.ts
-import { createWorld, apply, runHours, findSpot, World, alive, built, desks, workersAt, charterProgress, feastCheck, costOf, laborers, day, debugGrow, strainPerDay } from '../src/sim/world';
+import { createWorld, apply, runHours, findSpot, World, alive, built, desks, workersAt, charterProgress, feastCheck, costOf, laborers, day, debugGrow, strainPerDay, comfortsOf } from '../src/sim/world';
 import { seasonOf } from '../src/sim/seasons';
 import { BUILDING_BY_ID, MEALS, FINALE_COLONISTS } from '../src/sim/content';
 import { START } from '../src/sim/scenario';
@@ -181,6 +181,20 @@ function pavilion(w: World, larder: Partial<Record<string, number>>, full = true
   ok(alive(wi).filter(x => x.bed != null).every(x => x.cold), 'with no wood, every home is cold');
   wi.res.wood = 200; hours(2);
   ok(alive(wi).filter(x => x.bed != null).every(x => !x.cold), 'with wood, homes are warm again');
+}
+
+// ---- comforts shield against strain (claude/mumblewood-mood-boost.md) ----
+{
+  const w = createWorld(83); w.nextEventHour = 1e9; w.strain = 20;
+  const c = alive(w).find(x => !(x.traits ?? []).includes('stoic'))!;
+  const wear = () => { runHours(w, 1); return -(c.thoughts.find(t => t.label.startsWith('The frontier'))?.value ?? 0); };
+  c.fun = 10; c.drankOn = []; c.goodMealAt = undefined;
+  const bare = wear(), n0 = comfortsOf(w, c).filter(k => k.met).length;
+  c.fun = 90; c.drankOn = [day(w)]; c.goodMealAt = w.hour;
+  const eased = wear(), n1 = comfortsOf(w, c).filter(k => k.met).length;
+  ok(n1 >= n0 + 3, `a drink, fun and a good meal count as comforts (${n0} → ${n1})`);
+  ok(eased < bare * 0.8, `comforts ease the frontier's wear (${bare.toFixed(1)} → ${eased.toFixed(1)})`);
+  ok(comfortsOf(w, c).length * START.comforts.ease <= 0.5, 'comforts take off at most half the wear');
 }
 
 // ---- strain relief: charters ----

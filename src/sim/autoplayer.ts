@@ -182,7 +182,7 @@ function gathererBills(w: World) {
     // rotting in store is a hand that could have cut wood
     if (recs.length === 1 && !Object.keys(recs[0].inputs).length && !['wood', 'clay'].includes(recs[0].output)) {
       const wdc = winterDrinks(w);
-      const cap = Math.max(30, pop * 5) + (wdc && wdc.have < wdc.need && wdc.crops.includes(b.def) ? wdc.need - wdc.have : 0);
+      const cap = Math.max(30, pop * 5) + (wdc && wdc.have < wdc.need + pop && wdc.crops.includes(b.def) ? wdc.need + pop - wdc.have : 0);
       if ((b.productionLimits?.[recs[0].output] ?? null) !== cap) apply(w, { type: 'productionLimit', building: b.uid, output: recs[0].output, limit: cap });
       continue;
     }
@@ -751,6 +751,10 @@ export function winterDrinks(w: World): { goods: ResourceId[]; need: number; hav
   const have = goods.reduce((n, g) => n + w.res[g], 0);
   return { goods, need, have, makers, crops };
 }
+/** from charter 2, a cottage is a comfort that eases strain for everyone in it: worth a draft before the finale */
+function cottagePull(w: World, id: string) {
+  return BOT.smallColony && id === 'cottage' && (w.charterTier ?? 1) >= 2 && !w.owned.includes('cottage') ? -30 : 0;
+}
 /** the win plan's drink-route blueprints, from late summer, when the plan's plain drinks come from crops */
 function autumnDrinkDrafts(w: World, planNeed: string[]): string[] {
   const s = seasonOf(w);
@@ -978,6 +982,7 @@ export function autoDecide(w: World, style: 'greedy' | 'random' = 'greedy', rand
         'the charter\u2019s route waits on it': links.includes(id) ? -110 : 0,
         'on the win plan': BOT.winPlan && planNeed.includes(id) ? -95 : 0,
         'brew before the frost': drinkFirst.includes(id) ? -12 : 0,
+        'a cosy home eases the frontier': cottagePull(w, id),
         'helps the charter': helpers.includes(id) && feedable(id) ? -100 + helpers.indexOf(id) : 0,
         'a note asks for it': asked.includes(id) ? -50 + asked.indexOf(id) : 0,
         'settlers want it': wantsAsk.includes(id) ? -40 + wantsAsk.indexOf(id) : 0,
@@ -985,7 +990,7 @@ export function autoDecide(w: World, style: 'greedy' | 'random' = 'greedy', rand
         ...usableParts(id),
         ...(BOT.routes ? { 'new kinds it unlocks (×3)': -newKinds(w, id) * 3 } : {}),
       });
-      const rank = (id: string) => (drinkFirst.includes(id) ? -12 : 0) + (BOT.winPlan && planNeed.includes(id) ? -95 : 0) + (links.includes(id) ? -110 : 0) + (helpers.includes(id) && feedable(id) ? -100 + helpers.indexOf(id) : 0) + (asked.includes(id) ? -50 + asked.indexOf(id) : 0) + (wantsAsk.includes(id) ? -40 + wantsAsk.indexOf(id) : 0) + BLUEPRINT_PRIORITY.indexOf(id) + usable(id);
+      const rank = (id: string) => (drinkFirst.includes(id) ? -12 : 0) + cottagePull(w, id) + (BOT.winPlan && planNeed.includes(id) ? -95 : 0) + (links.includes(id) ? -110 : 0) + (helpers.includes(id) && feedable(id) ? -100 + helpers.indexOf(id) : 0) + (asked.includes(id) ? -50 + asked.indexOf(id) : 0) + (wantsAsk.includes(id) ? -40 + wantsAsk.indexOf(id) : 0) + BLUEPRINT_PRIORITY.indexOf(id) + usable(id);
       // nothing on offer the colony is missing and wants: pay for a reroll while gold stays comfortable
       const core = ['sawmill', 'tavern', 'cottage', 'pieoven', 'stage', 'bathhouse', 'dock', ...(DRINK_MAKERS.some(x => w.owned.includes(x)) ? [] : DRINK_MAKERS)];
       const wanted = (id: string) => planNeed.includes(id) || links.includes(id) || (helpers.includes(id) && feedable(id)) || asked.includes(id) || wantsAsk.includes(id) || (core.includes(id) && usable(id) < 6);
@@ -1262,7 +1267,7 @@ export function autoBuild(w: World, options: { construction?: boolean } = {}) {
       if (count('statue') < 2 && !saving.includes('planks') && stockOf(w, 'fine') > 30) want.push('statue');
       if (count('lantern') < 3 && spare) want.push('lantern');
       // swap drafty shacks for cottages when planks allow
-      if (w.owned.includes('cottage') && count('cottage') < Math.ceil(pop / 2) && stockOf(w, 'fine') >= 14) want.unshift('cottage');
+      if (w.owned.includes('cottage') && count('cottage') < Math.ceil(pop / 2) + (BOT.smallColony && (w.charterTier ?? 1) >= 2 ? 1 : 0) && stockOf(w, 'fine') >= 14) want.unshift('cottage');
     }
     // one of everything owned, except site gatherers nothing is waiting on yet
     const waitedOn = staffWants(w).drinks > 0 || staffWants(w).sawmill > 0 ? neededGatherers(w) : [];
@@ -1542,7 +1547,7 @@ export function staffPlan(w: World, explain = false): Map<number, number> {
   give('clinic', 1);
   // winter drink stores: the brewer and the crop behind it keep a hand until the autumn store is full
   const wdr = winterDrinks(w);
-  if (wdr && wdr.have < wdr.need) { stage = 'drinks for winter'; for (const c of wdr.crops) give(kindFor(c), 1); for (const m of wdr.makers) give(kindFor(m), 1); stage = 'essentials'; }
+  if (wdr && wdr.have < wdr.need + alive(w).length) { stage = 'drinks for winter'; for (const c of wdr.crops) give(kindFor(c), 1); for (const m of wdr.makers) give(kindFor(m), 1); stage = 'essentials'; }
   // the charter's chain gets its first hands before the winter stores take the rest
   if (BOT.chainBeforeWinter && !BOT.rateStaffing) {
     stage = 'charter chain';
