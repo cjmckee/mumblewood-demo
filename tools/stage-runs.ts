@@ -8,7 +8,7 @@
 //
 // Branches differ by the world's random stream and the bot's: the same start, five ways it could go.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { createWorld, tick, day, alive, avgMood, TICKS_PER_HOUR, World, charterDef, charterRequirements, blockedReason, built, hourOfDay } from '../src/sim/world';
+import { createWorld, tick, day, alive, avgMood, TICKS_PER_HOUR, World, charterDef, charterRequirements, blockedReason, built, hourOfDay, remainingCost, stockOf } from '../src/sim/world';
 import { autoDecide, autoBuild, TRACE, BotNote } from '../src/sim/autoplayer';
 import { BUILDING_BY_ID, MEALS, DRINKS, TIER, ResourceId } from '../src/sim/content';
 import { seasonOf } from '../src/sim/seasons';
@@ -47,6 +47,8 @@ for (let b = 0; b < branches; b++) {
     const moods = pop.map(c => c.mood);
     const reqs = w.charter ? charterRequirements(w) : [];
     charterName = charterDef(w.charter)?.name ?? charterName;
+    // SNAP=40,50 saves the colony at the start of those days too (bK-d40.json), for mood probes mid-stage
+    if ((process.env.SNAP ?? '').split(',').map(Number).includes(curDay)) writeFileSync(`${out}/b${b}-d${curDay}.json`, JSON.stringify(w));
     say(`\n## Day ${curDay} (${seasonOf(w).season} ${seasonOf(w).dayOf}) · pop ${pop.length} · mood ${fmt(avgMood(w))} (min ${fmt(Math.min(...moods))}) · strain ${fmt(w.strain)} · gold ${fmt(w.gold)}`);
     say(`charter: ${charterDef(w.charter)?.name ?? '—'} ${reqs.map(q => `[${q.metric.kind} ${fmt(q.value)}/${fmt(q.target)}]`).join(' ')}`);
     // time: colony hours by what people were doing (working is by building)
@@ -69,6 +71,12 @@ for (let b = 0; b < branches; b++) {
     const stock = (Object.keys(w.res) as ResourceId[]).filter(k => w.res[k] >= 1).map(k => `${k} ${fmt(w.res[k])}`);
     say(`stock: ${stock.join(', ')}`);
     if (w.forbidden.length) say(`held back: ${w.forbidden.join(', ')}`);
+    // the finale's site: what it still needs, whether that's in store, and who's happy enough (mood 55+) to work on it
+    const site = w.buildings.find(b => (b.def === 'hall' || b.def === 'pavilion') && !b.built);
+    if (site) {
+      const rem = remainingCost(site) as Record<string, number>, short = Object.entries(rem).filter(([k, n]) => n > 0 && stockOf(w, k as never) < n);
+      say(`site: ${site.def} stage ${site.stage ?? 0} · needs ${Object.entries(rem).filter(([, n]) => n > 0).map(([k, n]) => `${k} ${n}`).join(', ') || 'only work'} · ${short.length ? `short of ${short.map(([k]) => k).join(', ')}` : 'all in store'} · at 55+: ${pop.filter(c => c.mood >= 55).length}/${pop.length}`);
+    }
     const sites = w.buildings.filter(x => !x.built).map(x => name(x.def));
     say(`built: ${[...new Set(built(w).map(x => x.def))].map(name).join(', ')}${sites.length ? ` · sites: ${sites.join(', ')}` : ''}`);
     const blocked = built(w).map(x => [x, blockedReason(w, x)] as const).filter(([, why]) => why);

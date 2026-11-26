@@ -566,12 +566,21 @@ function genTerrain(w: World) {
       if (d < 1 && x >= BUILD_MIN && y >= BUILD_MIN && x <= BUILD_MAX && y <= BUILD_MAX && t[y * MAP_SIZE + x] === T_GRASS && nextRand(w) < density * (1.15 - d * 0.6)) set(x, y, v);
     }
   };
+  // a site that lands mostly on trees or water is too small to farm: try again elsewhere until it has room (a field's
+  // soil can be just two tiles otherwise, and a map's only drink with it). Maps whose first try is big enough are unchanged.
+  const SITE_TILE: Partial<Record<SiteId, number>> = { grove: T_APPLE, meadow: T_FLOWERS, soil: T_SOIL, oaks: T_OAK };
+  const SITE_MIN: Partial<Record<SiteId, number>> = { soil: 14, grove: 8, meadow: 8 };
   for (const id of order) {
-    const g = around(7.5, 10.5);
-    if (id === 'grove') onGrass(g.x, g.y, 2.2, T_APPLE, 0.75);
-    if (id === 'meadow') onGrass(g.x, g.y, 2.6, T_FLOWERS, 0.9);
-    if (id === 'soil') onGrass(g.x, g.y, 2.8, T_SOIL, 1);
-    if (id === 'oaks') onGrass(g.x, g.y, 2.3, T_OAK, 0.7);
+    let g = around(7.5, 10.5);
+    for (let tries = 0; tries < 6 && SITE_TILE[id] != null; tries++) {
+      // (drink sites only: oaks are a bonus, not a map's only way to something)
+      if (id === 'grove') onGrass(g.x, g.y, 2.2, T_APPLE, 0.75);
+      if (id === 'meadow') onGrass(g.x, g.y, 2.6, T_FLOWERS, 0.9);
+      if (id === 'soil') onGrass(g.x, g.y, 2.8, T_SOIL, 1);
+      if (id === 'oaks') onGrass(g.x, g.y, 2.3, T_OAK, 0.7);
+      if (!DRINK_SITES.includes(id) || t.filter(v => v === SITE_TILE[id]).length >= (SITE_MIN[id] ?? 0)) break;
+      g = around(7.5, 10.5);
+    }
     if (id === 'clay') {
       // clay lines a stretch of the pond's shore: grass tiles next to water, around one point on the bank
       const shore: { x: number; y: number }[] = [];

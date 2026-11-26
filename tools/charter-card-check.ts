@@ -33,7 +33,7 @@ const tonic = charterPreview(noMeadow, 'hearty').conditions.find(c => c.text ===
 check(tonic?.route?.state === 'never', 'tonics without a meadow: not on this map');
 
 // variety lists a route per kind
-const tasting = charterPreview(w, 'tasting').conditions.find(c => c.text.startsWith('40 renown from 3 kinds of drink'));
+const tasting = charterPreview(w, 'tasting').conditions.find(c => c.text.startsWith('30 renown from 3 kinds of drink'));
 check((tasting?.routes?.length ?? 0) === 3, `three drink routes are listed (${tasting?.routes?.map(r => r.good)})`);
 
 // while a charter is under way, its panel gets the same routes: bread on a fresh map needs an oven (acorn meal can come from the kitchen)
@@ -58,7 +58,7 @@ check(g.decisions[0]?.kind === 'charter' && g.decisions[1]?.kind === 'perk', `ne
 
 // the requirement row names what it counts
 const h = createWorld(5); h.charter = 'bread';
-check(charterRequirements(h).some(r => r.label.endsWith('/ 30 bread eaten')), `tally requirement names the good and how it counts (${charterRequirements(h).map(r => r.label)})`);
+check(charterRequirements(h).some(r => r.label.endsWith('/ 20 bread eaten')), `tally requirement names the good and how it counts (${charterRequirements(h).map(r => r.label)})`);
 
 // any option whose label spends gold, meals, drinks, food, wood or planks declares it, with what happens if short
 const spends = /(\d+) (gold|meals?|drinks?|food|wood|planks)|Pay \d+|Toss them \d+|Slip him \d+/;

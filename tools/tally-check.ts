@@ -48,7 +48,7 @@ ok(CHARTERS.filter(c => c.tier === 2).every(c => parts(c.metric).some(p => p.kin
   w.tally.eaten.honeycake = 3;
   ok(renownOf(w, 'meal').points === 52 && renownOf(w, 'meal').kinds.length === 2, 'a quality meal earns 4, but 3 of a kind don’t count as a kind yet');
   const label = charterProgress(w)?.label ?? '';
-  ok(/52 \/ 60 renown · 2 \/ 3 kinds/.test(label), `the card says where renown stands (${label})`);
+  ok(/52 \/ 40 renown · 2 \/ 3 kinds/.test(label), `the card says where renown stands (${label})`);
 }
 
 // 5. The finales' goods: quality meals and quality drinks, made on every map; the supper house plates a ploughman's supper.
