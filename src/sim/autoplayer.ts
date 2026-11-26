@@ -684,7 +684,9 @@ export function winPlan(w: World, charter = w.charter): { need: string[]; meal?:
   const cached = PLAN_CACHE.get(w);
   if (cached?.key === key) return cached.plan;
   const memo = new Map<string, Set<string>[]>();
-  const usable = BUILDINGS.filter(d => siteOk(w, d) && !ROUTE_AVOID.includes(d.id));
+  // a building tied to a site (soil, a grove) needs room left on it: a field with its soil all built over is no route
+  const room = (d: typeof BUILDINGS[number]) => !BOT.smallColony || !d.needs || built(w).some(b => b.def === d.id) || !!findSpot(w, d.id, CENTER, CENTER, true);
+  const usable = BUILDINGS.filter(d => siteOk(w, d) && !ROUTE_AVOID.includes(d.id) && room(d));
   const routes = (good: ResourceId, depth = 6): Set<string>[] => {
     const k = good + depth; if (memo.has(k)) return memo.get(k)!;
     memo.set(k, []);
@@ -715,6 +717,9 @@ export function winPlan(w: World, charter = w.charter): { need: string[]; meal?:
     const u = new Set([...mr, ...dr, ...tr]);
     if (u.size < bestN) { bestN = u.size; best = { need: [...u], meal, drink }; }
   }
+  // the finale only goes up with people at mood 55: homes and a tavern (a cosy home, a drink) are part of winning, as a
+  // player reading the Hall's gate would plan them
+  if (BOT.smallColony) best = { ...best, need: [...best.need, ...['cottage', 'tavern'].filter(id => !w.owned.includes(id) && !best.need.includes(id) && usableHere(w, id))] };
   PLAN_CACHE.set(w, { key, plan: best });
   return best;
 }
@@ -1304,7 +1309,9 @@ export function autoBuild(w: World, options: { construction?: boolean } = {}) {
     // while the charter's chain is missing a building, wood goes to that chain and to beds and food first
     // (one that needs planks with no way to get them doesn't hold everything else up: nothing would ever be built)
     const noFine = (id: string) => (BUILDING_BY_ID[id].cost.fine ?? 0) > stockOf(w, 'fine') && !w.buildings.some(b => FINE_MAKERS.includes(b.def)) && !FINE_MAKERS.some(m => w.owned.includes(m));
-    const missing = charterChain(w).filter(id => count(id) === 0 && !(BOT.unlockChain && noFine(id)));
+    // a chain building with no room on the map (a field whose soil is all taken) can't hold the colony's wood for itself
+    const roomFor = (id: string) => { if (!BOT.smallColony) return true; const near = storageSpot(w, id); return !!((BOT.layout && !BUILDING_BY_ID[id].decor && botSpot(w, id)) || findSpot(w, id, near.x, near.y, !BUILDING_BY_ID[id].decor)); };
+    const missing = charterChain(w).filter(id => count(id) === 0 && !(BOT.unlockChain && noFine(id)) && roomFor(id));
     const fineChain = BOT.fineInputs && missing.some(id => (BUILDING_BY_ID[id].cost.fine ?? 0) > stockOf(w,'fine')) ? fineMaterialChain(w) : [];
     const firstNeeds = [...fineChain, 'leanto', 'woodcutter', 'forager', 'dock', ...(count('kitchen') ? [] : ['kitchen']), ...(count('dining') ? [] : ['dining'])];
     // a chain building that needs planks can't go up without something that makes them: that maker unlocks the chain
@@ -1484,9 +1491,12 @@ export function staffPlan(w: World, explain = false): Map<number, number> {
   const slack = BOT.advisor && concernsOf(w).some(c => c.id === 'slack') ? 1 : 0;
   // a colony of eight keeps one laborer (two while building): the work grid sends idle hands to hauling anyway
   const keepFree = Math.max(1, (pop <= 5 ? 1 : BOT.smallColony && pop <= 8 ? 1 + (sites(w).length > 1 ? 1 : 0) : Math.max(2, Math.ceil(pop / BOT.laborersPer)) + (sites(w).length > 1 ? 1 : 0)) + Math.min(1, extraHands) - slack);
+  // a gated finale site: as many free hands as there are people happy enough to work on it (up to 3)
+  const gate = gateOf(w);
+  const gatedHands = gate == null ? 0 : Math.max(0, Math.min(3, alive(w).filter(c => c.mood >= gate && !bedridden(c)).length) - keepFree);
   // nearly out of food: everyone who can forages first
   const famine = foodTotal(w) < pop * 2;
-  let budget = Math.max(0, pop - (famine ? 1 : keepFree));
+  let budget = Math.max(0, pop - (famine ? 1 : keepFree + gatedHands));
   const given: Record<string, number> = {};
   const plan = new Map<number, number>();
   const capacity = (kind: string) => built(w).filter(b => defsOf(kind).includes(b.def) && !blockedReason(w, b) && (!BOT.seasonalStaffing || seasonYield(w,b.def)>0)).reduce((n, b) => n + bdef(b).slots, 0);
@@ -1684,6 +1694,15 @@ function tradeFit(w: World, c: Colonist, job: JobKind) {
  * rest to low, so each trade's workers go where the bot wants them and help elsewhere only when those run dry; the
  * number of people in each trade is the plan's total for that trade's buildings.
  */
+/**
+ * The finale's site only takes people at its mood gate (the Hall: 55+). While it's going up, the happy ones are its
+ * only hands: they're left as laborers and the jobs go to everyone else first (BOT.smallColony).
+ */
+function gateOf(w: World): number | null {
+  if (!BOT.smallColony) return null;
+  const site = sites(w).find(b => bdef(b).moodGate);
+  return site ? bdef(site).moodGate! : null;
+}
 export function autoStaff(w: World) {
   const plan = staffPlan(w, TRACE.on && Math.round(hourOfDay(w)) === 9);
   const want: Partial<Record<JobKind, number>> = {};
@@ -1700,11 +1719,13 @@ export function autoStaff(w: World) {
   // the doctor: with someone laid up, a healthy medic, never one who's ill themselves
   const urgent = BOT.urgentClinic && alive(w).some(bedridden);
   const canDo = (c: Colonist, job: JobKind) => able(c) && !(urgent && job === 'medicine' && c.illness);
+  // happy enough for the finale's site: kept for it, so the last to take a job and the first to leave one
+  const gate = gateOf(w), keep = (c: Colonist) => (gate != null && c.mood >= gate ? 50 : 0);
   // first, release extras: the worst fits, and anyone who can't do it right now
   for (const job of JOB_KINDS) {
     const ts = alive(w).filter(c => tradeOf(w, c) === job && able(c));
     for (const c of ts.filter(c => !canDo(c, job))) setTrade(c, null);
-    const ok = ts.filter(c => canDo(c, job)).sort((a, z) => tradeFit(w, a, job) - tradeFit(w, z, job));
+    const ok = ts.filter(c => canDo(c, job)).sort((a, z) => (tradeFit(w, a, job) - keep(a)) - (tradeFit(w, z, job) - keep(z)));
     for (const c of ok.slice(0, Math.max(0, ok.length - (want[job] ?? 0)))) setTrade(c, null);
   }
   // nobody keeps a trade they hate while a laborer could take it instead
@@ -1728,7 +1749,7 @@ export function autoStaff(w: World) {
     while (have(job) < want[job]!) {
       const free = alive(w).filter(c => tradeOf(w, c) == null && canDo(c, job));
       if (!free.length) break;
-      free.sort((a, z) => tradeFit(w, z, job) - tradeFit(w, a, job));
+      free.sort((a, z) => (tradeFit(w, z, job) - keep(z)) - (tradeFit(w, a, job) - keep(a)));
       setTrade(free[0], job);
     }
   }
@@ -1802,7 +1823,9 @@ export function autoFoodRules(w: World) {
   const site = w.buildings.find(b => (b.def === 'hall' || b.def === 'pavilion') && !b.built && 'feastMeal' in costOf(b));
   const feast0 = (w.charter === 'longtable' || w.charter === 'hall') && !!site && (remainingCost(site).feastMeal ?? 0) > stockOf(w, 'feastMeal');
   // a Hall still at its timber stage owes its meals later: the cakes made early are saved for it, not eaten as supper
-  const hallAhead = BOT.smallColony && w.charter === 'hall' && !!w.buildings.find(b => b.def === 'hall' && !b.built && ((b.delivered as Record<string, number> | undefined)?.feastMeal ?? 0) < Math.max(alive(w).length, FINALE_COLONISTS)) && stockOf(w, 'feastMeal') < Math.max(alive(w).length, FINALE_COLONISTS) + 2;
+  // and at the meals stage until they're carried in (only to there: deliveries start afresh each stage, so at the
+  // drinks stage the meals are already paid and go back on the table)
+  const hallAhead = BOT.smallColony && w.charter === 'hall' && !!w.buildings.find(b => b.def === 'hall' && !b.built && (b.stage ?? 0) <= 1 && ((b.delivered as Record<string, number> | undefined)?.feastMeal ?? 0) < Math.max(alive(w).length, FINALE_COLONISTS)) && stockOf(w, 'feastMeal') < Math.max(alive(w).length, FINALE_COLONISTS) + 2;
   const feast = feast0 || hallAhead;
   // or a stocked pavilion still short of a meal for someone: the meals for it are kept too
   const toppingUp = w.charter === 'longtable' && !!w.buildings.find(b => b.def === 'pavilion' && b.built) && !w.feast?.done && feastUnservedMeals(w).length > 0;

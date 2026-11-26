@@ -18,7 +18,9 @@ for (const id of ['outdoorsy', 'restless', 'aboveHauling'] as const) assert(want
 const fresh = createWorld(6); fresh.nextEventHour = 1e9;
 for (const x of alive(fresh)) apply(fresh, { type: 'prios', colonist: x.id, prios: focusedPrios('foraging') });
 for (let i = 0; i < 24 * 4; i++) { fresh.decisions = []; runHours(fresh, 1); }
-const someone = alive(fresh).find(x => (x.worked ?? []).length)!;
+// (the log trims as it's written, so judge it on whoever worked last)
+const someone = alive(fresh).filter(x => (x.worked ?? []).length).sort((a, z) => z.worked!.at(-1)!.h - a.worked!.at(-1)!.h)[0];
 assert(someone, 'working hours are logged');
-assert((someone.worked ?? []).every(x => x.h > fresh.hour - 72), 'the log keeps three days');
+const lastWorked = someone.worked!.at(-1)!.h;
+assert((someone.worked ?? []).every(x => x.h > lastWorked - 72), 'the log keeps three days');
 console.log('work wants: outdoorsy, restless, above hauling, work buddy and the work log passed');
