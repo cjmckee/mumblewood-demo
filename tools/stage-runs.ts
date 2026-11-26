@@ -12,13 +12,13 @@ import { createWorld, tick, day, alive, avgMood, TICKS_PER_HOUR, World, charterD
 import { autoDecide, autoBuild, TRACE, BotNote } from '../src/sim/autoplayer';
 import { BUILDING_BY_ID, MEALS, DRINKS, TIER, ResourceId } from '../src/sim/content';
 import { seasonOf } from '../src/sim/seasons';
-import { applyWinterWhatIf } from './winter-whatif';
+import { applyWinterWhatIf, applyDraftKnobs } from './winter-whatif';
 
 const arg = (k: string, d?: string) => { const i = process.argv.indexOf(`--${k}`); return i > 0 ? process.argv[i + 1] : d; };
 const branches = Number(arg('branches', '5')), maxDays = Number(arg('maxDays', '40')), out = arg('out', 'runs/stage')!;
 const quiet = process.argv.includes('--quiet');
 mkdirSync(out, { recursive: true });
-applyWinterWhatIf();
+applyWinterWhatIf(); applyDraftKnobs();
 const start: World = arg('from') ? JSON.parse(readFileSync(arg('from')!, 'utf8')) : createWorld(Number(arg('seed', '1000')));
 const startJson = JSON.stringify(start);
 const name = (id: string) => BUILDING_BY_ID[id]?.name ?? charterDef(id)?.name ?? id;

@@ -76,6 +76,9 @@ b { font-weight: 600; }
 .ch-tier { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; white-space: nowrap; }
 .meter { height: 6px; background: #2c332b; border-radius: 3px; margin: 6px 0 4px; overflow: hidden; }
 .meter i { display: block; height: 100%; background: var(--accent); border-radius: 3px; transition: width .4s; }
+.meter { position: relative; }
+.meter .tick { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: rgba(255,255,255,.35); }
+.draft-next { font-size: 12px; margin: 4px 0 0; color: var(--muted, #8a8070); }
 .ch-label { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .threats { display: grid; gap: 6px; border-left: 1px solid var(--line); padding-left: 12px; }
 .threats span { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); display: block; }

@@ -8,7 +8,7 @@ import {
   costOf, researchLeft, researchStillNeeds, desks, feastCheck, mealTotal, drinkTotal,
   strainPerDay, footprint, standingOf, yieldIn, BREAKING, GRUMBLE, breakPoint, breakKindFor, inspired, STANDINGS, NeedKey, winterFuelPerDay,
   sellPrice, renownOf, pavilionOf, larderOf, FEAST_MEALS, charterCounted, charterRequirements, basicsDone, researchOpen, edibleTotal, storePrio, colonyName, nameFrom, NAME_MAX, wantMet, wantPenalty, wantSupported, wantGap, tradeOf, TRADE_DEFS, workPrio, hasWork,
-  comfortsOf,
+  comfortsOf, draftSteps,
 } from '../sim/world';
 import { charterPreview, metricRoutes, Route } from '../sim/charterplan';
 import { START, SEASONS, Season } from '../sim/scenario';
@@ -646,6 +646,8 @@ export class UI {
     const h = hourOfDay(w);
     const hh = String(Math.floor(h)).padStart(2, '0');
     const prog = charterProgress(w);
+    // with earned drafts the bar shows the parts' average, the progress the drafts follow (START.drafts)
+    const steps = draftSteps(w), pct = steps ? steps.ratio : prog?.ratio ?? 0;
     const title = prog?.charter.name ?? (w.status === 'won' ? 'Town charter granted' : w.research && !w.charterOffered ? 'The Crown is watching' : 'Awaiting a charter');
     const issueCount = this.rankedIssues(w).length;
     const sc = START;
@@ -692,14 +694,14 @@ export class UI {
       <div class="res">${res}</div>
       <section class="status${this.charterCollapsed ? ' is-collapsed' : ''}" aria-label="Charter and colony status">
         <button type="button" class="status-toggle" data-act="charter-toggle" aria-expanded="${!this.charterCollapsed}" aria-controls="colony-status-details" aria-label="${this.charterCollapsed ? 'Expand' : 'Collapse'} charter details: ${esc(title)}">
-          <span class="status-heading"><span class="ch-name">${esc(title)}</span><span class="ch-tier">${prog ? `Charter ${w.chartersDone.length + 1}/3 · ${Math.round(prog.ratio * 100)}%` : 'Colony status'}${issueCount ? ` · ⚠ ${issueCount}` : ''}</span></span>
+          <span class="status-heading"><span class="ch-name">${esc(title)}</span><span class="ch-tier">${prog ? `Charter ${w.chartersDone.length + 1}/3 · ${Math.round(pct * 100)}%` : 'Colony status'}${issueCount ? ` · ⚠ ${issueCount}` : ''}</span></span>
           <svg class="status-chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="m5 12 5-5 5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
-        ${prog ? `<div class="meter" role="progressbar" aria-label="Charter progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(prog.ratio * 100)}"><i style="width:${(prog.ratio * 100).toFixed(1)}%"></i></div>` : ''}
+        ${prog ? `<div class="meter" role="progressbar" aria-label="Charter progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(pct * 100)}"><i style="width:${(pct * 100).toFixed(1)}%"></i>${steps ? '<b class="tick" style="left:33.3%"></b><b class="tick" style="left:66.7%"></b>' : ''}</div>` : ''}
         <div id="colony-status-details" class="status-details" ${this.charterCollapsed ? 'hidden' : ''}>
         <div class="charter">
           ${prog ? `
-          ${this.requirementChips(w)}${feastBtn}` : w.research && !w.charterOffered ? `<div class="ch-label">The first charter arrives on the morning of day ${sc.firstCharterDay}.</div>` : ''}
+          ${this.requirementChips(w)}${feastBtn}${draftLine(steps)}` : w.research && !w.charterOffered ? `<div class="ch-label">The first charter arrives on the morning of day ${sc.firstCharterDay}.</div>` : ''}
           ${researchChip}${concernCards(w)}
         </div>
         <div class="threats">
@@ -1466,6 +1468,12 @@ function moodLedger(w: World, c: Colonist) {
   const row = (label: string, v: number, cls: string) => `<div class="lg-row ${cls}"><span>${label}</span><i><b style="width:${Math.min(100, Math.abs(v) / scale * 100)}%"></b></i><em>${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(Math.round(v))}</em></div>`;
   return `<div class="ledger">${row('Good things', good, 'lg-good')}${row('Gripes', bad, 'lg-bad')}${row('Frontier wear', wear, 'lg-wear')}
     <p class="lg-sum">50 ${good >= 0 ? '+' : '−'} ${Math.abs(Math.round(good))} − ${Math.abs(Math.round(bad))} − ${Math.abs(Math.round(wear))} → heading to <b>${Math.round(c.moodTarget)}</b></p>${comfortLine(w, c)}</div>`;
+}
+/** when the next blueprint draft comes, with earned drafts: at each third of the charter's progress */
+function draftLine(steps: ReturnType<typeof draftSteps>) {
+  if (!steps) return '';
+  const third = (x: number) => (x < 0.5 ? '⅓' : '⅔');
+  return `<p class="draft-next" title="Blueprint drafts are earned: one when a charter is picked, and one at each third of its progress.">${steps.nextAt != null ? `Next blueprint draft at ${third(steps.nextAt)} of the charter` : 'Both of this charter’s blueprint drafts are earned · the next comes with the next charter'}</p>`;
 }
 /** the comforts that ease the frontier's wear: which this colonist has, and how much they take off */
 function comfortLine(w: World, c: Colonist) {

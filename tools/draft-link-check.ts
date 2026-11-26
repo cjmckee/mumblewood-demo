@@ -6,6 +6,9 @@ import { createWorld, apply, runHours, World, alive, feastUnservedDrinks, findSp
 import { draftLinks } from '../src/sim/charterplan';
 import { autoDecide, autoBuild } from '../src/sim/autoplayer';
 import { FINALE_COLONISTS } from '../src/sim/content';
+import { START as START_DRAFTS } from '../src/sim/scenario';
+// these fixtures test production and routes, not when drafts come: keep the old day timer so their RNG stays put
+START_DRAFTS.drafts.mode = 'days';
 
 let failed = 0;
 const check = (ok: boolean, what: string) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}`); if (!ok) failed++; };

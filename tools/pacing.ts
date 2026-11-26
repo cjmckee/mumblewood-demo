@@ -6,8 +6,8 @@ import { autoDecide, autoBuild, BOT, ROUTE_AVOID, pushing } from '../src/sim/aut
 import { CHARTERS } from '../src/sim/content';
 import { START } from '../src/sim/scenario';
 import { BUILDINGS } from '../src/sim/content';
-import { applyWinterWhatIf } from './winter-whatif';
-applyWinterWhatIf();
+import { applyWinterWhatIf, applyDraftKnobs } from './winter-whatif';
+applyWinterWhatIf(); applyDraftKnobs();
 // STYLE=random: the control, which makes every choice (charters, blueprints, research, cornerstones, recruits, events, trading) at random
 const STYLE = (process.env.STYLE ?? 'greedy') as 'greedy' | 'random';
 // experiment knobs: STRAIN_K, DRAFT_EVERY, RECRUIT_CAP (bot), LABORERS_PER (bot)
@@ -19,12 +19,7 @@ if (process.env.LONGTABLE_POP) { const m = CHARTERS.find(c => c.id === 'longtabl
 if (process.env.AVOID) ROUTE_AVOID.push(...process.env.AVOID.split(','));
 if (process.env.STRAIN_K) START.strain.rate = Number(process.env.STRAIN_K);
 if (process.env.DRAFT_EVERY) START.draftEvery = Number(process.env.DRAFT_EVERY);
-// DRAFT_MODE=days|charter|settlers|standing, DRAFT_FALLBACK=6, STANDING_EACH=24 (claude/mumblewood-draft-cadence.md)
-if (process.env.DRAFT_MODE) START.drafts.mode = process.env.DRAFT_MODE as typeof START.drafts.mode;
-if (process.env.DRAFT_FALLBACK) START.drafts.fallback = Number(process.env.DRAFT_FALLBACK);
-if (process.env.CORNERSTONES) START.cornerstoneWhen = process.env.CORNERSTONES as typeof START.cornerstoneWhen;
-if (process.env.RECRUIT_MODE) START.recruitMode = process.env.RECRUIT_MODE as typeof START.recruitMode;
-if (process.env.STANDING_EACH) START.drafts.standingEach = Number(process.env.STANDING_EACH);
+
 if (process.env.RECRUIT_CAP) BOT.recruitCap = Number(process.env.RECRUIT_CAP);
 if (process.env.LABORERS_PER) BOT.laborersPer = Number(process.env.LABORERS_PER);
 if (process.env.RECRUIT_EXTRA) BOT.recruitExtra = Number(process.env.RECRUIT_EXTRA);
