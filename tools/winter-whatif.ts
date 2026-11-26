@@ -14,3 +14,16 @@ export function applyWinterWhatIf() {
     ws.homeFuel = {}; ws.chill = { cold: 0, warm: 0 }; ws.spoil.winter = ws.spoil.autumn;
   }
 }
+
+/** draft and settler schedules from the environment (claude/mumblewood-draft-cadence.md), for pacing and stage-runs */
+export function applyDraftKnobs() {
+  // DRAFT_MODE=days|charter|settlers|standing, DRAFT_FALLBACK=6, STANDING_EACH=24 (claude/mumblewood-draft-cadence.md)
+  if (process.env.DRAFT_MODE) START.drafts.mode = process.env.DRAFT_MODE as typeof START.drafts.mode;
+  if (process.env.DRAFT_FALLBACK) START.drafts.fallback = Number(process.env.DRAFT_FALLBACK);
+  if (process.env.CORNERSTONES) START.cornerstoneWhen = process.env.CORNERSTONES as typeof START.cornerstoneWhen;
+  if (process.env.RECRUIT_MODE) START.recruitMode = process.env.RECRUIT_MODE as typeof START.recruitMode;
+  if (process.env.DRAFT_PROGRESS) START.drafts.progress = process.env.DRAFT_PROGRESS as typeof START.drafts.progress;
+  if (process.env.DRAFTS_ON_PICK) START.drafts.onPick = Number(process.env.DRAFTS_ON_PICK);
+  if (process.env.DRAFT_BLOCKED) START.drafts.blocked = Number(process.env.DRAFT_BLOCKED);
+  if (process.env.STANDING_EACH) START.drafts.standingEach = Number(process.env.STANDING_EACH);
+}

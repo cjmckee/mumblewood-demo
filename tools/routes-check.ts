@@ -3,6 +3,9 @@
 // Usage: npx tsx tools/routes-check.ts
 import { CATEGORIES, BUILDING_BY_ID } from '../src/sim/content';
 import { createWorld, debugGrow, apply, runHours, findSpot, built, workersAt, alive, World, efficiencyAt, currentRecipe, canPlace, reconcileStock, WALKING_WOUNDED } from '../src/sim/world';
+import { START as START_DRAFTS } from '../src/sim/scenario';
+// these fixtures test production and routes, not when drafts come: keep the old day timer so their RNG stays put
+START_DRAFTS.drafts.mode = 'days';
 
 let failed = 0;
 const check = (ok: boolean, what: string) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}`); if (!ok) failed++; };

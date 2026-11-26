@@ -1397,9 +1397,10 @@ function resolveDecision(w: World, option: number): string | null {
       for (const m of def.metric.kind === 'all' ? def.metric.parts : [def.metric]) if ((m.kind === 'monument' || m.kind === 'longTable') && !w.owned.includes(m.kind === 'monument' ? m.def : 'pavilion')) { const id = m.kind === 'monument' ? m.def : 'pavilion'; w.owned.push(id); addLog(w, `The Crown sends plans for ${m.kind === 'monument' ? BUILDING_BY_ID[id].name : 'a feast pavilion'}. Find it a good spot.`, 'good'); }
       // drafts that wait for the first charter start now, with an offer that knows what the charter needs
       w.draftMarks = 0;
-      if (w.draftsFrom == null) { w.draftsFrom = day(w); offerDraft(w); }
-      // outside the day timer, every charter brings a draft to start its route
-      else if (START.drafts.mode !== 'days') offerDraft(w);
+      // outside the day timer, every charter brings drafts to start its route (START.drafts.onPick)
+      const first = w.draftsFrom == null;
+      if (first) w.draftsFrom = day(w);
+      if (first || START.drafts.mode !== 'days') for (let k = 0; k < (START.drafts.mode === 'days' ? 1 : START.drafts.onPick); k++) offerDraft(w);
       break;
     }
     case 'research': {
@@ -3227,6 +3228,9 @@ function dawn(w: World) {
   // blueprint drafts every few days once the first charter is picked
   if (START.drafts.mode === 'days') { if (w.draftsFrom != null && d > w.draftsFrom && (d - w.draftsFrom) % START.draftEvery === 0) offerDraft(w); }
   else if (w.draftsFrom != null && w.status === 'playing' && d - (w.lastDraftDay ?? w.draftsFrom) >= START.drafts.fallback) offerDraft(w);
+  // a charter can't stall on a missing blueprint: its route waits on one, and no draft is open
+  else if (START.drafts.blocked > 0 && w.draftsFrom != null && w.charter && w.status === 'playing' && !w.decisions.some(x => x.kind === 'blueprint')
+    && d - (w.lastDraftDay ?? w.draftsFrom) >= START.drafts.blocked && draftLinks(w).length) offerDraft(w);
   const every = recruitInterval(w);
   const due = START.seasons.recruitTaper && w.lastRecruitDay != null ? d - w.lastRecruitDay >= every : d % every === 0;
   if (every > 0 && due) {
@@ -3471,6 +3475,23 @@ export function charterParts(w: World): { kind: string; value: number; target: n
   const parts = c.metric.kind === 'all' ? c.metric.parts : [c.metric];
   return parts.map((p, i) => { const v = metricValue(w, p, i); return { kind: p.kind, ...v, met: v.value >= v.target }; });
 }
+/**
+ * Earned drafts (START.drafts, mode 'charter'): a charter's steps toward its next blueprint draft. Progress is the
+ * average of its parts (each counted up to full), so every part moves it; a draft comes at each third, the last
+ * third being the charter itself. null when drafts aren't earned this way or no charter is open.
+ */
+export function draftSteps(w: World): { ratio: number; earned: number; got: number; nextAt: number | null } | null {
+  const c = charterDef(w.charter);
+  if (!c || START.drafts.mode !== 'charter') return null;
+  const parts = c.metric.kind === 'all' ? c.metric.parts : [c.metric];
+  const ratios = parts.map((p, i) => { const x = metricValue(w, p, c.metric.kind === 'all' ? i : 0); return x.target > 0 ? Math.min(1, x.value / x.target) : 1; });
+  const how = START.drafts.progress;
+  const v = charterValue(w, c);
+  const ratio = how === 'mean' ? ratios.reduce((a, b) => a + b, 0) / ratios.length : how === 'parts' ? ratios.filter(r => r >= 1).length / parts.length : Math.min(1, v.value / v.target);
+  const earned = how === 'parts' ? Math.min(parts.length - 1, ratios.filter(r => r >= 1).length) : Math.min(2, Math.floor(3 * ratio));
+  const got = w.draftMarks ?? 0;
+  return { ratio, earned, got, nextAt: got < 2 && how !== 'parts' ? (got + 1) / 3 : null };
+}
 export function charterProgress(w: World) {
   const c = charterDef(w.charter);
   if (!c) return null;
@@ -3501,9 +3522,12 @@ function checkCharter(w: World) {
   if (START.drafts.mode === 'standing' && w.draftsFrom != null && (w.standing ?? 0) >= START.drafts.standingEach * ((w.standingDrafts ?? 0) + 1)) {
     w.standingDrafts = (w.standingDrafts ?? 0) + 1; offerDraft(w);
   }
+  let owedDrafts = 0;
   if (START.drafts.mode === 'charter' && v.target > 0) {
-    const third = Math.min(2, Math.floor(3 * v.value / v.target));
-    if (third > (w.draftMarks ?? 0)) { w.draftMarks = third; offerDraft(w); }
+    // a charter finished in one jump still pays the thirds it skipped, after its celebration, the next charter and the cornerstone
+    const marks = draftSteps(w)?.earned ?? 0;
+    if (v.value < v.target) while (marks > (w.draftMarks ?? 0)) { w.draftMarks = (w.draftMarks ?? 0) + 1; offerDraft(w); }
+    else owedDrafts = Math.max(0, marks - (w.draftMarks ?? 0));
   }
   if (v.value < v.target) return;
   w.chartersDone.push(c.id); w.charter = null;
@@ -3523,6 +3547,7 @@ function checkCharter(w: World) {
   w.charterTier = c.tier + 1;
   w.decisions.push(charterDecision(w, w.charterTier as 2 | 3), ...cornerstone);
   w.decisions.unshift({ kind: 'charter-complete', charter: c.id, tier: c.tier, gold: stipend, strainBefore, strainAfter: w.strain });
+  for (let k = 0; k < owedDrafts; k++) offerDraft(w);
 }
 
 // ---------- Gold and the caravan ----------

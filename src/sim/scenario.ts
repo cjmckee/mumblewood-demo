@@ -31,7 +31,16 @@ export interface Start {
    * 'standing' at each charter pick and every standingEach renown enjoyed (the Against the Storm way). Outside 'days', a
    * draft also comes after fallback days without one, so a colony never waits forever.
    */
-  drafts: { mode: 'days' | 'charter' | 'settlers' | 'standing'; fallback: number; standingEach: number };
+  drafts: {
+    mode: 'days' | 'charter' | 'settlers' | 'standing'; fallback: number; standingEach: number;
+    /** in 'charter' mode, how progress is judged: the weakest part ('min'), the parts' average ('mean'), or a draft
+     * for each part met ('parts') */
+    progress: 'min' | 'mean' | 'parts';
+    /** drafts at each charter pick */
+    onPick: number;
+    /** a charter whose route waits on a blueprint nobody owns brings a draft after this many days without one (0: never) */
+    blocked: number;
+  };
   /** cornerstones never offered (Open road brings settlers: settlers come with the charters, not as a boon) */
   cornerstoneOff: string[];
   /** when cornerstones are offered: each season's start and each charter ('both'), or only one of them */
@@ -164,7 +173,8 @@ export const START: Start = {
   popTargets: [4, 6, 8],
   wants: { per: 2, met: 6, unmet: [1, 3, 6], on: true },
   draftEvery: 4,
-  drafts: { mode: 'days', fallback: 6, standingEach: 24 },
+  // earned drafts (Cody, 2026-11-25): one when a charter is picked and one at each third of its progress, nothing on a timer
+  drafts: { mode: 'charter', fallback: 999, standingEach: 24, progress: 'mean', onPick: 1, blocked: 4 },
   cornerstoneOff: ['openRoad'],
   cornerstoneWhen: 'both',
   recruitMode: 'season',
