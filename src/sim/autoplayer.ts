@@ -1527,11 +1527,14 @@ export function staffPlan(w: World, explain = false): Map<number, number> {
   // before it studies: research costs wood too, and a scholar would eat the sawmill's woodpile
   const waitingOnWood = BOT.smallColony && charterChain(w).some(id => w.owned.includes(id) && !built(w).some(b => b.def === id) && (BUILDING_BY_ID[id].cost.wood ?? 0) + 10 > w.res.wood);
   if (waitingOnWood) { stage = 'wood for the charter\u2019s chain'; want.woodcutter = Math.max(want.woodcutter ?? 0, 2); give('woodcutter', 2); stage = 'essentials'; want.desk = 0; }
-  if (!chainFirst && w.res.wood >= 30) give('desk', 1);
+  // the charter's next workshop waits on planks, with a plank maker standing: its sawyer comes before the books
+  const waitingOnPlanks = BOT.smallColony && !waitingOnWood && built(w).some(b => FINE_MAKERS.includes(b.def)) && charterChain(w).some(id => w.owned.includes(id) && !built(w).some(b => b.def === id) && (BUILDING_BY_ID[id].cost.fine ?? 0) > stockOf(w, 'fine'));
+  if (waitingOnPlanks) { stage = 'planks for the charter’s chain'; give('sawmill', 1); stage = 'essentials'; want.desk = 0; }
+  if (!chainFirst && !waitingOnPlanks && w.res.wood >= 30) give('desk', 1);
   // cooked meals before books: raw berries make people ill, and a kitchen standing idle while the scholar reads is the
   // first thing a player would fix (BOT.smallColony)
   // and the charter's own workshops before either: a built sawmill for First planks gets its sawyer before the cook
-  if (BOT.smallColony) { give('woodcutter', 1); if (chainFirst) { stage = 'charter chain first'; for (const k of chain) give(k, 1); stage = 'essentials'; } give('kitchen', 1); if (!chainFirst) give('desk', 1); }
+  if (BOT.smallColony) { give('woodcutter', 1); if (chainFirst) { stage = 'charter chain first'; for (const k of chain) give(k, 1); stage = 'essentials'; } give('kitchen', 1); if (!chainFirst && !waitingOnPlanks) give('desk', 1); }
   else { give('woodcutter', 1); if (!chainFirst) give('desk', 1); give('kitchen', 1); }
   if (chainFirst) { stage = 'charter chain first'; for (const k of chain) give(k, 1); stage = 'essentials'; give('desk', 1); }
   if (BOT.summerService && seasonOf(w).season === 'summer' && !famine && drinkTotal(w) >= 0.3) {
@@ -1638,7 +1641,8 @@ export function staffPlan(w: World, explain = false): Map<number, number> {
 function rankedStaffing(w: World, want: Record<string, number>, budget: number, given: Record<string, number>, capacity: (k: string) => number, ch: string, pop: number) {
   const slots: { kind: string; k: number; p: number }[] = [];
   const firstP: Record<string, number> = { rawFood: 200, woodcutter: 190, kitchen: 120, clinic: 150, sawmill: 80, desk: 170 };
-  const short: Record<string, boolean> = { rawFood: rawStock(w) < pop * 4, woodcutter: w.res.wood < 30 };
+  // nearly out of planks with wood in store: every workshop past the stew kitchen is waiting on the plank maker
+  const short: Record<string, boolean> = { rawFood: rawStock(w) < pop * 4, woodcutter: w.res.wood < 30, sawmill: BOT.smallColony && stockOf(w, 'fine') < 12 && w.res.wood >= 20 };
   const asked = new Map<string, { n: number; p: number }>();
   for (const c of actedConcerns(w)) for (const f of c.fixes) if ('staff' in f) {
     const p = c.weight * 2 + (SURVIVAL.some(k => c.id.startsWith(k)) ? 40 : 0);
